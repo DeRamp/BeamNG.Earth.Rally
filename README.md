@@ -18,7 +18,7 @@ modding API 1.6 or newer (1.7, with the `onBeamNGEarthRebased` event, is used wh
    control (ATC), moves BeamNG.Earth's world origin to the middle of the stage (so the world does not shift under you
    for any stage up to ~26 km across) and writes the stage for the game's rally engine. The game's route arrows lead
    to each control; in a control's zone the car is braked to a stop and a sound says you are in. At the ATC you are
-   given your start time on the rally clock: the next full minute at least 30 s on. Wait on the start line for it
+   given your start time on the rally clock: the next half minute at least 30 s on (never more than 60 s). Wait on the start line for it, held still until the countdown
    (the co-driver counts the last five seconds down); moving off early is a jump start (+10 s), arriving after it is
    late (+10 s a minute, and the next minute). The clock stops at the flying finish (a sound), and you drive on to
    the stop control. Each control has the game's own rally boards just off the road edge, and a gazebo at the ATC,

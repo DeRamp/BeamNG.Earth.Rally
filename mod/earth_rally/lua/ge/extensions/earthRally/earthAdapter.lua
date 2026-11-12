@@ -100,10 +100,35 @@ end
 -- Move the world's origin to lat, lon without moving the car (BeamNG.Earth's core.rebaseTo, as its BeamMP shared
 -- origin does). true once asked, or false and why. It happens a few frames later, or not at all if BeamNG.Earth
 -- drops it: the caller watches M.anchor().
+--
+-- The camera: at a rebase BeamNG.Earth moves every camera vector it takes for a world position, those within
+-- RADIUS_MIN..MAX (1-5 km) of the player (camshift.lua), the rest being offsets and rotations near (0, 0, 0). Its own
+-- rebases happen 15 km out, where the two never mix; this one comes right after a teleport, with the player within a
+-- kilometre of the origin, so the chase camera's offsets were moved too: the camera went off to the origin, far from
+-- the car. For this move only, positions are those within CAMERA_NEAR_M of the player (the camera trails the car
+-- by a few metres); M.originMoved() puts BeamNG.Earth's radius back.
+M.CAMERA_NEAR_M = 30
+local camRadius = nil
+local function camshift()
+  local ok, cs = pcall(require, 'beamngEarth/camshift')
+  return ok and type(cs) == 'table' and cs.RADIUS_MIN and cs or nil
+end
+function M.originMoved()
+  local cs = camshift()
+  if cs and camRadius then cs.RADIUS_MIN, cs.RADIUS_MAX = camRadius[1], camRadius[2] end
+  camRadius = nil
+end
+
 function M.moveOriginTo(lat, lon)
   local c = core()
   if not (c and type(c.rebaseTo) == 'function') then return false, 'this BeamNG.Earth cannot move its origin on request' end
+  local cs = camshift()
+  if cs and not camRadius then
+    camRadius = { cs.RADIUS_MIN, cs.RADIUS_MAX }
+    cs.RADIUS_MIN, cs.RADIUS_MAX = M.CAMERA_NEAR_M, M.CAMERA_NEAR_M
+  end
   local ok, res, why = pcall(c.rebaseTo, lat, lon)
+  if not ok or res ~= true then M.originMoved() end
   if not ok then return false, tostring(res) end
   return res == true, why
 end

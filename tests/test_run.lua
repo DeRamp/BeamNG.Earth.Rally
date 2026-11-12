@@ -76,8 +76,11 @@ beamngEarth_api = {
 }
 local rebaseDistance = 15000
 package.loaded['beamngEarth/rebase'] = { distance = 15000 }
+local camshift = { RADIUS_MIN = 1000, RADIUS_MAX = 5000 }
+package.loaded['beamngEarth/camshift'] = camshift
+local radiusAtMove = nil
 beamngEarth_core = {
-  rebaseTo = function(lat, lon) moveAsk = { lat = lat, lon = lon, frames = 3 } return true end,
+  rebaseTo = function(lat, lon) moveAsk = { lat = lat, lon = lon, frames = 3 } radiusAtMove = camshift.RADIUS_MAX return true end,
   setRebaseDistance = function(m) rebaseDistance = math.max(2000, math.min(16000, m))
     package.loaded['beamngEarth/rebase'].distance = rebaseDistance return rebaseDistance end,
 }
@@ -98,7 +101,8 @@ function createObject(class)
   local o = { class = class, fields = {}, id = nextObj }
   function o:setField(k, _, v) self.fields[k] = v end
   function o:setPosRot(x, y, z, qx, qy, qz, qw) self.pos = { x, y, z } self.q = { qx, qy, qz, qw } end
-  function o:registerObject() objects[self.id] = self end
+  function o:registerObject(name) self.name = name objects[self.id] = self end
+  function o:addObject() end
   function o:getID() return self.id end
   function o:delete() objects[self.id] = nil end
   return o
@@ -106,7 +110,8 @@ end
 scenetree = { MissionGroup = { addObject = function() end }, findObjectById = function(_, id) return objects[id] end }
 setmetatable(scenetree, { __index = function(t, k) return rawget(t, k) end })
 scenetree.findObjectById = function(id) return objects[id] end
-local function countObjects() local n = 0 for _ in pairs(objects) do n = n + 1 end return n end
+scenetree.findObject = function(name) for _, o in pairs(objects) do if o.name == name then return o end end end
+local function countObjects() local n = 0 for _, o in pairs(objects) do if o.class == 'TSStatic' then n = n + 1 end end return n end
 
 -- the game's rally engine: loads the files, and its driveline load sets heights down on the terrain (z = 0)
 -- unless the snap is replaced, as the real one does on BeamNG.Earth outside the loaded kilometre
@@ -129,7 +134,8 @@ gameplay_rally = {
     for _, n in ipairs(nodes) do spline.divPoints[#spline.divPoints + 1] = n end
     manager = { notebook = { pacenotes = { sorted = nb.pacenotes } }, drivelineV3 = { spline = spline },
                 lastPlayedPacenoteIdx = nil, resyncAfterTeleport = function() end, race = race, dl = dl,
-                enqueueRandomSystemPacenote = function(_, name) lines[#lines + 1] = name end }
+                enqueueRandomSystemPacenote = function(_, name) lines[#lines + 1] = name end,
+                setPacenoteProcessingEnabled = function(self, on) self.notesOn = on end }
     return true
   end,
   unloadMission = function() manager = nil return true end,
@@ -210,6 +216,8 @@ frames(5)
 T.check(runner.current().checks.originMoved == 'yes', 'the origin moved to the stage centre (' ..
   tostring(runner.current().checks.originMoved) .. ')')
 T.check(math.abs(anchor.lat - 47.009) < 1e-9, 'the anchor is at the centre')
+T.check(radiusAtMove == 30, 'the camera moved at the origin move only within 30 m of the car (' .. tostring(radiusAtMove) .. ')')
+T.check(camshift.RADIUS_MIN == 1000 and camshift.RADIUS_MAX == 5000, 'BeamNG.Earth camera radius put back after')
 T.check(rebaseDistance == 16000, 'the rebase distance raised for the run')
 frames(3)
 local r = runner.current()
@@ -349,7 +357,7 @@ do
   T.check(dAtc > 30 and dAtc < 50, 'the car put ~40 m before the ATC (' .. string.format('%.0f', dAtc) .. ' m)')
   T.check(countObjects() >= 6, 'the ATC and start boards and tents put down (' .. countObjects() .. ')')
   local shapes = {}
-  for _, o in pairs(objects) do shapes[o.fields.shapeName:match('([^/]+)%.dae$')] = true end
+  for _, o in pairs(objects) do if o.fields.shapeName then shapes[o.fields.shapeName:match('([^/]+)%.dae$')] = true end end
   T.check(shapes.s_rally_signboard_time_control and shapes.s_rally_signboard_start and shapes.s_rally_gazebo_mod_frame_3x3,
     'the time control and start boards and a gazebo')
   -- roll up to the ATC and stop
@@ -359,12 +367,12 @@ do
   inputs = {}
   frames(2)
   T.check(runner.state() == 'toAtc', 'not checked in while moving')
-  T.check(inputs[1] and inputs[1]:find("'brake', 1"), 'braked in the ATC zone')
+  T.check(inputs[1] and inputs[1]:find("'brake', 0.35"), 'braked (gently) in the ATC zone')
   car.speed = 0
   frames(2)
   local clk = runner.clock()
-  T.check(r2.startAt and r2.startAt % 60 == 0 and r2.startAt - clk >= 29 and r2.startAt - clk <= 91,
-    'checked in: the start time the next minute at least 30 s on (' .. runner.formatClock(r2.startAt) .. ', now ' ..
+  T.check(r2.startAt and r2.startAt % 30 == 0 and r2.startAt - clk >= 29 and r2.startAt - clk <= 61,
+    'checked in: the start time the next half minute at least 30 s on, never 60 s past (' .. runner.formatClock(r2.startAt) .. ', now ' ..
     runner.formatClock(clk) .. ')')
   T.check(r2.checks.atc:find('checked in') ~= nil, 'checked in at the ATC')
   frames(20)
@@ -376,8 +384,29 @@ do
   car.lat, car.lon, car.speed = full[9][1], full[9][2], 0
   frames(20)
   T.check(runner.state() == 'waitStart', 'stopped on the start line: waiting for the minute (' .. runner.state() .. ')')
+  frames(1)
+  T.check(routes[#routes] == false, 'no route arrows once at the start')
+  T.check(manager.notesOn == false, 'no stage notes called before the start')
+  T.check(frozen == true, 'held on the line while waiting')
+  local drawn = 0
+  debugDrawer = debugDrawer or {}
+  debugDrawer.drawSquarePrism = function() drawn = drawn + 1 end
+  Point2F = Point2F or function(a, b) return { a, b } end
+  ColorF = ColorF or function(r, g, b, a) return { r, g, b, a } end
+  frames(2)
+  T.check(drawn >= 2, 'the start line drawn on the road')
+  local tcBoards = 0
+  for _, o in pairs(objects) do if (o.fields.shapeName or ''):find('signboard_time_control.dae') then tcBoards = tcBoards + 1 end end
+  T.check(tcBoards == 2, 'a time control board on each side of the road (' .. tcBoards .. ')')
+  local releasedAt = nil
   lines = {}
-  for _ = 1, 1200 do frames(1) if runner.state() == 'running' then break end end
+  for _ = 1, 1200 do
+    frames(1)
+    if not releasedAt and frozen == false then releasedAt = r2.startAt - runner.clock() end
+    if runner.state() == 'running' then break end
+  end
+  T.check(releasedAt and releasedAt <= 5.05 and releasedAt > 4, 'let go 5 s before the start (' .. tostring(releasedAt) .. ')')
+  T.check(manager.notesOn == true, 'the stage notes on from GO')
   T.check(runner.state() == 'running', 'GO at the start minute (with controls)')
   T.check(math.abs(runner.clock() - r2.startAt) < 0.2, 'the stage clock from the minute itself')
   T.check(has(lines, 'countdown5') and has(lines, 'countdowngo') and not r2.jumpStart, 'counted down, no jump start')
@@ -391,10 +420,10 @@ do
   T.check(runner.state() == 'toStop' and r2.finalTime, 'the clock stopped at the flying finish, on to the stop control')
   T.check(has(sounds, 'event:UI_CountdownGo'), 'a sound at the flying finish')
   local ffShapes = 0
-  for _, o in pairs(objects) do if o.fields.shapeName:find('gazebo_mod_frame') then ffShapes = ffShapes + 1 end end
+  for _, o in pairs(objects) do if (o.fields.shapeName or ''):find('gazebo_mod_frame') then ffShapes = ffShapes + 1 end end
   T.check(ffShapes >= 3, 'a tent at the ATC, the start and the finish (' .. ffShapes .. ')')
   local shapes2 = {}
-  for _, o in pairs(objects) do shapes2[o.fields.shapeName:match('([^/]+)%.dae$')] = true end
+  for _, o in pairs(objects) do if o.fields.shapeName then shapes2[o.fields.shapeName:match('([^/]+)%.dae$')] = true end end
   T.check(shapes2.s_rally_signboard_finish and shapes2.s_rally_signboard_finish_entry, 'the finish boards put down')
   car.lat, car.lon = ev2.stages[1].controls.stop.lat, ev2.stages[1].controls.stop.lon
   frames(2)

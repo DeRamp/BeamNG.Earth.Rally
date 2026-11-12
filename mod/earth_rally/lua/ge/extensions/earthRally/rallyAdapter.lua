@@ -88,6 +88,13 @@ function M.heightCheck(ourNodes)
   return worst, lowest
 end
 
+-- The stage's pacenotes called or not (the co-driver's own lines, such as the countdown, are not held back): off from
+-- the load until GO, as the game's own rally countdown does, so nothing is called on the way to the start.
+function M.notesOn(on)
+  local rm = M.manager()
+  if rm and rm.setPacenoteProcessingEnabled then pcall(rm.setPacenoteProcessingEnabled, rm, on and true or false) end
+end
+
 -- One of the co-driver's own lines (the voice pack's system pacenotes: 'countdown5'..'countdown1', 'countdowngo',
 -- 'falseStart'), as the game's rally countdown says them.
 function M.systemNote(name)

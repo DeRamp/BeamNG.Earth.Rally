@@ -31,8 +31,8 @@ M.SHAPES = {
 -- each kind of control: { shape, fwd (m along the road), out (m beyond the road's right edge), yaw (degrees from the
 -- road's way) }. The edge is the road's own (BeamNG.Earth's road map: its half width where the site is), so the boards
 -- stand just off the road on a wide one as on a forest track.
-M.BOARD_OUT_M = 1.0
-M.TENT_OUT_M = 2.2          -- the gazebo's centre (it is 3 m square: its near side 0.7 m off the road)
+M.BOARD_OUT_M = -0.3         -- (a little inside the road's edge, as the boards stand on a rally road)
+M.TENT_OUT_M = 1.5          -- the gazebo's centre (it is 3 m square: its near side at the road's edge)
 M.DEFAULT_HALF_WIDTH_M = 3.0
 M.SNAP_M = 30               -- a site this close to a road is put on it
 local TENT = function(fwd)
@@ -44,15 +44,42 @@ local TENT = function(fwd)
 end
 local function join(a, b) for _, x in ipairs(b) do a[#a + 1] = x end return a end
 local B = M.BOARD_OUT_M
+-- (a board on both sides of the road: the 5th field is the side, -1 the left)
+local function both(name, fwd)
+  return { { name, fwd, B, 0, 1 }, { name, fwd, B, 0, -1 } }
+end
 M.LAYOUTS = {
-  atc = join({ { 'tcEntry', -50, B, 0 }, { 'tc', 0, B, 0 } }, TENT(4)),
-  start = join({ { 'start', 0, B, 0 }, { 'clock', 1.5, B + 0.5, 0 } }, TENT(-6)),
-  ff = join({ { 'finishEntry', -150, B, 0 }, { 'finish', 0, B, 0 } }, TENT(6)),
-  stop = join({ { 'stop', 0, B, 0 } }, TENT(4)),
+  atc = join(join(both('tcEntry', -50), both('tc', 0)), TENT(4)),
+  start = join(join(both('start', 0), { { 'clock', 1.5, B + 0.5, 0 } }), TENT(-6)),
+  ff = join(join(both('finishEntry', -150), both('finish', 0)), TENT(6)),
+  stop = join(both('stop', 0), TENT(4)),
 }
 
 local sites = {}          -- { kind, lat, lon, z (nil: not known), dir = {x, y} (game coordinates), objs, failed }
 local serial = 0
+-- All of them in one group of the scene, found by its name: a Lua reload (Ctrl+L) forgets the objects this module put
+-- down, so the next load takes the group away whole (M.sweep), and names stay unique across loads.
+M.GROUP = 'earthRally_props'
+local session = tostring(os.time())
+
+local function group()
+  local g = scenetree.findObject and scenetree.findObject(M.GROUP)
+  if g then return g end
+  local ok, made = pcall(function()
+    local o = createObject('SimGroup')
+    o.canSave = false
+    o:registerObject(M.GROUP)
+    scenetree.MissionGroup:addObject(o)
+    return o
+  end)
+  return ok and made or nil
+end
+
+-- Take away whatever an earlier load of the mod left in the scene.
+function M.sweep()
+  local g = scenetree.findObject and scenetree.findObject(M.GROUP)
+  if g then pcall(function() g:delete() end) end
+end
 
 -- dir: the road's direction at the site in game coordinates (re-given after a world shift via M.setSite)
 function M.setSite(kind, lat, lon, dir, z)
@@ -114,8 +141,9 @@ local function makeObj(shape, x, y, z, q)
   o.canSave = false
   o:setPosRot(x, y, z, q[1], q[2], q[3], q[4])
   serial = serial + 1
-  o:registerObject('earthRally_prop_' .. serial)
-  scenetree.MissionGroup:addObject(o)
+  o:registerObject('earthRally_prop_' .. session .. '_' .. serial)
+  local g = group()
+  if g then g:addObject(o) else scenetree.MissionGroup:addObject(o) end
   return o:getID()
 end
 
@@ -161,7 +189,7 @@ local function spawn(s, toGame, carZ)
   s.objs = {}
   for _, it in ipairs(layout) do
     local shape = M.SHAPES[it[1]]
-    local out = half + it[3]
+    local out = (half + it[3]) * (it[5] or 1)
     local x, y = x0 + fx * it[2] + rx * out, y0 + fy * it[2] + ry * out
     local yaw = math.rad(it[4])
     local dx, dy = fx * math.cos(yaw) + rx * math.sin(yaw), fy * math.cos(yaw) + ry * math.sin(yaw)

@@ -56,7 +56,12 @@ M.STOP_CONTROL_RADIUS_M = 25
 M.STOPPED_MS = 1.0
 M.START_ZONE_BEFORE_M = 12     -- stopped this far before the start line (or less), beside it: on the line
 M.START_ZONE_OFF_M = 8
-M.START_GAP_S = 30             -- the start minute at least this long after checking in at the ATC
+M.START_GAP_S = 30             -- the start time at least this long after checking in at the ATC: the next half
+                               -- minute mark (hh:mm:00 or hh:mm:30) from there, so the wait is 30-60 s
+M.LATE_GAP_S = 10              -- late at the start: the next half-minute mark at least this far on
+M.BRAKE_LEVEL = 0.35           -- the brake applied in a control zone (0..1): the car slows, the driver still stops it
+M.HOLD_RELEASE_S = 5           -- on the start line the car is held until this long before the start (the countdown)
+M.START_LINE_SHOW_M = 250      -- the start line drawn on the road while the car is this close to it
 M.NO_ATC_START_S = 8           -- without an ATC: the start this long after stopping on the line
 M.LATE_PENALTY_S = 10          -- a minute (or part) late at the start
 M.ZONE_HOLD_S = 1.5            -- the car held still this long after it stops in a control zone
@@ -316,9 +321,11 @@ local function stepAnchor(dt)
   local la, lo = earth.anchor()
   if la and geo.metres(la, lo, c.lat, c.lon) <= M.ANCHOR_CLOSE_M and not earth.rebasing() and earth.ready() then
     run.checks.originMoved = 'yes'
+    earth.originMoved()
     M.resetCameraSoon()
     setState('build')
   elseif run.t > M.ANCHOR_WAIT_S then
+    earth.originMoved()
     run.checks.originMoved = 'timed out'
     log('W', logTag, 'origin never moved to the stage centre: the world may shift during the run')
     setState('build')
@@ -334,6 +341,7 @@ local function stepBuild()
   writer.write(run.dir, built)
   run.built = built
   local ok, why = rallyA.load(run.id, run.dir)
+  rallyA.notesOn(false)        -- (no calls on the way to the start: on at GO)
   run.checks.rallyEngine = ok and 'loaded' or ('failed: ' .. tostring(why))
   run.checks.cornersFound = built.corners
   if not ok then
@@ -441,7 +449,8 @@ end
 local function brakes(veh, on)
   if not veh then return end
   pcall(function()
-    veh:queueLuaCommand(on and "input.event('brake', 1, 2) input.event('throttle', 0, 2)" or "input.event('brake', 0, 2)")
+    veh:queueLuaCommand(on and string.format("input.event('brake', %.2f, 2)", M.BRAKE_LEVEL)
+      or "input.event('brake', 0, 2)")
   end)
 end
 local function freeze(veh, on)
@@ -451,7 +460,7 @@ end
 
 -- A control zone: inZone each frame; the car braked from the moment it is in it, held still once stopped (a sound),
 -- and let go ZONE_HOLD_S later. Returns 'stopped' in the frame it stops, 'held' while held, 'done' once let go.
-local function zone(inZone, dt)
+local function zone(inZone, dt, keepHeld)
   local _, veh = carPos()
   local z = run.zone
   if not z then
@@ -462,6 +471,7 @@ local function zone(inZone, dt)
   end
   if z.stopped then
     z.t = z.t + dt
+    if keepHeld then return z.t >= M.ZONE_HOLD_S and 'done' or 'held' end
     if z.t >= M.ZONE_HOLD_S then
       freeze(veh, false)
       brakes(veh, false)
@@ -526,12 +536,12 @@ local function stepToAtc(dt)
   run.toControlM = d
   run.atcTarget = run.atcTarget or {}
   run.atcTarget.pos = { x = a.x, y = a.y, z = p.z }
-  routeTo(run.atcTarget, dt)
+  if not (run.zone and run.zone.stopped) then routeTo(run.atcTarget, dt) end   -- (none once stopped in the zone)
   local zs = zone(d <= M.CONTROL_RADIUS_M, dt)
   if zs == 'stopped' then
     local now = M.clock()
     run.atcTime = now
-    run.startAt = math.ceil((now + M.START_GAP_S) / 60) * 60
+    run.startAt = math.ceil((now + M.START_GAP_S) / 30) * 30
     run.checks.atc = 'checked in ' .. M.formatClock(now)
     say(string.format('Checked in at %s. Your start time: %s', M.formatClock(now), M.formatClock(run.startAt)), 8)
   elseif zs == 'done' then
@@ -556,14 +566,15 @@ local function stepToStart(dt)
   local sp = geo.pointAt(run.line, run.cum, run.startM)
   run.startTarget = run.startTarget or {}
   run.startTarget.pos = sp
-  routeTo(run.startTarget, dt)
+  if not (run.zone and run.zone.stopped) then routeTo(run.startTarget, dt) end   -- (none once stopped in the zone)
   if along > run.startM + 2 and off <= M.START_ZONE_OFF_M and not run.zone then
     if not run.overLine then say('Back up behind the start line.', 3) end
     run.overLine = true
     return
   end
   run.overLine = false
-  local zs = zone(along >= run.startM - M.START_ZONE_BEFORE_M and along <= run.startM + 3 and off <= M.START_ZONE_OFF_M, dt)
+  local zs = zone(along >= run.startM - M.START_ZONE_BEFORE_M and along <= run.startM + 3 and off <= M.START_ZONE_OFF_M, dt,
+    true)
   if zs == 'stopped' then
     routeOff()
     local now = M.clock()
@@ -571,7 +582,7 @@ local function stepToStart(dt)
       run.startAt = now + M.NO_ATC_START_S
     elseif now > run.startAt - 5 then
       -- late at the start: the next minute, and a penalty for each minute (or part) late
-      local newStart = math.ceil((now + 10) / 60) * 60
+      local newStart = math.ceil((now + M.LATE_GAP_S) / 30) * 30
       local mins = math.ceil((newStart - run.startAt) / 60)
       run.latePenalty = mins * M.LATE_PENALTY_S
       run.checks.lateMinutes = mins
@@ -581,18 +592,50 @@ local function stepToStart(dt)
       say('Start time ' .. M.formatClock(run.startAt) .. '. Wait for your minute.', 5)
     end
   elseif zs == 'done' then
-    run.staged = carPos()
+    -- (the co-driver from the start afresh: whatever it picked up on the way here is dropped)
+    rallyA.resync()
     setState('waitStart')
     run.lastShown = nil
   end
 end
 
+-- The start line across the road (white, edge to edge where the road's width is known), drawn while the car is near.
+local lineColor = nil
+local function drawStartLine()
+  if not (run and run.line and debugDrawer and debugDrawer.drawSquarePrism) then return end
+  local s = run.state
+  if not (s == 'toAtc' or s == 'toStart' or s == 'waitStart' or (s == 'running' and (run.clock or 0) < 10)) then return end
+  local p = carPos()
+  local sp, dir = geo.pointAt(run.line, run.cum, run.startM)
+  if not (p and sp) or (p.x - sp.x) ^ 2 + (p.y - sp.y) ^ 2 > M.START_LINE_SHOW_M ^ 2 then return end
+  if not run.startHalf then
+    local road = props.roadAt(sp.x, sp.y, sp.z)
+    run.startHalf = road and road.half or 3.5
+  end
+  local h = run.startHalf
+  local rx, ry = dir.y, -dir.x
+  local z = (sp.z or p.z) + 0.04
+  lineColor = lineColor or ColorF(1, 1, 1, 0.95)
+  local ok = pcall(function()
+    debugDrawer:drawSquarePrism(vec3(sp.x - rx * h, sp.y - ry * h, z), vec3(sp.x + rx * h, sp.y + ry * h, z),
+      Point2F(0.03, 0.45), Point2F(0.03, 0.45), lineColor)
+  end)
+  if not ok then run.noStartLine = true end
+end
+M._drawStartLine = drawStartLine
+
 local function stepWaitStart(dt)
   run.t = run.t + dt
+  routeOff()                   -- (no route arrows at the start, nor on the stage)
   local p = carPos()
   if p then props.update(p, earth.toGame) end
   local left = run.startAt - M.clock()
-  -- moving off before the start minute: a jump start (the stage clock still runs from the minute)
+  -- held on the line until the countdown, as the game's own rally starts hold a staged car; then let go, and
+  -- moving off before the start is a jump start (the stage clock still runs from the start time)
+  if run.zone and left <= M.HOLD_RELEASE_S then
+    zoneRelease()
+    run.staged = carPos()
+  end
   if p and run.staged and not run.jumpStart and geo.dist2d(p, run.staged) > M.JUMP_START_M then
     run.jumpStart = true
     rallyA.systemNote('falseStart')
@@ -605,6 +648,8 @@ local function stepWaitStart(dt)
     if ui_message then ui_message(tostring(n), 1, 'earthRallyCount') end
   end
   if left <= 0 then
+    if run.zone then zoneRelease() end
+    rallyA.notesOn(true)       -- (the stage's notes from GO only)
     rallyA.systemNote('countdowngo')
     if ui_message then ui_message('GO', 1.5, 'earthRallyCount') end
     run.clock = -left          -- (from the minute itself, not this frame)
@@ -613,6 +658,7 @@ local function stepWaitStart(dt)
 end
 
 local function stepRunning(dtSim)
+  routeOff()
   run.clock = run.clock + dtSim
   if not earth.ready() then run.checks.notReadyS = run.checks.notReadyS + dtSim end
   local st = rallyA.status()
@@ -662,7 +708,7 @@ local function stepToStop(dt)
   run.toControlM = d
   run.stopTarget = run.stopTarget or {}
   run.stopTarget.pos = { x = b.x, y = b.y, z = p.z }
-  routeTo(run.stopTarget, dt)
+  if not (run.zone and run.zone.stopped) then routeTo(run.stopTarget, dt) end   -- (none once stopped in the zone)
   local zs = zone(d <= M.STOP_CONTROL_RADIUS_M, dt)
   if zs == 'stopped' then
     routeOff()
@@ -678,6 +724,7 @@ end
 function M.update(dtReal, dtSim)
   camUpdate(dtReal or 0)
   if not run then return end
+  if not run.noStartLine then drawStartLine() end
   if run.clockBase then run.clockRun = run.clockRun + (dtSim or 0) end
   local s = run.state
   if s == 'travel' then stepTravel(dtReal)
@@ -700,6 +747,7 @@ end
 
 function M.abort(quiet)
   if not run then return end
+  earth.originMoved()
   zoneRelease()
   routeOff()
   M.release()

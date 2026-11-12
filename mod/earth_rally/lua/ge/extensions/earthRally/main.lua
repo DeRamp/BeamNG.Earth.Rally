@@ -186,6 +186,10 @@ function M.onClientEndMission()
   earth.reset()
 end
 
-function M.onExtensionLoaded() log('I', logTag, 'Earth Rally loaded (Ctrl+Alt+K opens its window)') end
+function M.onExtensionLoaded()
+  -- (boards and tents a run left before a Lua reload: taken away)
+  pcall(require('earthRally/props').sweep)
+  log('I', logTag, 'Earth Rally loaded (Ctrl+Alt+K opens its window)')
+end
 
 return M
