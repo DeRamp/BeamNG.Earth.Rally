@@ -542,7 +542,11 @@ local function stepToAtc(dt)
     run.atcTime = now
     run.startAt = math.ceil((now + M.START_GAP_S) / 30) * 30
     run.checks.atc = 'checked in ' .. M.formatClock(now)
-    say(string.format('Checked in at %s. Your start time: %s', M.formatClock(now), M.formatClock(run.startAt)), 8)
+    say(string.format('Checked in at %s. Your start time: %s. Move up to the start line.', M.formatClock(now),
+      M.formatClock(run.startAt)), 8)
+    -- (the co-driver's own pre-start lines: the voice packs have no "move up" line)
+    rallyA.systemNote('commsCheck')
+    rallyA.systemNote('beltsCheck')
   elseif zs == 'done' then
     setState('toStart')
   elseif not zs then

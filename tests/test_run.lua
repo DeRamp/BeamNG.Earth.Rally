@@ -378,6 +378,7 @@ do
     'checked in: the start time the next half minute at least 30 s on, never 60 s past (' .. runner.formatClock(r2.startAt) .. ', now ' ..
     runner.formatClock(clk) .. ')')
   T.check(r2.checks.atc:find('checked in') ~= nil, 'checked in at the ATC')
+  T.check(has(lines, 'commsCheck') and has(lines, 'beltsCheck'), 'the co-driver at the ATC: intercom check, belts')
   T.check(inputs[#inputs]:find("'brake', 0, 2", 1, true) ~= nil, 'the brake let go once stopped')
   frames(20)
   T.check(runner.state() == 'toStart' and frozen == false, 'let go: on to the start line')
