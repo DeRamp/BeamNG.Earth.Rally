@@ -252,7 +252,16 @@ T.check(layout == 'beamngEarth', 'BeamNG.Earth layout back')
 local drawn = 0
 debugDrawer = { drawLineInstance = function() drawn = drawn + 1 end, drawSphere = function() end }
 function ColorF(r, g, b, a) return { r, g, b, a } end
-function castRayStatic(o) return 300 - 50 end
+local rays = 0
+function castRayStatic(o, _, maxd)
+  rays = rays + 1
+  local ground = 100
+  local canopy = (math.floor(o.x / 15) % 10 == 0) and 130 or nil
+  if canopy and o.z > canopy then return o.z - canopy end
+  local d = o.z - ground
+  if d >= 0 and d <= maxd then return d end
+  return nil
+end
 local vmt = { __add = function(a, b) return vec3(a.x + b.x, a.y + b.y, a.z + b.z) end }
 local plainVec3 = vec3
 function vec3(x, y, z) return setmetatable(plainVec3(x, y, z), vmt) end
@@ -267,7 +276,20 @@ for i = 1, #full, 3 do
   if res == 'done' then done = i break end
 end
 T.check(drawn > 20, 'the stage line drawn ahead (' .. drawn .. ' segments)')
+
 T.check(done ~= nil and done > #full * 0.9, 'the recce ends at the stage end')
 T.check(recce.stop(true) == true and #events.recce('test', 'hill').points > 300, 'the recce saved')
+
+-- the drawn line stays on the ground (z 100 + the lift), never on a treetop (130)
+local zs = {}
+debugDrawer.drawLineInstance = function(_, a, b) zs[#zs + 1] = a.z zs[#zs + 1] = b.z end
+car.lat, car.lon, car.alt = full[1500][1], full[1500][2], 100.5
+recce.start(event, event.stages[1])
+recce.update()
+recce.draw(1)
+local high = 0
+for _, z in ipairs(zs) do if math.abs(z - 101) > high then high = math.abs(z - 101) end end
+T.check(#zs > 40 and high < 0.6, 'the line on the ground, under the trees (' .. #zs .. ' ends, worst ' .. high .. ' m)')
+recce.stop(false)
 
 T.done('test_run')

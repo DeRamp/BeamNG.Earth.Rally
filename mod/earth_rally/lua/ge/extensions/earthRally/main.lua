@@ -146,7 +146,7 @@ function M.onUpdate(dtReal, dtSim)
     message = saved and 'Recce saved: you can run the stage.' or err
     earth.notify('Earth Rally: ' .. message, 6)
   end
-  if recce.active() then pcall(recce.draw) end
+  if recce.active() then pcall(recce.draw, dtReal) end
   if facing then
     facing.t = facing.t + dtReal
     facing.ready = earth.ready() and facing.t > 2 and (facing.ready + dtReal) or 0

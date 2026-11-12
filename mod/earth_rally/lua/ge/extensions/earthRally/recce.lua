@@ -70,48 +70,81 @@ function M.update()
       or (along >= total - 1 and off < 40)) then return 'done' end
 end
 
--- The ground under a map point (game coordinates now), found once per world origin: a ray down from above the car.
-local function groundZ(i, x, y, carZ)
-  local key = i
-  local g = rec.ground[key]
-  if g ~= nil then return g or nil end
+-- The guide's heights, walked out from the car along the line (every GUIDE_REFRESH_S, not every frame). Each point's
+-- ground is looked for only a few metres above and below the one before it, starting from the car's own height: a
+-- ray from high up lands on the treetops of a forest stage, and the ground past what BeamNG.Earth has loaded round
+-- the car has no collision at all. Where nothing is found the line carries on level with the last point found, so
+-- it never breaks up.
+M.GUIDE_REFRESH_S = 0.25
+M.RAY_ABOVE_M = 6           -- how far above the last point's ground a ray starts
+M.RAY_DOWN_M = 30
+M.MAX_STEP_M = 5            -- a ground found more than this above or below the last point is not the road's
+
+local function rayGround(x, y, zPrev)
   local ray = rawget(_G, 'castRayStatic')
   if not ray then return nil end
-  local top = carZ + 300
-  local d = ray(vec3(x, y, top), vec3(0, 0, -1), 700)
-  local z = d and d < 700 and top - d or false
-  if z then rec.ground[key] = z end       -- (not found: asked again later, the ground may not be loaded yet)
-  return z or nil
+  for _, above in ipairs({ M.RAY_ABOVE_M, 2 }) do      -- (again from lower down: a branch over the road)
+    local top = zPrev + above
+    local d = ray(vec3(x, y, top), vec3(0, 0, -1), M.RAY_DOWN_M)
+    if d and d < M.RAY_DOWN_M then
+      local z = top - d
+      if math.abs(z - zPrev) <= M.MAX_STEP_M then return z end
+    end
+  end
+  return nil
+end
+
+local function buildGuide(p)
+  local line, cum = rec.guide, rec.guideCum
+  local s0, s1 = rec.here - M.GUIDE_BEHIND_M, rec.here + M.GUIDE_AHEAD_M
+  -- the guide point nearest the car, then outwards both ways from the car's height
+  local iCar, best = 1, math.huge
+  for i = 1, #line do
+    local d = math.abs(cum[i] - rec.here)
+    if d < best then iCar, best = i, d end
+  end
+  local pts = {}
+  local function walk(from, to, step)
+    local z = p.z - 0.5
+    for i = from, to, step do
+      if cum[i] < s0 or cum[i] > s1 then break end
+      local x, y = earth.toGame(line[i][1], line[i][2], 0)
+      if not x then return end
+      z = rayGround(x, y, z) or z
+      pts[i] = vec3(x, y, z + M.GUIDE_LIFT_M)
+    end
+  end
+  walk(iCar, #line, 1)
+  walk(iCar - 1, 1, -1)
+  rec.drawn = pts
+  local lo, hi = iCar, iCar
+  while pts[lo - 1] do lo = lo - 1 end
+  while pts[hi + 1] do hi = hi + 1 end
+  rec.drawnLo, rec.drawnHi = lo, hi
 end
 
 -- Draw the next stretch of the map line on the ground (every frame while recording).
-function M.draw()
+function M.draw(dt)
   if not rec or not rec.here or not debugDrawer then return end
-  local la, lo = earth.anchor()
-  if la ~= rec.groundLat or lo ~= rec.groundLon then rec.ground, rec.groundLat, rec.groundLon = {}, la, lo end
   local p = earth.pose()
   if not p then return end
+  local la, lo = earth.anchor()
+  rec.guideT = (rec.guideT or 0) - (dt or 0)
+  if rec.guideT <= 0 or la ~= rec.guideLat or lo ~= rec.guideLon or earth.rebasing() then
+    if earth.rebasing() then rec.drawn = nil return end
+    buildGuide(p)
+    rec.guideT, rec.guideLat, rec.guideLon = M.GUIDE_REFRESH_S, la, lo
+  end
   guideColor = guideColor or ColorF(1, 0.55, 0.1, 0.9)
   endColor = endColor or ColorF(0.2, 1, 0.3, 0.9)
-  local s0, s1 = rec.here - M.GUIDE_BEHIND_M, rec.here + M.GUIDE_AHEAD_M
-  local line, cum = rec.guide, rec.guideCum
+  local pts = rec.drawn
+  if not pts then return end
   local prev = nil
-  for i = 1, #line do
-    local s = cum[i]
-    if s >= s0 - 200 and s <= s1 + 200 then
-      local x, y = earth.toGame(line[i][1], line[i][2], 0)
-      if x then
-        local z = groundZ(i, x, y, p.z)
-        local pt = z and vec3(x, y, z + M.GUIDE_LIFT_M) or nil
-        if pt and prev and s >= s0 then
-          debugDrawer:drawLineInstance(prev, pt, M.GUIDE_WIDTH, guideColor)
-        end
-        prev = pt
-        if i == #line and pt then debugDrawer:drawSphere(pt + vec3(0, 0, 3), 3, endColor) end
-      end
-    elseif s > s1 + 200 then
-      break
-    end
+  for i = rec.drawnLo, rec.drawnHi do
+    local pt = pts[i]
+    if pt and prev then debugDrawer:drawLineInstance(prev, pt, M.GUIDE_WIDTH, guideColor) end
+    prev = pt
+    if pt and i == #rec.guide then debugDrawer:drawSphere(pt + vec3(0, 0, 3), 3, endColor) end
   end
 end
 
