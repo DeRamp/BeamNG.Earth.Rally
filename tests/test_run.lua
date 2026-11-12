@@ -370,7 +370,7 @@ do
   inputs = {}
   frames(2)
   T.check(runner.state() == 'toAtc', 'not checked in while moving')
-  T.check(inputs[1] and inputs[1]:find("'brake', 0.35"), 'braked (gently) in the ATC zone')
+  T.check(#inputs == 0, 'no braking of ours in the ATC zone')
   car.speed = 0
   frames(2)
   local clk = runner.clock()
@@ -415,11 +415,9 @@ do
   T.check(has(lines, 'countdown5') and has(lines, 'countdowngo') and not r2.jumpStart, 'counted down, no jump start')
   local order = table.concat(lines, ' ')
   T.check(order:find('warningSeconds30 precountdown') ~= nil, '"30 seconds", then good luck (' .. order .. ')')
-  T.check(order:find('warningSeconds10 note:Pacenote 1') ~= nil, '"10 seconds", then the first note')
-  T.check(order:find('countdowngo note:Pacenote 1') ~= nil, 'go, then the first note again')
-  T.check(manager.firstCalls == 2, 'the first note called twice before the stage (' .. tostring(manager.firstCalls) .. ')')
-  local ev1 = manager.drivelineRoute.events[1]
-  T.check(ev1 and ev1.audioTriggerComplete and ev1.csImmediateHit, 'the engine told the first note is called')
+  T.check(order:find('warningSeconds10') ~= nil and order:find('countdowngo') ~= nil, '"10 seconds" ... go')
+  T.check(not manager.firstCalls and next(manager.drivelineRoute.events) == nil,
+    'the first note left to the engine (nothing called or marked by us)')
   sounds = {}
   car.speed = 30
   for i = 11, #full, 25 do

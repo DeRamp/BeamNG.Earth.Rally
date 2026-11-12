@@ -95,26 +95,6 @@ function M.notesOn(on)
   if rm and rm.setPacenoteProcessingEnabled then pcall(rm.setPacenoteProcessingEnabled, rm, on and true or false) end
 end
 
--- The stage's first pacenote called now (as a co-driver reads it before the start). markDone: the engine is told
--- it has been called, so its own call of the first note as the car pulls away (an 'immediate' note) does not repeat it.
-function M.callFirstNote(markDone)
-  local rm = M.manager()
-  local list = rm and rm.notebook and rm.notebook.pacenotes and rm.notebook.pacenotes.sorted
-  local pn = list and list[1]
-  if not (pn and rm.triggerPacenote) then return false end
-  local ok, err = pcall(rm.triggerPacenote, rm, pn)
-  if not ok then log('W', logTag, 'first note: ' .. tostring(err)) return false end
-  local route = markDone and rm.drivelineRoute
-  if route and type(route.events) == 'table' and pn.id then
-    local ev = route.events[pn.id] or { disabledByRecalc = false, csDynamicHit = false, csStaticHit = false,
-      csMeterOffsetHit = { [-40] = false }, cornerPercentHit = { [0.5] = false }, ceStaticHit = false,
-      ceMeterOffsetHit = { [-5] = false } }
-    ev.csImmediateHit, ev.audioTriggerComplete = true, true
-    route.events[pn.id] = ev
-  end
-  return true
-end
-
 -- One of the co-driver's own lines (the voice pack's system pacenotes: 'countdown5'..'countdown1', 'countdowngo',
 -- 'falseStart'), as the game's rally countdown says them.
 function M.systemNote(name)

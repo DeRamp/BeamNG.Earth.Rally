@@ -59,7 +59,6 @@ M.START_ZONE_OFF_M = 8
 M.START_GAP_S = 30             -- the start time at least this long after checking in at the ATC: the next half
                                -- minute mark (hh:mm:00 or hh:mm:30) from there, so the wait is 30-60 s
 M.LATE_GAP_S = 10              -- late at the start: the next half-minute mark at least this far on
-M.BRAKE_LEVEL = 0.35           -- the brake applied in a control zone (0..1): the car slows, the driver still stops it
 M.HOLD_RELEASE_S = 5           -- on the start line the car is held until this long before the start (the countdown)
 M.START_LINE_SHOW_M = 250      -- the start line drawn on the road while the car is this close to it
 M.NO_ATC_START_S = 12          -- without an ATC: the start this long after stopping on the line (the 10 s call fits)
@@ -445,21 +444,15 @@ local function sound(ev)
   if eng and eng.Audio and eng.Audio.playOnce then pcall(eng.Audio.playOnce, 'AudioGui', ev) end
 end
 
--- The car braked (the game's brake input, full) and held (the game's freeze, as its own rally countdowns hold a car).
-local function brakes(veh, on)
-  if not veh then return end
-  pcall(function()
-    veh:queueLuaCommand(on and string.format("input.event('brake', %.2f, 2)", M.BRAKE_LEVEL)
-      or "input.event('brake', 0, 2)")
-  end)
-end
+-- The car held still (the game's freeze, as its own rally countdowns hold a staged car).
 local function freeze(veh, on)
   local vb = rawget(_G, 'core_vehicleBridge')
   if veh and vb and vb.executeAction then pcall(vb.executeAction, veh, 'setFreeze', on) end
 end
 
--- A control zone: inZone each frame; the car braked from the moment it is in it, held still once stopped (a sound),
--- and let go ZONE_HOLD_S later. Returns 'stopped' in the frame it stops, 'held' while held, 'done' once let go.
+-- A control zone: inZone each frame; once the car stops in it (the driver stops it: no braking of ours) a sound, and
+-- 'stopped' in that frame, 'done' the next. keepHeld (the start line): the car is held still from then on (the game's
+-- freeze) until zoneRelease(), so it cannot roll into a jump start while it waits.
 local function zone(inZone, dt, keepHeld)
   local _, veh = carPos()
   local z = run.zone
@@ -467,37 +460,29 @@ local function zone(inZone, dt, keepHeld)
     if not inZone then return nil end
     z = { t = 0 }
     run.zone = z
-    brakes(veh, true)
   end
   if z.stopped then
     z.t = z.t + dt
     if keepHeld then return z.t >= M.ZONE_HOLD_S and 'done' or 'held' end
-    if z.t >= M.ZONE_HOLD_S then
-      freeze(veh, false)
-      brakes(veh, false)
-      run.zone = nil
-      return 'done'
-    end
-    return 'held'
+    run.zone = nil
+    return 'done'
   end
-  if not inZone then        -- (through it too fast: let go, come back)
-    brakes(veh, false)
+  if not inZone then
     run.zone = nil
     return nil
   end
   if speed() < M.STOPPED_MS then
     z.stopped = true
-    freeze(veh, true)
+    if keepHeld then freeze(veh, true) end
     sound(M.SOUND_STOPPED)
     return 'stopped'
   end
-  return 'braking'
+  return 'moving'
 end
 local function zoneRelease()
   if run and run.zone then
     local _, veh = carPos()
     freeze(veh, false)
-    brakes(veh, false)
     run.zone = nil
   end
 end
@@ -649,11 +634,7 @@ local function stepWaitStart(dt)
     rallyA.systemNote('warningSeconds30')
     rallyA.systemNote('precountdown')
   end
-  if not run.firstNoteCalled and left <= 10 and left > 5.5 then
-    run.firstNoteCalled = true
-    if before > 10 then rallyA.systemNote('warningSeconds10') end
-    rallyA.callFirstNote(false)
-  end
+  if before > 10 and left <= 10 and left > 5.5 then rallyA.systemNote('warningSeconds10') end
   local n = math.ceil(left)
   if n >= 1 and n <= 5 and n ~= run.lastShown then
     run.lastShown = n
@@ -664,7 +645,8 @@ local function stepWaitStart(dt)
     if run.zone then zoneRelease() end
     rallyA.notesOn(true)       -- (the stage's notes from GO only)
     rallyA.systemNote('countdowngo')
-    rallyA.callFirstNote(true)   -- (again after go; the engine's own call of it held back)
+    -- (the first note is the engine's own: its 'immediate' note, read as the car pulls away. Calling it ourselves and
+    -- marking it called froze the engine's step to the next note, which only moves on when it plays one itself.)
     if ui_message then ui_message('GO', 1.5, 'earthRallyCount') end
     run.clock = -left          -- (from the minute itself, not this frame)
     setState('running')
