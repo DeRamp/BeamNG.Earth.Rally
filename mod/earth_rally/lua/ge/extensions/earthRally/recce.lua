@@ -168,6 +168,12 @@ function M.progress()
   return rec.best / rec.mapCum[#rec.mapCum], rec.lengthM, #rec.points, rec.off, rec.started == true
 end
 
+-- The stage being recorded: event id, stage id, stage name (nil when none).
+function M.stage()
+  if not rec then return nil end
+  return rec.event.id, rec.stage.id, rec.stage.name
+end
+
 -- Stop; keep: save what was recorded (only when it covers most of the stage, unless forced). When it does not, the
 -- recce goes on (nothing is lost): false and why.
 function M.stop(keep, force)

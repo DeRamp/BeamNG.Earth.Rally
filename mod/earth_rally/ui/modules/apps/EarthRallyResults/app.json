@@ -1,0 +1,25 @@
+{
+  "domElement": "<earth-rally-results></earth-rally-results>",
+  "name": "Earth Rally: stage results",
+  "types": [
+    "ui.apps.categories.rally"
+  ],
+  "description": "Earth Rally's stage done card at the stop control: time, penalties, best; Next stage, Retry, Rally menu.",
+  "css": {
+    "top": "120px",
+    "left": 0,
+    "right": 0,
+    "margin": "auto",
+    "position": "absolute",
+    "width": "900px",
+    "height": "800px"
+  },
+  "author": "Earth Rally",
+  "version": "1.2.0",
+  "directive": "earthRallyResults",
+  "appName": "earthRallyResults",
+  "vue": true,
+  "category": "Gameplay",
+  "isAuxiliary": true,
+  "interactive": "yes"
+}

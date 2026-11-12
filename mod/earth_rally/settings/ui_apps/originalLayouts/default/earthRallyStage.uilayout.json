@@ -79,11 +79,11 @@
       "appVersion": 2,
       "placement": {
         "bottom": "",
-        "height": "600px",
-        "left": "0px",
+        "height": "501px",
+        "left": "1467px",
         "position": "absolute",
         "right": "",
-        "top": "0px",
+        "top": "42px",
         "width": "380px"
       }
     },
@@ -161,6 +161,68 @@
         "top": "17.5%",
         "width": "75%"
       }
+    },
+    {
+      "appName": "rallyCountdown",
+      "placement": {
+        "bottom": "",
+        "height": "220px",
+        "left": 0,
+        "margin": "auto",
+        "position": "absolute",
+        "right": 0,
+        "top": "82px",
+        "width": "450px"
+      }
+    },
+    {
+      "appName": "rallyStageTiming",
+      "placement": {
+        "bottom": "",
+        "height": "427px",
+        "left": "0px",
+        "position": "absolute",
+        "right": "",
+        "top": "64px",
+        "width": "288px"
+      }
+    },
+    {
+      "appName": "rallyStageProgress",
+      "placement": {
+        "bottom": "",
+        "height": "114px",
+        "left": "288px",
+        "position": "absolute",
+        "right": "",
+        "top": "64px",
+        "width": "780px"
+      }
+    },
+    {
+      "appName": "earthRallyResults",
+      "placement": {
+        "bottom": "",
+        "height": "800px",
+        "left": 0,
+        "margin": "auto",
+        "position": "absolute",
+        "right": 0,
+        "top": "120px",
+        "width": "900px"
+      }
+    },
+    {
+      "appName": "earthRallyHud",
+      "placement": {
+        "bottom": "",
+        "height": "100%",
+        "left": "0px",
+        "position": "absolute",
+        "right": "",
+        "top": "0px",
+        "width": "100%"
+      }
     }
   ],
   "removedApps": {
@@ -171,6 +233,6 @@
   },
   "title": "Earth Rally stage",
   "type": "earthRallyStage",
-  "version": 4,
-  "description": "BeamNG.Earth with the rally pacenote cards (Earth Rally, during a stage)"
+  "version": 5,
+  "description": "BeamNG.Earth with the game's rally apps (countdown, stage time, progress) and Earth Rally's HUD (during a stage)"
 }

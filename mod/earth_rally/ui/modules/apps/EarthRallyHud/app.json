@@ -1,0 +1,22 @@
+{
+  "domElement": "<earth-rally-hud></earth-rally-hud>",
+  "name": "Earth Rally: HUD",
+  "types": [
+    "ui.apps.categories.rally"
+  ],
+  "description": "Earth Rally's stage HUD: the next stage, the start, km done, off route, the flying finish (stream earthRally). Full screen, click-through.",
+  "css": {
+    "top": "0px",
+    "left": "0px",
+    "width": "100%",
+    "height": "100%"
+  },
+  "author": "Earth Rally",
+  "version": "1.2.0",
+  "directive": "earthRallyHud",
+  "appName": "earthRallyHud",
+  "vue": true,
+  "category": "Gameplay",
+  "isAuxiliary": true,
+  "interactive": "no"
+}
