@@ -83,9 +83,11 @@ beamngEarth_core = {
 }
 
 -- the vehicle: its game position from where it is on Earth
+local sounds, frozen, inputs, routes, lines = {}, nil, {}, {}, {}
 local veh = {
   getPosition = function() local x, y, z = toGame(car.lat, car.lon, car.alt) return vec3(x, y, z) end,
   setPositionRotation = function(_, x, y, z) car.lat, car.lon = toGeo(x, y) car.alt = z end,
+  queueLuaCommand = function(_, cmd) inputs[#inputs + 1] = cmd end,
 }
 function getPlayerVehicle() return veh end
 
@@ -126,7 +128,8 @@ gameplay_rally = {
     zSnap.conformSplineGeometry(spline, false, 4)
     for _, n in ipairs(nodes) do spline.divPoints[#spline.divPoints + 1] = n end
     manager = { notebook = { pacenotes = { sorted = nb.pacenotes } }, drivelineV3 = { spline = spline },
-                lastPlayedPacenoteIdx = nil, resyncAfterTeleport = function() end, race = race, dl = dl }
+                lastPlayedPacenoteIdx = nil, resyncAfterTeleport = function() end, race = race, dl = dl,
+                enqueueRandomSystemPacenote = function(_, name) lines[#lines + 1] = name end }
     return true
   end,
   unloadMission = function() manager = nil return true end,
@@ -135,6 +138,10 @@ gameplay_rally = {
 extensions = { load = function() end }
 local camResets = 0
 core_camera = { resetCamera = function() camResets = camResets + 1 end }
+Engine = { Audio = { playOnce = function(_, ev) sounds[#sounds + 1] = ev end } }
+core_vehicleBridge = { executeAction = function(_, action, on) if action == 'setFreeze' then frozen = on end end }
+core_groundMarkers = { setPath = function(t) routes[#routes + 1] = t or false end }
+local function has(list, v) for _, x in ipairs(list) do if x == v then return true end end return false end
 local layout = 'beamngEarth'
 core_gamestate = { getGameState = function() return { appLayout = layout } end,
   setGameState = function(_, l) layout = l or layout end }
@@ -228,8 +235,9 @@ T.check(nodeDist(race.pathnodes[#race.pathnodes].pos, dlNodes[#dlNodes]) >= 100,
   string.format('%.0f', nodeDist(race.pathnodes[#race.pathnodes].pos, dlNodes[#dlNodes])) .. ' m)')
 local firstCs = files[r.dir .. '/rally/notebooks/structured.notebook.json'].pacenotes[1].pacenoteWaypoints[1].pos
 T.check(nodeDist(firstCs, race.startPositions[1].pos) >= 20, 'no note on the start line')
-T.check(runner.state() == 'countdown', 'counting down (' .. runner.state() .. ')')
+T.check(runner.state() == 'toStart', 'on the start line (' .. runner.state() .. ')')
 frames(8)
+T.check(frozen == true and has(sounds, 'event:UI_Checkpoint'), 'stopped on the line: held, a sound')
 T.check(camResets >= 2, 'the camera reset after the origin moved and the car was placed (' .. camResets .. ')')
 T.check(layout == 'earthRallyStage', 'the pacenote cards layout on for the run (' .. layout .. ')')
 -- the car stands on the start line, in game coordinates of the new origin
@@ -237,8 +245,11 @@ local sx, sy = toGame(full[11][1], full[11][2])
 local cp = veh.getPosition()
 T.check(math.sqrt((cp.x - sx) ^ 2 + (cp.y - sy) ^ 2) < 6, 'the car on the start line')
 
-frames(52)
-T.check(runner.state() == 'running', 'GO')
+frames(120)
+T.check(runner.state() == 'running', 'GO (' .. runner.state() .. ')')
+T.check(frozen == false, 'let go before the start')
+T.check(has(lines, 'countdown3') and has(lines, 'countdown1') and has(lines, 'countdowngo'),
+  'the co-driver counted down')
 T.check(not r.jumpStart, 'no jump start')
 
 -- drive: 25 m per frame along the stage; a world shift halfway
@@ -342,22 +353,35 @@ do
   T.check(shapes.s_rally_signboard_time_control and shapes.s_rally_signboard_start and shapes.s_rally_gazebo_mod_frame_3x3,
     'the time control and start boards and a gazebo')
   -- roll up to the ATC and stop
+  T.check(#routes > 0 and routes[#routes] ~= false, 'route arrows to the ATC')
   car.speed = 8
   car.lat, car.lon = toGeo(ax, ay - 5)
+  inputs = {}
   frames(2)
   T.check(runner.state() == 'toAtc', 'not checked in while moving')
+  T.check(inputs[1] and inputs[1]:find("'brake', 1"), 'braked in the ATC zone')
   car.speed = 0
   frames(2)
-  T.check(runner.state() == 'toStart' and r2.checks.atc == 'checked in', 'checked in at the ATC')
+  local clk = runner.clock()
+  T.check(r2.startAt and r2.startAt % 60 == 0 and r2.startAt - clk >= 29 and r2.startAt - clk <= 91,
+    'checked in: the start time the next minute at least 30 s on (' .. runner.formatClock(r2.startAt) .. ', now ' ..
+    runner.formatClock(clk) .. ')')
+  T.check(r2.checks.atc:find('checked in') ~= nil, 'checked in at the ATC')
+  frames(20)
+  T.check(runner.state() == 'toStart' and frozen == false, 'let go: on to the start line')
   -- on to the start line
   car.lat, car.lon, car.speed = full[11][1], full[11][2], 6
   frames(2)
-  T.check(runner.state() == 'toStart', 'no countdown while still rolling')
+  T.check(runner.state() == 'toStart', 'no start while still rolling')
   car.lat, car.lon, car.speed = full[9][1], full[9][2], 0
-  frames(2)
-  T.check(runner.state() == 'countdown', 'stopped on the start line: countdown (' .. runner.state() .. ')')
-  frames(55)
-  T.check(runner.state() == 'running', 'GO (with controls)')
+  frames(20)
+  T.check(runner.state() == 'waitStart', 'stopped on the start line: waiting for the minute (' .. runner.state() .. ')')
+  lines = {}
+  for _ = 1, 1200 do frames(1) if runner.state() == 'running' then break end end
+  T.check(runner.state() == 'running', 'GO at the start minute (with controls)')
+  T.check(math.abs(runner.clock() - r2.startAt) < 0.2, 'the stage clock from the minute itself')
+  T.check(has(lines, 'countdown5') and has(lines, 'countdowngo') and not r2.jumpStart, 'counted down, no jump start')
+  sounds = {}
   car.speed = 30
   for i = 11, #full, 25 do
     car.lat, car.lon = full[i][1], full[i][2]
@@ -365,6 +389,10 @@ do
     if runner.state() ~= 'running' then break end
   end
   T.check(runner.state() == 'toStop' and r2.finalTime, 'the clock stopped at the flying finish, on to the stop control')
+  T.check(has(sounds, 'event:UI_CountdownGo'), 'a sound at the flying finish')
+  local ffShapes = 0
+  for _, o in pairs(objects) do if o.fields.shapeName:find('gazebo_mod_frame') then ffShapes = ffShapes + 1 end end
+  T.check(ffShapes >= 3, 'a tent at the ATC, the start and the finish (' .. ffShapes .. ')')
   local shapes2 = {}
   for _, o in pairs(objects) do shapes2[o.fields.shapeName:match('([^/]+)%.dae$')] = true end
   T.check(shapes2.s_rally_signboard_finish and shapes2.s_rally_signboard_finish_entry, 'the finish boards put down')
@@ -372,8 +400,9 @@ do
   frames(2)
   T.check(shapes2.s_rally_signboard_stop or countObjects() > 0, 'the stop board')
   car.speed = 0
-  frames(2)
-  T.check(runner.state() == 'finished' and r2.checks.stopControl == 'stopped', 'stopped at the stop control: stage complete')
+  frames(20)
+  T.check(runner.state() == 'finished' and r2.checks.stopControl:find('stopped') ~= nil,
+    'stopped at the stop control: stage complete')
   runner.abort(true)
   T.check(countObjects() == 0, 'the boards and tents taken away with the run')
 end

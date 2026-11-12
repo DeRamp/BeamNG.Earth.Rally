@@ -88,6 +88,16 @@ function M.heightCheck(ourNodes)
   return worst, lowest
 end
 
+-- One of the co-driver's own lines (the voice pack's system pacenotes: 'countdown5'..'countdown1', 'countdowngo',
+-- 'falseStart'), as the game's rally countdown says them.
+function M.systemNote(name)
+  local rm = M.manager()
+  if rm and rm.enqueueRandomSystemPacenote then
+    local ok, err = pcall(rm.enqueueRandomSystemPacenote, rm, name)
+    if not ok then log('W', logTag, 'co-driver line ' .. name .. ': ' .. tostring(err)) end
+  end
+end
+
 -- Stage the co-driver for a fresh run (after the car was put at the start line).
 function M.resync()
   local rm = M.manager()

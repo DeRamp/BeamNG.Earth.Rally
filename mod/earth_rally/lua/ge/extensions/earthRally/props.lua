@@ -9,7 +9,7 @@
 -- none of them, so they are put down again after one.
 --
 -- Placement as the game's own rallies (gameplay/missions/*/rallyLoop/*/mainPrefab): the model's +Y along the
--- driving direction, on the right of the road, 1-5 m off it.
+-- driving direction, on the right of the road, just off its edge.
 local M = {}
 
 local A = '/art/shapes/race/rally/rally_assets/'
@@ -28,19 +28,27 @@ M.SHAPES = {
   clock = A .. 's_rally_start_clock_display.dae',
 }
 
--- each kind of control: { shape, fwd (m along the road), right (m to its right), yaw (degrees from the road's way) }
-local TENT = function(fwd, right)
+-- each kind of control: { shape, fwd (m along the road), out (m beyond the road's right edge), yaw (degrees from the
+-- road's way) }. The edge is the road's own (BeamNG.Earth's road map: its half width where the site is), so the boards
+-- stand just off the road on a wide one as on a forest track.
+M.BOARD_OUT_M = 1.0
+M.TENT_OUT_M = 2.2          -- the gazebo's centre (it is 3 m square: its near side 0.7 m off the road)
+M.DEFAULT_HALF_WIDTH_M = 3.0
+M.SNAP_M = 30               -- a site this close to a road is put on it
+local TENT = function(fwd)
+  local o = M.TENT_OUT_M
   return {
-    { 'gazeboFrame', fwd, right, 0 }, { 'gazeboCover', fwd, right, 0 },
-    { 'table', fwd - 0.3, right - 0.6, 90 }, { 'chair', fwd - 0.3, right + 0.3, 90 },
+    { 'gazeboFrame', fwd, o, 0 }, { 'gazeboCover', fwd, o, 0 },
+    { 'table', fwd - 0.3, o - 0.6, 90 }, { 'chair', fwd - 0.3, o + 0.3, 90 },
   }
 end
 local function join(a, b) for _, x in ipairs(b) do a[#a + 1] = x end return a end
+local B = M.BOARD_OUT_M
 M.LAYOUTS = {
-  atc = join({ { 'tcEntry', -50, 4, 0 }, { 'tc', 0, 4, 0 } }, TENT(2, 8)),
-  start = join({ { 'start', 0, 4, 0 }, { 'clock', 1.5, 3.5, 0 } }, TENT(-6, 8)),
-  ff = { { 'finishEntry', -150, 4, 0 }, { 'finish', 0, 4, 0 } },
-  stop = join({ { 'stop', 0, 4, 0 } }, TENT(3, 8)),
+  atc = join({ { 'tcEntry', -50, B, 0 }, { 'tc', 0, B, 0 } }, TENT(4)),
+  start = join({ { 'start', 0, B, 0 }, { 'clock', 1.5, B + 0.5, 0 } }, TENT(-6)),
+  ff = join({ { 'finishEntry', -150, B, 0 }, { 'finish', 0, B, 0 } }, TENT(6)),
+  stop = join({ { 'stop', 0, B, 0 } }, TENT(4)),
 }
 
 local sites = {}          -- { kind, lat, lon, z (nil: not known), dir = {x, y} (game coordinates), objs, failed }
@@ -111,6 +119,26 @@ local function makeObj(shape, x, y, z, q)
   return o:getID()
 end
 
+-- The road under a spot (the game's road map, which BeamNG.Earth fills with the roads round the car): the nearest
+-- point on its centre line, its half width there, and its direction; nil when no road is within SNAP_M.
+function M.roadAt(x, y, z)
+  local mp = rawget(_G, 'map')
+  if not (mp and mp.findClosestRoad and mp.getMap) then return nil end
+  local okM, m = pcall(mp.getMap)
+  if not okM or not (m and m.nodes) then return nil end
+  local ok, n1, n2, d = pcall(mp.findClosestRoad, vec3(x, y, z or 0), M.SNAP_M)
+  if not ok or not n1 or not n2 or not d or d > M.SNAP_M then return nil end
+  local a, b = m.nodes[n1], m.nodes[n2]
+  if not (a and b and a.pos and b.pos) then return nil end
+  local dx, dy = b.pos.x - a.pos.x, b.pos.y - a.pos.y
+  local l2 = dx * dx + dy * dy
+  if l2 < 1e-6 then return nil end
+  local t = math.max(0, math.min(1, ((x - a.pos.x) * dx + (y - a.pos.y) * dy) / l2))
+  local half = (a.radius or M.DEFAULT_HALF_WIDTH_M) * (1 - t) + (b.radius or M.DEFAULT_HALF_WIDTH_M) * t
+  local l = math.sqrt(l2)
+  return { x = a.pos.x + dx * t, y = a.pos.y + dy * t, half = half, dx = dx / l, dy = dy / l }
+end
+
 local function spawn(s, toGame, carZ)
   local layout = M.LAYOUTS[s.kind]
   if not layout then return end
@@ -119,12 +147,22 @@ local function spawn(s, toGame, carZ)
   local l = math.sqrt(s.dir.x * s.dir.x + s.dir.y * s.dir.y)
   if l < 1e-6 then return end
   local fx, fy = s.dir.x / l, s.dir.y / l
+  -- on the road the site is on (the map's controls can be a few metres off it), along it, the edge from its width
+  local half = M.DEFAULT_HALF_WIDTH_M
+  local road = M.roadAt(x0, y0, s.z or carZ)
+  if road then
+    x0, y0, half = road.x, road.y, road.half
+    local sgn = (road.dx * fx + road.dy * fy) >= 0 and 1 or -1
+    fx, fy = road.dx * sgn, road.dy * sgn
+  end
+  s.half = half
   local rx, ry = fy, -fx
   local z0 = s.z or carZ
   s.objs = {}
   for _, it in ipairs(layout) do
     local shape = M.SHAPES[it[1]]
-    local x, y = x0 + fx * it[2] + rx * it[3], y0 + fy * it[2] + ry * it[3]
+    local out = half + it[3]
+    local x, y = x0 + fx * it[2] + rx * out, y0 + fy * it[2] + ry * out
     local yaw = math.rad(it[4])
     local dx, dy = fx * math.cos(yaw) + rx * math.sin(yaw), fy * math.cos(yaw) + ry * math.sin(yaw)
     local ok, id = pcall(makeObj, shape, x, y, ground(x, y, z0), yawQuat(dx, dy))

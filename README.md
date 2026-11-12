@@ -14,13 +14,15 @@ modding API 1.6 or newer (1.7, with the `onBeamNGEarthRebased` event, is used wh
 2. **Recce** each stage once in game: the stage's map line is drawn on the road ahead of you (orange; a green ball at
    the flying finish) and the mod records the line you drive (with real heights). Not the GPS: its route planner does
    not take cars on forest roads. Hand-drawn maps cut corners and have no heights; the recce line is what stages are timed and called on.
-3. **Run** the stage, through its controls as in a real rally: the mod takes you just before the arrival time
+3. **Run** the stage, through its controls as in a real rally. The mod takes you just before the arrival time
    control (ATC), moves BeamNG.Earth's world origin to the middle of the stage (so the world does not shift under you
-   for any stage up to ~26 km across) and writes the stage for the game's rally engine. You stop at the ATC to check
-   in, then on the start line for the countdown; the clock stops at the flying finish, and you drive on to the stop
-   control and stop there. Each control has the game's own rally boards by the road (yellow warning boards before the
-   ATC and the finish) and a gazebo at the ATC, start and stop. The pacenote cards show during the run. Times are
-   kept.
+   for any stage up to ~26 km across) and writes the stage for the game's rally engine. The game's route arrows lead
+   to each control; in a control's zone the car is braked to a stop and a sound says you are in. At the ATC you are
+   given your start time on the rally clock: the next full minute at least 30 s on. Wait on the start line for it
+   (the co-driver counts the last five seconds down); moving off early is a jump start (+10 s), arriving after it is
+   late (+10 s a minute, and the next minute). The clock stops at the flying finish (a sound), and you drive on to
+   the stop control. Each control has the game's own rally boards just off the road edge, and a gazebo at the ATC,
+   start, finish and stop. The pacenote cards show during the run. Times and penalties are kept.
 
 Pacenotes: corners are found from the recce line; the game works out each one's severity and the distance calls and
 voices them with its own co-driver voice pack.

@@ -7,13 +7,16 @@
 --   build      the stage line (the recce) put into game coordinates now, the rally engine's files written and
 --              loaded: its co-driver calls the pacenotes
 --   place      the car 40 m before the ATC (else on the start line), the controls' boards and tents put down
---   toAtc      drive to the ATC and stop at it (checked in)
---   toStart    drive to the start line and stop on it
---   countdown  5 s; moving before the end is a jump start (+10 s)
---   running    our clock (game time: a pause stops it); progress along the line; the clock stops at the flying finish
---              and the time is kept in earthRally/results
---   toStop     drive on to the stop control and stop at it
+--   toAtc      drive to the ATC (the game's route arrows show the way); the car is braked to a stop in its zone and
+--              checked in: its start time is the next full minute at least 30 s on (the rally clock)
+--   toStart    drive to the start line; braked to a stop on it
+--   waitStart  wait for the start minute; the co-driver counts the last 5 s down. Moving off before it is a jump
+--              start (+10 s); reaching the line after it is late (+10 s a minute, and the next minute)
+--   running    the stage clock from the start minute (game time: a pause stops it); a sound at the flying finish,
+--              where the clock stops and the time is kept in earthRally/results
+--   toStop     drive on to the stop control; braked to a stop in its zone
 --   finished
+-- (Without an ATC the start time is a few seconds after the car stops on the line.)
 --
 -- Everything is kept as lat / lon and put into game coordinates again whenever the world's origin moves, so the
 -- clock and the finish never go wrong; the co-driver's own copy is not moved yet (milestone 5), and the run's
@@ -53,8 +56,31 @@ M.STOP_CONTROL_RADIUS_M = 25
 M.STOPPED_MS = 1.0
 M.START_ZONE_BEFORE_M = 12     -- stopped this far before the start line (or less), beside it: on the line
 M.START_ZONE_OFF_M = 8
+M.START_GAP_S = 30             -- the start minute at least this long after checking in at the ATC
+M.NO_ATC_START_S = 8           -- without an ATC: the start this long after stopping on the line
+M.LATE_PENALTY_S = 10          -- a minute (or part) late at the start
+M.ZONE_HOLD_S = 1.5            -- the car held still this long after it stops in a control zone
+M.ROUTE_REFRESH_S = 5          -- the route arrows planned again this often (BeamNG.Earth's road map changes as you go)
+M.SOUND_STOPPED = 'event:UI_Checkpoint'
+M.SOUND_FINISH = 'event:UI_CountdownGo'
 
 local run = nil
+
+-- The rally clock (seconds of the day): the game's time of day when the run began, carried on with game time (so a
+-- pause stops it, as the stage clock).
+local function todNow()
+  local env = rawget(_G, 'core_environment')
+  local ok, tod = pcall(function() return env and env.getTimeOfDay and env.getTimeOfDay() end)
+  if ok and type(tod) == 'table' and tonumber(tod.time) then return ((tod.time + 0.5) % 1) * 86400 end
+  return os.time() % 86400
+end
+function M.clock() return run and run.clockBase and (run.clockBase + run.clockRun) or nil end
+function M.formatClock(t)
+  if not t then return '--:--:--' end
+  t = math.floor(t + 0.5) % 86400
+  return string.format('%02d:%02d:%02d', math.floor(t / 3600), math.floor(t / 60) % 60, t % 60)
+end
+
 
 local function say(text, s) earth.notify(text, s or 4) log('I', logTag, text) end
 function M.state() return run and run.state or 'idle' end
@@ -211,6 +237,7 @@ function M.start(event, stage)
     checks = { moveSource = earth.moveSource(), shifts = 0, notesCalledAfterShift = 0, notReadyS = 0,
                maxOffM = 0, notesCalled = 0 },
     oldRebase = earth.rebaseDistance(),
+    clockBase = todNow(), clockRun = 0,
   }
   run.moveHandle = earth.onMoved(function(info) M._moved(info) end)
 
@@ -240,7 +267,7 @@ end
 -- The world's origin moved (earthAdapter): our line follows; the co-driver's does not (yet).
 function M._moved(info)
   if not run then return end
-  if run.state == 'running' or run.state == 'countdown' or run.state == 'toStart' or run.state == 'toAtc' then
+  if run.state == 'running' or run.state == 'waitStart' or run.state == 'toStart' or run.state == 'toAtc' then
     run.checks.shifts = run.checks.shifts + 1
     run.shiftedAtNote = run.checks.notesCalled
     log('W', logTag, string.format('the world shifted during the run (%s, %s): the co-driver keeps its old positions',
@@ -394,8 +421,7 @@ local function stepPlace()
     say('Earth Rally: drive to the time control and stop at its red board', 6)
   else
     toStartLine(veh)
-    setState('countdown')
-    run.lastShown = nil
+    setState('toStart')
   end
   rallyA.resync()
   layoutOn()
@@ -406,6 +432,90 @@ local function speed()
   return p and p.speed or 0
 end
 
+local function sound(ev)
+  local eng = rawget(_G, 'Engine')
+  if eng and eng.Audio and eng.Audio.playOnce then pcall(eng.Audio.playOnce, 'AudioGui', ev) end
+end
+
+-- The car braked (the game's brake input, full) and held (the game's freeze, as its own rally countdowns hold a car).
+local function brakes(veh, on)
+  if not veh then return end
+  pcall(function()
+    veh:queueLuaCommand(on and "input.event('brake', 1, 2) input.event('throttle', 0, 2)" or "input.event('brake', 0, 2)")
+  end)
+end
+local function freeze(veh, on)
+  local vb = rawget(_G, 'core_vehicleBridge')
+  if veh and vb and vb.executeAction then pcall(vb.executeAction, veh, 'setFreeze', on) end
+end
+
+-- A control zone: inZone each frame; the car braked from the moment it is in it, held still once stopped (a sound),
+-- and let go ZONE_HOLD_S later. Returns 'stopped' in the frame it stops, 'held' while held, 'done' once let go.
+local function zone(inZone, dt)
+  local _, veh = carPos()
+  local z = run.zone
+  if not z then
+    if not inZone then return nil end
+    z = { t = 0 }
+    run.zone = z
+    brakes(veh, true)
+  end
+  if z.stopped then
+    z.t = z.t + dt
+    if z.t >= M.ZONE_HOLD_S then
+      freeze(veh, false)
+      brakes(veh, false)
+      run.zone = nil
+      return 'done'
+    end
+    return 'held'
+  end
+  if not inZone then        -- (through it too fast: let go, come back)
+    brakes(veh, false)
+    run.zone = nil
+    return nil
+  end
+  if speed() < M.STOPPED_MS then
+    z.stopped = true
+    freeze(veh, true)
+    sound(M.SOUND_STOPPED)
+    return 'stopped'
+  end
+  return 'braking'
+end
+local function zoneRelease()
+  if run and run.zone then
+    local _, veh = carPos()
+    freeze(veh, false)
+    brakes(veh, false)
+    run.zone = nil
+  end
+end
+
+-- The game's route arrows on the road to a control (core_groundMarkers, as BeamNG.Earth's GPS draws its own; the
+-- GPS's destination cleared first so the two do not fight). Planned again every ROUTE_REFRESH_S.
+local function routeTo(target, dt)
+  local gm = rawget(_G, 'core_groundMarkers')
+  if not (gm and gm.setPath) then return end
+  run.routeT = (run.routeT or 0) - (dt or 0)
+  if target and run.routeT > 0 and run.routeTarget == target then return end
+  if target and not run.routeTarget then earth.gpsClear() end
+  run.routeT, run.routeTarget = M.ROUTE_REFRESH_S, target
+  if target then
+    local p = target.pos
+    pcall(gm.setPath, vec3(p.x, p.y, p.z or 0))
+  else
+    pcall(gm.setPath, nil)
+  end
+end
+local function routeOff()
+  if run and run.routeTarget then
+    local gm = rawget(_G, 'core_groundMarkers')
+    if gm and gm.setPath then pcall(gm.setPath, nil) end
+    run.routeTarget = nil
+  end
+end
+
 local function stepToAtc(dt)
   run.t = run.t + dt
   local p = carPos()
@@ -414,17 +524,25 @@ local function stepToAtc(dt)
   props.update(p, earth.toGame)
   local d = math.sqrt((p.x - a.x) ^ 2 + (p.y - a.y) ^ 2)
   run.toControlM = d
-  if d <= M.CONTROL_RADIUS_M and speed() < M.STOPPED_MS then
-    run.checks.atc = 'checked in'
+  run.atcTarget = run.atcTarget or {}
+  run.atcTarget.pos = { x = a.x, y = a.y, z = p.z }
+  routeTo(run.atcTarget, dt)
+  local zs = zone(d <= M.CONTROL_RADIUS_M, dt)
+  if zs == 'stopped' then
+    local now = M.clock()
+    run.atcTime = now
+    run.startAt = math.ceil((now + M.START_GAP_S) / 60) * 60
+    run.checks.atc = 'checked in ' .. M.formatClock(now)
+    say(string.format('Checked in at %s. Your start time: %s', M.formatClock(now), M.formatClock(run.startAt)), 8)
+  elseif zs == 'done' then
     setState('toStart')
-    say('Checked in. Drive to the start line and stop on it.', 5)
-    return
-  end
-  -- (driven on past it to the start: the ATC missed)
-  local along, off = progress(p)
-  if along >= run.startM - M.START_ZONE_BEFORE_M and off <= M.START_ZONE_OFF_M then
-    run.checks.atc = 'missed'
-    setState('toStart')
+  elseif not zs then
+    -- (driven on past it to the start: the ATC missed)
+    local along, off = progress(p)
+    if along >= run.startM - M.START_ZONE_BEFORE_M and off <= M.START_ZONE_OFF_M then
+      run.checks.atc = 'missed'
+      setState('toStart')
+    end
   end
 end
 
@@ -435,37 +553,61 @@ local function stepToStart(dt)
   props.update(p, earth.toGame)
   local along, off = progress(p)
   run.toControlM = run.startM - along
-  if along > run.startM + 2 and off <= M.START_ZONE_OFF_M then
+  local sp = geo.pointAt(run.line, run.cum, run.startM)
+  run.startTarget = run.startTarget or {}
+  run.startTarget.pos = sp
+  routeTo(run.startTarget, dt)
+  if along > run.startM + 2 and off <= M.START_ZONE_OFF_M and not run.zone then
     if not run.overLine then say('Back up behind the start line.', 3) end
     run.overLine = true
     return
   end
   run.overLine = false
-  if along >= run.startM - M.START_ZONE_BEFORE_M and off <= M.START_ZONE_OFF_M and speed() < M.STOPPED_MS then
-    setState('countdown')
+  local zs = zone(along >= run.startM - M.START_ZONE_BEFORE_M and along <= run.startM + 3 and off <= M.START_ZONE_OFF_M, dt)
+  if zs == 'stopped' then
+    routeOff()
+    local now = M.clock()
+    if not run.startAt then
+      run.startAt = now + M.NO_ATC_START_S
+    elseif now > run.startAt - 5 then
+      -- late at the start: the next minute, and a penalty for each minute (or part) late
+      local newStart = math.ceil((now + 10) / 60) * 60
+      local mins = math.ceil((newStart - run.startAt) / 60)
+      run.latePenalty = mins * M.LATE_PENALTY_S
+      run.checks.lateMinutes = mins
+      say(string.format('Late at the start: +%d s. New start time %s', run.latePenalty, M.formatClock(newStart)), 6)
+      run.startAt = newStart
+    else
+      say('Start time ' .. M.formatClock(run.startAt) .. '. Wait for your minute.', 5)
+    end
+  elseif zs == 'done' then
+    run.staged = carPos()
+    setState('waitStart')
     run.lastShown = nil
   end
 end
 
-
-local function stepCountdown(dt)
+local function stepWaitStart(dt)
   run.t = run.t + dt
-  do local cp = carPos() if cp then props.update(cp, earth.toGame) end end
-  -- (the car settles when set down: where it stands after the first second is where it must stay)
   local p = carPos()
-  if p and run.t >= 1 and not run.settled then run.settled = p end
-  if p and run.settled and not run.jumpStart and geo.dist2d(p, run.settled) > M.JUMP_START_M then
+  if p then props.update(p, earth.toGame) end
+  local left = run.startAt - M.clock()
+  -- moving off before the start minute: a jump start (the stage clock still runs from the minute)
+  if p and run.staged and not run.jumpStart and geo.dist2d(p, run.staged) > M.JUMP_START_M then
     run.jumpStart = true
+    rallyA.systemNote('falseStart')
     say('Jump start: +' .. M.JUMP_START_PENALTY_S .. ' s', 3)
   end
-  local left = math.ceil(M.COUNTDOWN_S - run.t)
-  if left ~= run.lastShown and left > 0 then
-    run.lastShown = left
-    if ui_message then ui_message(tostring(left), 1, 'earthRallyCount') end
+  local n = math.ceil(left)
+  if n >= 1 and n <= 5 and n ~= run.lastShown then
+    run.lastShown = n
+    rallyA.systemNote('countdown' .. n)
+    if ui_message then ui_message(tostring(n), 1, 'earthRallyCount') end
   end
-  if run.t >= M.COUNTDOWN_S then
+  if left <= 0 then
+    rallyA.systemNote('countdowngo')
     if ui_message then ui_message('GO', 1.5, 'earthRallyCount') end
-    run.clock = 0
+    run.clock = -left          -- (from the minute itself, not this frame)
     setState('running')
   end
 end
@@ -487,10 +629,14 @@ local function stepRunning(dtSim)
   run.along, run.off = along, off
   if off > run.checks.maxOffM then run.checks.maxOffM = off end
   if along >= run.finishM and off <= M.FINISH_OFF_M then
-    local time = run.clock + (run.jumpStart and M.JUMP_START_PENALTY_S or 0)
+    sound(M.SOUND_FINISH)
+    run.stageTime = run.clock
+    run.penalty = (run.jumpStart and M.JUMP_START_PENALTY_S or 0) + (run.latePenalty or 0)
+    local time = run.clock + run.penalty
     local checks = run.checks
-    local best = events.addResult(run.event.id, run.stage.id, { finished = true, timeS = time,
-      jumpStart = run.jumpStart == true, date = os.date('!%Y-%m-%dT%H:%M:%SZ'), checks = checks })
+    local best = events.addResult(run.event.id, run.stage.id, { finished = true, timeS = time, stageS = run.clock,
+      penaltyS = run.penalty, jumpStart = run.jumpStart == true, lateMinutes = checks.lateMinutes,
+      startAt = M.formatClock(run.startAt), date = os.date('!%Y-%m-%dT%H:%M:%SZ'), checks = checks })
     run.finalTime, run.best = time, best
     log('I', logTag, 'run checks: ' .. dumps(checks))
     local text = string.format('%s: %s%s', run.stage.name, M.formatTime(time), best and best < time and
@@ -514,10 +660,16 @@ local function stepToStop(dt)
   props.update(p, earth.toGame)
   local d = math.sqrt((p.x - b.x) ^ 2 + (p.y - b.y) ^ 2)
   run.toControlM = d
-  if d <= M.STOP_CONTROL_RADIUS_M and speed() < M.STOPPED_MS then
-    run.checks.stopControl = 'stopped'
-    setState('finished')
+  run.stopTarget = run.stopTarget or {}
+  run.stopTarget.pos = { x = b.x, y = b.y, z = p.z }
+  routeTo(run.stopTarget, dt)
+  local zs = zone(d <= M.STOP_CONTROL_RADIUS_M, dt)
+  if zs == 'stopped' then
+    routeOff()
+    run.checks.stopControl = 'stopped ' .. M.formatClock(M.clock())
     say('Stage complete: ' .. M.formatTime(run.finalTime), 6)
+  elseif zs == 'done' then
+    setState('finished')
     M.release()
   end
 end
@@ -526,16 +678,17 @@ end
 function M.update(dtReal, dtSim)
   camUpdate(dtReal or 0)
   if not run then return end
+  if run.clockBase then run.clockRun = run.clockRun + (dtSim or 0) end
   local s = run.state
   if s == 'travel' then stepTravel(dtReal)
   elseif s == 'anchor' then stepAnchor(dtReal)
   elseif s == 'build' then stepBuild()
   elseif s == 'place' then stepPlace()
-  elseif s == 'toAtc' then stepToAtc(dtReal)
-  elseif s == 'toStart' then stepToStart(dtReal)
-  elseif s == 'countdown' then stepCountdown(dtSim)
+  elseif s == 'toAtc' then stepToAtc(dtSim)
+  elseif s == 'toStart' then stepToStart(dtSim)
+  elseif s == 'waitStart' then stepWaitStart(dtSim)
   elseif s == 'running' then stepRunning(dtSim)
-  elseif s == 'toStop' then stepToStop(dtReal) end
+  elseif s == 'toStop' then stepToStop(dtSim) end
 end
 
 -- BeamNG.Earth's rebase distance back, the co-driver kept until the next run (its notes stay readable).
@@ -547,6 +700,8 @@ end
 
 function M.abort(quiet)
   if not run then return end
+  zoneRelease()
+  routeOff()
   M.release()
   layoutOff()
   props.clear()

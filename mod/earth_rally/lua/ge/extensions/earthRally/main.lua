@@ -57,16 +57,24 @@ local function drawRun()
     im.TextColored(AMBER, string.format('Drive to the time control (red clock board) and stop: %.0f m', r.toControlM or 0))
   elseif st == 'toStart' then
     im.TextColored(AMBER, string.format('Drive to the start line and stop on it: %.0f m', math.max(0, r.toControlM or 0)))
+  elseif st == 'waitStart' then
+    local left = (r.startAt or 0) - (runner.clock() or 0)
+    im.TextColored(left <= 5 and GREEN or AMBER, string.format('Start at %s: %.0f s', runner.formatClock(r.startAt),
+      math.max(0, math.ceil(left))))
   elseif st == 'finished' then
     im.TextColored(GREEN, string.format('%s: %s%s', r.stage.name, runner.formatTime(r.finalTime),
-      r.jumpStart and ' (jump start +10 s)' or ''))
+      (r.penalty or 0) > 0 and string.format('  (stage %s + %d s penalties)', runner.formatTime(r.stageTime), r.penalty) or ''))
     if r.best then im.Text('Best: ' .. runner.formatTime(r.best)) end
   elseif st == 'failed' then
     im.TextColored(RED, 'Stopped: ' .. tostring(r.error))
   else
     im.TextColored(AMBER, r.stage.name .. ': ' .. ({ travel = 'going to the start, the world loading',
       anchor = 'moving the world to the stage', build = 'building the stage', place = 'to the start line',
-      countdown = 'countdown' })[st] or st)
+      })[st] or st)
+  end
+  if r.clockBase then
+    im.TextColored(GREY, 'Rally clock ' .. runner.formatClock(runner.clock()) ..
+      (r.startAt and ('   start ' .. runner.formatClock(r.startAt)) or ''))
   end
   for _, l in ipairs(checksText(r.checks)) do im.TextColored(GREY, l) end
   if st == 'finished' or st == 'failed' then
