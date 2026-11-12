@@ -948,4 +948,249 @@ do
   runner.abort(true)
 end
 
+------------------------------------------------------------------------------------------ 1.2.0: settings in the run, the HUD
+local settings = require('earthRally/settings')
+local toasts = {}
+guihooks = { trigger = function(name, d) if name == 'toastrMsg' then toasts[#toasts + 1] = d end end }
+local function toastTitled(pat)
+  for _, t in ipairs(toasts) do if tostring(t.title):find(pat) then return t end end
+end
+-- (a run of `ev` from far off to the start line, waiting there; the start time brought close)
+local function toTheLine(ev)
+  anchor = { lat = 47.0, lon = -123.0 }
+  car.lat, car.lon, car.speed = full[1][1] - 0.02, full[1][2], 0
+  local ok5, why5 = runner.start(ev, ev.stages[1])
+  frames(80)
+  car.lat, car.lon, car.speed = full[9][1], full[9][2], 0
+  frames(20)
+  local r5 = runner.current()
+  return r5, ok5, why5
+end
+local function go(r5)
+  r5.startAt = math.min(r5.startAt, runner.clock() + 2)
+  r5.staged, r5.jumpStart = nil, nil      -- (the car moved by hand onto the line: not a jump start)
+  for _ = 1, 100 do frames(1) if runner.state() == 'running' then break end end
+end
+local function driveTo(i0, i1, step)
+  for i = i0, i1, step or 25 do
+    car.lat, car.lon = full[i][1], full[i][2]
+    frames(1, 1.0)
+    if runner.state() ~= 'running' then break end
+  end
+end
+
+-- the reset penalty: +10 s a reset during the timed stage, in the result
+do
+  settings.reset()
+  local r5 = toTheLine(event)
+  T.check(not runner.onVehicleResetted(1), 'a reset before the start costs nothing')
+  go(r5)
+  T.check(runner.state() == 'running', 'running (reset penalty run)')
+  T.check(runner.onVehicleResetted(1) == true and r5.resets == 1, 'a reset on the stage: counted')
+  T.check(toastTitled('Reset: %+10 s') ~= nil, 'a toast says so')
+  T.check(not runner.onVehicleResetted(1) and r5.resets == 1, 'the same reset heard twice: counted once')
+  frames(10)
+  moveAnchor(anchor.lat, anchor.lon, 'rebase')
+  T.check(not runner.onVehicleResetted(1) and r5.resets == 1, 'just after the world moved: not the player\'s reset')
+  frames(30)
+  T.check(runner.onVehicleResetted(1) == true and r5.resets == 2, 'a second reset')
+  settings.set('resetPenalty', false)
+  frames(10)
+  T.check(not runner.onVehicleResetted(1) and r5.resets == 2, 'setting off: not counted')
+  settings.set('resetPenalty', true)
+  driveTo(11, #full)
+  T.check(runner.state() == 'finished', 'finished (reset penalty run: ' .. runner.state() .. ')')
+  local runs = events.results('test', 'hill').runs
+  local last5 = runs[#runs]
+  T.check(last5.resets == 2 and last5.resetPenaltyS == 20 and last5.penaltyS == 20 and
+    math.abs(last5.timeS - last5.stageS - 20) < 1e-9, 'the resets in the result: +20 s in the time')
+  -- the results card: the HUD frame, Retry starts the stage again
+  local rl, ours = runner.uiFrame()
+  T.check(rl.activeState == 'inactive' and ours.finish and ours.finish.penalties.resets == 20 and
+    ours.finish.penalties.resetCount == 2, 'the HUD has the resets itemised')
+  T.check(r5.resultsOpen and r5.sinceFinish ~= nil, 'the results card open at the flying finish (no stop control)')
+  frames(50)
+  rl, ours = runner.uiFrame()
+  T.check(ours.show.results and ours.results.finish.time == r5.finalTime and ours.results.next == nil,
+    'the results card after the big time (the last stage: no Next stage)')
+  T.check(runner.resultsAction('next') == false, 'no next stage on a one-stage rally')
+  local okR = runner.resultsAction('retry')
+  T.check(okR and runner.current() ~= r5 and runner.state() == 'travel', 'Retry: the stage again from the start')
+  runner.abort(true)
+  settings.reset()
+end
+
+-- quick start (no ATC), no zone brake, the clock view off; the HUD through every state of a run
+do
+  local hooks = {}
+  extensions.hook = function(name, d) if name == 'onRallyDataUpdated' then hooks[#hooks + 1] = d end end
+  local ev8 = { format = 1, id = 'test8', name = 'Test Rally 8', stages = { {
+    id = 'hill', name = 'Hill', lengthM = 3000, radiusM = 1200, centre = event.stages[1].centre,
+    controls = { start = event.stages[1].controls.start, ff = event.stages[1].controls.ff,
+                 atc = { lat = full[11][1] - 150 / 111195, lon = full[11][2] } },
+    line = event.stages[1].line }, { id = 'two', name = 'Two', lengthM = 4000, line = event.stages[1].line } } }
+  files['/earthRally/events/test8.json'] = ev8
+  events.saveRecce('test8', 'hill', { format = 1, points = recFrom, lengthM = 3000 })
+  T.check(select(3, runner.arrivalPoint(ev8.stages[1])) == 'ATC', 'full time controls: Route to start goes to the ATC')
+  settings.set('timeControls', 'quick')
+  settings.set('zoneBrake', false)
+  settings.set('clockView', 'off')
+  T.check(select(3, runner.arrivalPoint(ev8.stages[1])) == 'start', 'quick start: Route to start goes to the start')
+  anchor = { lat = 47.0, lon = -123.0 }
+  car.lat, car.lon, car.speed = full[1][1] - 0.02, full[1][2], 0
+  T.check(runner.start(ev8, ev8.stages[1]), 'the quick-start run starts')
+  local r8 = runner.current()
+  T.check(r8.atc == nil and r8.ss == 1 and r8.ssCount == 2 and r8.nextStage and r8.nextStage.name == 'Two',
+    'quick start: no ATC; SS1 of 2, the next stage known')
+  local seen = {}
+  local function look()
+    local rl, ours = runner.uiFrame()
+    seen[runner.state()] = { rl = rl, ours = ours }
+  end
+  car.speed = 3
+  for _ = 1, 80 do frames(1) look() if runner.state() == 'toStart' then break end end
+  T.check(runner.state() == 'toStart', 'quick start: set down for the start line (' .. runner.state() .. ')')
+  -- roll onto the line: no zone brake
+  inputs = {}
+  car.lat, car.lon, car.speed = full[9][1], full[9][2], 3
+  frames(2)
+  look()
+  local braked = false
+  for _, c in ipairs(inputs) do if c:find('earthRally_ctl("zone"', 1, true) then braked = true end end
+  T.check(not braked, 'zone brake off: no brake in the start zone')
+  car.speed = 0
+  for _ = 1, 20 do frames(1) look() end
+  T.check(runner.state() == 'waitStart' and r8.startAt - runner.clock() <= runner.NO_ATC_START_S,
+    'stopped on the line: the start a few seconds on (' .. runner.state() .. ')')
+  hooks = {}
+  for _ = 1, 200 do frames(1) look() if runner.state() == 'running' then break end end
+  local cd = false
+  for _, d in ipairs(hooks) do if d.activeState == 'countdown' then cd = true end end
+  T.check(not cd and #hooks > 0, 'clock view off: the start clock never told "countdown" (its view stays off)')
+  T.check(runner.state() == 'running', 'GO (quick start)')
+  car.speed = 30
+  for i = 11, #full, 25 do
+    car.lat, car.lon = full[i][1], full[i][2]
+    frames(1, 1.0)
+    look()
+    if runner.state() ~= 'running' then break end
+  end
+  look()
+  frames(1)
+  look()
+  -- what the HUD showed in each state
+  T.check(seen.toStart and seen.toStart.rl.activeState == 'vehicleProximity' and seen.toStart.rl.scheduleData.label == 'SS1',
+    'HUD to the start: the stock proximity, SS1')
+  T.check(seen.waitStart and seen.waitStart.rl.activeState == 'countdown' and seen.waitStart.rl.countdownData.countdown ~= nil,
+    'HUD on the line: the stock countdown')
+  local run = seen.running
+  T.check(run and run.rl.activeState == 'stageActive' and run.rl.uiColors.theme and run.rl.stageData.stageHeader == 'SS1 · HILL'
+    and run.ours.show.km and run.ours.totalM > 2800, 'HUD on the stage: stage time, progress, our km')
+  T.check(seen.finished and seen.finished.ours.finish and seen.finished.ours.finish.first,
+    'HUD at the finish: the first time on this stage')
+  T.check(toastTitled('Hill: ') ~= nil, 'a toast with the time at the flying finish')
+  -- off route: the amber card once 60 m off, gone within 40 m
+  runner.abort(true)
+  settings.reset()
+end
+
+-- off route on a real run, with the way back
+do
+  local r9 = toTheLine(event)
+  go(r9)
+  car.speed = 20
+  driveTo(11, 900)
+  local fx, fy = toGame(full[900][1], full[900][2])
+  veh.getDirectionVector = function() return { x = 0, y = 1, z = 0 } end   -- (heading north, along the stage)
+  car.lat, car.lon = toGeo(fx + 80, fy)
+  frames(1)
+  local _, ours = runner.uiFrame()
+  T.check(r9.offRoute and ours.show.offRoute and ours.offM > 60 and math.abs(ours.backBearing + 90) < 5,
+    '80 m right of the line: off route, the way back to the left (' .. tostring(ours.backBearing) .. ')')
+  car.lat, car.lon = toGeo(fx + 50, fy)
+  frames(1)
+  T.check(r9.offRoute, 'still off route at 50 m (no flicker)')
+  car.lat, car.lon = toGeo(fx + 20, fy)
+  frames(1)
+  _, ours = runner.uiFrame()
+  T.check(not r9.offRoute and not ours.show.offRoute and ours.show.km, 'back on the line: the card gone')
+  veh.getDirectionVector = nil
+  runner.abort(true)
+end
+
+-- main.lua: the menu page's data and buttons, the HUD's streams, the preview, Ctrl+Alt+K
+do
+  ui_imgui = { BoolPtr = function(v) return { [0] = v } end, ImVec4 = function() return {} end }
+  local navs = {}
+  ui_router = { navigate = function(r) navs[#navs + 1] = r end }
+  local streams = {}
+  guihooks.queueStream = function(k, v) streams[#streams + 1] = { k = k, v = v } end
+  local main = require('earthRally/main')
+  settings.reset()
+  events.list(true)          -- (the rallies added by the tests above: read again, as an import does)
+  local st = main.uiState()
+  T.check(st.version == main.VERSION and #st.rallies >= 3 and #st.settings.schema == 6 and st.settings.settings.units == 'km'
+    and st.importFolder, 'uiState: the rallies, the settings, the import folder')
+  local rr = main.uiRally('test8')
+  T.check(rr.name == 'Test Rally 8' and #rr.list == 2 and rr.list[1].status == 'ready' and rr.list[2].status == 'none',
+    'uiRally: the stages and their status')
+  local ss = main.uiStage('test8', 'hill')
+  T.check(ss.atc and ss.canDrive and ss.ss == 1 and ss.name == 'Hill', 'uiStage: SS1 Hill, with its ATC')
+  T.check(main.uiStage('test8', 'nope').missing, 'uiStage: an unknown stage')
+  T.check(main.uiSet('units', 'mi').ok and settings.get('units') == 'mi', 'uiSet: a setting changed')
+  settings.reset()
+  local a = main.uiAction('drive', 'test8', 'nope')
+  T.check(not a.ok and a.message, 'a button for a stage that is not there: refused, said why')
+  -- Ctrl+Alt+K: the page, again: back to driving
+  main.toggleMenu()
+  main.onUiChangedState('earthRally')
+  main.toggleMenu()
+  T.check(navs[1] == 'earthRally' and navs[2] == 'play', 'Ctrl+Alt+K opens the menu page and closes it')
+  main.onUiChangedState('play')
+  -- Drive stage from the page: the run starts, the page closes
+  anchor = { lat = 47.0, lon = -123.0 }
+  car.lat, car.lon, car.speed = full[1][1] - 0.02, full[1][2], 0
+  navs = {}
+  a = main.uiAction('drive', 'test8', 'hill')
+  T.check(a.ok and runner.current() and navs[1] == 'play', 'Drive stage: the run starts, back to the game')
+  T.check(not main.uiAction('drive', 'test8', 'hill').ok, 'not a second run while one is under way')
+  -- the streams: both, every frame or so
+  streams = {}
+  for _ = 1, 10 do main._sendStreams(0.05) end
+  local kinds = {}
+  for _, x in ipairs(streams) do kinds[x.k] = (kinds[x.k] or 0) + 1 end
+  T.check((kinds.rallyLoop or 0) >= 5 and (kinds.earthRally or 0) >= 5, 'both streams queued (' ..
+    tostring(kinds.rallyLoop) .. ', ' .. tostring(kinds.earthRally) .. ')')
+  T.check(main.previewHud() == false, 'no HUD preview during a run')
+  main.uiAction('abort')
+  streams = {}
+  main._sendStreams(0.05)
+  main._sendStreams(0.05)
+  T.check(#streams == 2 and streams[1].v.activeState == 'inactive' and streams[2].v.state == 'idle',
+    'the run gone: the stock apps told inactive once, ours idle')
+  -- the HUD preview: the stage layout on, sample frames, the layout back
+  layout = 'beamngEarth'
+  T.check(main.previewHud() and layout == 'earthRallyStage', 'HUD preview: the stage layout on')
+  streams = {}
+  for _ = 1, 2000 do main._sendStreams(0.05) end
+  local prevFrames, shown = 0, {}
+  for _, x in ipairs(streams) do
+    if x.k == 'earthRally' and x.v.preview then
+      prevFrames = prevFrames + 1
+      for k in pairs(x.v.show) do shown[k] = true end
+    end
+  end
+  T.check(prevFrames > 500 and shown.results and shown.offRoute and shown.bigCount, 'the preview\'s frames went out')
+  T.check(layout == 'beamngEarth', 'after the preview: the layout back')
+  -- the results card's Rally menu: the card closed, the page opened at the rally
+  navs = {}
+  T.check(main.uiResults('menu').ok == false and navs[1] == 'earthRally', 'Rally menu with no run: still opens the page')
+  local st2 = main.uiState()
+  T.check(st2.openAt and st2.openAt.view == 'rally' and main.uiState().openAt == nil, 'the page told where to open, once')
+  -- the developer panel follows its setting
+  settings.set('devPanel', true)
+  T.check(main.onUpdate ~= nil, 'main loaded')
+  settings.reset()
+end
+
 T.done('test_run')
