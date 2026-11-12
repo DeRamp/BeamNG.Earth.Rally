@@ -115,6 +115,9 @@ gameplay_rally = {
   getRallyManager = function() return manager end,
 }
 extensions = { load = function() end }
+local layout = 'beamngEarth'
+core_gamestate = { getGameState = function() return { appLayout = layout } end,
+  setGameState = function(_, l) layout = l or layout end }
 
 ------------------------------------------------------------------------------------------ a stage
 
@@ -150,8 +153,10 @@ local earth = require('earthRally/earthAdapter')
 T.check(#events.list() == 1, 'the event is listed')
 local ok, why = runner.start(event, event.stages[1])
 T.check(not ok and why:match('recce'), 'no run before a recce')
+-- (as in game: the recce began on the start line and stopped 40 m before the flying finish, full[2900])
 local recFrom = {}
-for _, p in ipairs(recPts) do
+for k, p in ipairs(recPts) do
+  if (k - 1) * 4 + 1 > 2860 then break end
   local d = math.sqrt(((p[1] - full[11][1]) * 111195) ^ 2 + ((p[2] - full[11][2]) * 75800) ^ 2)
   if #recFrom > 0 or d < 3 then recFrom[#recFrom + 1] = p end
 end
@@ -204,6 +209,7 @@ T.check(nodeDist(race.pathnodes[#race.pathnodes].pos, dlNodes[#dlNodes]) >= 100,
 local firstCs = files[r.dir .. '/rally/notebooks/structured.notebook.json'].pacenotes[1].pacenoteWaypoints[1].pos
 T.check(nodeDist(firstCs, race.startPositions[1].pos) >= 20, 'no note on the start line')
 T.check(runner.state() == 'countdown', 'counting down (' .. runner.state() .. ')')
+T.check(layout == 'earthRallyStage', 'the pacenote cards layout on for the run (' .. layout .. ')')
 -- the car stands on the start line, in game coordinates of the new origin
 local sx, sy = toGame(full[11][1], full[11][2])
 local cp = veh.getPosition()
@@ -228,6 +234,9 @@ end
 T.check(runner.state() == 'finished', 'finished (' .. runner.state() .. ')')
 T.check(r.checks.shifts == 1, 'the world shift was counted (' .. r.checks.shifts .. ')')
 T.check(r.checks.maxOffM < 5, 'never off the line, across the shift (' .. string.format('%.1f', r.checks.maxOffM) .. ')')
+local ffx, ffy = toGame(full[2900][1], full[2900][2])
+local cp2 = veh.getPosition()
+T.check(math.sqrt((cp2.x - ffx) ^ 2 + (cp2.y - ffy) ^ 2) < 30, 'finished at the flying finish, past the recce end')
 T.check(r.finalTime and r.finalTime > 100 and r.finalTime < 130, 'a time of ~2 min (' .. tostring(r.finalTime) .. ')')
 T.check(rebaseDistance == 15000, 'the rebase distance back')
 local res = events.results('test', 'hill')
@@ -236,6 +245,7 @@ T.check(events.addResult('test', 'hill', { finished = true, timeS = 99 }) == 99 
   'a second time kept beside the first, the best of both')
 runner.abort(true)
 T.check(manager == nil, 'the co-driver unloaded when the run is closed')
+T.check(layout == 'beamngEarth', 'BeamNG.Earth layout back')
 
 
 -- the recce: the map line drawn ahead of the car on the ground, the driven line saved at the end

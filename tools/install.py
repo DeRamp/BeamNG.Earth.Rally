@@ -6,6 +6,7 @@ Ctrl+L in game to reload its Lua).
     python tools/install.py --user-dir "D:\\BeamNG user folder\\current"
 """
 import argparse
+import json
 import os
 import shutil
 import sys
@@ -22,6 +23,30 @@ def default_user_dir():
     return os.path.expanduser('~/.local/share/BeamNG/BeamNG.drive/current')
 
 
+LAYOUT_REL = os.path.join('settings', 'ui_apps', 'originalLayouts', 'default')
+EARTH_LAYOUT = 'beamngEarth.uilayout.json'
+OUR_LAYOUT = 'earthRallyStage.uilayout.json'
+# the game's own rally stage layout's pacenote cards (settings/ui_apps/originalLayouts/mission/rallyModeStage)
+PACENOTE_APP = {
+    'appName': 'rallyVisualPacenotes', 'appVersion': 1,
+    'placement': {'bottom': '', 'height': '20%', 'left': '0px', 'margin': 'auto', 'position': 'absolute',
+                  'right': '0px', 'top': '17.5%', 'width': '75%'},
+}
+
+
+def make_layout(earth_layout_path, out_path):
+    """The run's layout: BeamNG.Earth's own (its status bar, map, credits) with the game's pacenote cards added."""
+    with open(earth_layout_path, encoding='utf-8') as f:
+        layout = json.load(f)
+    layout['apps'] = [a for a in layout.get('apps', []) if a.get('appName') != PACENOTE_APP['appName']]
+    layout['apps'].append(PACENOTE_APP)
+    layout['title'] = 'Earth Rally stage'
+    layout['type'] = 'earthRallyStage'
+    layout['description'] = 'BeamNG.Earth with the rally pacenote cards (Earth Rally, during a stage)'
+    with open(out_path, 'w', encoding='utf-8') as f:
+        json.dump(layout, f, indent=2)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--user-dir', default=default_user_dir(), help='the BeamNG.drive user folder (…/current)')
@@ -33,6 +58,10 @@ def main():
     if os.path.isdir(dest):
         shutil.rmtree(dest)
     shutil.copytree(SRC, dest)
+    # the stage layout from the BeamNG.Earth installed now (else the copy in this repository stays)
+    earth_layout = os.path.join(args.user_dir, 'mods', 'unpacked', 'beamng_earth', LAYOUT_REL, EARTH_LAYOUT)
+    if os.path.isfile(earth_layout):
+        make_layout(earth_layout, os.path.join(dest, LAYOUT_REL, OUR_LAYOUT))
     os.makedirs(os.path.join(args.user_dir, 'earthRally', 'events'), exist_ok=True)
     print(f'Earth Rally installed in {dest}')
     print('In game: load the BeamNG.Earth level, then Ctrl+Alt+K opens the Earth Rally window.')

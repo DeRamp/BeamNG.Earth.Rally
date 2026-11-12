@@ -24,35 +24,6 @@ local function rotFor(quatFn, dir)
   return { x, y, z, w }
 end
 
--- The line carried on straight for `len` m past its start (back) or end (forward): the rally engine drops a start
--- line, a pathnode or a note sitting on the very end of its route (it found no route point there), and a recce often
--- starts on the start line and stops at the finish.
-local function extend(line, len, atStart)
-  local n = #line
-  local a, b = atStart and line[1] or line[n], nil
-  -- the direction over the last ~10 m
-  local cum = 0
-  for k = 2, n do
-    b = atStart and line[k] or line[n - k + 1]
-    cum = cum + geo.dist2d(line[atStart and k - 1 or n - k + 2], b)
-    if cum >= 10 then break end
-  end
-  local dx, dy = a.x - b.x, a.y - b.y
-  local l = math.sqrt(dx * dx + dy * dy)
-  if l < 1e-6 then return line end
-  dx, dy = dx / l, dy / l
-  local out = {}
-  local steps = math.ceil(len / 5)
-  if atStart then
-    for k = steps, 1, -1 do out[#out + 1] = { x = a.x + dx * 5 * k, y = a.y + dy * 5 * k, z = a.z } end
-    for _, p in ipairs(line) do out[#out + 1] = p end
-  else
-    for _, p in ipairs(line) do out[#out + 1] = p end
-    for k = 1, steps do out[#out + 1] = { x = a.x + dx * 5 * k, y = a.y + dy * 5 * k, z = a.z } end
-  end
-  return out
-end
-
 M.LEAD_IN_M = 60            -- of route before the start line, at least
 M.RUN_OUT_M = 150           -- of route past the finish, at least (the stop control at its end)
 M.NOTE_CLEAR_M = 25         -- no note's corner starting this close to the start line or past the finish
@@ -66,9 +37,9 @@ function M.build(line, opts)
   local startM = math.max(0, math.min(opts.startM or 0, total0 - 50))
   local finishM = math.max(startM + 50, math.min(opts.finishM or total0, total0))
   local lead = math.max(0, M.LEAD_IN_M - startM)
-  if lead > 0 then line = extend(line, lead, true) startM, finishM = startM + lead, finishM + lead end
+  if lead > 0 then line = geo.extend(line, lead, true) startM, finishM = startM + lead, finishM + lead end
   local tail = math.max(0, M.RUN_OUT_M - (total0 - (finishM - lead)))
-  if tail > 0 then line = extend(line, tail, false) end
+  if tail > 0 then line = geo.extend(line, tail, false) end
   local cum = geo.cumulative(line)
   local total = cum[#cum]
 

@@ -97,6 +97,35 @@ function M.slice(pts, cum, s0, s1)
   return out
 end
 
+-- The line carried on straight for `len` m past its start (back) or end (forward): the rally engine drops a start
+-- line, a pathnode or a note sitting on the very end of its route (it found no route point there), and a recce often
+-- starts on the start line and stops at the finish.
+function M.extend(line, len, atStart)
+  local n = #line
+  local a, b = atStart and line[1] or line[n], nil
+  -- the direction over the last ~10 m
+  local cum = 0
+  for k = 2, n do
+    b = atStart and line[k] or line[n - k + 1]
+    cum = cum + d2(line[atStart and k - 1 or n - k + 2], b)
+    if cum >= 10 then break end
+  end
+  local dx, dy = a.x - b.x, a.y - b.y
+  local l = math.sqrt(dx * dx + dy * dy)
+  if l < 1e-6 then return line end
+  dx, dy = dx / l, dy / l
+  local out = {}
+  local steps = math.ceil(len / 5)
+  if atStart then
+    for k = steps, 1, -1 do out[#out + 1] = { x = a.x + dx * 5 * k, y = a.y + dy * 5 * k, z = a.z } end
+    for _, p in ipairs(line) do out[#out + 1] = p end
+  else
+    for _, p in ipairs(line) do out[#out + 1] = p end
+    for k = 1, steps do out[#out + 1] = { x = a.x + dx * 5 * k, y = a.y + dy * 5 * k, z = a.z } end
+  end
+  return out
+end
+
 local function wrap(a)
   while a > pi do a = a - 2 * pi end
   while a < -pi do a = a + 2 * pi end

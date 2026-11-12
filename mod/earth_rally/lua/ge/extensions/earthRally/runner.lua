@@ -31,7 +31,9 @@ M.JUMP_START_PENALTY_S = 10
 M.LINE_BEFORE_START_M = 30     -- of the recce kept before the start line
 M.CAR_BEHIND_LINE_M = 4
 M.Z_BELOW_POSE_M = 0.5         -- the road under the car's reference point
-M.FINISH_OFF_M = 40            -- past the finish this close to the line: finished
+M.FINISH_OFF_M = 40            -- across the finish this close to the line: finished
+M.TIMING_RUN_OUT_M = 300       -- the timing line carried on past the recce's end (a recce may stop short of the finish)
+M.CONTROL_ON_LINE_M = 60       -- a start / finish control this close to the line is where it is on the line
 M.OFF_ROUTE_M = 60
 M.RUNTIME_DIR = '/earthRally/runtime/'
 M.MAX_REBASE_M = 16000
@@ -87,10 +89,25 @@ local function project()
     if not x then return false end
     pts[i] = { x = x, y = y, z = z }
   end
+  local recceEnd = geo.cumulative(pts)
+  recceEnd = recceEnd[#recceEnd]
+  pts = geo.extend(pts, M.TIMING_RUN_OUT_M, false)
   run.line, run.cum = pts, geo.cumulative(pts)
-  -- (distances along the game line differ from the flat frame's by centimetres: the controls by fraction)
-  local scale = run.cum[#run.cum] / math.max(1, run.latlonLength)
+  -- the start and the flying finish where their controls are along the line (the finish may lie past the recce's
+  -- end, on the run-out), else where the recce put them
+  local scale = recceEnd / math.max(1, run.latlonLength)
   run.startM, run.finishM = run.startFlat * scale, run.finishFlat * scale
+  local ctl = run.stage.controls or {}
+  local function at(c)
+    if not c then return nil end
+    local x, y = earth.toGame(c.lat, c.lon, 0)
+    if not x then return nil end
+    local _, _, s, off = geo.locate(pts, run.cum, { x = x, y = y })
+    return off <= M.CONTROL_ON_LINE_M and s or nil
+  end
+  run.startM = at(ctl.start) or run.startM
+  local f = at(ctl.ff)
+  if f and f > run.startM + 100 then run.finishM = f end
   return true
 end
 
@@ -109,6 +126,24 @@ local function aheadDir(line, cum, s)
   local a = geo.pointAt(line, cum, s)
   local b = geo.pointAt(line, cum, s + M.FACE_AHEAD_M)
   return { x = b.x - a.x, y = b.y - a.y, z = (b.z or 0) - (a.z or 0) }, a
+end
+
+-- The run's screen layout (settings/ui_apps/.../earthRallyStage: BeamNG.Earth's own with the game's pacenote cards),
+-- and back to the one before when the run ends.
+M.STAGE_LAYOUT = 'earthRallyStage'
+local function layoutOn()
+  local gs = rawget(_G, 'core_gamestate')
+  if not (gs and gs.setGameState and gs.getGameState) or run.oldLayout then return end
+  local ok, cur = pcall(gs.getGameState)
+  run.oldLayout = ok and cur and cur.appLayout or 'beamngEarth'
+  if run.oldLayout ~= M.STAGE_LAYOUT then pcall(gs.setGameState, nil, M.STAGE_LAYOUT) end
+end
+local function layoutOff()
+  local gs = rawget(_G, 'core_gamestate')
+  if run and run.oldLayout and gs and gs.setGameState then
+    pcall(gs.setGameState, nil, run.oldLayout ~= M.STAGE_LAYOUT and run.oldLayout or 'beamngEarth')
+  end
+  if run then run.oldLayout = nil end
 end
 
 local function carPos()
@@ -243,6 +278,7 @@ local function stepPlace()
   if not veh then fail('no car') return end
   M.placeCar(veh, pos, dir)
   rallyA.resync()
+  layoutOn()
   run.home = pos
   setState('countdown')
   run.lastShown = nil
@@ -330,6 +366,7 @@ end
 function M.abort(quiet)
   if not run then return end
   M.release()
+  layoutOff()
   rallyA.unload()
   if not quiet and run.state ~= 'finished' then say('Earth Rally: run stopped') end
   run = nil

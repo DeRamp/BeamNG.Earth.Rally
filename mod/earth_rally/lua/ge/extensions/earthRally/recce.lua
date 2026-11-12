@@ -11,7 +11,7 @@ local events = require('earthRally/events')
 local M = {}
 
 M.RECORD_EVERY_M = 4
-M.END_RADIUS_M = 40         -- this close to the stage's end (after most of it): the recce is done
+M.END_RADIUS_M = 12         -- this close to the stage's end, or level with it (after most of it): the recce is done
 M.END_SHARE = 0.9
 M.GUIDE_AHEAD_M = 400       -- of the map line drawn ahead of the car
 M.GUIDE_BEHIND_M = 40
@@ -65,7 +65,9 @@ function M.update()
   -- progress along the map line (never backwards), and the end
   if off < 150 and along > rec.best then rec.best = along end
   local total = rec.mapCum[#rec.mapCum]
-  if rec.best >= total * M.END_SHARE and geo.dist2d(q, rec.mapPts[#rec.mapPts]) <= M.END_RADIUS_M then return 'done' end
+  -- (level with the end: the car has come as far along the line as it goes, beside it)
+  if rec.best >= total * M.END_SHARE and (geo.dist2d(q, rec.mapPts[#rec.mapPts]) <= M.END_RADIUS_M
+      or (along >= total - 1 and off < 40)) then return 'done' end
 end
 
 -- The ground under a map point (game coordinates now), found once per world origin: a ray down from above the car.
