@@ -19,3 +19,10 @@ From the user, during the 1.1.0 build:
 
 Both need the junctions along the stage (which roads meet there, which one the stage takes): the same work as 1.1.0's
 junction calls (test notes item 9), so they build on it.
+
+## From testing 1.1.0 (noted for the next update, not fixed now; the user, 2026-11-12)
+
+- **Start tree board blank after a new start minute**: waiting on the line past the original start minute (late:
+  a new start time given), the start tree's LED board goes blank. To look at: what runner.feedStartClock sends to
+  gameplay_rallyStartClock once `run.startAt` moves on (countdownData / state after the old minute passed), against
+  what the game's rallySuperCountdown sends when it reschedules (`rescheduleNextSSStart`).
