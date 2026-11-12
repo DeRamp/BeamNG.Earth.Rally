@@ -12,6 +12,7 @@ local logTag = 'earthRally'
 local show = im.BoolPtr(false)
 local selEvent, selStage = 1, 1
 local message = nil
+local facing = nil       -- after Go to start: turn the car along the stage once BeamNG.Earth has set it down
 
 function M.toggle() show[0] = not show[0] end
 function M.show() show[0] = true end
@@ -97,8 +98,11 @@ local function drawWindow()
       im.TextColored(GREY, string.format('%s, fits a %s circle', km(stage.lengthM), km(stage.radiusM)))
       local busy = recce.active() or (runner.current() and runner.state() ~= 'finished' and runner.state() ~= 'failed')
       if recce.active() then
-        local share, len, n = recce.progress()
+        local share, len, n, off = recce.progress()
         im.TextColored(GREEN, string.format('Recce: %.0f %% (%s, %d points)', share * 100, km(len), n))
+        if off and off > 60 then
+          im.TextColored(AMBER, string.format('%.0f m from the stage line: follow the orange line', off))
+        end
         if im.Button('Save recce') then
           local saved, err = recce.stop(true)
           message = saved and 'Recce saved.' or err
@@ -112,9 +116,10 @@ local function drawWindow()
           local s = stage.controls and stage.controls.start or { lat = stage.line[1][1], lon = stage.line[1][2] }
           local tok, terr = earth.teleport(s.lat, s.lon, stage.name .. ' start')
           message = tok and nil or tostring(terr)
+          if tok then facing = { stage = stage, t = 0, ready = 0 } end
         end
         im.SameLine()
-        if im.Button('Start recce') then recce.start(ev, stage) message = 'Drive the stage to its flying finish; the GPS shows the way.' end
+        if im.Button('Start recce') then recce.start(ev, stage) message = 'Follow the orange line on the road to the flying finish (the green ball); the recce saves itself there.' end
         if events.recce(ev.id, stage.id) then
           im.SameLine()
           if im.Button('Run stage') then
@@ -140,6 +145,15 @@ function M.onUpdate(dtReal, dtSim)
     local saved, err = recce.stop(true)
     message = saved and 'Recce saved: you can run the stage.' or err
     earth.notify('Earth Rally: ' .. message, 6)
+  end
+  if recce.active() then pcall(recce.draw) end
+  if facing then
+    facing.t = facing.t + dtReal
+    facing.ready = earth.ready() and facing.t > 2 and (facing.ready + dtReal) or 0
+    if facing.ready >= runner.TELEPORT_SETTLE_S then
+      pcall(runner.faceStage, facing.stage)
+      facing = nil
+    elseif facing.t > 120 then facing = nil end
   end
   local ok, err = pcall(runner.update, dtReal, dtSim)
   if not ok then log('E', logTag, 'run: ' .. tostring(err)) runner.abort(true) message = 'Run stopped: ' .. tostring(err) end

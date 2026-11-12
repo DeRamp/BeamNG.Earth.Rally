@@ -35,6 +35,8 @@ M.FINISH_OFF_M = 40            -- past the finish this close to the line: finish
 M.OFF_ROUTE_M = 60
 M.RUNTIME_DIR = '/earthRally/runtime/'
 M.MAX_REBASE_M = 16000
+M.FACE_AHEAD_M = 25            -- the car faces the stage line this far ahead (a few metres of recce can wobble)
+M.TELEPORT_SETTLE_S = 2        -- BeamNG.Earth sets the car down a moment after the world is ready: wait for it
 
 local run = nil
 
@@ -90,6 +92,23 @@ local function project()
   local scale = run.cum[#run.cum] / math.max(1, run.latlonLength)
   run.startM, run.finishM = run.startFlat * scale, run.finishFlat * scale
   return true
+end
+
+-- Put the car at pos facing along dir (game coordinates; dir may climb or fall), as the game's own start positions do
+-- (gameplay/race/startPosition.lua: quatFromDir(forward, up), turned half round for the vehicle's frame).
+function M.placeCar(veh, pos, dir)
+  local l = math.sqrt(dir.x * dir.x + dir.y * dir.y + (dir.z or 0) ^ 2)
+  if l < 1e-6 then return false end
+  local q = quatFromEuler(0, 0, math.pi) * quatFromDir(vec3(dir.x / l, dir.y / l, (dir.z or 0) / l), vec3(0, 0, 1))
+  veh:setPositionRotation(pos.x, pos.y, pos.z, q.x, q.y, q.z, q.w)
+  return true
+end
+
+-- The direction from s along a line to FACE_AHEAD_M further on (with the climb).
+local function aheadDir(line, cum, s)
+  local a = geo.pointAt(line, cum, s)
+  local b = geo.pointAt(line, cum, s + M.FACE_AHEAD_M)
+  return { x = b.x - a.x, y = b.y - a.y, z = (b.z or 0) - (a.z or 0) }, a
 end
 
 local function carPos()
@@ -156,9 +175,12 @@ local function stepTravel(dt)
   run.t = run.t + dt
   if run.teleported and run.t < 2 then return end
   if not earth.ready() then
+    run.readyFor = 0
     if run.t > 180 then fail('the world did not load at the start') end
     return
   end
+  run.readyFor = (run.readyFor or 0) + dt
+  if run.teleported and run.readyFor < M.TELEPORT_SETTLE_S then return end
   setState('anchor')
   local c = run.stage.centre
   local la, lo = earth.anchor()
@@ -214,12 +236,12 @@ local function stepBuild()
 end
 
 local function stepPlace()
-  local s, dir = geo.pointAt(run.line, run.cum, run.startM)
-  local pos = { x = s.x - dir.x * M.CAR_BEHIND_LINE_M, y = s.y - dir.y * M.CAR_BEHIND_LINE_M, z = (s.z or 0) + 1.0 }
+  local dir, s = aheadDir(run.line, run.cum, run.startM)
+  local l = math.sqrt(dir.x * dir.x + dir.y * dir.y)
+  local pos = { x = s.x - dir.x / l * M.CAR_BEHIND_LINE_M, y = s.y - dir.y / l * M.CAR_BEHIND_LINE_M, z = (s.z or 0) + 1.0 }
   local _, veh = carPos()
   if not veh then fail('no car') return end
-  local q = quatFromEuler(0, 0, math.pi) * quatFromDir(vec3(dir.x, dir.y, 0), vec3(0, 0, 1))
-  veh:setPositionRotation(pos.x, pos.y, pos.z, q.x, q.y, q.z, q.w)
+  M.placeCar(veh, pos, dir)
   rallyA.resync()
   run.home = pos
   setState('countdown')
@@ -311,6 +333,25 @@ function M.abort(quiet)
   rallyA.unload()
   if not quiet and run.state ~= 'finished' then say('Earth Rally: run stopped') end
   run = nil
+end
+
+-- After a 'Go to start' teleport (BeamNG.Earth keeps the car's heading): the car turned to face along the stage, where
+-- it stands. true once done.
+function M.faceStage(stage)
+  local p, veh = carPos()
+  if not (p and veh and stage.line and #stage.line >= 2) then return false end
+  local s = stage.controls and stage.controls.start
+  local o = s and { s.lat, s.lon } or stage.line[1]
+  -- the map line's point FACE_AHEAD_M+ on from the start
+  local ahead = stage.line[#stage.line]
+  for i = 2, #stage.line do
+    local q = stage.line[i]
+    if geo.metres(o[1], o[2], q[1], q[2]) >= M.FACE_AHEAD_M then ahead = q break end
+  end
+  local ax, ay = earth.toGame(o[1], o[2], 0)
+  local bx, by = earth.toGame(ahead[1], ahead[2], 0)
+  if not (ax and bx) then return false end
+  return M.placeCar(veh, { x = p.x, y = p.y, z = p.z + 0.3 }, { x = bx - ax, y = by - ay, z = 0 })
 end
 
 function M.formatTime(s)

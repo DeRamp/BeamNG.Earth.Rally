@@ -150,7 +150,12 @@ local earth = require('earthRally/earthAdapter')
 T.check(#events.list() == 1, 'the event is listed')
 local ok, why = runner.start(event, event.stages[1])
 T.check(not ok and why:match('recce'), 'no run before a recce')
-events.saveRecce('test', 'hill', { format = 1, points = recPts, lengthM = 3000 })
+local recFrom = {}
+for _, p in ipairs(recPts) do
+  local d = math.sqrt(((p[1] - full[11][1]) * 111195) ^ 2 + ((p[2] - full[11][2]) * 75800) ^ 2)
+  if #recFrom > 0 or d < 3 then recFrom[#recFrom + 1] = p end
+end
+events.saveRecce('test', 'hill', { format = 1, points = recFrom, lengthM = 3000 })
 T.check(events.recce('test', 'hill') ~= nil, 'the recce is read back')
 
 ------------------------------------------------------------------------------------------ the run
@@ -188,6 +193,16 @@ local race = manager.race
 T.check(race.startPositions[1].name == 'SS_start_line' and race.startPositions[2].name == 'SS_stop_control',
   'start line and stop control')
 T.check(#race.pathnodes >= 3 and race.endNode == race.pathnodes[#race.pathnodes].oldId, 'pathnodes to the finish')
+-- the rally engine drops a start line, pathnode or note on the very end of its route: the driveline carries on
+-- before the start and past the finish
+local dlNodes = manager.dl.nodes
+local function nodeDist(p, n) return math.sqrt((p[1] - n[1]) ^ 2 + (p[2] - n[2]) ^ 2) end
+T.check(nodeDist(race.startPositions[1].pos, dlNodes[1]) >= 50, 'route before the start line (' ..
+  string.format('%.0f', nodeDist(race.startPositions[1].pos, dlNodes[1])) .. ' m)')
+T.check(nodeDist(race.pathnodes[#race.pathnodes].pos, dlNodes[#dlNodes]) >= 100, 'route past the finish (' ..
+  string.format('%.0f', nodeDist(race.pathnodes[#race.pathnodes].pos, dlNodes[#dlNodes])) .. ' m)')
+local firstCs = files[r.dir .. '/rally/notebooks/structured.notebook.json'].pacenotes[1].pacenoteWaypoints[1].pos
+T.check(nodeDist(firstCs, race.startPositions[1].pos) >= 20, 'no note on the start line')
 T.check(runner.state() == 'countdown', 'counting down (' .. runner.state() .. ')')
 -- the car stands on the start line, in game coordinates of the new origin
 local sx, sy = toGame(full[11][1], full[11][2])
@@ -221,5 +236,28 @@ T.check(events.addResult('test', 'hill', { finished = true, timeS = 99 }) == 99 
   'a second time kept beside the first, the best of both')
 runner.abort(true)
 T.check(manager == nil, 'the co-driver unloaded when the run is closed')
+
+
+-- the recce: the map line drawn ahead of the car on the ground, the driven line saved at the end
+local drawn = 0
+debugDrawer = { drawLineInstance = function() drawn = drawn + 1 end, drawSphere = function() end }
+function ColorF(r, g, b, a) return { r, g, b, a } end
+function castRayStatic(o) return 300 - 50 end
+local vmt = { __add = function(a, b) return vec3(a.x + b.x, a.y + b.y, a.z + b.z) end }
+local plainVec3 = vec3
+function vec3(x, y, z) return setmetatable(plainVec3(x, y, z), vmt) end
+local recce = require('earthRally/recce')
+car.lat, car.lon = full[1][1], full[1][2]
+recce.start(event, event.stages[1])
+local done = nil
+for i = 1, #full, 3 do
+  car.lat, car.lon, car.alt = full[i][1], full[i][2], full[i][3]
+  local res = recce.update()
+  recce.draw()
+  if res == 'done' then done = i break end
+end
+T.check(drawn > 20, 'the stage line drawn ahead (' .. drawn .. ' segments)')
+T.check(done ~= nil and done > #full * 0.9, 'the recce ends at the stage end')
+T.check(recce.stop(true) == true and #events.recce('test', 'hill').points > 300, 'the recce saved')
 
 T.done('test_run')

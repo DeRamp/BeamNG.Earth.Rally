@@ -11,8 +11,9 @@ modding API 1.6 or newer (1.7, with the `onBeamNGEarthRebased` event, is used wh
 1. **Import** a rally's map (KML or GPX) with `tools/import_kml.py`. Each line becomes a stage; the named points
    next to it (start, flying finish, stop, ATC) become its controls. The event file goes to your game's user folder,
    not to this repository: organisers' maps are theirs.
-2. **Recce** each stage once in game: the GPS guides you along it and the mod records the line you drive (with real
-   heights). Hand-drawn maps cut corners and have no heights; the recce line is what stages are timed and called on.
+2. **Recce** each stage once in game: the stage's map line is drawn on the road ahead of you (orange; a green ball at
+   the flying finish) and the mod records the line you drive (with real heights). Not the GPS: its route planner does
+   not take cars on forest roads. Hand-drawn maps cut corners and have no heights; the recce line is what stages are timed and called on.
 3. **Run** the stage: the mod takes you to the start, moves BeamNG.Earth's world origin to the middle of the stage
    (so the world does not shift under you for any stage up to ~26 km across), writes the stage for the game's rally
    engine, puts you on the start line and counts down. The clock stops at the flying finish; times are kept.
