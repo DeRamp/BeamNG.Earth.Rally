@@ -79,3 +79,7 @@ Scope: 1.1.0 is these fixes and polish; new ideas and the player UI go to 1.2.0 
 | # | What | Wanted | Status |
 |---|---|---|---|
 | 14 | The control zones' brake: the full 30 % at the zone's edge stops the car short of the boards and tent; uncomfortable | The brake easing in as you get closer, so you can roll up to the boards | built, not installed yet: from nothing at the zone's edge (ATC 12 m, stop 25 m, 12 m before the start line) to 30 % at the board / line, never easing off again inside the zone; stopping anywhere in the zone still counts |
+
+Checked in game (second session): **Maryhill Up** runs on the map roads (the window says so); the flying finish's
+boards where they should be, all facing the car; the warning boards right; the stop control's boards facing the car;
+the co-driver's "at junction" where it should be. Items 3 (Maryhill), 4 and 9 (Maryhill) pass.
