@@ -72,3 +72,9 @@ The window lists what each run found out, also saved with its time:
 2. One timed stage, polished (the stage area downloaded ahead).
 3. Recce refinements. 4. Better pacenotes (crests, cautions). 5. Stages wider than ~26 km (the co-driver re-placed
    when the world shifts). 6. Itineraries: loops, road sections, time controls, service. 7. An in-game editor.
+
+## License
+
+Code: MIT, see [LICENSE](LICENSE). BeamNG.drive is a trademark of BeamNG GmbH; this is an unofficial fan
+project. The rally boards, tents and co-driver voice are the game's own assets, used from the game at runtime and not
+included here. Rally maps and route books belong to their organisers and are not part of this repository.
