@@ -161,7 +161,7 @@ local function drawWindow()
           local s = stage.controls and stage.controls.start or { lat = stage.line[1][1], lon = stage.line[1][2] }
           local tok, terr = earth.teleport(s.lat, s.lon, stage.name .. ' start')
           message = tok and 'Waiting for the world to load...' or ('Could not go there: ' .. tostring(terr))
-          if tok then facing = { stage = stage, t = 0, ready = 0 } end
+          if tok then facing = { stage = stage, eventId = ev.id, t = 0, ready = 0 } end
         end
         im.SameLine()
         if im.Button('Start recce') then recce.start(ev, stage) message = 'Follow the orange line on the road to the flying finish (the green ball); the recce saves itself there.' end
@@ -225,7 +225,8 @@ function M.onUpdate(dtReal, dtSim)
     facing.t = facing.t + dtReal
     facing.ready = earth.ready() and facing.t > 2 and (facing.ready + dtReal) or 0
     if facing.ready >= runner.TELEPORT_SETTLE_S then
-      pcall(runner.faceStage, facing.stage)
+      local fok, placed, how = pcall(runner.faceStage, facing.stage, facing.eventId)
+      log('I', logTag, 'Go to start: the car set down (' .. tostring(fok and placed and how or 'not moved') .. ')')
       if message == 'Waiting for the world to load...' then message = nil end
       facing = nil
     elseif facing.t > 120 then

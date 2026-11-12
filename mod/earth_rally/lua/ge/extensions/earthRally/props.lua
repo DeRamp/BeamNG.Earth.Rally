@@ -123,10 +123,13 @@ function M.clear()
   sites = {}
 end
 
--- (a yaw-only rotation turning +Y to (dx, dy): as quatFromDir(dir, up))
+-- (a yaw-only rotation turning +Y to (dx, dy), as the game's quatFromDir(dir, up) makes it: its axes go in as the rows
+-- of the matrix, so the turn's sign is the opposite of a textbook rotation about +Z. Mirrored, a board on a road
+-- running north looked right and one on a road running east faced nearly backwards: test_props checks it against a
+-- copy of the game's own math.)
 local function yawQuat(dx, dy)
   local h = math.atan2(dx, dy)          -- clockwise from +Y
-  return { 0, 0, -math.sin(h / 2), math.cos(h / 2) }
+  return { 0, 0, math.sin(h / 2), math.cos(h / 2) }
 end
 
 -- The ground under (x, y) near the height z0: looked for a few metres above first, so a tree over the spot is not
@@ -145,6 +148,7 @@ local function ground(x, y, z0)
   return z0
 end
 M._ground = ground
+M._yawQuat = yawQuat
 
 local function makeObj(shape, x, y, z, q)
   local o = createObject('TSStatic')

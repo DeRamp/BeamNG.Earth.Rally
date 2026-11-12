@@ -747,4 +747,69 @@ do
   runner.abort(true)
 end
 
+------------------------------------------------------------------------------------------ the car set down on the road
+do
+  -- the road map: the stage's road (running north from its first point), nodes every 10 m from 1 km south of it to
+  -- its bend, in game coordinates for the world's origin of the moment (it moves to the stage's centre during a run)
+  local function roadMap()
+    local nodes, prev = {}, nil
+    local x0, y0 = toGame(full[1][1], full[1][2], 0)
+    for k = -100, 100 do
+      local n = 'r' .. k
+      nodes[n] = { pos = vec3(x0, y0 + k * 10, 100 + k * 0.1), radius = 3, links = {} }
+      if prev then nodes[n].links[prev] = {} nodes[prev].links[n] = {} end
+      prev = n
+    end
+    return nodes
+  end
+  map = { getMap = function() return { nodes = roadMap() } end }
+  -- (the car against the road: across it, and along it from the start)
+  local function carXY()
+    local x, y = toGame(car.lat, car.lon, 0)
+    local rx, ry = toGame(full[1][1], full[1][2], 0)
+    return x - rx, y - ry
+  end
+  local function at(lat, lon) local x, y = toGame(lat, lon, 0) local rx, ry = toGame(full[1][1], full[1][2], 0) return x - rx, y - ry end
+
+  -- Run stage: an ATC drawn 8 m east of the road, 600 m before the start: the car on the road 40 m before it
+  local ax0, ay0 = toGame(full[11][1] - 600 / 111195, full[11][2])
+  local alat, alon = toGeo(ax0 + 8, ay0)
+  local _, atcY = at(full[11][1] - 600 / 111195, full[11][2])
+  local ev7 = { format = 1, id = 'test7', name = 'Test Rally 7', stages = { {
+    id = 'hill', name = 'Hill', lengthM = 3000, radiusM = 1200, centre = event.stages[1].centre,
+    controls = { start = event.stages[1].controls.start, ff = event.stages[1].controls.ff, atc = { lat = alat, lon = alon } },
+    line = event.stages[1].line } } }
+  files['/earthRally/events/test7.json'] = ev7
+  files['/earthRally/matched/test7__hill.json'] = { format = 1, points = recFrom }
+  anchor = { lat = 47.0, lon = -123.0 }
+  car.lat, car.lon, car.speed = full[1][1] - 0.02, full[1][2], 0
+  runner.start(ev7, ev7.stages[1])
+  frames(80)
+  local x, y = carXY()
+  T.check(runner.current().state == 'toAtc' and math.abs(x) < 0.5 and math.abs(y - (atcY - 40)) < 2,
+    'Run stage: the car on the road 40 m before an ATC drawn off it (' .. string.format('%.1f, %.1f', x, y - atcY) .. ')')
+  runner.abort(true)
+
+  -- Go to start with the stage's line on the roads: on it, 4 m behind the start, whatever the organisers' point
+  local sx, sy = toGame(full[11][1], full[11][2], 0)
+  local _, sAlong = at(full[11][1], full[11][2])
+  car.lat, car.lon = toGeo(sx - 12, sy + 3)        -- (where the teleport put it: 12 m left, in the trees)
+  local placed, how = runner.faceStage(event.stages[1], 'test')
+  x, y = carXY()
+  T.check(placed and how == 'stage line' and math.abs(x) < 0.5 and math.abs(y - (sAlong - 4)) < 1.5,
+    'Go to start: on the stage line behind the start (' .. tostring(how) .. ', ' .. string.format('%.1f, %.1f', x, y - sAlong) .. ')')
+
+  -- Go to start on a stage with no line on the roads yet: on the road map's road beside the start
+  local ev8 = { format = 1, id = 'test8', name = 'Test Rally 8', stages = { {
+    id = 'hill', name = 'Hill', lengthM = 3000, radiusM = 1200, centre = event.stages[1].centre,
+    controls = { start = { lat = select(1, toGeo(sx + 9, sy)), lon = select(2, toGeo(sx + 9, sy)) } },
+    line = event.stages[1].line } } }
+  car.lat, car.lon = toGeo(sx + 9, sy)
+  placed, how = runner.faceStage(ev8.stages[1], 'test8')
+  x, y = carXY()
+  T.check(placed and how == 'road map' and math.abs(x) < 0.5 and math.abs(y - (sAlong - 4)) < 1.5,
+    'Go to start, no stage line: on the road map\'s road (' .. tostring(how) .. ', ' .. string.format('%.1f, %.1f', x, y - sAlong) .. ')')
+  map = nil
+end
+
 T.done('test_run')
