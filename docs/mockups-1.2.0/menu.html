@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Rally menu</title>
+<!-- Mock-up for 1.2.0 (not built). The game's own fonts are Noto Sans and Overpass Mono (ui-vue/src/styles/modules/_fonts.scss). -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Overpass+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* Colours are the game's own (ui-vue/src/styles/modules/_colors.scss, BngButton, the rallyLoop apps) */
+:root {
+  --fnt-defs: "Noto Sans", system-ui, sans-serif;
+  --fnt-mono: "Overpass Mono", ui-monospace, monospace;
+  --orange: oklch(69.58% 0.2043 43.49);       /* bng-orange-b400 */
+  --orange-500: oklch(61.95% 0.1801 43.40);   /* BngButton main */
+  --tbg-700: oklch(38.57% 0.0507 243.31);     /* bng-ter-blue-gray-700: BngButton secondary */
+  --cg-300: oklch(75.07% 0.0256 267.86);
+  --cg-500: oklch(62.05% 0.0251 269.28);
+  --cg-600: oklch(50.63% 0.0185 266.15);
+  --cg-800: oklch(28.94% 0.0152 269.15);
+  --green-400: oklch(69.59% 0.1416 153.15);
+  --green-600: oklch(50.33% 0.1042 153.31);
+  --yellow: oklch(85% 0.15 90);
+  --stage-blue: #1f8fff;                       /* the game's stage theme colour (gameplay/rally/loop/uiColors.lua) */
+  --black-o8: rgba(0,0,0,.8); --black-o6: rgba(0,0,0,.6); --black-o4: rgba(0,0,0,.4);
+  --off-white: #f0f0f0;
+  --r1: .25rem; --r2: .5rem;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0d0f12; color: var(--off-white); font-family: var(--fnt-defs); }
+
+/* the mock-up's own controls (not part of the game screen) */
+.mock-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 16px; background: #1a1d22; border-bottom: 1px solid #2a2e35; position: sticky; top: 0; z-index: 10; }
+.mock-bar b { margin-right: 8px; font-weight: 600; }
+.mock-bar a { color: var(--cg-300); margin-right: 12px; font-size: 14px; }
+.mock-bar button { font: inherit; font-size: 14px; padding: 6px 12px; border-radius: var(--r1); border: 1px solid #3a3f48; background: #23272e; color: #ddd; cursor: pointer; }
+.mock-bar button.on { background: var(--orange-500); border-color: var(--orange-500); color: #fff; }
+.mock-bar .hint { margin-left: auto; font-size: 13px; color: #8a909a; }
+
+/* the game screen: 1920x1080, scaled to the window */
+.stage-wrap { padding: 16px; }
+.screen-box { position: relative; width: 100%; max-width: 1920px; margin: 0 auto; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 6px; box-shadow: 0 0 0 1px #2a2e35; }
+.screen { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-size: 16px; }
+
+/* behind the menu: the game, blurred and darkened (as the game's own menus over a level) */
+.screen::before { content: ""; position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse at 70% 20%, rgba(80,110,90,.35), transparent 60%),
+    radial-gradient(ellipse at 20% 80%, rgba(120,90,60,.30), transparent 55%),
+    linear-gradient(180deg, #2b3a40 0%, #1d2622 55%, #17140f 100%); }
+.screen::after { content: ""; position: absolute; inset: 0; background: rgba(10,12,16,.55); }
+.page { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; }
+
+/* top bar, as the game's full-page menus */
+.topbar { height: 84px; display: flex; align-items: center; gap: 20px; padding: 0 64px; background: linear-gradient(180deg, var(--black-o8), rgba(0,0,0,.35)); }
+.back { display: flex; align-items: center; gap: 10px; padding: 8px 16px 8px 10px; border-radius: var(--r1); background: var(--black-o4); color: var(--cg-300); font-size: 18px; }
+.key { font-family: var(--fnt-mono); font-size: 13px; padding: 1px 6px; border: 1px solid var(--cg-600); border-radius: 3px; color: var(--cg-300); }
+.title { font-size: 30px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.title .accent { color: var(--orange); }
+.crumbs { font-size: 18px; color: var(--cg-300); }
+.crumbs span + span::before { content: "›"; margin: 0 10px; color: var(--cg-600); }
+.topbar .right { margin-left: auto; display: flex; gap: 12px; }
+.content { flex: 1; padding: 36px 64px 24px; overflow: hidden; }
+.infobar { height: 56px; display: flex; align-items: center; gap: 28px; padding: 0 64px; background: var(--black-o6); font-size: 16px; color: var(--cg-300); }
+.infobar .k { font-family: var(--fnt-mono); font-size: 13px; padding: 1px 7px; margin-right: 6px; border: 1px solid var(--cg-500); border-radius: 3px; color: #fff; }
+
+/* the game's BngButton look */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; font: 600 18px var(--fnt-defs); color: #fff; border: 0; border-radius: var(--r1); padding: 12px 22px; background: var(--tbg-700); white-space: nowrap; }
+.btn.main { background: var(--orange-500); }
+.btn.big { font-size: 24px; padding: 18px 34px; }
+.btn.ghost { background: transparent; box-shadow: inset 0 0 0 1px var(--cg-600); color: var(--cg-300); }
+
+.card { background: var(--black-o6); border-radius: var(--r2); }
+.pill { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; padding: 3px 12px; border-radius: 999px; }
+.pill.ready { background: color-mix(in srgb, var(--green-600) 55%, transparent); color: #d9ffe6; }
+.pill.recce { background: color-mix(in srgb, oklch(65% 0.15 75) 45%, transparent); color: #fff1cc; }
+.pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.muted { color: var(--cg-300); }
+.dim { color: var(--cg-500); }
+
+.view { display: none; height: 100%; }
+.view.on { display: block; }
+
+/* ---------- Rallies ---------- */
+.rallies { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; }
+.rally-card { display: flex; flex-direction: column; min-height: 440px; border-top: 4px solid var(--orange); }
+.rally-card.selected { box-shadow: 0 0 0 3px var(--orange); }
+.rally-card .head { padding: 28px 30px 10px; }
+.rally-card .name { font-size: 34px; font-weight: 700; line-height: 1.15; }
+.rally-card .file { font-size: 15px; margin-top: 6px; }
+.rally-card .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 18px 30px; }
+.stat .v { font-family: var(--fnt-mono); font-size: 36px; font-weight: 700; }
+.stat .l { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--cg-300); }
+.driven { padding: 6px 30px 0; }
+.driven .bar { height: 10px; border-radius: 5px; background: var(--cg-800); overflow: hidden; margin-top: 8px; }
+.driven .bar i { display: block; height: 100%; background: var(--stage-blue); }
+.rally-card .foot { margin-top: auto; padding: 22px 30px 26px; }
+.add-card { border: 3px dashed var(--cg-600); background: rgba(0,0,0,.35); padding: 28px 30px; display: flex; flex-direction: column; gap: 16px; }
+.add-card .name { font-size: 30px; font-weight: 700; }
+.add-card ol { margin: 0; padding-left: 26px; font-size: 18px; line-height: 1.55; }
+.add-card .path { font-family: var(--fnt-mono); font-size: 14px; color: var(--cg-300); background: var(--black-o4); padding: 8px 10px; border-radius: var(--r1); }
+.report { background: var(--black-o4); border-radius: var(--r1); padding: 12px 14px; font-size: 15px; line-height: 1.5; }
+.report .ok { color: var(--green-400); }
+.report .warn { color: var(--yellow); }
+
+/* ---------- Rally page (stage list) ---------- */
+.rally-head { display: flex; align-items: flex-end; gap: 48px; margin-bottom: 26px; }
+.rally-head .name { font-size: 44px; font-weight: 700; }
+.rally-head .stat .v { font-size: 30px; }
+.stages { padding: 8px 0; }
+.srow { display: grid; grid-template-columns: 110px 1fr 140px 300px 170px 40px; align-items: center; height: 64px; padding: 0 28px; font-size: 22px; border-left: 4px solid transparent; }
+.srow + .srow { border-top: 1px solid rgba(255,255,255,.06); }
+.srow.hdr { height: 44px; font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--cg-300); }
+.srow.sel { background: color-mix(in srgb, var(--orange-500) 22%, transparent); border-left-color: var(--orange); }
+.srow .ss { font-family: var(--fnt-mono); font-weight: 700; color: var(--cg-300); }
+.srow .km, .srow .best { font-family: var(--fnt-mono); text-align: right; }
+.srow .st { padding-left: 36px; }
+.srow .best.none { color: var(--cg-600); }
+.srow .go { color: var(--cg-500); text-align: right; }
+
+/* ---------- Stage page ---------- */
+.stage-page { display: grid; grid-template-columns: 1.25fr 1fr; gap: 28px; height: 100%; }
+.stage-title .ss { font-family: var(--fnt-mono); font-size: 22px; color: var(--orange); font-weight: 700; letter-spacing: .05em; }
+.stage-title .name { font-size: 56px; font-weight: 700; line-height: 1.1; }
+.stage-title .sub { font-size: 20px; margin-top: 6px; }
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin: 30px 0; }
+.tile { padding: 20px 22px; }
+.tile .v { font-family: var(--fnt-mono); font-size: 44px; font-weight: 700; line-height: 1.1; }
+.tile .v small { font-size: 22px; color: var(--cg-300); margin-left: 4px; }
+.tile .l { font-size: 15px; text-transform: uppercase; letter-spacing: .08em; color: var(--cg-300); margin-top: 6px; }
+.line-note { padding: 16px 22px; font-size: 18px; display: flex; gap: 14px; align-items: center; }
+.actions { display: flex; gap: 16px; margin-top: 30px; }
+.act-help { margin-top: 14px; font-size: 16px; color: var(--cg-300); line-height: 1.6; }
+.runs { padding: 26px 28px; }
+.runs h3 { margin: 0 0 18px; font-size: 16px; text-transform: uppercase; letter-spacing: .1em; color: var(--cg-300); font-weight: 600; }
+.best-box { display: flex; align-items: baseline; gap: 18px; margin-bottom: 22px; }
+.best-box .t { font-family: var(--fnt-mono); font-size: 64px; font-weight: 700; }
+.best-box .badge { font-size: 15px; font-weight: 700; padding: 3px 10px; border-radius: var(--r1); background: var(--stage-blue); }
+.run { display: grid; grid-template-columns: 1fr 150px 1fr; gap: 10px; padding: 12px 0; font-size: 19px; border-top: 1px solid rgba(255,255,255,.07); }
+.run .t { font-family: var(--fnt-mono); font-weight: 600; text-align: right; }
+.run .p { color: var(--yellow); font-size: 16px; text-align: right; }
+.run .p.clean { color: var(--cg-500); }
+
+/* ---------- Settings ---------- */
+.settings { display: grid; grid-template-columns: 1.6fr 1fr; gap: 28px; }
+.set-list { padding: 10px 0; }
+.set { display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: center; padding: 19px 30px; border-left: 4px solid transparent; }
+.set + .set { border-top: 1px solid rgba(255,255,255,.06); }
+.set.focus { background: color-mix(in srgb, var(--orange-500) 18%, transparent); border-left-color: var(--orange); }
+.set .n { font-size: 22px; font-weight: 600; }
+.set .d { font-size: 16px; color: var(--cg-300); margin-top: 4px; }
+.seg { display: inline-flex; background: var(--black-o4); border-radius: var(--r1); padding: 3px; gap: 3px; }
+.seg span { padding: 9px 18px; border-radius: 3px; font-size: 17px; color: var(--cg-300); white-space: nowrap; }
+.seg span.on { background: var(--orange-500); color: #fff; font-weight: 600; }
+.side { padding: 30px; }
+.side h3 { margin: 0 0 12px; font-size: 26px; }
+.side p { font-size: 18px; line-height: 1.6; color: #dfe3ea; margin: 0 0 14px; }
+.side .tag { display: inline-block; font-size: 14px; padding: 2px 10px; border-radius: var(--r1); background: var(--tbg-700); color: #fff; }
+
+/* what renders it (the mock-up's note, not part of the game screen) */
+.who { position: absolute; right: 14px; bottom: 70px; z-index: 5; max-width: 600px; background: rgba(255,250,150,.96); color: #222; font: 500 15px/1.45 var(--fnt-defs); padding: 10px 14px; border-radius: 4px; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+.who code { font-size: 13px; }
+.hide-notes .who { display: none; }
+</style>
+</head>
+<body>
+<div class="mock-bar">
+  <b>Earth Rally 1.2.0 · menu mock-up</b>
+  <a href="index.html">All mock-ups</a>
+  <button data-v="rallies" class="on">Rallies</button>
+  <button data-v="rally">Rally page</button>
+  <button data-v="stage">Stage page</button>
+  <button data-v="settings">Settings</button>
+  <button id="notes" class="on">Note: what renders it</button>
+  <span class="hint">1920×1080, scaled to the window. Times, corner counts and the import report are sample data.</span>
+</div>
+
+<div class="stage-wrap">
+<div class="screen-box" id="box">
+<div class="screen" id="screen">
+<div class="page">
+
+  <div class="topbar">
+    <div class="back"><span>‹</span> Back <span class="key">Esc</span></div>
+    <div class="title"><span class="accent">Earth</span> Rally</div>
+    <div class="crumbs" id="crumbs"><span>Rallies</span></div>
+    <div class="right"><span class="btn ghost">⚙ Settings</span></div>
+  </div>
+
+  <div class="content">
+
+    <!-- ===================== Rallies ===================== -->
+    <section class="view on" id="v-rallies">
+      <div class="rallies">
+        <div class="card rally-card selected">
+          <div class="head">
+            <div class="name">Olympus Rally 26</div>
+            <div class="file dim">from V4 Olympus Rally 26.kml</div>
+          </div>
+          <div class="stats">
+            <div class="stat"><div class="v">9</div><div class="l">stages</div></div>
+            <div class="stat"><div class="v">164.7</div><div class="l">km of stages</div></div>
+            <div class="stat"><div class="v">3</div><div class="l">driven</div></div>
+          </div>
+          <div class="driven"><span class="muted">3 of 9 stages driven</span><div class="bar"><i style="width:33%"></i></div></div>
+          <div class="foot"><span class="btn main">Open rally</span></div>
+        </div>
+
+        <div class="card rally-card">
+          <div class="head">
+            <div class="name">Oregon Trail Rally 2024</div>
+            <div class="file dim">from OTR 2024 Final.kml</div>
+          </div>
+          <div class="stats">
+            <div class="stat"><div class="v">9</div><div class="l">stages</div></div>
+            <div class="stat"><div class="v">88.2</div><div class="l">km of stages</div></div>
+            <div class="stat"><div class="v">2</div><div class="l">driven</div></div>
+          </div>
+          <div class="driven"><span class="muted">2 of 9 stages driven</span><div class="bar"><i style="width:22%"></i></div></div>
+          <div class="foot"><span class="btn">Open rally</span></div>
+        </div>
+
+        <div class="card add-card">
+          <div class="name">+ Add a rally</div>
+          <ol>
+            <li>Get the rally's map: a <b>.kml</b>, <b>.kmz</b> or <b>.gpx</b> (Google My Maps, or the organisers' map).</li>
+            <li>Put it in the import folder. It is imported straight away.</li>
+          </ol>
+          <div class="path">…\BeamNG.drive\current\earthRally\import\</div>
+          <div style="display:flex; gap:12px">
+            <span class="btn main">📂 Open import folder</span>
+            <span class="btn">Re-scan</span>
+          </div>
+          <div class="report">
+            <div class="muted" style="font-size:13px; text-transform:uppercase; letter-spacing:.08em; margin-bottom:4px">Last import · 12 Nov, 14:02</div>
+            <div class="ok">✓ OTR 2024 Final.kml: Oregon Trail Rally 2024, 9 stages</div>
+            <div class="warn">! 1 to check: "Starveout Stp" matches no stage. Did you mean Starveout?</div>
+            <div style="margin-top:8px"><span class="btn ghost" style="font-size:15px; padding:6px 12px">Full report</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== Rally page ===================== -->
+    <section class="view" id="v-rally">
+      <div class="rally-head">
+        <div class="name">Olympus Rally 26</div>
+        <div class="stat"><div class="v">9</div><div class="l">stages</div></div>
+        <div class="stat"><div class="v">164.7 km</div><div class="l">of stages</div></div>
+        <div class="stat"><div class="v">3 / 9</div><div class="l">driven</div></div>
+      </div>
+      <div class="card stages">
+        <div class="srow hdr"><span>Stage</span><span>Name</span><span style="text-align:right">Length</span><span class="st">Status</span><span style="text-align:right">Best</span><span></span></div>
+        <div class="srow"><span class="ss">SS1</span><span>Wildcat</span><span class="km">29.8 km</span><span class="st"><span class="pill recce">Recce recommended</span></span><span class="best">22:41.3</span><span class="go">›</span></div>
+        <div class="srow sel"><span class="ss">SS2</span><span>Kuhnle</span><span class="km">8.4 km</span><span class="st"><span class="pill ready">Ready</span></span><span class="best">6:12.4</span><span class="go">›</span></div>
+        <div class="srow"><span class="ss">SS3</span><span>Deckerville</span><span class="km">11.8 km</span><span class="st"><span class="pill ready">Ready</span></span><span class="best none">–</span><span class="go">›</span></div>
+        <div class="srow"><span class="ss">SS4</span><span>Mason Lake</span><span class="km">9.7 km</span><span class="st"><span class="pill ready">Ready</span></span><span class="best none">–</span><span class="go">›</span></div>
+        <div class="srow"><span class="ss">SS5</span><span>Stillwater</span><span class="km">21.3 km</span><span class="st"><span class="pill ready">Ready</span></span><span class="best">16:05.8</span><span class="go">›</span></div>
+        <div class="srow"><span class="ss">SS6</span><span>Schafer</span><span class="km">15.7 km</span><span class="st"><span class="pill recce">Recce recommended</span></span><span class="best none">–</span><span class="go">›</span></div>
+        <div class="srow"><span class="ss">SS7</span><span>Nahwatzel Meadows</span><span class="km">41.8 km</span><span class="st"><span class="pill ready">Ready</span></span><span class="best none">–</span><span class="go">›</span></div>
+        <div class="srow"><span class="ss">SS8</span><span>Taylor Town</span><span class="km">8.5 km</span><span class="st"><span class="pill recce">Recce recommended</span></span><span class="best none">–</span><span class="go">›</span></div>
+        <div class="srow"><span class="ss">SS9</span><span>Dayton</span><span class="km">17.7 km</span><span class="st"><span class="pill ready">Ready</span></span><span class="best none">–</span><span class="go">›</span></div>
+      </div>
+      <div class="muted" style="margin-top:16px; font-size:16px">
+        <b>Ready</b>: notes from the stage's own roads or your recce. <b>Recce recommended</b>: part of the stage has no road on the map (no notes there) until you drive its recce.
+      </div>
+    </section>
+
+    <!-- ===================== Stage page ===================== -->
+    <section class="view" id="v-stage">
+      <div class="stage-page">
+        <div>
+          <div class="stage-title">
+            <div class="ss">SS2 · OLYMPUS RALLY 26</div>
+            <div class="name">Kuhnle</div>
+            <div class="sub muted">Time control before the start · stop control after the flying finish</div>
+          </div>
+          <div class="tiles">
+            <div class="card tile"><div class="v">8.4<small>km</small></div><div class="l">Length</div></div>
+            <div class="card tile"><div class="v">71</div><div class="l">Corners</div></div>
+            <div class="card tile"><div class="v">9</div><div class="l">Junctions</div></div>
+            <div class="card tile"><div class="v">1</div><div class="l">Bridge</div></div>
+          </div>
+          <div class="card line-note"><span class="pill ready">Ready</span><span>Notes from the map's roads, all the way. No recce needed.</span></div>
+          <div class="actions">
+            <span class="btn main big">▶ Drive stage</span>
+            <span class="btn big">⌖ Route to start</span>
+            <span class="btn big">Recce</span>
+          </div>
+          <div class="act-help">
+            <b>Drive stage</b>: takes you to the time control before the start, then through the stage as in a real rally.<br>
+            <b>Route to start</b>: the way there on the GPS, arrows on the road. No teleport.<br>
+            <b>Recce</b>: drive the stage once at your own pace; the line you drive gives the notes.
+          </div>
+        </div>
+        <div class="card runs">
+          <h3>Your runs</h3>
+          <div class="best-box"><span class="t">6:12.4</span><span class="badge">BEST</span></div>
+          <div class="run"><span>Today, 14:31 <span class="dim">· last</span></span><span class="t">6:20.9</span><span class="p">+10 s jump start</span></div>
+          <div class="run"><span>Today, 14:18</span><span class="t">6:12.4</span><span class="p clean">clean</span></div>
+          <div class="run"><span>Yesterday, 21:05</span><span class="t">6:31.0</span><span class="p">+20 s, 2 resets</span></div>
+          <div class="run"><span>Yesterday, 20:47</span><span class="t">6:44.7</span><span class="p clean">clean</span></div>
+          <div class="muted" style="margin-top:16px; font-size:15px">Times include penalties.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== Settings ===================== -->
+    <section class="view" id="v-settings">
+      <div class="settings">
+        <div class="card set-list">
+          <div class="set"><div><div class="n">Units</div><div class="d">Stage lengths and distances on the HUD</div></div>
+            <div class="seg"><span class="on">km</span><span>miles</span></div></div>
+          <div class="set focus"><div><div class="n">Time controls</div><div class="d">Check in at the time control and wait for your start time, or start on the line</div></div>
+            <div class="seg"><span class="on">Full</span><span>Quick start on the line</span></div></div>
+          <div class="set"><div><div class="n">Reset penalty</div><div class="d">+10 s for each car reset during the timed stage</div></div>
+            <div class="seg"><span class="on">On</span><span>Off</span></div></div>
+          <div class="set"><div><div class="n">Control-zone brake</div><div class="d">The brakes ease on in a control's zone, so you stop at its board</div></div>
+            <div class="seg"><span class="on">On</span><span>Off</span></div></div>
+          <div class="set"><div><div class="n">Start clock view</div><div class="d">Where the close-up of the start clock shows during the countdown</div></div>
+            <div class="seg"><span class="on">Right</span><span>Top</span><span>Off</span></div></div>
+          <div class="set"><div><div class="n">Developer panel</div><div class="d">The old Earth Rally window with each run's checks</div></div>
+            <div class="seg"><span>On</span><span class="on">Off</span></div></div>
+        </div>
+        <div class="card side">
+          <h3>Time controls</h3>
+          <p><b>Full</b>: as in a real rally. You stop at the time control (the red clock board), get your start time on the rally clock, move up to the start line and wait for your minute. Driving past the time control costs 60 s.</p>
+          <p><b>Quick start on the line</b>: you are taken straight to the start line; the countdown starts a few seconds after you stop on it.</p>
+          <span class="tag">From the next stage</span>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <div class="infobar">
+    <span><span class="k">Enter</span>Select</span>
+    <span><span class="k">Esc</span>Back</span>
+    <span><span class="k">Ctrl+Alt+K</span>Open / close Earth Rally</span>
+  </div>
+</div>
+
+<div class="who" id="who"></div>
+</div>
+</div>
+</div>
+
+<script>
+const NOTES = {
+  rallies: "<b>Our Vue page</b> (a route of our own, ui/ui-vue/mods/earthRally/EarthRally.vue), opened from its pause-menu tab, Ctrl+Alt+K, or after a stage. Built from the game's own components (BngButton, BngCard, BngPill). Data from Lua: <code>earthRally_main.uiRallies()</code> (events.list, importer.lastReports).",
+  rally: "<b>Our Vue page</b>, same route. Data: <code>earthRally_main.uiRally(id)</code>: each stage's length, status (events.stageLine: recce / matched, and the matched line's gapM) and best (events.best).",
+  stage: "<b>Our Vue page</b>, same route. Corners from stageWriter's corner finder, junctions and bridges from the matched file (counted once, kept with the stage). Buttons call <code>runner.start</code>, <code>earth.gpsSet</code>, <code>recce.start</code>, as the ImGui window does today.",
+  settings: "<b>Our Vue page</b> (and the pause-menu tab's page). Stored by Lua in <code>/settings/earthRally.json</code> (jsonReadFile / jsonWriteFile, as BeamNG.Earth does)."
+};
+const CRUMBS = { rallies: ["Rallies"], rally: ["Rallies", "Olympus Rally 26"],
+  stage: ["Rallies", "Olympus Rally 26", "SS2 Kuhnle"], settings: ["Settings"] };
+function show(v) {
+  document.querySelectorAll(".view").forEach(e => e.classList.toggle("on", e.id === "v-" + v));
+  document.querySelectorAll(".mock-bar button[data-v]").forEach(b => b.classList.toggle("on", b.dataset.v === v));
+  document.getElementById("crumbs").innerHTML = CRUMBS[v].map(c => "<span>" + c + "</span>").join("");
+  document.getElementById("who").innerHTML = NOTES[v];
+  history.replaceState(null, "", "#" + v);
+}
+document.querySelectorAll(".mock-bar button[data-v]").forEach(b => b.onclick = () => show(b.dataset.v));
+document.getElementById("notes").onclick = e => { e.target.classList.toggle("on"); document.body.classList.toggle("hide-notes"); };
+function fit() { const box = document.getElementById("box"); document.getElementById("screen").style.transform = "scale(" + (box.clientWidth / 1920) + ")"; }
+addEventListener("resize", fit); fit();
+show(location.hash.slice(1) in NOTES ? location.hash.slice(1) : "rallies");
+</script>
+</body>
+</html>

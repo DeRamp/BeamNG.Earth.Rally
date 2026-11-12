@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Rally results</title>
+<!-- Mock-up for 1.2.0 (not built): the stage done, stopped at the stop control. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Overpass+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --fnt-defs: "Noto Sans", system-ui, sans-serif;
+  --fnt-mono: "Overpass Mono", ui-monospace, monospace;
+  --orange: oklch(69.58% 0.2043 43.49);
+  --orange-500: oklch(61.95% 0.1801 43.40);
+  --tbg-700: oklch(38.57% 0.0507 243.31);
+  --cg-300: oklch(75.07% 0.0256 267.86);
+  --cg-500: oklch(62.05% 0.0251 269.28);
+  --cg-600: oklch(50.63% 0.0185 266.15);
+  --theme: #1f8fff;
+  --go: rgb(0, 255, 0);
+  --amber: #ffb000;
+  --pen: #ffd36b;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: var(--fnt-defs); }
+.mock-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 16px; background: #1a1d22; border-bottom: 1px solid #2a2e35; position: sticky; top: 0; z-index: 10; }
+.mock-bar b { margin-right: 8px; font-weight: 600; }
+.mock-bar a { color: var(--cg-300); margin-right: 12px; font-size: 14px; }
+.mock-bar button { font: inherit; font-size: 14px; padding: 6px 12px; border-radius: 4px; border: 1px solid #3a3f48; background: #23272e; color: #ddd; cursor: pointer; }
+.mock-bar button.on { background: var(--orange-500); border-color: var(--orange-500); color: #fff; }
+.stage-wrap { padding: 16px; }
+.screen-box { position: relative; width: 100%; max-width: 1920px; margin: 0 auto; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 6px; box-shadow: 0 0 0 1px #2a2e35; }
+.screen { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-size: 16px; overflow: hidden; }
+.abs { position: absolute; }
+
+/* behind: the car stopped at the stop control, the game dimmed */
+.dim { position: absolute; inset: 0; background: rgba(8,10,14,.62); }
+
+.card { position: absolute; left: 510px; top: 120px; width: 900px; background: rgba(0,0,0,.78); border-radius: .5rem; overflow: hidden; box-shadow: 0 10px 50px rgba(0,0,0,.6); }
+.card .top { padding: 26px 40px 20px; border-top: 6px solid var(--theme); display: flex; align-items: baseline; gap: 18px; }
+.card .ss { font: 700 22px var(--fnt-mono); color: var(--theme); }
+.card .name { font-size: 40px; font-weight: 700; }
+.card .done { margin-left: auto; font-size: 18px; letter-spacing: .12em; text-transform: uppercase; color: var(--cg-300); }
+.total { padding: 6px 40px 18px; display: flex; align-items: flex-end; gap: 24px; }
+.total .t { font: 700 112px/1 var(--fnt-mono); }
+.total .delta { font-size: 30px; font-weight: 800; padding: 4px 16px; border-radius: 8px; margin-bottom: 14px; }
+.delta.best { background: var(--go); color: #002a00; }
+.delta.slower { background: var(--amber); color: #1a1000; }
+.lines { margin: 0 40px; border-top: 1px solid rgba(255,255,255,.12); }
+.line { display: grid; grid-template-columns: 1fr auto; padding: 11px 0; font-size: 22px; border-bottom: 1px solid rgba(255,255,255,.07); }
+.line .v { font: 600 22px var(--fnt-mono); }
+.line.sub { padding-left: 26px; font-size: 19px; color: #dfe3ea; }
+.line.sub .v { font-size: 19px; }
+.line.sub.zero, .line.sub.zero .v { color: var(--cg-600); }
+.line.pen .v { color: var(--pen); }
+.line.sum { font-weight: 700; }
+.line.sum .v { font-size: 26px; font-weight: 700; }
+.line.best .v { color: var(--cg-300); }
+.buttons { display: flex; gap: 16px; padding: 26px 40px 30px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; font: 600 22px var(--fnt-defs); color: #fff; border-radius: .25rem; padding: 16px 28px; background: var(--tbg-700); white-space: nowrap; }
+.btn.main { background: var(--orange-500); flex: 1; box-shadow: 0 0 0 3px #fff inset; }
+.btn small { font-weight: 500; opacity: .85; font-size: 17px; }
+.infobar { position: absolute; left: 0; right: 0; bottom: 0; height: 56px; display: flex; align-items: center; justify-content: center; gap: 30px; background: rgba(0,0,0,.6); font-size: 16px; color: var(--cg-300); }
+.k { font-family: var(--fnt-mono); font-size: 13px; padding: 1px 7px; margin-right: 6px; border: 1px solid var(--cg-500); border-radius: 3px; color: #fff; }
+
+.who { position: absolute; left: 1440px; top: 120px; width: 450px; background: rgba(255,250,150,.96); color: #222; font: 500 16px/1.5 var(--fnt-defs); padding: 12px 16px; border-radius: 4px; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+.who p { margin: 0 0 8px; }
+.no-notes .who { display: none; }
+.v-best .only-pen, .v-pen .only-best { display: none !important; }
+</style>
+</head>
+<body class="v-best">
+<div class="mock-bar">
+  <b>Earth Rally 1.2.0 · stage done</b>
+  <a href="index.html">All mock-ups</a>
+  <a href="hud.html#m5a">← HUD</a>
+  <button data-v="best" class="on">Clean run, new best</button>
+  <button data-v="pen">With penalties</button>
+  <button id="notes" class="on">Note: what renders it</button>
+</div>
+
+<div class="stage-wrap">
+<div class="screen-box" id="box">
+<div class="screen" id="screen">
+  <svg class="abs" style="inset:0" width="1920" height="1080" viewBox="0 0 1920 1080">
+    <defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3d4f5c"/><stop offset="1" stop-color="#6d7f86"/></linearGradient></defs>
+    <rect width="1920" height="470" fill="url(#sky)"/>
+    <rect y="470" width="1920" height="610" fill="#1a2116"/>
+    <path d="M915 470 L1005 470 L1500 1080 L420 1080 Z" fill="#5a524a"/>
+    <rect x="1210" y="560" width="120" height="70" fill="#d8d8d8"/><path d="M1200 560 L1270 520 L1340 560 Z" fill="#c33"/>
+    <rect x="1150" y="600" width="40" height="70" fill="#c00"/>
+  </svg>
+  <div class="dim"></div>
+
+  <div class="card">
+    <div class="top"><span class="ss">SS2</span><span class="name">Kuhnle</span><span class="done">Stage complete</span></div>
+
+    <div class="total only-best"><span class="t">6:08.9</span><span class="delta best">−3.5 s · NEW BEST</span></div>
+    <div class="total only-pen"><span class="t">6:31.4</span><span class="delta slower">+19.0 s</span></div>
+
+    <div class="lines only-best">
+      <div class="line"><span>Stage time</span><span class="v">6:08.9</span></div>
+      <div class="line pen"><span>Penalties</span><span class="v">none</span></div>
+      <div class="line sub zero"><span>Jump start</span><span class="v">–</span></div>
+      <div class="line sub zero"><span>Late at the start</span><span class="v">–</span></div>
+      <div class="line sub zero"><span>Resets</span><span class="v">–</span></div>
+      <div class="line sub zero"><span>Missed time control</span><span class="v">–</span></div>
+      <div class="line sum"><span>Your time</span><span class="v">6:08.9</span></div>
+      <div class="line best"><span>Best before this run</span><span class="v">6:12.4</span></div>
+    </div>
+
+    <div class="lines only-pen">
+      <div class="line"><span>Stage time</span><span class="v">6:01.4</span></div>
+      <div class="line pen"><span>Penalties</span><span class="v">+30 s</span></div>
+      <div class="line sub"><span>Jump start</span><span class="v">+10 s</span></div>
+      <div class="line sub zero"><span>Late at the start</span><span class="v">–</span></div>
+      <div class="line sub"><span>Resets (2 × 10 s)</span><span class="v">+20 s</span></div>
+      <div class="line sub zero"><span>Missed time control</span><span class="v">–</span></div>
+      <div class="line sum"><span>Your time</span><span class="v">6:31.4</span></div>
+      <div class="line best"><span>Best</span><span class="v">6:12.4</span></div>
+    </div>
+
+    <div class="buttons">
+      <span class="btn main">Next stage <small>SS3 Deckerville · 11.8 km</small> ▶</span>
+      <span class="btn">↻ Retry</span>
+      <span class="btn">Rally menu</span>
+    </div>
+  </div>
+
+  <div class="infobar">
+    <span><span class="k">Enter</span>Next stage</span>
+    <span><span class="k">R</span>Retry</span>
+    <span><span class="k">Esc</span>Rally menu</span>
+    <span>Or just drive off: the card closes.</span>
+  </div>
+
+  <div class="who">
+    <p><b>Our Vue component</b> (EarthRallyResults.vue). It needs the mouse / pad, so it is either a route of ours shown over the game (as the game's own mission end screen), or an interactive UI app. To try in game which feels better.</p>
+    <p>Shown a few seconds after stopping at the stop control (runner 'finished'; today the tidy-up 8 s later).</p>
+    <p>The stock <b>RallyTimecard</b> is not a fit: rows of TC due / actual times and grouped penalties, toggled with Interact, no buttons.</p>
+    <p>Penalties itemised from the run's result (events.addResult: jumpStart, lateMinutes, missedAtc; resets: new in 1.2.0).</p>
+    <p><b>Next stage</b>: the next SS of the rally in order (Drive stage on it). <b>Retry</b>: this stage again from its ATC.</p>
+  </div>
+</div>
+</div>
+</div>
+
+<script>
+function show(v) {
+  document.body.classList.toggle("v-best", v === "best");
+  document.body.classList.toggle("v-pen", v === "pen");
+  document.querySelectorAll(".mock-bar button[data-v]").forEach(b => b.classList.toggle("on", b.dataset.v === v));
+  history.replaceState(null, "", "#" + v);
+}
+document.querySelectorAll(".mock-bar button[data-v]").forEach(b => b.onclick = () => show(b.dataset.v));
+document.getElementById("notes").onclick = e => { e.target.classList.toggle("on"); document.body.classList.toggle("no-notes"); };
+function fit() { const box = document.getElementById("box"); document.getElementById("screen").style.transform = "scale(" + (box.clientWidth / 1920) + ")"; }
+addEventListener("resize", fit); fit();
+show(location.hash === "#pen" ? "pen" : "best");
+</script>
+</body>
+</html>

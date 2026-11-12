@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Rally mock-ups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root { --orange: oklch(69.58% 0.2043 43.49); --cg-300: oklch(75.07% 0.0256 267.86); --cg-600: oklch(50.63% 0.0185 266.15); }
+* { box-sizing: border-box; }
+body { margin: 0; background: #14171c; color: #eef0f3; font: 17px/1.6 "Noto Sans", system-ui, sans-serif; }
+main { max-width: 900px; margin: 0 auto; padding: 40px 16px 60px; }
+h1 { font-size: 34px; margin: 0 0 4px; letter-spacing: .02em; }
+h1 span { color: var(--orange); }
+.lead { color: var(--cg-300); margin: 0 0 30px; }
+a.card { display: block; text-decoration: none; color: inherit; background: #1d2128; border-radius: 8px; padding: 18px 22px; margin-bottom: 14px; border-left: 4px solid var(--orange); }
+a.card:hover { background: #242933; }
+a.card h2 { margin: 0 0 4px; font-size: 22px; }
+a.card p { margin: 0; color: var(--cg-300); font-size: 16px; }
+h3 { margin: 34px 0 8px; font-size: 18px; }
+ul { margin: 0; padding-left: 22px; color: #d6dae1; }
+.key { display: inline-block; font-size: 13px; font-weight: 700; padding: 0 7px; border-radius: 3px; }
+.stock { background: #2b88c2; } .ours { background: #ff6b1a; } .have { background: #555; }
+</style>
+</head>
+<body>
+<main>
+  <h1><span>Earth Rally</span> 1.2.0 mock-ups</h1>
+  <p class="lead">For talking through together before anything is built in game. Sample times and counts; stage names and lengths from the two real rallies' maps.</p>
+
+  <a class="card" href="menu.html"><h2>Menu</h2><p>Rallies (with Add a rally) → Rally page (stages in order) → Stage page (Drive stage, Route to start, Recce). Settings.</p></a>
+  <a class="card" href="hud.html"><h2>In-car HUD</h2><p>Driving to the stage, at the ATC, the start (countdown, GO, jump start), on the stage, off route, flying finish, on to the stop, messages. 1920×1080 with the existing apps outlined.</p></a>
+  <a class="card" href="results.html"><h2>Stage done</h2><p>The results card at the stop control: time, penalties itemised, best; Next stage, Retry, Rally menu.</p></a>
+
+  <h3>Reading the HUD tags</h3>
+  <ul>
+    <li><span class="key stock">stock</span> one of the game's own rally apps, fed by us with its data stream (rallyLoop).</li>
+    <li><span class="key ours">ours</span> a Vue component of ours, in the game's look.</li>
+    <li><span class="key have">have</span> already in the 1.1.0 layout (pacenote cards, start clock view, speedometer).</li>
+  </ul>
+
+  <h3>Agreed so far</h3>
+  <ul>
+    <li>Mock-ups first; nothing built in game until agreed.</li>
+    <li>No split times, no stage sketches or elevation profiles for now.</li>
+    <li>One thing on screen at a time; the game's own rally look.</li>
+  </ul>
+  <p style="color:var(--cg-300); margin-top:28px">Research and build order: <code>docs/plan-1.2.0.md</code>.</p>
+</main>
+</body>
+</html>

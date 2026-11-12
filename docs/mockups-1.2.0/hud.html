@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Rally HUD</title>
+<!-- Mock-up for 1.2.0 (not built). Positions are the game's own at 1920x1080: the stock rally stage layout
+     (settings/ui_apps/originalLayouts/mission/rallyModeStage.uilayout.json) and ours (earthRallyStage.uilayout.json). -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Overpass+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --fnt-defs: "Noto Sans", system-ui, sans-serif;
+  --fnt-mono: "Overpass Mono", ui-monospace, monospace;
+  /* the rally apps' own colours (ui/modules/apps/rallyLoop/*.vue) */
+  --theme: #1f8fff;                     /* stage theme colour (gameplay/rally/loop/uiColors.lua: stage) */
+  --dash: rgba(66, 70, 81, .8);         /* RallyDashboard / RallyCountdown panel */
+  --black-80: rgba(0, 0, 0, .8);
+  --clock-pink: rgb(225, 123, 225);     /* the dashboard's event clock */
+  --clock-badge: rgb(184, 107, 184);
+  --tc-blue: rgb(43, 136, 194);         /* the proximity badge (SS2 / ATC) */
+  --red: #ff0000; --slow: #ffff00; --staged: #ff8400; --goback: #ff0099; --go: rgb(0, 255, 0);
+  --amber: #ffb000;
+  --orange-500: oklch(61.95% 0.1801 43.40);
+  --cg-300: oklch(75.07% 0.0256 267.86);
+  --cg-600: oklch(50.63% 0.0185 266.15);
+  --green: oklch(79.81% 0.1703 153.54);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: var(--fnt-defs); }
+.mock-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 16px; background: #1a1d22; border-bottom: 1px solid #2a2e35; position: sticky; top: 0; z-index: 10; }
+.mock-bar b { margin-right: 8px; font-weight: 600; }
+.mock-bar a { color: var(--cg-300); margin-right: 10px; font-size: 14px; }
+.mock-bar button { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 4px; border: 1px solid #3a3f48; background: #23272e; color: #ddd; cursor: pointer; }
+.mock-bar button.on { background: var(--orange-500); border-color: var(--orange-500); color: #fff; }
+.mock-bar .sep { width: 1px; height: 22px; background: #3a3f48; margin: 0 6px; }
+.stage-wrap { padding: 16px; }
+.screen-box { position: relative; width: 100%; max-width: 1920px; margin: 0 auto; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 6px; box-shadow: 0 0 0 1px #2a2e35; }
+.screen { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-size: 16px; overflow: hidden; }
+.abs { position: absolute; }
+
+/* which moment shows what: an element with data-m shows only in the moments it lists (script below) */
+
+/* ---------- the existing HUD (always there; outlined) ---------- */
+.existing { border: 2px dashed rgba(255,255,255,.22); border-radius: 6px; color: rgba(255,255,255,.45); font-size: 14px; display: flex; align-items: flex-end; justify-content: center; padding: 6px; text-align: center; }
+.tacho { border-radius: 50%; border: 3px solid rgba(255,255,255,.25); background: radial-gradient(circle, rgba(0,0,0,.55) 55%, rgba(0,0,0,.25) 56%); align-items: center; flex-direction: column; justify-content: center; }
+.tacho .spd { font: 700 72px var(--fnt-mono); color: #fff; line-height: 1; }
+.tacho .u { font-size: 16px; color: var(--cg-300); }
+.tacho .g { font: 700 30px var(--fnt-mono); color: #ffcf6b; margin-top: 4px; }
+.minimap { border-radius: 8px; background: rgba(0,0,0,.35); }
+
+/* ---------- the pacenote cards (stock RallyVisualPacenotes, already used) ---------- */
+.notes { left: 240px; top: 189px; width: 1440px; height: 216px; display: flex; align-items: center; justify-content: center; gap: 22px; }
+.note { position: relative; width: 132px; height: 132px; }
+.note svg.bg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.note .in { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; }
+.note .num { font: 700 46px var(--fnt-defs); line-height: 1; }
+.note svg.ico { width: 58px; height: 46px; }
+.note .mod { position: absolute; bottom: -14px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 15px; font-weight: 700; padding: 2px 9px; border-radius: 6px; background: #3b4250; border: 2px solid #8a94a6; }
+.note.current { transform: scale(1.12); }
+.note.later { opacity: .8; transform: scale(.88); }
+
+/* ---------- start clock picture-in-picture (built in 1.1.0: right, bottom 36 % of the height up) ---------- */
+.pip { left: 1507px; top: 534px; width: 384px; height: 157px; border: 4px solid var(--red); background: #10151a; overflow: hidden; }
+.pip .board { position: absolute; left: 40px; top: 18px; width: 300px; height: 112px; background: #050505; border: 3px solid #333; border-radius: 4px; display: grid; grid-template-columns: 1fr auto; align-items: center; padding: 0 14px; }
+.pip .led { font: 700 40px var(--fnt-mono); color: #ff3b2f; text-shadow: 0 0 8px rgba(255,60,40,.8); letter-spacing: .04em; }
+.pip .led.small { font-size: 22px; color: #ffb000; text-shadow: 0 0 6px rgba(255,170,0,.7); }
+.pip .cd { font: 700 64px var(--fnt-mono); color: #ff3b2f; text-shadow: 0 0 10px rgba(255,60,40,.9); }
+.pip.green { border-color: var(--go); } .pip.green .cd { color: var(--go); text-shadow: 0 0 10px rgba(0,255,0,.9); }
+
+/* ---------- the rally apps' look ---------- */
+.panel { background: var(--dash); border-radius: .5rem; color: #fff; }
+.label { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #fff; opacity: .85; }
+.badge { display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; font-weight: 700; color: #fff; }
+.badge.tc { background: var(--tc-blue); box-shadow: 0 0 10px 0 rgba(43,136,194,.7); }
+.badge.slow { background: var(--slow); color: #000; box-shadow: 0 0 10px 0 rgba(255,255,0,.7); }
+.badge.staged { background: var(--staged); color: #000; box-shadow: 0 0 10px 0 rgba(255,132,0,.7); }
+.clockb { background: var(--clock-badge); border-radius: 8px; padding: 1px 8px; font-family: var(--fnt-mono); font-weight: 700; }
+.kbd { display: inline-block; font: 700 15px var(--fnt-mono); padding: 1px 8px; border-radius: 4px; background: #fff; color: #111; margin-right: 8px; }
+
+/* (1) driving to the stage: our card, in the countdown app's place (top 82, centred) */
+.next { left: 585px; top: 82px; width: 750px; padding: 14px 20px 16px; display: grid; grid-template-columns: 170px 1fr; gap: 6px 22px; }
+.next .clock { grid-row: span 2; display: flex; flex-direction: column; align-items: center; justify-content: center; border-right: 1px solid rgba(255,255,255,.15); padding-right: 18px; }
+.next .clock .v { font: 700 32px var(--fnt-mono); color: var(--clock-pink); text-shadow: 0 0 10px rgba(225,123,225,.5); }
+.next .what { font-size: 30px; font-weight: 700; line-height: 1.2; }
+.next .what .ss { color: var(--cg-300); font-weight: 600; margin-right: 6px; }
+.next .what .sub { font-size: 22px; font-weight: 500; color: var(--cg-300); }
+.next .to { display: flex; align-items: center; gap: 16px; }
+.next .to .badge { font-size: 26px; padding: 2px 12px; }
+.next .to .d { font: 700 40px var(--fnt-mono); white-space: nowrap; }
+.next .to .t { font-size: 18px; color: #e8e8e8; line-height: 1.3; }
+
+/* (2)(3) the stock RallyCountdown (VehicleProximity / CountdownWidget), top 82, 450 wide */
+.prox { left: 735px; top: 82px; width: 450px; padding: 13px; }
+.prox .row { display: flex; align-items: center; }
+.prox .row > div { flex: 1; display: flex; justify-content: center; }
+.prox .badge { font-size: 48px; padding: 0 14px; }
+.prox .dist { font: 400 48px var(--fnt-defs); }
+.prox .ins { text-align: center; font-size: 19px; padding-top: 6px; }
+.prox .hint { margin: 12px -13px -13px; padding: 10px; text-align: center; background: rgba(0,0,0,.5); border-top: 1px solid rgba(31,143,255,.7); border-radius: 0 0 .5rem .5rem; font: 600 17px var(--fnt-mono); }
+.timecard { left: 735px; top: 318px; width: 450px; padding: 10px 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 16px; }
+.timecard .v { font: 700 24px var(--fnt-mono); }
+.timecard .v.pink { color: var(--clock-pink); }
+.squares { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; padding: 12px 12px 0; }
+.squares i { aspect-ratio: 1; border: 2px solid rgba(128,128,128,.3); border-radius: 5px; }
+.squares i.on { background: var(--red); border-color: transparent; box-shadow: 0 0 15px 3px rgba(255,0,0,.7); }
+.squares .gobar { grid-column: 1 / -1; aspect-ratio: 5.5 / 1; background: var(--go); border-radius: 5px; box-shadow: 0 0 15px 3px rgba(0,255,0,.7); }
+.wall { text-align: center; font: 700 64px var(--fnt-defs); letter-spacing: .05em; text-shadow: 0 0 8px rgba(255,255,255,.75), 0 0 18px rgba(170,220,255,.35); padding: 14px 0 10px; }
+.bigcount { left: 0; right: 0; top: 380px; text-align: center; font: 800 220px/1 var(--fnt-defs); color: #fff; text-shadow: 0 0 30px rgba(0,0,0,.6), 0 0 12px rgba(255,255,255,.5); }
+.bigcount.go { color: var(--go); text-shadow: 0 0 30px rgba(0,255,0,.6); }
+.jump { left: 660px; top: 640px; width: 600px; padding: 14px; text-align: center; background: rgba(160,0,0,.88); border: 2px solid #ff6666; border-radius: .5rem; font-size: 40px; font-weight: 800; letter-spacing: .04em; box-shadow: 0 0 24px rgba(255,0,0,.6); }
+.jump small { display: block; font-size: 20px; font-weight: 500; letter-spacing: 0; opacity: .9; }
+
+/* (4) on the stage: stock RallyStageTiming (top-left 288 wide) and RallyStageProgress (left 288, 780 wide) */
+.timing { left: 0; top: 0; width: 288px; font-family: var(--fnt-defs); }
+.timing .h { background: var(--black-80); text-align: center; font-style: italic; letter-spacing: .08rem; font-size: 19px; padding: 4px; }
+.timing .t { background: var(--theme); text-align: center; font-size: 48px; font-weight: 600; }
+.progress { left: 288px; top: 0; width: 780px; height: 68px; background: var(--black-80); padding: 4px 26px 4px 20px; display: flex; align-items: center; }
+.track { position: relative; width: 100%; height: 5px; background: #fff; }
+.track .fill { position: absolute; left: 0; top: 0; height: 100%; background: var(--theme); }
+.track .sq { position: absolute; top: 50%; width: 14px; height: 14px; transform: translate(-50%, -50%); }
+.track .sq.theme { background: var(--theme); }
+.track .sq.out { background: #202020; border: 2px solid #fff; }
+.track .lab { position: absolute; top: 12px; transform: translateX(-50%); font: 600 17px var(--fnt-mono); white-space: nowrap; }
+.kmread { left: 1068px; top: 0; height: 68px; padding: 0 16px; background: var(--black-80); display: flex; align-items: center; gap: 8px; font: 700 28px var(--fnt-mono); border-left: 1px solid rgba(255,255,255,.1); }
+.kmread small { font-size: 17px; color: var(--cg-300); font-weight: 600; }
+.offroute { left: 288px; top: 0; width: 780px; height: 96px; background: rgba(255,176,0,.95); color: #111; display: flex; align-items: center; gap: 22px; padding: 0 26px; box-shadow: 0 0 30px rgba(255,176,0,.6); }
+.offroute .arrow { width: 70px; height: 70px; border-radius: 50%; background: #111; display: flex; align-items: center; justify-content: center; }
+.offroute .w { font-size: 40px; font-weight: 800; letter-spacing: .04em; }
+.offroute .d { font: 700 40px var(--fnt-mono); }
+.offroute .s { font-size: 26px; font-weight: 600; }
+
+/* (5) flying finish: our card */
+.finish { left: 560px; top: 210px; width: 800px; padding: 22px 30px 26px; text-align: center; background: rgba(0,0,0,.72); border-radius: .5rem; border-top: 6px solid var(--theme); }
+.finish .l { font-size: 20px; letter-spacing: .12em; text-transform: uppercase; color: var(--cg-300); }
+.finish .t { font: 700 120px/1.05 var(--fnt-mono); }
+.finish .delta { display: inline-block; margin-top: 8px; font-size: 34px; font-weight: 800; padding: 4px 18px; border-radius: 8px; }
+.finish .delta.best { background: var(--go); color: #002a00; }
+.finish .delta.slower { background: rgba(255,176,0,.95); color: #1a1000; }
+.finish .pen { margin-top: 12px; font-size: 20px; color: #ffd36b; }
+
+/* (7) messages: the game's toasts */
+.toasts { left: 1467px; top: 42px; width: 430px; display: flex; flex-direction: column; gap: 10px; }
+.toast { display: grid; grid-template-columns: 38px 1fr; gap: 10px; align-items: start; background: rgba(20,22,27,.92); border-radius: 6px; padding: 12px 14px; border-left: 5px solid var(--tc-blue); box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+.toast .i { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #111; background: var(--tc-blue); }
+.toast .tt { font-weight: 700; font-size: 18px; }
+.toast .mm { font-size: 16px; color: #dfe3ea; margin-top: 2px; }
+.toast.warn { border-left-color: var(--amber); } .toast.warn .i { background: var(--amber); }
+.toast.ok { border-left-color: #3fcf6a; } .toast.ok .i { background: #3fcf6a; }
+
+/* tags: which game element renders each piece (toggle) */
+.tag { position: absolute; z-index: 6; font: 700 12px var(--fnt-defs); padding: 2px 7px; border-radius: 3px; white-space: nowrap; letter-spacing: .02em; }
+.tag.stock { background: #2b88c2; color: #fff; }
+.tag.ours { background: #ff6b1a; color: #fff; }
+.tag.have { background: #555; color: #fff; }
+.who { position: absolute; left: 330px; bottom: 14px; z-index: 7; width: 1080px; background: rgba(255,250,150,.96); color: #222; font: 500 17px/1.45 var(--fnt-defs); padding: 10px 16px; border-radius: 4px; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+.who b { font-weight: 700; }
+.no-tags .tag, .no-tags .who { display: none !important; }
+.no-tags .existing { border-color: transparent; color: transparent; }
+.no-tags .existing.tacho { border-color: rgba(255,255,255,.25); }
+</style>
+</head>
+<body>
+<div class="mock-bar">
+  <b>Earth Rally 1.2.0 · in-car HUD</b>
+  <a href="index.html">All mock-ups</a>
+  <button data-go="m1" class="on">1 Driving to the stage</button>
+  <button data-go="m2">2 At the ATC</button>
+  <button data-go="m3a">3 Start: countdown</button>
+  <button data-go="m3b">3 Start: GO</button>
+  <button data-go="m3c">3 Start: jump start</button>
+  <button data-go="m4a">4 On the stage</button>
+  <button data-go="m4b">4 Off route</button>
+  <button data-go="m5a">5 Finish: new best</button>
+  <button data-go="m5b">5 Finish: slower</button>
+  <button data-go="m5c">5→6 To the stop</button>
+  <button data-go="m7">7 Messages</button>
+  <span class="sep"></span>
+  <button id="tags" class="on">Tags: what renders it</button>
+  <a href="results.html">6 Stage done →</a>
+</div>
+
+<div class="stage-wrap">
+<div class="screen-box" id="box">
+<div class="screen" id="screen">
+
+  <!-- the road (a plain stand-in for the game's view) -->
+  <svg class="abs" style="inset:0" width="1920" height="1080" viewBox="0 0 1920 1080">
+    <defs>
+      <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3d4f5c"/><stop offset="1" stop-color="#6d7f86"/></linearGradient>
+      <linearGradient id="gnd" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#26301f"/><stop offset="1" stop-color="#151a12"/></linearGradient>
+      <linearGradient id="road" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6b625a"/><stop offset="1" stop-color="#4a423b"/></linearGradient>
+    </defs>
+    <rect width="1920" height="470" fill="url(#sky)"/>
+    <path d="M0 470 L0 300 L70 260 L120 320 L180 230 L240 330 L300 250 L380 340 L450 270 L520 360 L600 300 L680 380 L760 330 L840 410 L880 470 Z" fill="#1e2a1c"/>
+    <path d="M1920 470 L1920 280 L1850 240 L1790 330 L1730 250 L1660 340 L1600 270 L1530 360 L1460 300 L1390 380 L1320 330 L1240 420 L1060 470 Z" fill="#1c271a"/>
+    <rect y="470" width="1920" height="610" fill="url(#gnd)"/>
+    <g id="road-straight">
+      <path d="M915 470 L1005 470 L1500 1080 L420 1080 Z" fill="url(#road)"/>
+      <path d="M915 470 L420 1080" stroke="#8a8075" stroke-width="3" opacity=".5"/>
+      <path d="M1005 470 L1500 1080" stroke="#8a8075" stroke-width="3" opacity=".5"/>
+    </g>
+    <!-- route arrows on the road (BeamNG.Earth's GPS), moment 1 -->
+    <g data-m="m1" fill="#2fb6ff" opacity=".85">
+      <path d="M945 610 l15 -18 l15 18 l-8 0 l-7 -9 l-7 9 z"/>
+      <path d="M935 700 l25 -30 l25 30 l-13 0 l-12 -15 l-12 15 z"/>
+      <path d="M922 830 l38 -44 l38 44 l-19 0 l-19 -22 l-19 22 z"/>
+    </g>
+    <!-- the start line and the start tree, moment 3 -->
+    <g data-m="m3a m3b m3c m2">
+      <path d="M560 905 L1360 905 L1372 925 L548 925 Z" fill="#f2f2f2"/>
+      <rect x="1430" y="640" width="14" height="260" fill="#222"/>
+      <rect x="1385" y="600" width="104" height="70" rx="4" fill="#111" stroke="#444" stroke-width="3"/>
+      <rect x="1395" y="612" width="84" height="22" fill="#300"/>
+    </g>
+    <!-- the car going off the line, moment 4b: a side road -->
+    <g data-m="m4b">
+      <path d="M1005 470 L1160 470 L1920 760 L1920 900 Z" fill="#5b534b" opacity=".9"/>
+    </g>
+  </svg>
+
+  <!-- ===== the existing HUD (our stage layout today) ===== -->
+  <div class="abs existing tacho" style="left:1615px; top:775px; width:300px; height:300px">
+    <div class="spd" id="spd">87</div><div class="u">km/h</div><div class="g" id="gear">3</div>
+  </div>
+  <div class="abs existing" style="left:1770px; top:645px; width:150px; height:150px">turbo<br>(forcedInduction)</div>
+  <div class="abs existing" style="left:1430px; top:910px; width:230px; height:170px">simplePowertrainControl</div>
+  <div class="abs existing minimap" style="left:5px; top:640px; width:300px; height:350px">navigation (minimap)</div>
+  <div class="abs existing" style="left:5px; top:356px; width:158px; height:280px">damageApp</div>
+  <div class="abs existing" style="left:0; top:1016px; width:560px; height:64px">beamngEarthCredits</div>
+  <div class="abs existing" style="left:1090px; top:6px; width:340px; height:44px; align-items:center">beamngEarthStatus (moved right of the progress bar)</div>
+  <span class="tag have" style="left:1620px; top:752px">have: tacho2</span>
+
+  <!-- ===== pacenote cards (stock RallyVisualPacenotes) ===== -->
+  <div class="abs notes" data-m="m4a m4b">
+    <div class="note current">
+      <svg class="bg" viewBox="0 0 56 56"><path d="M9.455 .75H51.414C53.342 .75 54.847 2.42 54.646 4.338L49.631 52.316C49.457 53.978 48.05 55.238 46.379 55.228L4.42 54.97C2.498 54.959 1.007 53.292 1.207 51.381L6.223 3.66C6.397 2.006 7.792 .75 9.455 .75Z" fill="oklch(50.63% 0.0185 266.15)" stroke="#fff" stroke-width="1.5"/></svg>
+      <div class="in"><svg class="ico" viewBox="0 0 60 46"><path d="M8 40 C 8 18, 22 10, 44 10" stroke="#fff" stroke-width="7" fill="none" stroke-linecap="round"/><path d="M40 0 L56 10 L40 20 Z" fill="#fff"/></svg><div class="num">4</div></div>
+    </div>
+    <div class="note">
+      <svg class="bg" viewBox="0 0 56 56"><path d="M9.455 .75H51.414C53.342 .75 54.847 2.42 54.646 4.338L49.631 52.316C49.457 53.978 48.05 55.238 46.379 55.228L4.42 54.97C2.498 54.959 1.007 53.292 1.207 51.381L6.223 3.66C6.397 2.006 7.792 .75 9.455 .75Z" fill="oklch(50.63% 0.0185 266.15)" stroke="#8a94a6" stroke-width="1.5"/></svg>
+      <div class="in"><svg class="ico" viewBox="0 0 60 46"><path d="M52 40 C 52 22, 40 12, 18 12" stroke="#fff" stroke-width="7" fill="none" stroke-linecap="round"/><path d="M20 2 L4 12 L20 22 Z" fill="#fff"/></svg><div class="num">2</div></div>
+      <div class="mod">at junction</div>
+    </div>
+    <div class="note later">
+      <svg class="bg" viewBox="0 0 56 56"><path d="M9.455 .75H51.414C53.342 .75 54.847 2.42 54.646 4.338L49.631 52.316C49.457 53.978 48.05 55.238 46.379 55.228L4.42 54.97C2.498 54.959 1.007 53.292 1.207 51.381L6.223 3.66C6.397 2.006 7.792 .75 9.455 .75Z" fill="oklch(50.63% 0.0185 266.15)" stroke="#8a94a6" stroke-width="1.5"/></svg>
+      <div class="in"><svg class="ico" viewBox="0 0 60 46"><path d="M30 42 L30 10" stroke="#fff" stroke-width="7" stroke-linecap="round"/><path d="M18 14 L30 0 L42 14 Z" fill="#fff"/></svg><div class="num" style="font-size:30px">150</div></div>
+    </div>
+  </div>
+  <span class="tag have" style="left:250px; top:196px" data-m="m4a m4b">have: RallyVisualPacenotes (stock)</span>
+
+  <!-- ===== (1) driving to the stage ===== -->
+  <div class="abs panel next" data-m="m1">
+    <div class="clock"><div class="label">Rally clock</div><div class="v">10:41:52</div></div>
+    <div class="what"><span class="ss">Next</span>SS2 Kuhnle <span class="sub">· 8.4 km gravel</span></div>
+    <div class="to"><span class="badge tc">ATC</span><span class="d">1.24 km</span>
+      <span class="t">Stop at the time control (red clock board).<br>You get your start time there.</span></div>
+  </div>
+  <span class="tag ours" style="left:585px; top:60px" data-m="m1">ours: EarthRallyHud.vue (the stock look)</span>
+
+  <!-- ===== (2) checked in at the ATC, moving up ===== -->
+  <div class="abs panel prox" data-m="m2">
+    <div class="row"><div><span class="badge tc">SS2</span></div><div class="dist">180m</div></div>
+    <div class="ins">Stage vehicle at start line.</div>
+    <div class="ins">Start in <span class="clockb">0:58</span></div>
+  </div>
+  <div class="abs panel timecard" data-m="m2">
+    <div><div class="label">Checked in</div><div class="v">10:42:30</div></div>
+    <div><div class="label">Your start</div><div class="v pink">10:43:30</div></div>
+    <div style="grid-column: span 2; font-size:15px; color:#ddd; padding-top:4px">On the line, stopped: <span class="kbd">Shift+E</span> skips the wait</div>
+  </div>
+  <span class="tag stock" style="left:735px; top:60px" data-m="m2">stock: RallyCountdown (proximity)</span>
+  <span class="tag ours" style="left:735px; top:296px" data-m="m2">ours: EarthRallyHud.vue</span>
+
+  <!-- ===== (3) on the start line ===== -->
+  <div class="abs panel prox" data-m="m3a m3c" style="padding:0">
+    <div class="squares"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div>
+    <div class="wall">10:43:27</div>
+  </div>
+  <div class="abs panel prox" data-m="m3b" style="padding:0">
+    <div class="squares"><div class="gobar"></div></div>
+    <div class="wall">10:43:30</div>
+  </div>
+  <div class="abs bigcount" data-m="m3a m3c">3</div>
+  <div class="abs bigcount go" data-m="m3b">GO</div>
+  <div class="abs jump" data-m="m3c">JUMP START +10 s<small>You moved before GO. The clock runs from your start time.</small></div>
+  <div class="abs pip" data-m="m3a m3c"><div class="board"><div><div class="led small">SS2 · 10:43:27</div><div class="led">START</div></div><div class="cd">3</div></div></div>
+  <div class="abs pip green" data-m="m3b"><div class="board"><div><div class="led small">SS2 · 10:43:30</div><div class="led" style="color:#0f0;text-shadow:0 0 8px #0f0">GO</div></div><div class="cd">0</div></div></div>
+  <span class="tag stock" style="left:735px; top:60px" data-m="m3a m3b m3c">stock: RallyCountdown (countdown)</span>
+  <span class="tag ours" style="left:880px; top:360px" data-m="m3a m3b m3c">ours: big count (or ui_message, as 1.1.0)</span>
+  <span class="tag ours" style="left:660px; top:618px" data-m="m3c">ours: EarthRallyHud.vue</span>
+  <span class="tag have" style="left:1507px; top:512px" data-m="m3a m3b m3c">have: start clock view (game's rallyStartClock)</span>
+
+  <!-- ===== (4) on the stage ===== -->
+  <div class="abs timing" data-m="m4a m4b m5a m5b m5c">
+    <div class="h">SS2 · KUHNLE</div>
+    <div class="t" id="sstime">2:41.7</div>
+  </div>
+  <div class="abs progress" data-m="m4a m5a m5b">
+    <div class="track"><div class="fill" style="width:37%"></div>
+      <span class="sq theme" style="left:0"></span>
+      <span class="sq out" style="left:100%"></span><span class="lab" style="left:100%; transform:translateX(-90%)">8.4 km</span>
+      <span class="sq theme" style="left:37%"></span>
+    </div>
+  </div>
+  <div class="abs kmread" data-m="m4a">3.1 <small>/ 8.4 km</small></div>
+  <div class="abs offroute" data-m="m4b">
+    <div class="arrow"><svg width="44" height="44" viewBox="0 0 44 44" style="transform:rotate(-130deg)"><path d="M22 4 L36 24 L27 24 L27 40 L17 40 L17 24 L8 24 Z" fill="#ffb000"/></svg></div>
+    <span class="w">OFF ROUTE</span><span class="d">85 m</span><span class="s">· turn back</span>
+  </div>
+  <span class="tag stock" style="left:4px; top:118px" data-m="m4a m4b m5a m5b m5c">stock: RallyStageTiming</span>
+  <span class="tag stock" style="left:300px; top:72px" data-m="m4a">stock: RallyStageProgress</span>
+  <span class="tag ours" style="left:1072px; top:72px" data-m="m4a">ours: km readout</span>
+  <span class="tag ours" style="left:300px; top:100px" data-m="m4b">ours: EarthRallyHud.vue (takes the progress bar's place)</span>
+
+  <!-- ===== (5) flying finish ===== -->
+  <div class="abs finish" data-m="m5a">
+    <div class="l">SS2 Kuhnle · flying finish</div>
+    <div class="t">6:08.9</div>
+    <div class="delta best">−3.5 s · NEW BEST</div>
+  </div>
+  <div class="abs finish" data-m="m5b">
+    <div class="l">SS2 Kuhnle · flying finish</div>
+    <div class="t">6:14.5</div>
+    <div class="delta slower">+2.1 s</div>
+    <div class="pen">includes +10 s jump start</div>
+  </div>
+  <span class="tag ours" style="left:560px; top:188px" data-m="m5a m5b">ours: EarthRallyHud.vue (a few seconds)</span>
+
+  <!-- ===== (5→6) to the stop control: stock proximity, SLOW ===== -->
+  <div class="abs panel prox" data-m="m5c">
+    <div class="row"><div><span class="badge slow">SLOW</span></div><div class="dist">0.22km</div></div>
+    <div class="ins">Stop at the stop control.</div>
+  </div>
+  <span class="tag stock" style="left:735px; top:60px" data-m="m5c">stock: RallyCountdown (proximity, ss_stop)</span>
+
+  <!-- ===== (7) messages ===== -->
+  <div class="abs toasts" data-m="m7">
+    <div class="toast ok"><div class="i">✓</div><div><div class="tt">Checked in 10:42:30</div><div class="mm">Your start time: 10:43:30. Move up to the start line.</div></div></div>
+    <div class="toast warn"><div class="i">!</div><div><div class="tt">Time control missed: +60 s</div><div class="mm">You drove past the time control.</div></div></div>
+    <div class="toast"><div class="i">i</div><div><div class="tt">Imported Olympus Rally 26</div><div class="mm">9 stages. Open Earth Rally (Ctrl+Alt+K) to drive one.</div></div></div>
+  </div>
+  <span class="tag stock" style="left:1467px; top:20px" data-m="m7">stock: the game's toasts (guihooks 'toastrMsg')</span>
+
+  <div class="who" id="who"></div>
+</div>
+</div>
+</div>
+
+<script>
+const NOTES = {
+  m1: "<b>1 Driving to the stage.</b> Our card (EarthRallyHud.vue, a UI app in our stage layout) in the stock countdown's place, with the stock dashboard's look: rally clock, next stage, distance to the ATC, what to do there. Route arrows: BeamNG.Earth's GPS, as now. The stock RallyDashboard is not used: its instructions are fixed texts about TC time windows that we do not have. 'gravel': the surface is not known yet (open question).",
+  m2: "<b>2 Checked in at the ATC.</b> Stock <b>RallyCountdown</b> (proximity: eventType ss_start, badge SS2, distance to the line, 'Start in' from scheduleData.timeDiff). Below it our small timecard: checked-in time and start time. Its skip hint ('[Interact] Skip Clock') comes from rallyClock.canSkipCountdown: sent true only once stopped on the line (runner.canSkip).",
+  m3a: "<b>3 On the start line.</b> Stock <b>RallyCountdown</b> (countdown: 5 red squares from 5 s, the rally clock big) + the start clock picture-in-picture on the right (built in 1.1.0). The big numeral is ours (today ui_message). Pick one: the squares alone, the numeral alone, or both.",
+  m3b: "<b>3 GO.</b> Stock RallyCountdown's green bar (countdownData.countdown = 0); the view's border goes green and lingers 1.5 s (the game's rallyStartClock).",
+  m3c: "<b>3 Jump start.</b> Ours: a red card for ~3 s (runner: run.jumpStart). The countdown carries on.",
+  m4a: "<b>4 On the stage.</b> Stock <b>RallyStageTiming</b> (stageHeader, currentSSTime) top-left and <b>RallyStageProgress</b> (completion.distPct, totalDistM; no splits) along the top, as the game's own rally layout places them; both hidden unless uiColors.theme is sent. Km done is not on the stock bar: a small readout of ours beside it. Pacenote cards: stock, as now. BeamNG.Earth's status app overlaps the bar's place: moved right in our layout.",
+  m4b: "<b>4 Off route.</b> Ours: the amber card takes the progress bar's place while the car is more than 60 m off the stage line (runner: run.off &gt; OFF_ROUTE_M): how far, and an arrow pointing back to the line, turned against the car's heading. Gone once back on the line.",
+  m5a: "<b>5 Flying finish, a new best.</b> Ours, for ~4 s: the stage time big (with penalties), against the best before this run. RallyStageTiming keeps the time top-left.",
+  m5b: "<b>5 Flying finish, slower.</b> Ours: the difference to the best in amber; the penalties included said under it.",
+  m5c: "<b>On to the stop control</b> (between 5 and 6, not in the pitch): stock <b>RallyCountdown</b> proximity with eventType ss_stop shows the yellow SLOW badge and the distance. Free, if we want it.",
+  m7: "<b>7 Messages.</b> The game's own toasts (guihooks.trigger('toastrMsg', {type, title, msg, config = {timeOut}})) instead of BeamNG.Earth's notify line. Info / success / warning types."
+};
+const MOMENTS = Object.keys(NOTES);
+function go(m) {
+  document.querySelectorAll("[data-m]").forEach(e => {
+    e.style.display = e.dataset.m.split(" ").includes(m) ? "" : "none";
+  });
+  document.querySelectorAll(".mock-bar button[data-go]").forEach(b => b.classList.toggle("on", b.dataset.go === m));
+  document.getElementById("who").innerHTML = NOTES[m];
+  document.getElementById("spd").textContent = { m1: 64, m2: 22, m3a: 0, m3b: 0, m3c: 4, m4a: 87, m4b: 31, m5a: 112, m5b: 104, m5c: 58, m7: 40 }[m];
+  document.getElementById("gear").textContent = { m2: 2, m3a: 1, m3b: 1, m3c: 1, m4b: 2 }[m] || 3;
+  history.replaceState(null, "", "#" + m);
+}
+document.querySelectorAll(".mock-bar button[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
+document.getElementById("tags").onclick = e => { e.target.classList.toggle("on"); document.getElementById("screen").classList.toggle("no-tags"); };
+function fit() { const box = document.getElementById("box"); document.getElementById("screen").style.transform = "scale(" + (box.clientWidth / 1920) + ")"; }
+addEventListener("resize", fit); fit();
+go(MOMENTS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "m1");
+</script>
+</body>
+</html>
