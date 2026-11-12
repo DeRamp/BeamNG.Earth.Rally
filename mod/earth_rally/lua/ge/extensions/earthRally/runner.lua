@@ -112,8 +112,9 @@ end
 function M.say(text, s, kind, title)
   local gh = rawget(_G, 'guihooks')
   if gh and gh.trigger then
+    -- (label: the toast's id there; one shared id would replace each toast with the next)
     pcall(gh.trigger, 'toastrMsg', { type = kind or 'info', title = title or 'Earth Rally', msg = text,
-      config = { timeOut = math.floor((s or 4) * 1000) } })
+      label = 'earthRally: ' .. tostring(title) .. ': ' .. tostring(text), config = { timeOut = math.floor((s or 4) * 1000) } })
   else
     earth.notify((title and (title .. ': ') or '') .. text, s or 4)
   end
