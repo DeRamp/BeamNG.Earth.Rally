@@ -1,0 +1,10 @@
+{
+"earthRally_window": {
+"cat": "gameplay",
+"order": 120,
+"ctx": "tlua",
+"onDown": "if earthRally_main then earthRally_main.toggle() end",
+"title": "Earth Rally: window",
+"desc": "Opens or closes the Earth Rally window (rallies, recce, timed stages)."
+}
+}

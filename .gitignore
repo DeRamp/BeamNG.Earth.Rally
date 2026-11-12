@@ -1,0 +1,11 @@
+# Organisers' material (maps, route books, regulations) stays on your own computer
+Rally Docs/
+*.kml
+*.kmz
+*.gpx
+*.pdf
+events/
+# Python
+__pycache__/
+*.pyc
+.venv/

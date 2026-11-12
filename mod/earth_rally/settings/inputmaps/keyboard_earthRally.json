@@ -1,0 +1,6 @@
+{
+  "displayName": "Keyboard",
+  "bindings":[
+    {"control":"ctrl alt k", "action":"earthRally_window"}
+  ]
+}
