@@ -121,7 +121,7 @@ local function drawWindow()
     for i, s in ipairs(ev.stages) do
       local line, kind = events.stageLine(ev.id, s.id, s)
       local note = '  - recce needed'
-      local shortM = events.recceShortM(events.recce(ev.id, s.id), s)
+      local shortM = events.recceShortM(events.recce(ev.id, s.id), s, events.matched(ev.id, s.id))
       if kind == 'recce' then
         note = shortM >= events.RECCE_SHORT_OF_FF_M and
           string.format('  - recce stops %d m before the flying finish: drive it again', math.floor(shortM)) or ''

@@ -90,12 +90,16 @@ end
 -- 1.0, which saved where the recce ended, not where the stage did.
 M.RECCE_SHORT_OF_FF_M = 25
 
--- How far a stage's recce stops short of its flying finish (m; 0 when it reaches it, or the stage has none), worked out
--- once per recce.
-function M.recceShortM(r, stage)
+-- How far a stage's recce stops short of its flying finish (m): how much further the flying finish's pin is from the
+-- recce than from the matched line on the roads (a pin standing off the road is as far from both, and not "short").
+-- 0 when it reaches it, or there is no matched line to tell by. Worked out once per recce.
+function M.recceShortM(r, stage, m)
   local ff = stage and stage.controls and stage.controls.ff
-  if not (r and ff and r.points) then return 0 end
-  if not r._shortM then r._shortM = nearestM(r.points, ff.lat, ff.lon) end
+  if not (r and ff and r.points and m and m.points) then return 0 end
+  if not r._shortM or r._shortFor ~= m.points then
+    r._shortM = math.max(0, nearestM(r.points, ff.lat, ff.lon) - nearestM(m.points, ff.lat, ff.lon))
+    r._shortFor = m.points
+  end
   return r._shortM
 end
 
@@ -107,7 +111,7 @@ function M.stageLine(eventId, stageId, stage)
   local r = M.recce(eventId, stageId)
   local m = M.matched(eventId, stageId)
   if m and stage and m.mapKey and m.mapKey ~= M.mapKey(stage.line) then m = nil end
-  local short = r and ((type(r.share) == 'number' and r.share < 0.9) or M.recceShortM(r, stage) >= M.RECCE_SHORT_OF_FF_M)
+  local short = r and ((type(r.share) == 'number' and r.share < 0.9) or M.recceShortM(r, stage, m) >= M.RECCE_SHORT_OF_FF_M)
   if r and (not m or not short) then return r, 'recce' end
   if m then return m, 'matched' end
   return nil

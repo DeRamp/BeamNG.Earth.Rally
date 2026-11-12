@@ -519,59 +519,50 @@ local function groundNear(x, y, z0)
 end
 
 
--- The game's traffic and parked cars out of the way for the stage, as its own missions do it (missionManager: the
--- traffic, police and parking systems frozen with gameplay_traffic.freezeState, their cars stashed with
--- setActive(0)); put back as they were at the tidy-up (the cars shown again, then gameplay_traffic.unfreezeState).
+-- The game's traffic and parked cars out of the way for the stage: their systems' active amounts set to 0 (the cars
+-- pooled away, out of sight), as BeamNG.Earth itself does over a teleport (navgraph.lua / parking.lua onTeleport), and
+-- the player's amounts back at the tidy-up. BeamNG.Earth's adaptive traffic reads a 0 set by someone else as traffic
+-- off and leaves it alone until the amount changes again. (Not the missions' freezeState: on BeamNG.Earth it drops the
+-- parking system's sites, which only BeamNG.Earth sets, so the parked cars came back unmanaged: review 2026-11-12.)
+local function systems()
+  local gt, gp = rawget(_G, 'gameplay_traffic'), rawget(_G, 'gameplay_parking')
+  local out = {}
+  if gt and gt.setActiveAmount and gt.getTrafficVars and gt.getState and gt.getState() == 'on' then
+    out.traffic = { set = gt.setActiveAmount, get = function() return (gt.getTrafficVars() or {}).activeAmount end }
+  end
+  if gp and gp.setActiveAmount and gp.getParkingVars and gp.getState and gp.getState() then
+    out.parking = { set = gp.setActiveAmount, get = function() return (gp.getParkingVars() or {}).activeAmount end }
+  end
+  return out
+end
+
 local function trafficOff()
   if not run or run.trafficStash then return end
-  local gt, gp = rawget(_G, 'gameplay_traffic'), rawget(_G, 'gameplay_parking')
-  local getObj = rawget(_G, 'getObjectByID')
-  local player = getPlayerVehicle and getPlayerVehicle(0)
-  local playerId = player and player.getID and player:getID()
-  local stash = { ids = {} }
-  local ids = {}
-  if gt and gt.getTrafficList then
-    local ok, l = pcall(gt.getTrafficList)
-    if ok and type(l) == 'table' then for _, id in ipairs(l) do ids[#ids + 1] = id end end
-  end
-  if gp and gp.getParkedCarsList then
-    local ok, l = pcall(gp.getParkedCarsList)
-    if ok and type(l) == 'table' then for _, id in ipairs(l) do ids[#ids + 1] = id end end
-  end
-  if gt and gt.freezeState then
-    local ok, a, b, c = pcall(gt.freezeState, { exceptVehicleId = playerId })
-    if ok then stash.traffic, stash.police, stash.parking = a, b, c end
-  end
-  if getObj then
-    for _, id in ipairs(ids) do
-      if id ~= playerId then
-        local o = getObj(id)
-        if o and o.getActive and o:getActive() then
-          pcall(o.setActive, o, 0)
-          stash.ids[#stash.ids + 1] = id
-        end
-      end
+  local stash = {}
+  for name, s in pairs(systems()) do
+    local ok, cur = pcall(s.get)
+    -- (0 now: none showing, or BeamNG.Earth holding them over a teleport; nothing to do, nothing to give back)
+    if ok and cur ~= nil and cur ~= 0 then
+      if pcall(s.set, 0) then stash[name] = cur end
     end
   end
   run.trafficStash = stash
-  run.checks.trafficHidden = #stash.ids
-  if #stash.ids > 0 then log('I', logTag, 'traffic and parked cars out of the way for the stage: ' .. #stash.ids) end
+  run.checks.trafficHidden = (stash.traffic and 'traffic ' or '') .. (stash.parking and 'parked cars' or '')
+  if next(stash) then log('I', logTag, 'traffic and parked cars out of the way for the stage') end
 end
 
 local function trafficOn()
   local stash = run and run.trafficStash
   if not stash then return end
   run.trafficStash = nil
-  local getObj = rawget(_G, 'getObjectByID')
-  if getObj then
-    for _, id in ipairs(stash.ids) do
-      local o = getObj(id)
-      if o then pcall(o.setActive, o, 1) end
+  local sys = systems()
+  for name, amount in pairs(stash) do
+    local s = sys[name]
+    -- (only where it is still our 0: an amount the player or BeamNG.Earth changed since is theirs)
+    if s then
+      local ok, cur = pcall(s.get)
+      if ok and cur == 0 then pcall(s.set, amount) end
     end
-  end
-  local gt = rawget(_G, 'gameplay_traffic')
-  if gt and gt.unfreezeState and (stash.traffic or stash.parking) then
-    pcall(gt.unfreezeState, stash.traffic, stash.police, stash.parking)
   end
 end
 M._trafficOff = function() trafficOff() end
@@ -594,7 +585,6 @@ local function stepPlace()
     say('Earth Rally: drive to the time control and stop at its red board', 6)
   else
     toStartLine(veh)
-    trafficOff()
     setState('toStart')
   end
   rallyA.resync()
@@ -821,6 +811,7 @@ local function stepToStart(dt)
   if zs == 'stopped' then
     routeOff()
     run.staged = p              -- (where it stopped: moving away from here before GO is a jump start)
+    trafficOff()                -- (a stage with no ATC: here; else already at the check-in)
     local now = M.clock()
     if not run.startAt and run.missedAtc then
       -- the ATC driven past: a start time as if checked in here, and the penalty

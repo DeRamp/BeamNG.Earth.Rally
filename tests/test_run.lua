@@ -696,7 +696,12 @@ do
   files['/earthRally/recce/test5__hill.json'] = { format = 1, points = recFrom, share = 0.95 }
   events.forget()
   _, kind = events.stageLine('test5', 'hill', st)
-  -- (recFrom stops 40 m before the flying finish, as the 1.0 recce on Maryhill did)
+  -- (recFrom stops 40 m before the flying finish, as the 1.0 recce on Maryhill did; the matched line goes on past it)
+  local wholeLine = {}
+  for k = 1, #full, 4 do wholeLine[#wholeLine + 1] = { full[k][1], full[k][2], full[k][3] } end
+  files['/earthRally/matched/test5__hill.json'].points = wholeLine
+  events.forget()
+  _, kind = events.stageLine('test5', 'hill', st)
   T.check(kind == 'matched', 'a recce stopping 40 m before the flying finish loses to a whole matched line (' .. tostring(kind) .. ')')
   local whole = {}
   for k, p in ipairs(recFrom) do whole[k] = p end
@@ -840,29 +845,23 @@ do
   la, lo, what = runner.arrivalPoint(event.stages[1])
   T.check(what == 'start' and la == full[11][1], 'Route to start: to the start when there is no ATC')
 
-  -- traffic and parked cars: out of the way once checked in at the ATC, back at the tidy-up
-  local cars = {}
-  for id = 101, 103 do cars[id] = { active = true } end
-  local frozen, unfrozen = 0, 0
-  getObjectByID = function(id)
-    local c = cars[id]
-    return c and { getActive = function() return c.active end, setActive = function(_, v) c.active = v == 1 end } or nil
-  end
-  gameplay_traffic = { getTrafficList = function() return { 101 } end,
-    freezeState = function() frozen = frozen + 1 return 'T', 'P', 'K' end,
-    unfreezeState = function(a, _, c) if a == 'T' and c == 'K' then unfrozen = unfrozen + 1 end end }
-  gameplay_parking = { getParkedCarsList = function() return { 102, 103 } end }
+  -- traffic and parked cars: out of the way once checked in at the ATC (their active amounts 0, as BeamNG.Earth does
+  -- over a teleport), the player's amounts back at the tidy-up
+  local tAmount, pAmount = 8, math.huge
+  gameplay_traffic = { getState = function() return 'on' end, getTrafficVars = function() return { activeAmount = tAmount } end,
+    setActiveAmount = function(n) tAmount = n end }
+  gameplay_parking = { getState = function() return true end, getParkingVars = function() return { activeAmount = pAmount } end,
+    setActiveAmount = function(n) pAmount = n end }
   car.lat, car.lon, car.speed = full[1][1] - 0.02, full[1][2], 0
   runner.start(ev7, ev7.stages[1])
   frames(80)
-  T.check(cars[102].active and frozen == 0, 'parked cars still there on the way to the ATC')
+  T.check(tAmount == 8 and pAmount == math.huge, 'traffic and parked cars still there on the way to the ATC')
   local ax1, ay1 = toGame(alat, alon)
   car.lat, car.lon = toGeo(ax1 - 8, ay1 - 5)
   car.speed = 8 frames(1) car.speed = 0 frames(3)
-  T.check(runner.current().startAt and frozen == 1 and not cars[101].active and not cars[102].active and not cars[103].active,
-    'checked in at the ATC: traffic and parked cars out of the way')
+  T.check(runner.current().startAt and tAmount == 0 and pAmount == 0, 'checked in at the ATC: traffic and parked cars out of the way')
   runner.abort(true)
-  T.check(unfrozen == 1 and cars[101].active and cars[102].active and cars[103].active, 'after the run: all back as they were')
+  T.check(tAmount == 8 and pAmount == math.huge, 'after the run: the player amounts back')
   getObjectByID, gameplay_traffic, gameplay_parking = nil, nil, nil
 
   -- Go to start with the stage's line on the roads: on it, 4 m behind the start, whatever the organisers' point

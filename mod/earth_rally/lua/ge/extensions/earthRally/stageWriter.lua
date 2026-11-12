@@ -143,9 +143,10 @@ function M.build(line, opts)
     entries[#entries + 1] = { i0 = c.i0, i1 = c.i1, corner = c,
       items = { ['1'] = {}, ['2'] = {}, ['3'] = {}, ['4'] = { type = 'corner' }, ['5'] = {}, ['6'] = {} } }
   end
-  local function put(items, kind)
-    local slot = M.LANDMARKS[kind].slot
-    for _, k in ipairs(slot == 5 and { '5', '6' } or { '2' }) do
+  -- (keep left / right before the corner, slot 2; the rest where they lie: before its start slot 3, else 5 then 6)
+  local function put(items, kind, beforeCorner)
+    local slots = M.LANDMARKS[kind].slot == 2 and { '2' } or (beforeCorner and { '3' } or { '5', '6' })
+    for _, k in ipairs(slots) do
       if not items[k].type then items[k].type = kind return true end
     end
     return false
@@ -160,11 +161,17 @@ function M.build(line, opts)
       for _, e in ipairs(entries) do
         if e.corner and i >= e.i0 - before and i <= e.i1 + after then host = e break end
       end
+      -- (another junction or bridge note a step or two away: one note for both)
+      if not host then
+        for _, e in ipairs(entries) do
+          if not e.corner and math.abs(i - (e.i0 + 1)) <= 2 then host = e break end
+        end
+      end
       if host then
-        if put(host.items, lm.type) then landmarks = landmarks + 1 end
+        if put(host.items, lm.type, host.corner ~= nil and i < host.i0) then landmarks = landmarks + 1 end
       else
         local items = { ['1'] = {}, ['2'] = {}, ['3'] = {}, ['4'] = {}, ['5'] = {}, ['6'] = {} }
-        put(items, lm.type)
+        put(items, lm.type, false)
         entries[#entries + 1] = { i0 = math.max(1, i - 1), i1 = math.min(#stagePts, i + 1), items = items }
         landmarks = landmarks + 1
       end
