@@ -851,4 +851,37 @@ do
   map = nil
 end
 
+------------------------------------------------------------------------------------------ skipping the wait on the start line
+do
+  anchor = { lat = 47.0, lon = -123.0 }
+  car.lat, car.lon, car.speed = full[1][1] - 0.02, full[1][2], 0
+  runner.start(event, event.stages[1])
+  frames(1)
+  T.check(not runner.canSkip(), 'no skip before the start line (' .. runner.state() .. ')')
+  frames(80)
+  car.lat, car.lon, car.speed = full[9][1], full[9][2], 0
+  frames(20)
+  local r = runner.current()
+  T.check(runner.state() == 'waitStart', 'waiting on the start line (' .. runner.state() .. ')')
+  -- (a start time well ahead, as after an early arrival)
+  r.startAt = math.ceil((runner.clock() + 70) / 30) * 30
+  r.staged, r.jumpStart = nil, nil      -- (the car moved by hand onto the line above: not a jump start)
+  r.prevLeft = nil
+  frames(1)
+  car.speed = 3
+  T.check(not runner.onGameplayInteract(), 'no skip while rolling')
+  car.speed = 0
+  lines = {}
+  T.check(runner.onGameplayInteract() == true, 'Interact on the line: skipped')
+  T.check(math.abs((r.startAt - runner.clock()) - 6) < 0.05, '6 s to go after the skip (' ..
+    string.format('%.2f', r.startAt - runner.clock()) .. ')')
+  T.check(not runner.onGameplayInteract(), 'not again straight away, nor inside the last seconds')
+  for _ = 1, 600 do frames(1) if runner.state() == 'running' then break end end
+  local order = table.concat(lines, ' ')
+  T.check(runner.state() == 'running' and math.abs(runner.clock() - r.startAt) < 0.2, 'GO at the start time after a skip')
+  T.check(not order:find('warningSeconds10') and not order:find('warningSeconds30') and order:find('countdown5') and
+    order:find('countdowngo'), 'after a skip: only 5-4-3-2-1-go (' .. order .. ')')
+  runner.abort(true)
+end
+
 T.done('test_run')

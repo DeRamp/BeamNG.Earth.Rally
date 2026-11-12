@@ -826,7 +826,8 @@ local function stepToStart(dt)
       run.startAt = newStart
       rallyA.systemNote('rescheduled')
     else
-      say('Start time ' .. M.formatClock(run.startAt) .. '. Wait for your minute.', 5)
+      say('Start time ' .. M.formatClock(run.startAt) .. '. Wait for your minute' ..
+        (run.startAt - M.clock() > M.SKIP_TO_S + 10 and ' (Interact, Shift+E: skip the wait).' or '.'), 5)
     end
   elseif zs == 'done' then
     -- (the co-driver from the start afresh: whatever it picked up on the way here is dropped)
@@ -900,6 +901,34 @@ local function stepWaitStart(dt)
     setState('running')
   end
 end
+
+-- Skipping the wait on the start line, as the game's rally mode does (flowgraph rallySuperCountdown): the game's
+-- Interact control (gameplay_interact: Shift+E, the modifier + Y on a pad) while held on the line, stopped, more than
+-- SKIP_TO_S before the start, moves the rally clock on to SKIP_TO_S before it (the start tree's clock with it); the 30 s
+-- and 10 s calls are passed over, so only 5-4-3-2-1-go plays. Not again for SKIP_DEBOUNCE_S.
+M.SKIP_TO_S = 6
+M.SKIP_DEBOUNCE_S = 2
+M.SKIP_MAX_MS = 2 / 3.6          -- (stopped: under 2 km/h)
+function M.canSkip()
+  if not (run and run.state == 'waitStart' and run.startAt and run.clockBase) then return false end
+  if run.jumpStart or (run.skipAt and run.t - run.skipAt < M.SKIP_DEBOUNCE_S) then return false end
+  if speed() >= M.SKIP_MAX_MS then return false end
+  return run.startAt - M.clock() > M.SKIP_TO_S + 0.5
+end
+
+function M.skipCountdown()
+  if not M.canSkip() then return false end
+  local left = run.startAt - M.clock()
+  run.clockRun = run.clockRun + (left - M.SKIP_TO_S)
+  run.prevLeft = M.SKIP_TO_S        -- (the 30 s and 10 s calls passed over)
+  run.skipAt = run.t
+  run.checks.skippedS = (run.checks.skippedS or 0) + (left - M.SKIP_TO_S)
+  log('I', logTag, string.format('start countdown skipped: %.0f s on', left - M.SKIP_TO_S))
+  return true
+end
+
+-- (the game's Interact control: main.lua passes on its hook)
+function M.onGameplayInteract() return M.skipCountdown() end
 
 local function stepRunning(dtSim)
   routeOff()

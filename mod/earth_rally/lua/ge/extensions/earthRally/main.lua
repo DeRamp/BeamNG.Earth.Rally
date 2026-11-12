@@ -254,6 +254,11 @@ function M.onUpdate(dtReal, dtSim)
   end
 end
 
+-- The game's Interact control (Shift+E; the modifier + Y on a pad): on the start line, skip to 6 s before the start.
+function M.onGameplayInteract()
+  pcall(runner.onGameplayInteract)
+end
+
 -- (after every other extension's frame work: the start clock's view moved where we want it)
 function M.onDrawDebug()
   pcall(runner.placeClockView)
