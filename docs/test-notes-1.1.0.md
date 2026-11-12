@@ -55,3 +55,21 @@ Scope: 1.1.0 is these fixes and polish; new ideas and the player UI go to 1.2.0 
 | 12 | The skip: the game's Interact (Shift+E), held on the start line and stopped, more than 6 s to go: the clock jumps to 6 s before the start, only 5-4-3-2-1-go plays; not again for 2 s. The "Wait for your minute" message says so when the wait is long. No ATC skip: our ATC has no target time to wait for (the wait is on the start line) | Shift+E on the line; on a pad the modifier + Y |
 | 13 | Covered by 3 (the start line itself was right) | Schafer's start boards |
 | - | Vehicle Lua globals set with rawset: no more "set new global variable" lines | |
+
+## Contrarian review fixes (2026-11-12)
+
+- Matched lines now reach the flying finish (the matcher dropped a line's own end when it was near the last waypoint:
+  up to 100 m short, 83 m on Maryhill). All 18 within 18 m of their flying finish now. Maryhill therefore runs on its
+  matched line (the 1.0 recce stops 36 m before the finish).
+- The ATC's and stop's road direction picked by walking the road both ways (towards the start / away from the
+  finish), not by the angle to a straight line, which could not tell the way on a road running across it.
+- Run stage: a car already within 150 m of the ATC with no teleport (Route to start) is left where it is; a road-map
+  spot with no ground under it near its height (a road map from the place before the teleport) is not used.
+- The start-line set-down (no ATC) now on the ground under the line (a ray down), as the others.
+- Keep left / right always a note of its own, as the game's stages have them.
+- Bridges from 6 m long (short forest bridges were missed).
+- Each site's log line says what it was placed on: the stage line and how far the road map's centre is, or the road
+  map's heading. **Item 13 stays open**: the board turn fix explains boards facing the wrong way, not boards standing
+  to one side (positions do not depend on the turn). Check the log line for Schafer's start and Maryhill's finish.
+- Not changed, to check in game: the clock view may overlap the turbo gauge (bottom right) at 1080p and the tacho on
+  small screens; tell me where it should go.

@@ -45,7 +45,7 @@ TURN_DEG = 30.0         # the stage turning more than this at a junction: a turn
 FORK_DEG = 35.0         # a side road within this of the stage's way on: a fork ("keep left / right")
 JUNCTION_GAP_M = 25.0   # junctions closer than this along the stage: one
 BRIDGE_NEAR_M = 3.0     # the stage this close to a bridge's road ...
-BRIDGE_MIN_M = 10.0     # ... for at least this far: over the bridge (a road crossing under one is near it for less)
+BRIDGE_MIN_M = 6.0      # ... for at least this far: over the bridge (a road crossing under one is near it for less)
 NOT_ROADS = {'footway', 'path', 'cycleway', 'steps', 'pedestrian', 'bridleway', 'corridor', 'sidewalk', 'crosswalk'}
 
 
@@ -83,7 +83,9 @@ def resample(xy, step):
             pos += step
         carry = seg - (pos - step)
         acc += seg
-    if math.dist(out[-1], xy[-1]) > step * 0.25:
+    # (the line's own end always: dropping it when near the last point cut matched lines up to a quarter step short of
+    # the flying finish, 83 m on Maryhill: review 2026-11-12)
+    if math.dist(out[-1], xy[-1]) > 0.5:
         out.append(xy[-1])
         along.append(acc)
     return out, along

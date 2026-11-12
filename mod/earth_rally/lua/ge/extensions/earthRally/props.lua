@@ -220,6 +220,23 @@ function M.roadAt(x, y, dir)
   return best
 end
 
+-- An edge (roadAt) turned to run the way that leads towards `toward` (or away from `away`), along the road: walked
+-- ORIENT_M both ways, the end that comes nearer wins. A control's road often runs across the straight line to the
+-- start, where the angle alone could not tell the way (review 2026-11-12). Returns the edge (a copy when turned).
+M.ORIENT_M = 60
+function M.orient(edge, toward, away)
+  if not edge or not (toward or away) then return edge end
+  local f, b = M.walkRoad(edge, M.ORIENT_M), M.walkRoad(edge, -M.ORIENT_M)
+  local function d(p, q) return (p.x - q.x) ^ 2 + (p.y - q.y) ^ 2 end
+  local turn
+  if toward then turn = d(b, toward) < d(f, toward) else turn = d(f, away) < d(b, away) end
+  if not turn then return edge end
+  local e = {}
+  for k, v in pairs(edge) do e[k] = v end
+  e.a, e.b, e.t, e.dx, e.dy = edge.b, edge.a, 1 - (edge.t or 0), -edge.dx, -edge.dy
+  return e
+end
+
 -- From a road-map edge (roadAt), the point `fwd` m along the road in the driving direction (back for fwd < 0): at a
 -- junction the road that turns least, up to TURN_MAX_DEG; past the road map's end, straight on. Returns { x, y, z,
 -- dx, dy (the driving direction there), half }.
@@ -321,8 +338,19 @@ local function spawn(s, carZ)
       break
     end
   end
-  log('I', 'earthRally', string.format('props: %s put down (%d objects, %d placed by the road map%s)', s.kind, n, onRoad,
-    s.path and ', along the stage line' or (s.edge and '' or ', no road on the map there: straight from the control')))
+  local how = ''
+  if s.path then
+    local p = s.path(0)
+    local r = p and M.roadAt(p.x, p.y, { x = p.dx, y = p.dy })
+    how = string.format(', along the stage line (%s)', r and string.format('road map centre %.1f m off, heading %.0f deg',
+      r.d, math.deg(math.atan2(p.dx, p.dy)) % 360) or 'no road map there')
+  elseif s.edge then
+    how = string.format(', road map %.1f m from the control, heading %.0f deg', s.edge.d or 0,
+      math.deg(math.atan2(s.edge.dx, s.edge.dy)) % 360)
+  else
+    how = ', no road on the map there: straight from the control'
+  end
+  log('I', 'earthRally', string.format('props: %s put down (%d objects, %d placed by the road map%s)', s.kind, n, onRoad, how))
 end
 
 -- Every frame of a run: sites near enough the car put down (once). carPos in game coordinates.
@@ -338,7 +366,11 @@ function M.update(carPos, toGame)
         s.edge = nil
         if not s.path then
           local e = M.roadAt(x, y, s.dir)
-          if e then s.edge = e end
+          if e then
+            local tw = s.toward and { x = select(1, toGame(s.toward.lat, s.toward.lon, 0)), y = select(2, toGame(s.toward.lat, s.toward.lon, 0)) }
+            local aw = s.away and { x = select(1, toGame(s.away.lat, s.away.lon, 0)), y = select(2, toGame(s.away.lat, s.away.lon, 0)) }
+            s.edge = M.orient(e, tw and tw.x and tw, aw and aw.x and aw)
+          end
         end
         -- nothing to tell the height (no stage line, no road map there): only once the car is close, its own height
         -- then near the ground's

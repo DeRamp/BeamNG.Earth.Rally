@@ -158,8 +158,10 @@ function M.build(line, opts)
     local i = math.floor((lm.s + lead - startM) / M.NOTE_STEP_M + 0.5) + 1
     if M.LANDMARKS[lm.type] and i > clear and i < #stagePts and not muted(i) then
       local host = nil
+      -- (keep left / right: a note of its own, as the game's stages always have it)
+      local alone = M.LANDMARKS[lm.type].slot == 2
       for _, e in ipairs(entries) do
-        if e.corner and i >= e.i0 - before and i <= e.i1 + after then host = e break end
+        if not alone and e.corner and i >= e.i0 - before and i <= e.i1 + after then host = e break end
       end
       -- (another junction or bridge note a step or two away: one note for both)
       if not host then

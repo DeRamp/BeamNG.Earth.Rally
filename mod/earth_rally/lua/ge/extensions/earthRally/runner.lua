@@ -54,6 +54,7 @@ M.TELEPORT_SETTLE_S = 2        -- BeamNG.Earth sets the car down a moment after 
 M.ATC_MAX_FROM_START_M = 1500  -- an ATC farther from the start than this is not this stage's (left out)
 M.STOP_MAX_FROM_FINISH_M = 3000
 M.CAR_BEFORE_ATC_M = 40
+M.NO_SET_DOWN_M = 150          -- a car driven to within this of the ATC is not moved
 M.LANDMARK_OFF_M = 15          -- a junction or bridge this close to the stage line is on it
 M.CONTROL_RADIUS_M = 12        -- stopped this close to a control's board: checked in
 M.STOP_CONTROL_RADIUS_M = 25
@@ -474,28 +475,27 @@ local function setupProps()
   props.setSite('ff', flat, flon, fdir, fp.z, linePath(run.finishM))
   if run.atc then
     local a = ctlGame(run.atc)
-    if a then props.setSite('atc', run.atc.lat, run.atc.lon, { x = sp.x - a.x, y = sp.y - a.y }) end
+    if a then
+      local site = props.setSite('atc', run.atc.lat, run.atc.lon, { x = sp.x - a.x, y = sp.y - a.y })
+      site.toward, site.away = { lat = slat, lon = slon }, nil      -- (its road's way: the one leading on to the start)
+    end
   end
   if run.stopCtl then
     local b = ctlGame(run.stopCtl)
-    if b then props.setSite('stop', run.stopCtl.lat, run.stopCtl.lon, { x = b.x - fp.x, y = b.y - fp.y }) end
+    if b then
+      local site = props.setSite('stop', run.stopCtl.lat, run.stopCtl.lon, { x = b.x - fp.x, y = b.y - fp.y })
+      site.toward, site.away = nil, { lat = flat, lon = flon }      -- (its road's way: the one leading on from the finish)
+    end
   end
 end
 
--- The car on the start line, facing the stage.
-local function toStartLine(veh)
-  local dir, s = aheadDir(run.line, run.cum, run.startM)
-  local l = math.sqrt(dir.x * dir.x + dir.y * dir.y)
-  local pos = { x = s.x - dir.x / l * M.CAR_BEHIND_LINE_M, y = s.y - dir.y / l * M.CAR_BEHIND_LINE_M, z = (s.z or 0) + 1.0 }
-  M.placeCar(veh, pos, dir)
-end
 
 -- A place for the car on the road near (x, y), the way dir (game coordinates), fwd m along the road from there (back
 -- for fwd < 0): the road map's road (props.roadAt: the one best aligned with dir, within props.SNAP_M) walked along
 -- its bends; with no road on the map there, straight along dir. Returns { x, y, z (or nil), dx, dy, road }.
-function M.roadSpot(x, y, dir, fwd)
+function M.roadSpot(x, y, dir, fwd, toward)
   fwd = fwd or 0
-  local e = props.roadAt(x, y, dir)
+  local e = props.orient(props.roadAt(x, y, dir), toward)
   if e then
     local w = fwd ~= 0 and props.walkRoad(e, fwd) or e
     return { x = w.x, y = w.y, z = w.z, dx = w.dx, dy = w.dy, road = true }
@@ -512,10 +512,10 @@ local function groundNear(x, y, z0)
     for _, t in ipairs({ { 8, 40 }, { 25, 80 } }) do
       local top = z0 + t[1]
       local d = ray(vec3(x, y, top), vec3(0, 0, -1), t[2])
-      if d and d < t[2] and math.abs(top - d - z0) <= t[1] + 2 then return top - d end
+      if d and d < t[2] and math.abs(top - d - z0) <= t[1] + 2 then return top - d, true end
     end
   end
-  return z0
+  return z0, ray and false or nil      -- (false: looked and found no ground near z0; nil: no ray to look with)
 end
 
 
@@ -567,6 +567,15 @@ local function trafficOn()
 end
 M._trafficOff = function() trafficOff() end
 
+-- The car on the start line, facing the stage (on the ground there: a ray down from the line's height).
+local function toStartLine(veh)
+  local dir, s = aheadDir(run.line, run.cum, run.startM)
+  local l = math.sqrt(dir.x * dir.x + dir.y * dir.y)
+  local pos = { x = s.x - dir.x / l * M.CAR_BEHIND_LINE_M, y = s.y - dir.y / l * M.CAR_BEHIND_LINE_M }
+  pos.z = groundNear(pos.x, pos.y, s.z or 0) + 1.0
+  M.placeCar(veh, pos, dir)
+end
+
 local function stepPlace()
   local p, veh = carPos()
   if not veh then fail('no car') return end
@@ -577,10 +586,24 @@ local function stepPlace()
     -- start, walked back along its bends), facing along it; never the organisers' point itself, which can be metres
     -- off the road
     local _, sp = aheadDir(run.line, run.cum, run.startM)
-    local spot = M.roadSpot(a.x, a.y, { x = sp.x - a.x, y = sp.y - a.y }, -M.CAR_BEFORE_ATC_M)
-    spot.z = groundNear(spot.x, spot.y, spot.z or p.z) + 1.0
-    M.placeCar(veh, spot, { x = spot.dx, y = spot.dy, z = 0 })
-    run.checks.atcSetDown = spot.road and 'on the road map' or 'no road on the map there'
+    local near = p and not run.teleported and (p.x - a.x) ^ 2 + (p.y - a.y) ^ 2 <= M.NO_SET_DOWN_M ^ 2
+    if near then
+      -- (driven here, e.g. by Route to start: left where it is)
+      run.checks.atcSetDown = 'driven there'
+    else
+      local spot = M.roadSpot(a.x, a.y, { x = sp.x - a.x, y = sp.y - a.y }, -M.CAR_BEFORE_ATC_M, sp)
+      local z, hit = groundNear(spot.x, spot.y, spot.z or p.z)
+      -- (a road from the place before the teleport, its road map not yet rebuilt here: its height is not the ground's)
+      if spot.road and hit == false then
+        spot = M.roadSpot(a.x, a.y, { x = sp.x - a.x, y = sp.y - a.y }, 0, sp)
+        spot.road = false
+        z = groundNear(a.x, a.y, p.z)
+        spot.x, spot.y = a.x - spot.dx * M.CAR_BEFORE_ATC_M, a.y - spot.dy * M.CAR_BEFORE_ATC_M
+      end
+      spot.z = z + 1.0
+      M.placeCar(veh, spot, { x = spot.dx, y = spot.dy, z = 0 })
+      run.checks.atcSetDown = spot.road and 'on the road map' or 'no road on the map there'
+    end
     setState('toAtc')
     say('Earth Rally: drive to the time control and stop at its red board', 6)
   else

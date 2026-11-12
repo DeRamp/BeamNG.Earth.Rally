@@ -839,6 +839,17 @@ do
     'Run stage: the car on the road 40 m before an ATC drawn off it (' .. string.format('%.1f, %.1f', x, y - atcY) .. ')')
   runner.abort(true)
 
+  -- driven to the ATC (Route to start), no teleport: the car is not moved
+  local nx, ny = toGame(alat, alon)
+  car.lat, car.lon, car.speed = toGeo(nx - 30, ny - 60)
+  car.speed = 0
+  local before = { car.lat, car.lon }
+  runner.start(ev7, ev7.stages[1])
+  frames(80)
+  T.check(runner.current().state == 'toAtc' and car.lat == before[1] and car.lon == before[2] and
+    runner.current().checks.atcSetDown == 'driven there', 'driven to the ATC: left where it is')
+  runner.abort(true)
+
   -- Route to start: to the ATC when the stage has its own, else to the start
   local la, lo, what = runner.arrivalPoint(ev7.stages[1])
   T.check(what == 'ATC' and la == alat and lo == alon, 'Route to start: to the stage\'s ATC (' .. tostring(what) .. ')')

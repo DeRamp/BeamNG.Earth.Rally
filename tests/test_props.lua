@@ -53,4 +53,20 @@ local x, y, z, w = q[1], q[2], q[3], q[4]
 -- +Y rotated by q (the game's convention, as gameQuat: rows): column of the rotation matrix, conjugated
 local gx = gameQuat(1, 0)
 T.check(math.abs(z - gx[3]) < 1e-9 and math.abs(w - gx[4]) < 1e-9, 'east: the same quaternion as the game\'s')
+
+-- a control's road running across the straight line to the start: its way picked by walking along it
+local nodes = {}
+for k = -10, 10 do
+  local n = 'e' .. k
+  nodes[n] = { pos = { x = k * 10, y = 0, z = 0 }, radius = 3, links = {} }
+  if k > -10 then nodes[n].links['e' .. (k - 1)] = {} nodes['e' .. (k - 1)].links[n] = {} end
+end
+map = { getMap = function() return { nodes = nodes } end }
+local e = props.roadAt(2, 1, { x = 0.05, y = 1 })            -- (the start straight "north": the road runs east-west)
+local east = props.orient(e, { x = 300, y = 40 })
+local west = props.orient(e, { x = -300, y = 40 })
+T.check(east and east.dx > 0.9 and west and west.dx < -0.9, 'a road across the way to the start: turned along the road towards it')
+local fromEast = props.orient(e, nil, { x = 300, y = 0 })
+T.check(fromEast.dx < -0.9, 'the stop control: the way leading on from the finish')
+map = nil
 T.done('test_props')
