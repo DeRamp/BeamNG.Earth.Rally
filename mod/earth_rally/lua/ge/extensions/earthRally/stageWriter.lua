@@ -107,8 +107,14 @@ function M.build(line, opts)
   local stagePts = geo.resample(geo.slice(line, cum, startM, finishM), M.NOTE_STEP_M)
   local corners = {}
   local clear = math.ceil(M.NOTE_CLEAR_M / M.NOTE_STEP_M)
+  -- (opts.mute: { {fromM, toM}... } along the line as given: no notes there)
+  local function muted(i)
+    local s = startM + (i - 1) * M.NOTE_STEP_M - lead
+    for _, r in ipairs(opts.mute or {}) do if s >= r[1] and s <= r[2] then return true end end
+    return false
+  end
   for _, c in ipairs(geo.corners(stagePts, M.NOTE_STEP_M, opts.corners)) do
-    if c.i0 > clear and c.i1 < #stagePts then corners[#corners + 1] = c end
+    if c.i0 > clear and c.i1 < #stagePts and not muted(c.i0) and not muted(c.i1) then corners[#corners + 1] = c end
   end
   local pacenotes = {}
   local nid = 0

@@ -256,8 +256,8 @@ local firstCs = files[r.dir .. '/rally/notebooks/structured.notebook.json'].pace
 T.check(nodeDist(firstCs, race.startPositions[1].pos) >= 20, 'no note on the start line')
 T.check(runner.state() == 'toStart', 'on the start line (' .. runner.state() .. ')')
 frames(8)
-T.check(lastCtl() == 'hold' and frozen == nil and has(sounds, 'event:UI_Checkpoint'),
-  'stopped on the line: held (brake, clutch, launch control; not frozen), a sound')
+T.check(frozen == true and lastCtl() == 'launch' and has(sounds, 'event:UI_Checkpoint'),
+  'stopped on the line: held (the game freeze, launch control on), a sound')
 T.check(camResets >= 2, 'the camera reset after the origin moved and the car was placed (' .. camResets .. ')')
 T.check(layout == 'earthRallyStage', 'the pacenote cards layout on for the run (' .. layout .. ')')
 -- the car stands on the start line, in game coordinates of the new origin
@@ -267,7 +267,7 @@ T.check(math.sqrt((cp.x - sx) ^ 2 + (cp.y - sy) ^ 2) < 6, 'the car on the start 
 
 frames(120)
 T.check(runner.state() == 'running', 'GO (' .. runner.state() .. ')')
-T.check(lastCtl() == 'off', 'let go at GO')
+T.check(lastCtl() == 'off' and frozen == false, 'let go at GO')
 T.check(has(lines, 'countdown3') and has(lines, 'countdown1') and has(lines, 'countdowngo'),
   'the co-driver counted down')
 T.check(not r.jumpStart, 'no jump start')
@@ -401,7 +401,7 @@ do
   frames(1)
   T.check(routes[#routes] == false, 'no route arrows once at the start')
   T.check(manager.notesOn == false, 'no stage notes called before the start')
-  T.check(lastCtl() == 'hold', 'held on the line while waiting')
+  T.check(frozen == true, 'held on the line while waiting')
   local drawn = 0
   debugDrawer = debugDrawer or {}
   debugDrawer.drawSquarePrism = function() drawn = drawn + 1 end
@@ -417,12 +417,12 @@ do
   for _ = 1, 1200 do
     inputs = {}
     frames(1)
-    local m = lastCtl()
-    if runner.state() == 'waitStart' and m ~= 'hold' then heldAll = false end
-    if not releasedAt and m == 'off' then releasedAt = r2.startAt - runner.clock() end
+    if runner.state() == 'waitStart' and frozen ~= true then heldAll = false end
+    for _, c in ipairs(inputs) do if c:find('earthRally_ctl("zone"', 1, true) then heldAll = false end end
+    if not releasedAt and frozen == false then releasedAt = r2.startAt - runner.clock() end
     if runner.state() == 'running' then break end
   end
-  T.check(heldAll, 'held every frame while waiting (the player cannot undo it with a brake tap)')
+  T.check(heldAll, 'held (frozen) the whole wait, no brake override (arcade would select reverse)')
   T.check(releasedAt and releasedAt <= 0.001 and releasedAt > -0.2, 'let go at GO, not before (' .. tostring(releasedAt) .. ')')
   T.check(manager.notesOn == true, 'the stage notes on from GO')
   T.check(runner.state() == 'running', 'GO at the start minute (with controls)')
@@ -469,8 +469,10 @@ do
   frames(20)
   T.check(runner.state() == 'finished' and r2.checks.stopControl:find('stopped') ~= nil,
     'stopped at the stop control: stage complete')
+  T.check(countObjects() > 0, 'stage done: the stop control tent still there a moment after stopping')
+  frames(100)
   T.check(countObjects() == 0 and manager == nil and layout == 'beamngEarth',
-    'stage done: boards, co-driver and stage layout taken away at once (not left until Close)')
+    'a few seconds later: boards, co-driver and stage layout taken away (not left until Close)')
   runner.abort(true)
 end
 
@@ -497,20 +499,14 @@ do
   vrun('zone', 0.3)
   T.check(ev.brakeOverride == 1, 'zone: the player\'s own harder braking kept')
   env.input.brake = 0
-  vrun('hold', 0.3)
-  T.check(ev.brakeOverride == 0.3 and ev.clutchOverride == 1 and ts.enabled == true,
-    'hold on a keyboard: 30 % brake, clutch in, launch control on')
-  env.input.state.throttle.filter = 1          -- (a gamepad / pedals)
-  vrun('hold', 0.3)
-  T.check(ev.brakeOverride == 0.8, 'hold on an analog throttle with launch control: 80 % brake (it arms there)')
+  vrun('launch')
+  T.check(ev.brakeOverride == nil and ts.enabled == true,
+    'on the start line: launch control on, no brake override (the freeze holds the car)')
   vrun('off')
-  T.check(ev.brakeOverride == nil and ev.clutchOverride == nil and ts.enabled == false,
-    'off: brake and clutch handed back, launch control as the player had it')
-  gearbox, ts.enabled = 'automaticGearbox', true
-  env.controller.getControllersByType = function() return {} end
-  vrun('hold', 0.3)
-  T.check(ev.brakeOverride == 0.3 and ev.clutchOverride == nil, 'an automatic: the brake held, no clutch')
-  vrun('off')
+  T.check(ev.brakeOverride == nil and ts.enabled == false, 'off: launch control as the player had it')
+  ts.enabled = true
+  vrun('launch') vrun('off')
+  T.check(ts.enabled == true, 'a player who had it on keeps it on')
 end
 
 ------------------------------------------------------------------------------------------ props on a winding road
@@ -680,6 +676,74 @@ do
   local last4 = res4[#res4]
   T.check(last4 and last4.missedAtc and last4.penaltyS == 60, 'the missed time control in the result: +60 s')
   T.check(events.best('test3', 'hill') == last4.timeS, 'its best time')
+  runner.abort(true)
+end
+
+------------------------------------------------------------------------------------------ which line a stage runs on
+do
+  local st = event.stages[1]
+  files['/earthRally/events/test5.json'] = nil
+  events.forget()
+  -- a matched line from this map, and a recce saved short ("Save anyway", 60 %): the matched line covers the stage
+  files['/earthRally/matched/test5__hill.json'] = { format = 1, points = recFrom, mapKey = events.mapKey(st.line) }
+  files['/earthRally/recce/test5__hill.json'] = { format = 1, points = recFrom, share = 0.6 }
+  local _, kind = events.stageLine('test5', 'hill', st)
+  T.check(kind == 'matched', 'a recce saved short loses to a whole matched line (' .. tostring(kind) .. ')')
+  files['/earthRally/recce/test5__hill.json'] = { format = 1, points = recFrom, share = 0.95 }
+  events.forget()
+  _, kind = events.stageLine('test5', 'hill', st)
+  T.check(kind == 'recce', 'a full recce first')
+  -- a matched line from an older version of the map is not used
+  files['/earthRally/recce/test5__hill.json'] = nil
+  files['/earthRally/matched/test5__hill.json'].mapKey = '1:0:0:0:0'
+  events.forget()
+  local l3 = events.stageLine('test5', 'hill', st)
+  T.check(l3 == nil, 'a matched line made from another version of the map: not used')
+end
+
+------------------------------------------------------------------------------------------ no notes where the map has no road
+do
+  local writer = require('earthRally/stageWriter')
+  -- a straight line with a sharp bend at 1000 m and another at 2000 m; the second on a stretch with no road
+  local line, x, y, h = {}, 0, 0, math.pi / 2
+  local function step() x, y = x + math.cos(h), y + math.sin(h) line[#line + 1] = { x = x, y = y, z = 0 } end
+  line[1] = { x = 0, y = 0, z = 0 }
+  for k = 1, 3000 do
+    if (k > 1000 and k <= 1047) or (k > 2000 and k <= 2047) then h = h - (math.pi / 2) / 47 end
+    step()
+  end
+  local qf = function() return 0, 0, 0, 1 end
+  local all = writer.build(line, { startM = 100, finishM = 2900, quatFn = qf })
+  local muted = writer.build(line, { startM = 100, finishM = 2900, quatFn = qf, mute = { { 1950, 2100 } } })
+  T.check(all.corners == 2 and muted.corners == 1, 'the corner on the stretch with no road gets no note (' ..
+    all.corners .. ' / ' .. muted.corners .. ')')
+end
+
+------------------------------------------------------------------------------------------ a far ATC, late minutes
+do
+  local ev6 = { format = 1, id = 'test6', name = 'Test Rally 6', stages = { {
+    id = 'hill', name = 'Hill', lengthM = 3000, radiusM = 1200, centre = event.stages[1].centre,
+    controls = { start = event.stages[1].controls.start, ff = event.stages[1].controls.ff,
+                 atc = { lat = full[11][1] - 600 / 111195, lon = full[11][2] } },      -- 600 m before the start
+    line = event.stages[1].line } } }
+  files['/earthRally/events/test6.json'] = ev6
+  files['/earthRally/matched/test6__hill.json'] = { format = 1, points = recFrom }
+  anchor = { lat = 47.0, lon = -123.0 }
+  car.lat, car.lon, car.speed = full[1][1] - 0.02, full[1][2], 0
+  runner.start(ev6, ev6.stages[1])
+  frames(80)
+  local r6 = runner.current()
+  local ax, ay = toGame(ev6.stages[1].controls.atc.lat, ev6.stages[1].controls.atc.lon)
+  car.lat, car.lon = toGeo(ax, ay - 5)
+  car.speed = 8 frames(1) car.speed = 0 frames(3)
+  local gap = r6.startAt and (r6.startAt - runner.clock()) or 0
+  -- 600 m x 1.3 at 10 m/s = 78 s, + 20 s to stop: at least ~98 s, on a half minute
+  T.check(gap >= 95 and gap <= 130, 'a start line 600 m from the ATC: time to get there (' .. string.format('%.0f', gap) .. ' s)')
+  -- arrive 55 s late: one minute late (+10 s), not two
+  while runner.clock() < r6.startAt + 55 do frames(1) end
+  car.lat, car.lon, car.speed = full[9][1], full[9][2], 0
+  frames(2)
+  T.check(r6.latePenalty == 10, 'under a minute late: +10 s (' .. tostring(r6.latePenalty) .. ')')
   runner.abort(true)
 end
 

@@ -33,6 +33,7 @@ DETOUR_MAX = 1.4        # a route between two waypoints longer than this times t
                         # is a detour: that stretch is kept as the organisers' line
 MERGE_M = 0.75          # vertices this close are one node
 PIECE_M = 20.0          # roads cut into pieces no longer than this
+BLEND_M = 120.0         # a stretch on the organisers' line eased into the road over this at each end
 BRIDGE_M = 3.0          # a dead end this close to another road is joined to it ...
 BRIDGE_ON_LINE_M = 25.0 # ... or this close when both lie on the organisers' line (within ON_LINE_M): a break in the
 ON_LINE_M = 12.0        # map's road where the stage plainly goes on
@@ -100,18 +101,19 @@ class Roads:
 
     def __init__(self, np, md, mapcells, frame, line_xy):
         self.np = np
-        lat_lon = [frame.latlon(x, y) for x, y in line_xy]
         keys = set()
         pad = CORRIDOR_M + 200
-        for lat, lon in lat_lon[::2] + [lat_lon[-1]]:
-            x, y = frame.xy(lat, lon)
+        along_line, _ = resample(line_xy, 200.0)
+        for x, y in along_line:
             for dx in (-pad, 0, pad):
                 for dy in (-pad, 0, pad):
                     keys.add(mapcells.cell_of(*frame.latlon(x + dx, y + dy)))
         self.cells = len(keys)
         feats = {}
         for k in sorted(keys):
-            r = md.cell(k, layers=('roads',)).layers['roads']
+            r = md.cell(k, layers=('roads',)).layers.get('roads')
+            if r is None:           # (no road data for that cell: none there to use)
+                continue
             sub, cls = r.attrs.get('subtype'), r.attrs.get('class')
             for i in range(len(r)):
                 if sub is not None and str(sub[i]) != 'road':
@@ -324,10 +326,32 @@ def match_stage(np, md, mapcells, dem, stage):
     def kml_between(s0, s1):
         return [p for p, s in zip(fine, fine_along) if s0 <= s <= s1]
 
+    gap_idx = []        # (first, last) indices into out of each stretch on the organisers' line
+
     def add(pts):
         for p in pts:
             if not out or math.dist(out[-1], p) > 0.05:
                 out.append(p)
+
+    def add_gap(s0, s1, from_pt=None, to_pt=None):
+        # the organisers' line from s0 to s1, eased in from the road point before it and out to the road point after
+        # it over BLEND_M (no sudden kink where a hand-drawn line meets the road: that would be a phantom hairpin)
+        pts = kml_between(s0, s1)
+        if not pts:
+            return
+        o0 = (from_pt[0] - pts[0][0], from_pt[1] - pts[0][1]) if from_pt else (0.0, 0.0)
+        o1 = (to_pt[0] - pts[-1][0], to_pt[1] - pts[-1][1]) if to_pt else (0.0, 0.0)
+        acc, eased = 0.0, []
+        total = sum(math.dist(a, b) for a, b in zip(pts, pts[1:]))
+        for k, p in enumerate(pts):
+            if k:
+                acc += math.dist(pts[k - 1], p)
+            w0 = max(0.0, 1 - acc / BLEND_M)
+            w1 = max(0.0, 1 - (total - acc) / BLEND_M)
+            eased.append((p[0] + o0[0] * w0 + o1[0] * w1, p[1] + o0[1] * w0 + o1[1] * w1))
+        first = len(out)
+        add(eased)
+        gap_idx.append((first, len(out) - 1))
 
     i = 0
     n = len(wps)
@@ -339,7 +363,7 @@ def match_stage(np, md, mapcells, dem, stage):
                 j += 1
             s0, s1 = along[i], along[j]
             gaps.append((s0, s1))
-            add(kml_between(s0, s1))
+            add_gap(s0, s1, out[-1] if out else None, snaps[j][3] if snaps[j] else None)
             i = j
             continue
         j = i + 1
@@ -350,7 +374,7 @@ def match_stage(np, md, mapcells, dem, stage):
                 k += 1
             gaps.append((along[i], along[k]))
             add([snaps[i][3]])
-            add(kml_between(along[i], along[k]))
+            add_gap(along[i], along[k], snaps[i][3], snaps[k][3] if snaps[k] else None)
             i = k
             continue
         pts, length = roads.route(snaps[i], snaps[j])
@@ -358,14 +382,20 @@ def match_stage(np, md, mapcells, dem, stage):
         if pts is None or length > DETOUR_MAX * span + 100:
             gaps.append((along[i], along[j]))
             add([snaps[i][3]])
-            add(kml_between(along[i], along[j]))
+            add_gap(along[i], along[j], snaps[i][3], snaps[j][3])
         else:
             add(pts)
         i = j
     if not out:
         return None
-    # the matched line every OUT_STEP_M, with heights
-    res, _ = resample(out, OUT_STEP_M)
+    # the matched line every OUT_STEP_M, with heights; the points on a stretch with no road flagged (the mod calls no
+    # notes there)
+    out_cum = [0.0]
+    for a, b in zip(out, out[1:]):
+        out_cum.append(out_cum[-1] + math.dist(a, b))
+    gap_ranges = [(out_cum[a], out_cum[b]) for a, b in gap_idx]
+    res, res_along = resample(out, OUT_STEP_M)
+    flags = [1 if any(g0 <= s <= g1 for g0, g1 in gap_ranges) else 0 for s in res_along]
     lat_lon = [frame.latlon(x, y) for x, y in res]
     lats = np.array([p[0] for p in lat_lon])
     lons = np.array([p[1] for p in lat_lon])
@@ -380,8 +410,17 @@ def match_stage(np, md, mapcells, dem, stage):
         'gaps': [[round(a, 1), round(b, 1)] for a, b in gaps], 'gapM': round(gap_m, 1),
         'maxOffMapLineM': round(float(off_line.max()), 1),
         'cells': roads.cells, 'roadEdges': roads.edges, 'seconds': round(time.time() - t0, 1),
-        'points': [[round(la, 7), round(lo, 7), round(float(h), 2)] for (la, lo), h in zip(lat_lon, z)],
+        'mapKey': map_key(stage['line']),
+        'points': [[round(la, 7), round(lo, 7), round(float(h), 2)] + ([1] if f else [])
+                   for (la, lo), h, f in zip(lat_lon, z, flags)],
     }
+
+
+def map_key(line):
+    """The stage's map line in short, as the mod's events.mapKey: a matched line from another version of the map is
+    not used."""
+    a, b = line[0], line[-1]
+    return '%d:%.6f:%.6f:%.6f:%.6f' % (len(line), a[0], a[1], b[0], b[1])
 
 
 def main():

@@ -183,7 +183,7 @@ function M.stop(keep, force)
   end
   rec = nil
   events.saveRecce(r.event.id, r.stage.id, { format = 1, stage = r.stage.id, lengthM = r.lengthM,
-    date = os.date('!%Y-%m-%dT%H:%M:%SZ'), points = r.points, jumps = r.jumps })
+    date = os.date('!%Y-%m-%dT%H:%M:%SZ'), points = r.points, jumps = r.jumps, share = share })
   log('I', 'earthRally', string.format('recce saved: %s, %.0f m, %d points', r.stage.name, r.lengthM, #r.points))
   return true
 end

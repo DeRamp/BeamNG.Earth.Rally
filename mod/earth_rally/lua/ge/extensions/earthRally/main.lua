@@ -119,7 +119,7 @@ local function drawWindow()
       im.TreePop()
     end
     for i, s in ipairs(ev.stages) do
-      local line, kind = events.stageLine(ev.id, s.id)
+      local line, kind = events.stageLine(ev.id, s.id, s)
       local note = '  - recce needed'
       if kind == 'recce' then note = ''
       elseif kind == 'matched' then
@@ -165,7 +165,7 @@ local function drawWindow()
         end
         im.SameLine()
         if im.Button('Start recce') then recce.start(ev, stage) message = 'Follow the orange line on the road to the flying finish (the green ball); the recce saves itself there.' end
-        if events.stageLine(ev.id, stage.id) then
+        if events.stageLine(ev.id, stage.id, stage) then
           im.SameLine()
           if im.Button('Run stage') then
             local rok, rerr = runner.start(ev, stage)
@@ -184,7 +184,7 @@ end
 
 -- The import folder looked at: new or changed maps imported, the list read again, a message for each.
 function M.scanImports(always)
-  local ok, done = pcall(importer.scan)
+  local ok, done = pcall(importer.scan, always)
   if not ok then log('E', logTag, 'import: ' .. tostring(done)) message = 'Import failed: ' .. tostring(done) return end
   if #done > 0 or always then
     events.list(true)
@@ -193,14 +193,13 @@ function M.scanImports(always)
   local said = {}
   for _, d in ipairs(done) do
     local text
-    if d.removed then text = 'Removed the rally of ' .. d.file
+    if d.removed then text = d.file .. ' taken out of the import folder (its rally is kept)'
     elseif d.ok then text = string.format('Imported %s: %d stage%s', tostring(d.name), d.stages, d.stages == 1 and '' or 's')
     else text = 'Could not import ' .. d.file .. ': ' .. tostring(d.why) end
     said[#said + 1] = text
     earth.notify('Earth Rally: ' .. text, 6)
   end
-  if #said > 0 then message = table.concat(said, '
-')
+  if #said > 0 then message = table.concat(said, '\n')
   elseif always then message = 'Nothing new in the import folder.' end
 end
 

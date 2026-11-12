@@ -9,28 +9,31 @@ Status: alpha (1.1.0). Needs BeamNG.drive 0.40.5 and BeamNG.Earth with modding A
 ## How it works
 
 1. **Add a rally**: drop its map (`.kml`, `.kmz` or `.gpx`) into the import folder. Each line becomes a stage; the
-   named points next to it (start, flying finish, stop, ATC) become its controls. No command line.
+   named points next to it (start, flying finish, stop, ATC) become its controls. No command line for this.
 2. **The stage's line on the road.** A stage is timed and called on one of these:
    - **a recce** you drive once in game: the stage's map line is drawn on the road ahead of you (orange; a green ball
      at the flying finish) and the mod records the line you drive, with real heights;
-   - **its map line matched to BeamNG.Earth's roads** (`tools/match_roads.py`, a developer tool for now): no recce
-     needed. Where the map has no road the organisers' line is used, and the window says a recce is better there.
+   - **its map line matched to BeamNG.Earth's roads**: no recce needed. For now this takes a developer tool with
+     Python and BeamNG.Earth's source (`tools/match_roads.py`, below), so for most players every stage still needs a
+     recce. Where the map has no road the organisers' line is used, no notes are called there, and the window says a
+     recce is better.
 
-   A recce, when there is one, is used first.
+   A recce, when there is one, is used first (unless it was saved short and the matched line covers the stage).
 3. **Run** the stage, through its controls as in a real rally:
    - The mod takes you just before the arrival time control (ATC) and moves BeamNG.Earth's world origin to the middle
      of the stage, so the world does not shift under you on any stage up to ~26 km across.
    - The game's route arrows lead to each control. In a control's zone the brakes come on at 30 % (brake harder
      yourself if you like) and a sound says you are in once you stop.
-   - At the ATC you get your start time on the rally clock: the next half minute at least 30 s on (never more than
-     60 s). Driving past the ATC is a missed time control (+60 s).
-   - On the start line you are held until GO: 30 % brake, the clutch in on a manual gearbox (rev in gear), and the
-     car's launch control switched on where it has one. The start tree's LED clock counts down, with the game's
+   - At the ATC you get your start time on the rally clock: the next half minute at least 30 s on (30-60 s), more
+     when the start line is far from the ATC (time to drive there at ~36 km/h). Driving past the ATC is a missed time
+     control (+60 s).
+   - On the start line you are held until GO (the game's own hold, as its rally countdown does: rev freely, the car
+     does not move), with the car's launch control switched on where it has one. The start tree's LED clock counts down, with the game's
      picture-in-picture view of it at the top of the screen; the co-driver says 30 s, good luck, 10 s, 5-4-3-2-1, go.
      Moving off before GO is a jump start (+10 s); reaching the line after your start time is late (+10 s a minute,
      and the next half minute).
-   - The clock stops at the flying finish (a sound) and the notes stop; you drive on to the stop control. Then the
-     boards, the co-driver and the stage layout are tidied away.
+   - The clock stops at the flying finish (a sound) and the notes stop; you drive on to the stop control. A few
+     seconds after you stop there, the boards, the co-driver and the stage layout are tidied away.
    - Each control has the game's own rally boards beside the road, following its bends, and a gazebo at the ATC,
      start and stop. The pacenote cards show during the run. Times and penalties are kept.
 
@@ -95,7 +98,8 @@ the rally's **Import report** in the window lists each stage with its length and
 - **drawn in pieces with gaps**: fine; the recce (or the road matching) fills them in.
 - **too wide to run for now**: the stage is more than ~26 km across (the world would shift during it).
 
-Change the file and it is imported again; take it out of the folder and its rally goes (its recces and times stay).
+Change the file and it is imported again (**Re-scan** imports every file again). Taking a file out of the folder
+does not delete its rally: delete `earthRally/events/<rally>.json` yourself to remove one.
 A rally imported before with `tools/import_kml.py` from the same file keeps its id, so its recces and times still
 belong to it.
 

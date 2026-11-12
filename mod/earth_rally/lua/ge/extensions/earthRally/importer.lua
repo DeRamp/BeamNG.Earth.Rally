@@ -2,9 +2,9 @@
 --   <BeamNG user folder>/current/earthRally/import/
 -- and it becomes a rally in earthRally/events/ (the same file tools/import_kml.py writes): each line a stage (pieces
 -- joined in driving order), the named points beside it (start, flying finish, stop, ATC / TC) its controls. Files are
--- looked at when the mod loads, when one changes in the folder (the game's onFileChanged) and on Re-scan; only new or
--- changed ones are imported (importIndex.json), and a file taken out of the folder takes its rally with it (its
--- recces and times stay).
+-- looked at when the mod loads and when one changes in the folder (the game's onFileChanged); only new or changed ones
+-- are imported (importIndex.json); Re-scan imports every file again. A file taken out of the folder leaves its rally
+-- (and its recces and times) where it is: nothing is deleted.
 --
 -- parse() and build() are plain Lua (tests/test_import.lua runs them offline); scan() uses the game.
 local M = {}
@@ -23,12 +23,20 @@ local sqrt, abs, floor = math.sqrt, math.abs, math.floor
 ------------------------------------------------------------------------------------------ reading
 
 local ENT = { amp = '&', lt = '<', gt = '>', quot = '"', apos = "'" }
+-- (a character code as UTF-8)
+local function utf8(c)
+  if not c or c < 0 then return '' end
+  if c < 0x80 then return string.char(c) end
+  if c < 0x800 then return string.char(0xC0 + floor(c / 64), 0x80 + c % 64) end
+  if c < 0x10000 then return string.char(0xE0 + floor(c / 4096), 0x80 + floor(c / 64) % 64, 0x80 + c % 64) end
+  return string.char(0xF0 + floor(c / 262144), 0x80 + floor(c / 4096) % 64, 0x80 + floor(c / 64) % 64, 0x80 + c % 64)
+end
 local function text(s)
   if not s then return '' end
   s = s:gsub('<!%[CDATA%[(.-)%]%]>', '%1')
   s = s:gsub('&(#?x?)(%w+);', function(kind, v)
-    if kind == '#' then return string.char(tonumber(v) % 256)
-    elseif kind == '#x' then return string.char(tonumber(v, 16) % 256) end
+    if kind == '#' then return utf8(tonumber(v))
+    elseif kind == '#x' then return utf8(tonumber(v, 16)) end
     return ENT[v] or ('&' .. v .. ';')
   end)
   return (s:gsub('^%s+', ''):gsub('%s+$', ''))
@@ -470,11 +478,10 @@ end
 
 ------------------------------------------------------------------------------------------ the folder (in game)
 
--- (a cheap fingerprint of a file's bytes: changed or not)
+-- (a fingerprint of every byte of a file: changed or not, an edit that keeps its length too)
 local function fingerprint(s)
-  local h = #s
-  local step = math.max(1, floor(#s / 4096))
-  for i = 1, #s, step do h = (h * 31 + s:byte(i)) % 4294967296 end
+  local h = 5381
+  for i = 1, #s do h = (h * 33 + s:byte(i)) % 4294967291 end
   return string.format('%d:%08x', #s, h)
 end
 M._fingerprint = fingerprint
@@ -515,9 +522,9 @@ end
 
 M.lastReports = {}          -- event id -> { file, lines = {...}, date }
 
--- The folder made, its files imported when new or changed, rallies of files taken out removed. Returns a list of
--- { file, eventId, name, stages, ok, why }.
-function M.scan()
+-- The folder made, its files imported when new or changed (every file with force), files taken out forgotten (their
+-- rallies kept). Returns a list of { file, eventId, name, stages, ok, why, removed }.
+function M.scan(force)
   local done = {}
   if not FS:directoryExists(M.IMPORT_DIR) then pcall(function() FS:directoryCreate(M.IMPORT_DIR, true) end) end
   local index = readIndex()
@@ -534,17 +541,28 @@ function M.scan()
     if raw then
       local fp = fingerprint(raw)
       local entry = index.files[fileName]
-      if not entry or entry.fingerprint ~= fp then
+      if force or not entry or entry.fingerprint ~= fp then
         local s, why = raw, nil
         if ext == 'kmz' then s, why = readKmz(path) end
         local okP, parsed = false, nil
         if s then okP, parsed = pcall(M.parse, s, ext == 'gpx' and 'gpx' or 'kml') end
         if not s or not okP then
           done[#done + 1] = { file = fileName, ok = false, why = why or tostring(parsed) }
+          index.files[fileName] = { fingerprint = fp, failed = true }   -- (told once, until it changes)
           log('W', 'earthRally', 'import ' .. fileName .. ': ' .. tostring(why or parsed))
         else
           local id = (entry and entry.eventId) or existingId(fileName) or idFrom(stem(fileName))
           if id == '' then id = 'rally' end
+          -- (another file of the folder has that id already, e.g. X.kml beside X.kmz: this one gets its own)
+          local function taken(cand)
+            for other, e in pairs(index.files) do if other ~= fileName and e.eventId == cand then return true end end
+            return false
+          end
+          if taken(id) then
+            local base, k = id, 2
+            while taken(base .. '-' .. k) do k = k + 1 end
+            id = base .. '-' .. k
+          end
           local name = parsed.name or stem(fileName)
           local okB, event, report = pcall(M.build, parsed, id, name, fileName)
           if okB and event then
@@ -557,20 +575,22 @@ function M.scan()
           else
             local why2 = okB and table.concat(M.reportLines(report or {}), '; ') or tostring(event)
             done[#done + 1] = { file = fileName, ok = false, why = why2 }
+            index.files[fileName] = { fingerprint = fp, failed = true }
             log('W', 'earthRally', 'import ' .. fileName .. ': ' .. why2)
           end
         end
       end
     end
   end
-  -- files taken out of the folder: their rallies go too
+  -- files taken out of the folder: forgotten, their rallies kept (a rally is only ever deleted by the player)
   for fileName, entry in pairs(index.files) do
-    if not seen[fileName] then
-      local f = M.EVENTS_DIR .. tostring(entry.eventId) .. '.json'
-      if FS:fileExists(f) then FS:removeFile(f) end
+    if not seen[fileName] and entry.failed then
+      index.files[fileName] = nil
+    elseif not seen[fileName] then
       index.files[fileName] = nil
       done[#done + 1] = { file = fileName, eventId = entry.eventId, removed = true, ok = true }
-      log('I', 'earthRally', 'removed the rally of ' .. fileName .. ' (taken out of the import folder)')
+      log('I', 'earthRally', fileName .. ' taken out of the import folder: its rally ' .. tostring(entry.eventId) ..
+        ' is kept (delete earthRally/events/' .. tostring(entry.eventId) .. '.json to remove it)')
     end
   end
   if #done > 0 then jsonWriteFile(M.INDEX, index, true) end

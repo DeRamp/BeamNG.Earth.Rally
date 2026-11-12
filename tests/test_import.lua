@@ -111,6 +111,22 @@ files['/earthRally/import/Test Rally.kml'] = nil
 local r4 = imp.scan()
 local gone = false
 for _, x in ipairs(r4) do if x.removed and x.eventId == 'oldid' then gone = true end end
-T.check(gone and files['/earthRally/events/oldid.json'] == nil, 'the file taken out: its rally removed')
+T.check(gone and files['/earthRally/events/oldid.json'] ~= nil, 'the file taken out: forgotten, its rally kept')
+-- an edit that keeps the file's length is seen
+files['/earthRally/import/Same.kml'] = kml
+imp.scan()
+files['/earthRally/import/Same.kml'] = kml:gsub('Kuhnle FF', 'Kuhnle Ff')
+local r5 = imp.scan()
+T.check(#r5 == 1 and r5[1].ok, 'an edit of the same length: imported again')
+T.check(#imp.scan(true) >= 1, 'Re-scan imports every file again')
+-- X.kml and X.kmz: two rallies, not one
+files['/earthRally/import/Same.kmz'] = 'x'
+ZipArchive = function() return { openArchiveName = function() return true end,
+  getFileList = function() return { 'doc.kml' } end, readFileToMemory = function() return kml end,
+  close = function() end } end
+local r6 = imp.scan()
+T.check(#r6 == 1 and r6[1].ok and r6[1].eventId == 'same-2', 'a .kmz beside a .kml of the same name: its own rally ('
+  .. tostring(r6[1] and r6[1].eventId) .. ')')
+T.check(imp._text('Craig&#8217;s') == 'Craig\226\128\153s', 'a numeric entity as UTF-8')
 
 T.done('test_import')

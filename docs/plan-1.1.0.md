@@ -7,18 +7,26 @@ Theme: polish what 1.0.0-alpha has, and run stages without a recce (notes from t
 | # | Bug | Where | Status |
 |---|---|---|---|
 | 1 | The co-driver keeps calling notes after the flying finish | runner stepRunning | Fixed (test added) |
-| 2 | Props at the stop control (and any site well above or below the car when it comes within 350 m) are set at the car's height: buried or floating. The ground search only looks 8-25 m up and 40-80 m down from the car's height and rejects anything over ~27 m off; then it falls back to the car's height. Likely why the stop tent is not seen | props spawn / ground | Open |
-| 3 | Pressing "Save recce" before 90 % throws the whole recording away (rec is cleared before the share check), so you cannot carry on driving | recce.stop | Open |
-| 4 | The window re-reads every stage's recce file (and the selected stage's results) from disk every frame: frame drops once several stages have recces (a 40 km recce is ~10,000 points) | main drawWindow, events.recce | Open |
-| 5 | Reaching the start line in the last 5 s before your start time counts as late: a new start time and +10 s, though you were not late | runner stepToStart (`now > startAt - 5`) | Open |
-| 6 | Releasing the control-zone brake sends brake 0 to the car, overriding the player's own held brake (keyboard): the car can roll at the ATC, and at the start after the T-5 release, where 1.5 m of rolling is a jump start | runner brakes / zoneRelease | Open (check in game) |
-| 7 | Signs not lined up with the road (user, 2026-11-12). A control's props all take one direction: the nearest road-map edge at the control's spot, and are laid out on a straight line from there. (a) Offsets along the road follow that tangent: the yellow advance boards 150 m before the flying finish and 50 m before the ATC stand in the trees on a winding road, tents a little off on bends. (b) At a junction the nearest edge can be the side road: the whole site turned to it. (c) No road on the map: ATC / stop face the straight line to the start / from the finish. (d) ATC / stop look for the road at the car's height from up to 350 m away. Fix: each object placed on its own: start and flying finish by walking the stage line to the object's distance and taking the line's direction there (road map for the width only); ATC and stop by walking the road map from the control, at junctions taking the edge best aligned with the expected direction, not the nearest; heights from the road map's nodes (also bug 2) | props spawn, runner setupProps | Open |
-| 8 | Skipping the ATC (drive straight to the start) gives a 12 s start with no penalty: faster than checking in | runner stepToAtc 'missed' | Open |
-| 9 | After a finish the stage layout (pacenote cards) and the boards stay until you press Close | runner finish / main | Open |
-| 10 | Progress on the stage line can jump to another part of the line where the stage passes close to itself (Founders super special: 18 m apart at 2.4 and 4.1 km; Dayton 126 m; Wildcat 138 m). The recce searches the whole line every frame; the run does when more than 60 m off the line, which could finish a stage early | recce.update, runner.progress | Open |
-| 11 | A car reset or recovery during a recce adds the jump to the recorded line and length | recce.update | Open |
-| 12 | The recce records from wherever it was started, even far from the stage start | recce.start / update | Open |
-| 13 | The runner's header comment says "next full minute" (it is the next half minute) | runner.lua | Open |
+| 2 | Props at the stop control (and any site well above or below the car when it comes within 350 m) are set at the car's height: buried or floating. The ground search only looks 8-25 m up and 40-80 m down from the car's height and rejects anything over ~27 m off; then it falls back to the car's height. Likely why the stop tent is not seen | props spawn / ground | Fixed (in game: check) |
+| 3 | Pressing "Save recce" before 90 % throws the whole recording away (rec is cleared before the share check), so you cannot carry on driving | recce.stop | Fixed (test added) |
+| 4 | The window re-reads every stage's recce file (and the selected stage's results) from disk every frame: frame drops once several stages have recces (a 40 km recce is ~10,000 points) | main drawWindow, events.recce | Fixed (test added) |
+| 5 | Reaching the start line in the last 5 s before your start time counts as late: a new start time and +10 s, though you were not late | runner stepToStart (`now > startAt - 5`) | Fixed (test added) |
+| 6 | Releasing the control-zone brake sends brake 0 to the car, overriding the player's own held brake (keyboard): the car can roll at the ATC, and at the start after the T-5 release, where 1.5 m of rolling is a jump start | runner brakes / zoneRelease | Fixed (in game: check) |
+| 7 | Signs not lined up with the road (user, 2026-11-12). A control's props all take one direction: the nearest road-map edge at the control's spot, and are laid out on a straight line from there. (a) Offsets along the road follow that tangent: the yellow advance boards 150 m before the flying finish and 50 m before the ATC stand in the trees on a winding road, tents a little off on bends. (b) At a junction the nearest edge can be the side road: the whole site turned to it. (c) No road on the map: ATC / stop face the straight line to the start / from the finish. (d) ATC / stop look for the road at the car's height from up to 350 m away. Fix: each object placed on its own: start and flying finish by walking the stage line to the object's distance and taking the line's direction there (road map for the width only); ATC and stop by walking the road map from the control, at junctions taking the edge best aligned with the expected direction, not the nearest; heights from the road map's nodes (also bug 2) | props spawn, runner setupProps | Fixed (in game: check) |
+| 8 | Skipping the ATC (drive straight to the start) gives a 12 s start with no penalty: faster than checking in | runner stepToAtc 'missed' | Fixed (test added) |
+| 9 | After a finish the stage layout (pacenote cards) and the boards stay until you press Close | runner finish / main | Fixed (test added) |
+| 10 | Progress on the stage line can jump to another part of the line where the stage passes close to itself (Founders super special: 18 m apart at 2.4 and 4.1 km; Dayton 126 m; Wildcat 138 m). The recce searches the whole line every frame; the run does when more than 60 m off the line, which could finish a stage early | recce.update, runner.progress | Fixed (test added) |
+| 11 | A car reset or recovery during a recce adds the jump to the recorded line and length | recce.update | Fixed (test added) |
+| 12 | The recce records from wherever it was started, even far from the stage start | recce.start / update | Fixed (test added) |
+| 13 | The runner's header comment says "next full minute" (it is the next half minute) | runner.lua | Fixed (test added) |
+
+## Status (2026-11-12, branch v1.1.0)
+
+Done: every bug above, the start-line hold, the start tree and start clock, the import folder, road-matched stage
+lines (tools/match_roads.py, run on all 18 stages: 13 matched end to end; Wildcat 3.2 km, Schafer 2.4 km, Taylor Town,
+Founders and the like 400 m with no road on the map, the organisers' line used there), the polish items below
+except the stage layout built at runtime. Not done (deferred): the player UI and HUD preview; in-window import fixes
+(give a point to a stage, reverse, hide, rename); road matching inside BeamNG.Earth; the "Download stage" button.
 
 ## Polish
 
@@ -38,7 +46,9 @@ Now: stopped on the start line, the car is frozen (the game's setFreeze) and the
 released, and moving 1.5 m after that is a jump start. A frozen car cannot rev, and on a slope the released car can
 roll into a jump start.
 
-New behaviour, from stopping on the line until GO:
+(Superseded by the review below: the game's freeze holds the car, launch control on; no brake or clutch override.)
+
+First design, from stopping on the line until GO:
 - **No freeze.** The brake held at 30 %, re-applied every frame (a tap of the player's own brake key otherwise sets it
   back to 0: the game's input keeps only the last value; also bug 6).
 - **Manual gearbox:** the clutch held in (100 %) as well, so the player can select first and rev without moving.
@@ -201,3 +211,43 @@ Work:
 
 Later (not 1.1.0): line matching and a stage corridor download as BeamNG.Earth API calls (an upstream PR), so players
 need no Python.
+
+## Review before testing (2026-11-12: a bug hunt and a contrarian review, checked against the game's Lua)
+
+Fixed:
+- main.lua did not compile (a line break inside a string): the mod would not have loaded. A test now compiles every
+  Lua file of the mod.
+- The start-line hold changed. A brake override on a stopped car makes the arcade gearbox (the game's default) select
+  reverse and swap brake and throttle: the car would have backed off the line. Now the game's own freeze holds the car
+  (the engine revs freely, as the game's launch helper and rally countdown use it) with launch control on, both let go
+  at GO; no clutch override. The zone brake (moving) is unchanged; it is let go as the car stops.
+- Every car sent a hold is let go (a car switched away from kept its brake); the vehicle code is defined again with
+  each command (Ctrl+L no longer leaves the old version running in the car).
+- The ATC / stop check-in zone is where their boards stand on the road (they can be snapped up to 30 m from the
+  map's point).
+- A far ATC gives time to reach the start line (36 km/h over 1.3x the straight distance, + 20 s), so the start is not
+  late by design (Dalles Mtn Down's ATC is 510 m away). The 30-60 s rule holds for near ATCs.
+- Late minutes counted from how late, not from the new start time.
+- Import: every byte fingerprinted (an edit that keeps the file's length is seen); Re-scan imports every file again;
+  a file taken out no longer deletes its rally; a .kml and a .kmz of the same name are two rallies; numeric entities
+  as UTF-8; a broken file is reported once, until it changes.
+- A matched line from another version of the map is not used (mapKey); a recce saved short loses to a whole matched
+  line.
+- No notes on the stretches of a matched line with no road on the map (flagged points, 30 m either side); those
+  stretches eased into the road; a flying finish on one triggers within 150 m of the line.
+- The tidy-away waits 8 s after the stage is done (the stop control's tent no longer vanishes as the car stops).
+- The start-clock extension is loaded once the start tree is down (its scan of every static object is not left
+  running on the drive to the ATC).
+- match_roads.py: cells found along the whole line; a cell with no road data skipped.
+
+Not changed (to watch in game): props are placed once (a road map not loaded yet means the straight-line fallback);
+a parallel road within 30 m running the same way can still be chosen; the vehicle command is sent each frame in a
+zone; a stop on the line in the last 1.5 s before the start time loses about a second.
+
+## Dream features (super long term; not planned for any version yet)
+
+Ideas from the user (2026-11-12) to keep in mind, not to work on:
+
+- **Pick your rally car**: choose the car (and its setup) you run the stages in.
+- **Pick your recce car**: a separate, road-legal car for the recce drive, as real crews use.
+- **A recovery vehicle**: a recovery truck to come out to you after an off or a breakdown on a stage.

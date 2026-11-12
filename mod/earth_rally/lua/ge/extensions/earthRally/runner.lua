@@ -43,6 +43,7 @@ M.LINE_BEFORE_START_M = 30     -- of the recce kept before the start line
 M.CAR_BEHIND_LINE_M = 4
 M.Z_BELOW_POSE_M = 0.5         -- the road under the car's reference point
 M.FINISH_OFF_M = 40            -- across the finish this close to the line: finished
+M.FINISH_OFF_GAP_M = 150       -- ... this close where the line there is the organisers' (no road on the map)
 M.TIMING_RUN_OUT_M = 300       -- the timing line carried on past the recce's end (a recce may stop short of the finish)
 M.CONTROL_ON_LINE_M = 60       -- a start / finish control this close to the line is where it is on the line
 M.OFF_ROUTE_M = 60
@@ -61,6 +62,11 @@ M.START_ZONE_OFF_M = 8
 M.START_GAP_S = 30             -- the start time at least this long after checking in at the ATC: the next half
                                -- minute mark (hh:mm:00 or hh:mm:30) from there, so the wait is 30-60 s
 M.LATE_GAP_S = 10              -- late at the start: the next half-minute mark at least this far on
+M.LIAISON_MS = 10              -- the drive from the ATC to the start line timed at this speed (36 km/h) ...
+M.ROAD_FACTOR = 1.3            -- ... over the straight distance times this (the road winds) ...
+M.STOP_ALLOW_S = 20            -- ... plus this to stop on the line: a far ATC gets more than START_GAP_S
+M.MUTE_PAD_M = 30              -- no notes this far either side of a stretch with no road on the map
+M.TIDY_AFTER_S = 8             -- the stage's boards and co-driver taken away this long after it is done
 M.START_LINE_SHOW_M = 250      -- the start line drawn on the road while the car is this close to it
 M.NO_ATC_START_S = 12          -- without an ATC: the start this long after stopping on the line (the 10 s call fits)
 M.LATE_PENALTY_S = 10          -- a minute (or part) late at the start
@@ -137,7 +143,8 @@ local function project()
   for i, p in ipairs(run.latlon) do
     local x, y, z = earth.toGame(p[1], p[2], (p[3] or 0) - M.Z_BELOW_POSE_M)
     if not x then return false end
-    pts[i] = { x = x, y = y, z = z }
+    -- (gap: a stretch of a matched line with no road on the map, the organisers' line there: no notes on it)
+    pts[i] = { x = x, y = y, z = z, gap = p[4] == 1 or nil }
   end
   local recceEnd = geo.cumulative(pts)
   recceEnd = recceEnd[#recceEnd]
@@ -158,6 +165,10 @@ local function project()
   run.startM = at(ctl.start) or run.startM
   local f = at(ctl.ff)
   if f and f > run.startM + 100 then run.finishM = f end
+  -- (a flying finish on a stretch with no road on the map: the line there is the organisers', maybe well off the road)
+  local fi = geo.segAt(run.cum, run.finishM)
+  run.finishInGap = false
+  for k = math.max(1, fi - 10), math.min(#pts, fi + 10) do if pts[k].gap then run.finishInGap = true end end
   return true
 end
 
@@ -232,7 +243,7 @@ function M.start(event, stage)
   if not ok then return false, why end
   ok, why = rallyA.check()
   if not ok then return false, why end
-  local source, kind = events.stageLine(event.id, stage.id)
+  local source, kind = events.stageLine(event.id, stage.id, stage)
   if not source then return false, 'this stage has no line on the roads yet: drive its recce first' end
   if not carPos() then return false, 'get in a car first' end
   M.abort(true)
@@ -340,7 +351,17 @@ end
 local function stepBuild()
   if run.oldRebase then earth.setRebaseDistance(M.MAX_REBASE_M) end
   if not project() then fail('could not put the stage into game coordinates') return end
+  -- (no notes on the stretches of a matched line with no road on the map: its hand-drawn corners are not the road's)
+  local mute, from = {}, nil
+  for i, p in ipairs(run.line) do
+    if p.gap then from = from or run.cum[i]
+    elseif from then mute[#mute + 1] = { from - M.MUTE_PAD_M, run.cum[i] + M.MUTE_PAD_M } from = nil end
+  end
+  if from then mute[#mute + 1] = { from - M.MUTE_PAD_M, run.cum[#run.cum] } end
+  run.checks.notesMutedKm = 0
+  for _, r in ipairs(mute) do run.checks.notesMutedKm = run.checks.notesMutedKm + (r[2] - r[1]) / 1000 end
   local okB, built = pcall(writer.build, run.line, { startM = run.startM, finishM = run.finishM, name = run.stage.name,
+    mute = mute,
     quatFn = function(x, y, z) local q = quatFromDir(vec3(x, y, z), vec3(0, 0, 1)) return q.x, q.y, q.z, q.w end })
   if not okB then fail('could not build the stage: ' .. tostring(built)) return end
   writer.write(run.dir, built)
@@ -357,13 +378,6 @@ local function stepBuild()
     local worst, lowest = rallyA.heightCheck(built.nodes)
     run.checks.heightKeptM = worst
     run.checks.lowestDrivelineZ = lowest
-  end
-  -- the game's start clock: the LED board on the start tree (props.lua), and its picture-in-picture during the
-  -- countdown (gameplay_rallyStartClock, fed from M.update). Loaded for the run only: it looks through every static
-  -- object in the scene for start trees once a second while it has none, and BeamNG.Earth's scene is large.
-  if extensions and extensions.load and not rawget(_G, M.CLOCK_EXT) then
-    pcall(extensions.load, M.CLOCK_EXT)
-    run.clockExtOwned = rawget(_G, M.CLOCK_EXT) ~= nil
   end
   setState('place')
 end
@@ -488,36 +502,40 @@ local function sound(ev)
   if eng and eng.Audio and eng.Audio.playOnce then pcall(eng.Audio.playOnce, 'AudioGui', ev) end
 end
 
--- The car's controls in a control zone and on the start line, in the vehicle's own Lua (sent each frame while in
--- use). The vehicle controller's overrides (electrics.values.brakeOverride / clutchOverride) stand in for the
--- player's input while set and hand it back untouched when cleared, so the player's own brake is never cancelled:
---   'zone'  the brake at least `level` (the player's own when more)
---   'hold'  the same, the clutch held in on a manual or sequential gearbox (rev in gear, the car still), and the
---           car's launch control (the game's twoStepLaunch controller) switched on: it arms with the car stopped, the
---           throttle on and the brake at 20 % on a keyboard, 80 % on an analog throttle, so the brake is held at 80 %
---           there, and it lets the revs go when the brake does
---   'off'   both overrides cleared, the launch control back as the player had it
+-- The car's controls in a control zone and on the start line.
+--
+-- In a control zone (moving): the brake at least BRAKE_LEVEL through the vehicle controller's override
+-- (electrics.values.brakeOverride: the player's own harder braking kept, their input handed back untouched when it is
+-- cleared), let go as the car stops, before the arcade gearbox's "brake at a standstill selects reverse" can act.
+--
+-- On the start line, from stopping until GO: the game's freeze (as its own rally countdown holds a staged car,
+-- gameplay/rally/.../stagedCountdownUtils): the car cannot move, the engine revs freely (the frozen gearbox lets the
+-- clutch out, as the game's perfectLaunch does), and its brake output reads full, so the car's launch control (the
+-- game's twoStepLaunch controller, switched on for the start) arms on the throttle. Both let go at GO. Not a brake
+-- override there: on the arcade gearbox (the game's default) a held brake on a stopped car selects reverse and then
+-- swaps brake and throttle, which drove the car backwards (review 2026-11-12).
+--
+-- Vehicle Lua (sent with queueLuaCommand; defined again with each command, so a changed mod is not left running its
+-- old version in a car after Ctrl+L):
+--   'zone'    the brake override at least `level`
+--   'launch'  launch control on (its state before kept)
+--   'off'     the override cleared, launch control as the player had it
 M.VEH_CTL = [[
-if not earthRally_ctl then
-  earthRally_ctl = function(mode, level)
-    local ev = electrics.values
-    local st = earthRally_st
-    if mode == 'off' then
-      ev.brakeOverride, ev.clutchOverride = nil, nil
-      if st and st.ts then
-        for _, c in ipairs(st.ts) do if c.setTwoStep then pcall(c.setTwoStep, st.tsWas == true, true) end end
-      end
-      earthRally_st = nil
-      return
+earthRally_ctl = function(mode, level)
+  local ev = electrics.values
+  local st = earthRally_st
+  if mode == 'off' then
+    ev.brakeOverride = nil
+    if st and st.ts then
+      for _, c in ipairs(st.ts) do if c.setTwoStep then pcall(c.setTwoStep, st.tsWas == true, true) end end
     end
-    if not st then st = {} earthRally_st = st end
-    if mode == 'hold' and not st.hold then
-      st.hold = true
-      local function has(t)
-        local ok, d = pcall(powertrain.getDevicesByType, t)
-        return ok and type(d) == 'table' and next(d) ~= nil
-      end
-      st.manual = has('manualGearbox') or has('sequentialGearbox')
+    earthRally_st = nil
+    return
+  end
+  if not st then st = {} earthRally_st = st end
+  if mode == 'launch' then
+    ev.brakeOverride = nil
+    if not st.ts then
       local ok, ts = pcall(function() return controller.getControllersByType('twoStepLaunch') end)
       if ok and type(ts) == 'table' and ts[1] then
         st.ts, st.tsWas = ts, false
@@ -526,27 +544,35 @@ if not earthRally_ctl then
         for _, c in ipairs(ts) do if c.setTwoStep then pcall(c.setTwoStep, true, true) end end
       end
     end
-    local b = level or 0
-    if mode == 'hold' and st.ts then
-      local f = input.state and input.state.throttle and input.state.throttle.filter
-      if f ~= FILTER_KBD and f ~= FILTER_KBD2 then b = math.max(b, 0.8) end
-    end
-    ev.brakeOverride = math.max(input.brake or 0, b)
-    ev.clutchOverride = (mode == 'hold' and st.manual) and 1 or nil
+    return
   end
+  ev.brakeOverride = math.max(input.brake or 0, level or 0)
 end
 ]]
+-- (every car sent a control since the last 'off', so a car the player switched away from is let go too)
+local ctlCars = {}           -- vehicle id (or the object) -> the vehicle
+local function carKey(veh)
+  local ok, id = pcall(function() return veh:getID() end)
+  return ok and id or veh
+end
 local function vehCtl(veh, mode, level)
   if not veh then return end
   local cmd = M.VEH_CTL .. string.format('earthRally_ctl(%q, %.2f)', mode, level or 0)
   pcall(function() veh:queueLuaCommand(cmd) end)
-  if run then run.ctlVeh = (mode ~= 'off') and veh or nil end
+  if mode ~= 'off' then ctlCars[carKey(veh)] = veh end
 end
 M._vehCtl = vehCtl
 
+-- The car held still (the game's freeze).
+local function freeze(veh, on)
+  local vb = rawget(_G, 'core_vehicleBridge')
+  if veh and vb and vb.executeAction then pcall(vb.executeAction, veh, 'setFreeze', on) end
+  if on and veh then ctlCars[carKey(veh)] = veh end
+end
+
 -- A control zone: inZone each frame. The car braked (BRAKE_LEVEL) from the moment it is in it; once it stops a sound
 -- ('stopped' in that frame, 'done' a frame later) and the brake let go, or let go when it leaves the zone. keepHeld
--- (the start line): once stopped the car is held ('hold' above) until zoneRelease() at GO.
+-- (the start line): once stopped the car is held (freeze, launch control) until zoneRelease() at GO.
 local function zone(inZone, dt, keepHeld)
   local _, veh = carPos()
   local z = run.zone
@@ -557,10 +583,7 @@ local function zone(inZone, dt, keepHeld)
   end
   if z.stopped then
     z.t = z.t + dt
-    if keepHeld then
-      vehCtl(veh, 'hold', M.BRAKE_LEVEL)
-      return z.t >= M.ZONE_HOLD_S and 'done' or 'held'
-    end
+    if keepHeld then return z.t >= M.ZONE_HOLD_S and 'done' or 'held' end
     run.zone = nil
     return 'done'
   end
@@ -571,22 +594,28 @@ local function zone(inZone, dt, keepHeld)
   end
   if speed() < M.STOPPED_MS then
     z.stopped = true
-    if keepHeld then vehCtl(veh, 'hold', M.BRAKE_LEVEL) else vehCtl(veh, 'off') end
+    vehCtl(veh, 'off')
+    if keepHeld then
+      freeze(veh, true)
+      vehCtl(veh, 'launch')
+      z.held = veh
+    end
     sound(M.SOUND_STOPPED)
     return 'stopped'
   end
   vehCtl(veh, 'zone', M.BRAKE_LEVEL)
   return 'moving'
 end
--- Brake, clutch and launch control handed back (GO, the end of a run; also the car the controls were sent to when
--- the player has switched car since).
+-- Brake, freeze and launch control handed back (GO, the end of a run), on every car they were sent to.
 local function zoneRelease()
   if not run then return end
   local _, veh = carPos()
-  if run.zone or run.ctlVeh then
-    if run.ctlVeh and run.ctlVeh ~= veh then vehCtl(run.ctlVeh, 'off') end
-    vehCtl(veh, 'off')
+  if veh and run.zone then ctlCars[carKey(veh)] = veh end
+  for _, car in pairs(ctlCars) do
+    freeze(car, false)
+    vehCtl(car, 'off')
   end
+  ctlCars = {}
   run.zone = nil
 end
 
@@ -617,7 +646,8 @@ end
 local function stepToAtc(dt)
   run.t = run.t + dt
   local p = carPos()
-  local a = ctlGame(run.atc)
+  -- (where its boards stand on the road once they are down; the map's point until then)
+  local a = props.sitePoint('atc') or ctlGame(run.atc)
   if not (p and a) then return end
   props.update(p, earth.toGame)
   local d = math.sqrt((p.x - a.x) ^ 2 + (p.y - a.y) ^ 2)
@@ -629,7 +659,11 @@ local function stepToAtc(dt)
   if zs == 'stopped' then
     local now = M.clock()
     run.atcTime = now
-    run.startAt = math.ceil((now + M.START_GAP_S) / 30) * 30
+    -- the next half minute at least START_GAP_S on, more when the start line is far (driven at LIAISON_MS)
+    local sp = geo.pointAt(run.line, run.cum, run.startM)
+    local far = math.sqrt((sp.x - a.x) ^ 2 + (sp.y - a.y) ^ 2) * M.ROAD_FACTOR
+    local gap = math.max(M.START_GAP_S, far / M.LIAISON_MS + M.STOP_ALLOW_S)
+    run.startAt = math.ceil((now + gap) / 30) * 30
     run.checks.atc = 'checked in ' .. M.formatClock(now)
     say(string.format('Checked in at %s. Your start time: %s. Move up to the start line.', M.formatClock(now),
       M.formatClock(run.startAt)), 8)
@@ -685,7 +719,7 @@ local function stepToStart(dt)
     elseif now > run.startAt then
       -- late at the start: the next half minute, and a penalty for each minute (or part) late
       local newStart = math.ceil((now + M.LATE_GAP_S) / 30) * 30
-      local mins = math.ceil((newStart - run.startAt) / 60)
+      local mins = math.max(1, math.ceil((now - run.startAt) / 60))
       run.latePenalty = mins * M.LATE_PENALTY_S
       run.checks.lateMinutes = mins
       say(string.format('Late at the start: +%d s. New start time %s', run.latePenalty, M.formatClock(newStart)), 6)
@@ -733,10 +767,8 @@ local function stepWaitStart(dt)
   local p = carPos()
   if p then props.update(p, earth.toGame) end
   local left = run.startAt - M.clock()
-  -- held on the line until GO (brake, clutch, launch control: vehCtl 'hold'), so the player can rev without moving;
-  -- moving off before GO is still a jump start (the stage clock runs from the start time)
-  local _, veh = carPos()
-  if run.zone then vehCtl(veh, 'hold', M.BRAKE_LEVEL) end
+  -- held on the line until GO (the freeze, launch control on), so the player can rev without moving; moving off
+  -- before GO (a held car that was not, e.g. a switched car) is still a jump start (the stage clock runs from the start)
   run.staged = run.staged or p
   if p and run.staged and not run.jumpStart and geo.dist2d(p, run.staged) > M.JUMP_START_M then
     run.jumpStart = true
@@ -758,7 +790,7 @@ local function stepWaitStart(dt)
     if ui_message then ui_message(tostring(n), 1, 'earthRallyCount') end
   end
   if left <= 0 then
-    zoneRelease()              -- (brake and clutch let go in the frame of the GO call)
+    zoneRelease()              -- (the car let go in the frame of the GO call)
     rallyA.notesOn(true)       -- (the stage's notes from GO only)
     rallyA.systemNote('countdowngo')
     -- (the first note is the engine's own: its 'immediate' note, read as the car pulls away. Calling it ourselves and
@@ -786,7 +818,7 @@ local function stepRunning(dtSim)
   local along, off = progress(p)
   run.along, run.off = along, off
   if off > run.checks.maxOffM then run.checks.maxOffM = off end
-  if along >= run.finishM and off <= M.FINISH_OFF_M then
+  if along >= run.finishM and off <= (run.finishInGap and M.FINISH_OFF_GAP_M or M.FINISH_OFF_M) then
     sound(M.SOUND_FINISH)
     rallyA.notesOn(false)        -- (the stage is over: no more calls on the way to the stop control or after)
     run.stageTime = run.clock
@@ -815,7 +847,7 @@ end
 local function stepToStop(dt)
   run.t = run.t + dt
   local p = carPos()
-  local b = ctlGame(run.stopCtl)
+  local b = props.sitePoint('stop') or ctlGame(run.stopCtl)
   if not (p and b) then return end
   props.update(p, earth.toGame)
   local d = math.sqrt((p.x - b.x) ^ 2 + (p.y - b.y) ^ 2)
@@ -833,6 +865,8 @@ local function stepToStop(dt)
   end
 end
 
+local tidy        -- (below)
+
 -- Every frame (main.lua).
 function M.update(dtReal, dtSim)
   camUpdate(dtReal or 0)
@@ -840,8 +874,22 @@ function M.update(dtReal, dtSim)
   if not run.noStartLine then drawStartLine() end
   if run.clockBase then run.clockRun = run.clockRun + (dtSim or 0) end
   local s = run.state
+  -- the game's start clock: the LED board on the start tree (props.lua), and its picture-in-picture during the
+  -- countdown (gameplay_rallyStartClock, fed here). Loaded once the tree is down, for the run only: until it has a
+  -- tree it looks through every static object in the scene once a second, and BeamNG.Earth's scene is large.
+  if not run.clockExtTried and props.placed('start') and extensions and extensions.load then
+    run.clockExtTried = true
+    if not rawget(_G, M.CLOCK_EXT) then
+      pcall(extensions.load, M.CLOCK_EXT)
+      run.clockExtOwned = rawget(_G, M.CLOCK_EXT) ~= nil
+    end
+  end
   if s == 'toAtc' or s == 'toStart' or s == 'waitStart' or (s == 'running' and (run.clock or 0) < 8) then
     feedStartClock()
+  end
+  if s == 'finished' and run.tidyIn then
+    run.tidyIn = run.tidyIn - (dtReal or 0)
+    if run.tidyIn <= 0 then run.tidyIn = nil tidy() end
   end
   if s == 'travel' then stepTravel(dtReal)
   elseif s == 'anchor' then stepAnchor(dtReal)
@@ -862,7 +910,7 @@ function M.release()
 end
 
 -- Everything the run put in the game taken away (the result stays in `run` for the window until it is closed).
-local function tidy()
+tidy = function()
   earth.originMoved()
   zoneRelease()
   routeOff()
@@ -878,7 +926,12 @@ end
 function M.wrapUp()
   if not run then return end
   setState('finished')
-  tidy()
+  -- (the car let go, the route arrows off at once; the boards, the co-driver and the stage layout a few seconds
+  -- later, so the stop control's tent does not vanish the moment the car stops)
+  zoneRelease()
+  routeOff()
+  M.release()
+  run.tidyIn = M.TIDY_AFTER_S
 end
 
 function M.abort(quiet)

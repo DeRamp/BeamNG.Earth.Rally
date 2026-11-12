@@ -346,7 +346,21 @@ end
 
 -- After a world shift: everything put down again where it belongs (directions re-given by the caller).
 function M.reset()
-  for _, s in ipairs(sites) do M.removeSite(s) end
+  for _, s in ipairs(sites) do M.removeSite(s) s.edge = nil end
+end
+
+-- Where a site's boards stand on the road (game coordinates now: the road map's point beside the control), once its
+-- props are down and the road map had the road; else nil (the caller uses the control's own spot).
+function M.sitePoint(kind)
+  for _, s in ipairs(sites) do
+    if s.kind == kind and s.objs and #s.objs > 0 and s.edge then return { x = s.edge.x, y = s.edge.y } end
+  end
+end
+
+-- A site's props are down.
+function M.placed(kind)
+  for _, s in ipairs(sites) do if s.kind == kind and s.objs and #s.objs > 0 then return true end end
+  return false
 end
 
 function M.count()

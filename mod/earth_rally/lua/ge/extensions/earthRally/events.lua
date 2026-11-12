@@ -67,12 +67,22 @@ end
 -- The stage's map line matched to the roads: { points = { { lat, lon, alt }... }, gaps = { {fromM, toM}... }, ... }.
 function M.matched(eventId, stageId) return readOnce(M.MATCHED_DIR .. key(eventId, stageId), lineValid) end
 
--- The line a stage runs on: its recce (what the player drove) first, else the matched map line. Returns the line and
--- 'recce' / 'matched', or nil.
-function M.stageLine(eventId, stageId)
+-- A stage's map line in short (its points, first and last): a matched line made from another version of the map
+-- (the map changed and was imported again since) is not used. tools/match_roads.py writes the same as mapKey.
+function M.mapKey(line)
+  if type(line) ~= 'table' or #line == 0 then return nil end
+  local a, b = line[1], line[#line]
+  return string.format('%d:%.6f:%.6f:%.6f:%.6f', #line, a[1], a[2], b[1], b[2])
+end
+
+-- The line a stage runs on: its recce (what the player drove) first, unless it was saved short of the end ("Save
+-- anyway") and a matched line covers the whole stage; else the matched map line (when it was made from this map).
+-- stage: the event's stage (for the map check). Returns the line and 'recce' / 'matched', or nil.
+function M.stageLine(eventId, stageId, stage)
   local r = M.recce(eventId, stageId)
-  if r then return r, 'recce' end
   local m = M.matched(eventId, stageId)
+  if m and stage and m.mapKey and m.mapKey ~= M.mapKey(stage.line) then m = nil end
+  if r and (not m or type(r.share) ~= 'number' or r.share >= 0.9) then return r, 'recce' end
   if m then return m, 'matched' end
   return nil
 end
