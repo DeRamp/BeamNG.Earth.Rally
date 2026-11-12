@@ -484,8 +484,13 @@ do
     'stopped at the stop control: stage complete')
   T.check(countObjects() > 0, 'stage done: the stop control tent still there a moment after stopping')
   frames(100)
-  T.check(countObjects() == 0 and manager == nil and layout == 'beamngEarth',
-    'a few seconds later: boards, co-driver and stage layout taken away (not left until Close)')
+  T.check(countObjects() == 0 and manager == nil,
+    'a few seconds later: boards and co-driver taken away (not left until Close)')
+  T.check(layout == 'earthRallyStage' and r2.resultsOpen, 'the stage layout kept for the results card')
+  -- drive off: the card closes, BeamNG.Earth's layout back
+  car.lat, car.lon = toGeo(sx2 + 150, sy2)
+  frames(1)
+  T.check(not r2.resultsOpen and layout == 'beamngEarth', 'driven off: the results card closed, the layout back')
   runner.abort(true)
 end
 

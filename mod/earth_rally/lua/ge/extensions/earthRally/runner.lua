@@ -29,6 +29,8 @@ local earth = require('earthRally/earthAdapter')
 local rallyA = require('earthRally/rallyAdapter')
 local writer = require('earthRally/stageWriter')
 local events = require('earthRally/events')
+local settings = require('earthRally/settings')
+local hudFrame = require('earthRally/hudFrame')
 
 local M = {}
 local logTag = 'earthRally'
@@ -78,6 +80,12 @@ M.ZONE_HOLD_S = 1.5            -- stopped on the start line this long before the
 M.FOLLOW_BACK_M = 150          -- the car's progress looked for this far behind ...
 M.FOLLOW_AHEAD_M = 600         -- ... and this far ahead of where it was along the stage line
 M.ROUTE_REFRESH_S = 5          -- the route arrows planned again this often (BeamNG.Earth's road map changes as you go)
+M.RESET_PENALTY_S = 10         -- each car reset during the timed stage (setting resetPenalty)
+M.RESET_DEBOUNCE_S = 0.5       -- (one reset can be heard more than once)
+M.RESET_AFTER_MOVE_S = 2       -- (no reset counted this soon after the world's origin moved: not the player's)
+M.OFF_ROUTE_CLEAR_M = 40       -- off route from OFF_ROUTE_M, back on it within this (no flicker at the edge)
+M.RESULTS_CLOSE_M = 100        -- the results card closes once the car is driven this far from where it stopped ...
+M.RESULTS_TIMEOUT_S = 120      -- ... or after this long
 M.SOUND_STOPPED = 'event:UI_Checkpoint'
 M.SOUND_FINISH = 'event:UI_CountdownGo'
 
@@ -99,14 +107,26 @@ function M.formatClock(t)
 end
 
 
-local function say(text, s) earth.notify(text, s or 4) log('I', logTag, text) end
+-- A message: the game's toasts (guihooks 'toastrMsg', as gameplay/lowPerformance.lua), BeamNG.Earth's notify line
+-- without them. kind: 'info' / 'success' / 'warning' / 'error'; title: its first line (else 'Earth Rally').
+function M.say(text, s, kind, title)
+  local gh = rawget(_G, 'guihooks')
+  if gh and gh.trigger then
+    pcall(gh.trigger, 'toastrMsg', { type = kind or 'info', title = title or 'Earth Rally', msg = text,
+      config = { timeOut = math.floor((s or 4) * 1000) } })
+  else
+    earth.notify((title and (title .. ': ') or '') .. text, s or 4)
+  end
+  log('I', logTag, (title and (title .. ': ') or '') .. text)
+end
+local function say(text, s, kind, title) M.say(text, s, kind, title) end
 function M.state() return run and run.state or 'idle' end
 function M.current() return run end
 
 local function fail(why)
   if not run then return end
   run.state, run.error = 'failed', why
-  say('Earth Rally: ' .. why, 8)
+  say(why, 8, 'error', 'Earth Rally: run stopped')
 end
 
 -- The stage line (a recce, or the map line matched to the roads: { points = { {lat, lon, alt}... } }) cut round the
@@ -260,14 +280,26 @@ function M.start(event, stage)
     checks = { moveSource = earth.moveSource(), shifts = 0, notesCalledAfterShift = 0, notReadyS = 0,
                maxOffM = 0, notesCalled = 0, line = kind },
     oldRebase = earth.rebaseDistance(),
-    clockBase = todNow(), clockRun = 0,
+    clockBase = todNow(), clockRun = 0, realT = 0, resets = 0,
   }
+  -- its SS number (the stage's place in the rally's map) and the next stage
+  run.ssCount = #(event.stages or {})
+  for i, st in ipairs(event.stages or {}) do
+    if st == stage or st.id == stage.id then
+      run.ss = i
+      local nx = event.stages[i + 1]
+      if nx then run.nextStage = { id = nx.id, ss = i + 1, name = nx.name, lengthM = nx.lengthM } end
+      break
+    end
+  end
   run.moveHandle = earth.onMoved(function(info) M._moved(info) end)
 
   -- the time controls round the stage (from the event's map), when they are near enough to be its own
   local ctl = stage.controls or {}
   local st0 = ctl.start or { lat = latlon[1][1], lon = latlon[1][2] }
-  if ctl.atc then
+  -- (setting timeControls 'quick': no ATC, the car set down on the start line, the start a few seconds after stopping)
+  run.quick = settings.get('timeControls') == 'quick'
+  if ctl.atc and not run.quick then
     local d = geo.metres(ctl.atc.lat, ctl.atc.lon, st0.lat, st0.lon)
     if d <= M.ATC_MAX_FROM_START_M and d >= 5 then run.atc = ctl.atc end
   end
@@ -283,7 +315,7 @@ function M.start(event, stage)
     if not tok then fail('could not go to the start: ' .. tostring(twhy)) return false, twhy end
     run.teleported = true
   end
-  say('Earth Rally: ' .. stage.name .. ': getting ready')
+  say(stage.name .. ': getting ready', 4, 'info', 'Earth Rally')
   return true
 end
 
@@ -299,6 +331,7 @@ function M._moved(info)
   if run.line then project() end
   props.reset()            -- (put down again where they belong, in the new frame)
   run.lastMove = info
+  run.movedAt = run.realT
 end
 
 local function setState(s)
@@ -410,7 +443,9 @@ local function feedStartClock()
   local now = M.clock()
   local s = run.state
   local data = { rallyClock = { wallClockSecs = now % 86400 } }
-  if s == 'waitStart' then data.activeState = 'countdown'
+  -- (the view shows only while the state is 'countdown': setting clockView 'off' never says so; the LED board on the
+  -- start tree still counts down from countdownData)
+  if s == 'waitStart' and settings.get('clockView') ~= 'off' then data.activeState = 'countdown'
   elseif s == 'running' then data.activeState = 'stageActive'
   else data.activeState = 'vehicleProximity' end
   if run.startAt then
@@ -434,6 +469,7 @@ M.CLOCK_VIEW_RIGHT = 0.015      -- (gap to the screen's right edge, share of its
 M.CLOCK_VIEW_BOTTOM = 0.36      -- (the view's bottom this share of the screen's height above its bottom edge)
 function M.placeClockView()
   if not (run and rawget(_G, M.CLOCK_EXT)) then return end     -- (only in our runs: the game's rally mode keeps its own)
+  if settings.get('clockView') ~= 'right' then return end       -- ('top': where the game puts it; 'off': not shown)
   local rvm = rawget(_G, 'RenderViewManagerInstance')
   if not (rvm and rvm.getView) then return end
   local ok, view = pcall(rvm.getView, rvm, M.CLOCK_VIEW_NAME)
@@ -605,7 +641,7 @@ local function stepPlace()
       run.checks.atcSetDown = spot.road and 'on the road map' or 'no road on the map there'
     end
     setState('toAtc')
-    say('Earth Rally: drive to the time control and stop at its red board', 6)
+    say('Drive to the time control and stop at its red board.', 6, 'info', run.stage.name)
   else
     toStartLine(veh)
     setState('toStart')
@@ -613,6 +649,8 @@ local function stepPlace()
   rallyA.resync()
   layoutOn()
 end
+
+local resultsUpdate      -- (below)
 
 local function speed()
   local p = earth.pose()
@@ -730,6 +768,8 @@ local function zone(inZone, dt, keepHeld, near)
     sound(M.SOUND_STOPPED)
     return 'stopped'
   end
+  -- (setting zoneBrake off: no brake, stopping in the zone still counts)
+  if settings.get('zoneBrake') == false then return 'moving' end
   local want = M.BRAKE_LEVEL * math.max(0, math.min(1, near or 1))
   z.level = math.max(z.level or 0, want)
   vehCtl(veh, 'zone', z.level)
@@ -795,8 +835,8 @@ local function stepToAtc(dt)
     run.startAt = math.ceil((now + gap) / 30) * 30
     run.checks.atc = 'checked in ' .. M.formatClock(now)
     trafficOff()
-    say(string.format('Checked in at %s. Your start time: %s. Move up to the start line.', M.formatClock(now),
-      M.formatClock(run.startAt)), 8)
+    say(string.format('Your start time: %s. Move up to the start line.', M.formatClock(run.startAt)), 8, 'success',
+      'Checked in ' .. M.formatClock(now))
     -- (the co-driver's own pre-start lines: the voice packs have no "move up" line)
     rallyA.systemNote('commsCheck')
     rallyA.systemNote('beltsCheck')
@@ -812,7 +852,7 @@ local function stepToAtc(dt)
       run.checks.atc = 'missed'
       run.missedAtc = true
       trafficOff()
-      say(string.format('Time control missed: +%d s', M.MISSED_TC_PENALTY_S), 5)
+      say('You drove past the time control.', 5, 'warning', string.format('Time control missed: +%d s', M.MISSED_TC_PENALTY_S))
       setState('toStart')
     end
   end
@@ -830,7 +870,7 @@ local function stepToStart(dt)
   run.startTarget.pos = sp
   if not (run.zone and run.zone.stopped) then routeTo(run.startTarget, dt) end   -- (none once stopped in the zone)
   if along > run.startM + 2 and off <= M.START_ZONE_OFF_M and not run.zone then
-    if not run.overLine then say('Back up behind the start line.', 3) end
+    if not run.overLine then say('Back up behind the start line.', 3, 'warning') end
     run.overLine = true
     return
   end
@@ -845,7 +885,7 @@ local function stepToStart(dt)
     if not run.startAt and run.missedAtc then
       -- the ATC driven past: a start time as if checked in here, and the penalty
       run.startAt = math.ceil((now + M.START_GAP_S) / 30) * 30
-      say('Start time ' .. M.formatClock(run.startAt) .. '. Wait for it.', 5)
+      say('Start time ' .. M.formatClock(run.startAt) .. '. Wait for it.', 5, 'info')
     elseif not run.startAt then
       run.startAt = now + M.NO_ATC_START_S
     elseif now > run.startAt then
@@ -854,12 +894,13 @@ local function stepToStart(dt)
       local mins = math.max(1, math.ceil((now - run.startAt) / 60))
       run.latePenalty = mins * M.LATE_PENALTY_S
       run.checks.lateMinutes = mins
-      say(string.format('Late at the start: +%d s. New start time %s', run.latePenalty, M.formatClock(newStart)), 6)
+      say('New start time ' .. M.formatClock(newStart) .. '.', 6, 'warning',
+        string.format('Late at the start: +%d s', run.latePenalty))
       run.startAt = newStart
       rallyA.systemNote('rescheduled')
     else
       say('Start time ' .. M.formatClock(run.startAt) .. '. Wait for your minute' ..
-        (run.startAt - M.clock() > M.SKIP_TO_S + 10 and ' (Interact, Shift+E: skip the wait).' or '.'), 5)
+        (run.startAt - M.clock() > M.SKIP_TO_S + 10 and ' (Interact, Shift+E: skip the wait).' or '.'), 5, 'info')
     end
   elseif zs == 'done' then
     -- (the co-driver from the start afresh: whatever it picked up on the way here is dropped)
@@ -905,8 +946,9 @@ local function stepWaitStart(dt)
   run.staged = run.staged or p
   if p and run.staged and not run.jumpStart and geo.dist2d(p, run.staged) > M.JUMP_START_M then
     run.jumpStart = true
+    run.jumpStartAt = M.clock()
     rallyA.systemNote('falseStart')
-    say('Jump start: +' .. M.JUMP_START_PENALTY_S .. ' s', 3)
+    log('I', logTag, 'jump start: +' .. M.JUMP_START_PENALTY_S .. ' s')
   end
   -- the co-driver: "30 seconds", "good luck"; "10 seconds" and the first note; 5..1; go and the first note again
   local before = run.prevLeft or math.huge
@@ -919,16 +961,14 @@ local function stepWaitStart(dt)
   local n = math.ceil(left)
   if n >= 1 and n <= 5 and n ~= run.lastShown then
     run.lastShown = n
-    rallyA.systemNote('countdown' .. n)
-    if ui_message then ui_message(tostring(n), 1, 'earthRallyCount') end
+    rallyA.systemNote('countdown' .. n)       -- (the numeral on screen: the HUD's, hudFrame show.bigCount)
   end
   if left <= 0 then
     zoneRelease()              -- (the car let go in the frame of the GO call)
     rallyA.notesOn(true)       -- (the stage's notes from GO only)
-    rallyA.systemNote('countdowngo')
+    rallyA.systemNote('countdowngo')        -- (GO on screen: the HUD's, hudFrame show.go)
     -- (the first note is the engine's own: its 'immediate' note, read as the car pulls away. Calling it ourselves and
     -- marking it called froze the engine's step to the next note, which only moves on when it plays one itself.)
-    if ui_message then ui_message('GO', 1.5, 'earthRallyCount') end
     run.clock = -left          -- (from the minute itself, not this frame)
     setState('running')
   end
@@ -973,33 +1013,49 @@ local function stepRunning(dtSim)
     if run.checks.shifts > 0 then run.checks.notesCalledAfterShift = run.checks.notesCalledAfterShift + 1 end
   end
   if earth.rebasing() then return end
-  local p = carPos()
+  local p, veh = carPos()
   if not p then return end
   props.update(p, earth.toGame)
   local along, off = progress(p)
   run.along, run.off = along, off
   if off > run.checks.maxOffM then run.checks.maxOffM = off end
+  -- off route (a wrong turn): on beyond OFF_ROUTE_M, off again within OFF_ROUTE_CLEAR_M; the way back to the line (its
+  -- point level with the car) against the car's heading, for the HUD's arrow
+  if off > M.OFF_ROUTE_M then run.offRoute = true elseif off <= M.OFF_ROUTE_CLEAR_M then run.offRoute = false end
+  if run.offRoute then
+    local back = geo.pointAt(run.line, run.cum, along)
+    local okD, d = pcall(function() return veh:getDirectionVector() end)
+    run.backBearing = okD and d and hudFrame.relBearing({ x = d.x, y = d.y }, p, back) or nil
+  else
+    run.backBearing = nil
+  end
   if along >= run.finishM and off <= (run.finishInGap and M.FINISH_OFF_GAP_M or M.FINISH_OFF_M) then
     sound(M.SOUND_FINISH)
     rallyA.notesOn(false)        -- (the stage is over: no more calls on the way to the stop control or after)
+    run.offRoute, run.backBearing = false, nil
     run.stageTime = run.clock
+    local resetPen = (run.resets or 0) * M.RESET_PENALTY_S
     run.penalty = (run.jumpStart and M.JUMP_START_PENALTY_S or 0) + (run.latePenalty or 0)
-      + (run.missedAtc and M.MISSED_TC_PENALTY_S or 0)
+      + (run.missedAtc and M.MISSED_TC_PENALTY_S or 0) + resetPen
     local time = run.clock + run.penalty
     local checks = run.checks
+    run.bestBefore = events.best(run.event.id, run.stage.id)      -- (the best before this run: the HUD's difference)
     local best = events.addResult(run.event.id, run.stage.id, { finished = true, timeS = time, stageS = run.clock,
       penaltyS = run.penalty, jumpStart = run.jumpStart == true, lateMinutes = checks.lateMinutes,
-      missedAtc = run.missedAtc == true, line = checks.line,
+      missedAtc = run.missedAtc == true, resets = run.resets or 0, resetPenaltyS = resetPen, line = checks.line,
       startAt = M.formatClock(run.startAt), date = os.date('!%Y-%m-%dT%H:%M:%SZ'), checks = checks })
     run.finalTime, run.best = time, best
+    run.sinceFinish = 0
     log('I', logTag, 'run checks: ' .. dumps(checks))
-    local text = string.format('%s: %s%s', run.stage.name, M.formatTime(time), best and best < time and
-      ('  (best ' .. M.formatTime(best) .. ')') or '  (best)')
+    local title = string.format('%s: %s', run.stage.name, M.formatTime(time))
+    local text = (run.bestBefore == nil and 'Your first time on this stage.') or
+      (time < run.bestBefore and string.format('A new best (%.1f s faster).', run.bestBefore - time)) or
+      ('Best ' .. M.formatTime(run.bestBefore) .. '.')
     if run.stopCtl then
       setState('toStop')
-      say(text .. '. Drive on to the stop control and stop at it.', 8)
+      say(text .. ' Drive on to the stop control and stop at it.', 8, 'success', title)
     else
-      say(text, 8)
+      say(text, 8, 'success', title)
       M.wrapUp()
     end
   end
@@ -1020,7 +1076,6 @@ local function stepToStop(dt)
   if zs == 'stopped' then
     routeOff()
     run.checks.stopControl = 'stopped ' .. M.formatClock(M.clock())
-    say('Stage complete: ' .. M.formatTime(run.finalTime), 6)
   elseif zs == 'done' then
     M.wrapUp()
   end
@@ -1028,9 +1083,33 @@ end
 
 local tidy        -- (below)
 
+-- The results card (the HUD's, at the stop control; at the flying finish without one): open from the stage's end until
+-- the player picks Next stage / Retry / Rally menu, drives RESULTS_CLOSE_M on from where the car came to rest, or
+-- RESULTS_TIMEOUT_S passes. The stage layout (where the card is) stays until then.
+function M.closeResults()
+  if not (run and run.resultsOpen) then return end
+  run.resultsOpen = false
+  if run.state == 'finished' and not run.tidyIn then layoutOff() end
+end
+resultsUpdate = function(dt)
+  run.resultsT = (run.resultsT or 0) + dt
+  if run.resultsT > M.RESULTS_TIMEOUT_S then M.closeResults() return end
+  local p = carPos()
+  if not p then return end
+  if not run.restPos then
+    if speed() < M.STOPPED_MS then run.restPos = p end
+  elseif geo.dist2d(p, run.restPos) > M.RESULTS_CLOSE_M then
+    M.closeResults()
+  end
+end
+
 -- Every frame (main.lua).
 function M.update(dtReal, dtSim)
   camUpdate(dtReal or 0)
+  if not run then return end
+  run.realT = (run.realT or 0) + (dtReal or 0)
+  if run.sinceFinish then run.sinceFinish = run.sinceFinish + (dtReal or 0) end
+  if run.resultsOpen then resultsUpdate(dtReal or 0) end
   if not run then return end
   if not run.noStartLine then drawStartLine() end
   if run.clockBase then run.clockRun = run.clockRun + (dtSim or 0) end
@@ -1050,7 +1129,7 @@ function M.update(dtReal, dtSim)
   end
   if s == 'finished' and run.tidyIn then
     run.tidyIn = run.tidyIn - (dtReal or 0)
-    if run.tidyIn <= 0 then run.tidyIn = nil tidy() end
+    if run.tidyIn <= 0 then run.tidyIn = nil tidy(run.resultsOpen) end
   end
   if s == 'travel' then stepTravel(dtReal)
   elseif s == 'anchor' then stepAnchor(dtReal)
@@ -1071,13 +1150,14 @@ function M.release()
 end
 
 -- Everything the run put in the game taken away (the result stays in `run` for the window until it is closed).
-tidy = function()
+-- (keepLayout: the stage layout left on, for the results card)
+tidy = function(keepLayout)
   trafficOn()
   earth.originMoved()
   zoneRelease()
   routeOff()
   M.release()
-  layoutOff()
+  if not keepLayout then layoutOff() end
   props.clear()
   startClockOff()
   rallyA.unload()
@@ -1088,6 +1168,8 @@ end
 function M.wrapUp()
   if not run then return end
   setState('finished')
+  run.resultsOpen = run.finalTime ~= nil
+  run.resultsT, run.restPos = 0, nil
   -- (the car let go, the route arrows off at once; the boards, the co-driver and the stage layout a few seconds
   -- later, so the stop control's tent does not vanish the moment the car stops)
   zoneRelease()
@@ -1099,7 +1181,7 @@ end
 function M.abort(quiet)
   if not run then return end
   tidy()
-  if not quiet and run.state ~= 'finished' then say('Earth Rally: run stopped') end
+  if not quiet and run.state ~= 'finished' then say('Run stopped.', 4, 'info') end
   run = nil
 end
 
@@ -1109,7 +1191,7 @@ function M.arrivalPoint(stage)
   local ctl = stage.controls or {}
   local st = ctl.start or (stage.line and stage.line[1] and { lat = stage.line[1][1], lon = stage.line[1][2] })
   if not st then return nil end
-  if ctl.atc then
+  if ctl.atc and settings.get('timeControls') ~= 'quick' then
     local d = geo.metres(ctl.atc.lat, ctl.atc.lon, st.lat, st.lon)
     if d <= M.ATC_MAX_FROM_START_M and d >= 5 then return ctl.atc.lat, ctl.atc.lon, 'ATC' end
   end
@@ -1170,6 +1252,57 @@ function M.faceStage(stage, eventId)
   end
   -- 3. no road known here: where it stands, turned along the stage
   return M.placeCar(veh, { x = p.x, y = p.y, z = p.z + 0.3 }, { x = dir.x, y = dir.y, z = 0 }), 'turned only'
+end
+
+-- A vehicle reset (the game's onVehicleResetted, from main.lua): the player's car reset during the timed stage costs
+-- RESET_PENALTY_S each (setting resetPenalty), counted in the result. Not one heard again within RESET_DEBOUNCE_S, nor
+-- one just after the world's origin moved (BeamNG.Earth moving the car is not the player's reset).
+function M.onVehicleResetted(vid)
+  if not (run and run.state == 'running') then return false end
+  if settings.get('resetPenalty') == false then return false end
+  local _, veh = carPos()
+  if not veh then return false end
+  local okI, id = pcall(function() return veh:getID() end)
+  if okI and id ~= nil and vid ~= nil and id ~= vid then return false end
+  local t = run.realT or 0
+  if earth.rebasing() or (run.movedAt and t - run.movedAt < M.RESET_AFTER_MOVE_S) then return false end
+  if run.resetAt and t - run.resetAt < M.RESET_DEBOUNCE_S then return false end
+  run.resetAt = t
+  run.resets = (run.resets or 0) + 1
+  say(string.format('%d reset%s on this stage.', run.resets, run.resets == 1 and '' or 's'), 3, 'warning',
+    string.format('Reset: +%d s', M.RESET_PENALTY_S))
+  return true
+end
+
+-- What the screen shows now: the game's rally apps' stream and ours (hudFrame.lua). main.lua queues them.
+-- Returns rallyLoop (nil: leave that stream alone, the game's own rally mode is running), earthRally.
+function M.uiFrame()
+  return hudFrame.build(run, {
+    now = M.clock() or 0, speed = run and speed() or 0, canSkip = M.canSkip(), units = settings.get('units'),
+    noRallyLoop = extensions and extensions.isExtensionLoaded and extensions.isExtensionLoaded('gameplay_rallyLoop')
+      or false,
+    c = { stoppedMs = M.STOPPED_MS, startZoneBeforeM = M.START_ZONE_BEFORE_M, stopRadiusM = M.STOP_CONTROL_RADIUS_M,
+          jumpStartS = M.JUMP_START_PENALTY_S, resetS = M.RESET_PENALTY_S, missedAtcS = M.MISSED_TC_PENALTY_S },
+  })
+end
+
+-- The results card's buttons: 'next' (the rally's next stage), 'retry' (this one again), 'menu' / 'close' (the card
+-- closed; main.lua opens the menu). Returns ok, why.
+function M.resultsAction(what)
+  if not run then return false, 'no run' end
+  local ev, st = run.event, run.stage
+  if what == 'next' then
+    local nx = run.nextStage
+    if not nx then return false, 'this was the last stage' end
+    for _, s in ipairs(ev.stages or {}) do
+      if s.id == nx.id then return M.start(ev, s) end
+    end
+    return false, 'the next stage is not in the rally'
+  elseif what == 'retry' then
+    return M.start(ev, st)
+  end
+  M.closeResults()
+  return true
 end
 
 function M.formatTime(s)
