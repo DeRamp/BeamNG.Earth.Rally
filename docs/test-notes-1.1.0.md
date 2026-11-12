@@ -34,3 +34,24 @@ shows. Keep the crash ZIP/DMP if it happens again.
 
 Minor, from the log: each vehicle command logs "set new global variable earthRally_st / earthRally_ctl" (the
 vehicle's Lua warns about new globals): harmless but noisy; keep them in one table made once.
+
+## Built (2026-11-12, after the session; to check in game)
+
+Scope: 1.1.0 is these fixes and polish; new ideas and the player UI go to 1.2.0 (docs/ideas-1.2.0.md).
+
+| # | Done | Check in game |
+|---|---|---|
+| 1 | At ATC check-in (or a missed ATC; on a stage with no ATC, once the car is set down at the start) the game's traffic and parked cars are frozen and hidden as its missions do (`gameplay_traffic.freezeState` + `setActive(0)`), and shown again with the traffic restored at the tidy-up | The parked cars by Kuhnle / Maryhill gone after check-in, back after the stop control |
+| 2 | (1.2.0, with the UI) | |
+| 3 | Cause confirmed: `yawQuat` turned the other way from the game's `quatFromDir` (its axes go in as matrix rows). Fixed; test_props compares it with a copy of the game's math on roads every 15° | Every board facing the arriving car: Maryhill's finish and stop, Kuhnle's ATC, start and stop, Schafer's start |
+| 4 | A recce that stops 25 m+ before the flying finish gives way to the matched line when there is one; the window says "recce stops N m before the flying finish: drive it again" | Maryhill Up now runs on its matched line, finish at the organisers' point |
+| 5 | The start clock's picture-in-picture moved to the right, its bottom 36 % of the screen height up (above the speedometers), set in `onDrawDebug` after the game places it (size unchanged). `runner.CLOCK_VIEW_RIGHT` / `CLOCK_VIEW_BOTTOM` to tune | Where it sits on your screen; tell me if it should go up or down |
+| 6 | **Route to start** button: BeamNG.Earth's GPS to the stage's ATC (or its start without one) | The route and arrows; arriving, then Run stage without a teleport |
+| 7 | Done ("Waiting for the world to load...", cleared once set down) | |
+| 8 | Go to start: the car on the stage line 4 m behind the start, facing along it (else on the road map's road beside the start; else turned only, as before). Run stage: 40 m before the ATC on the road map's road the ATC is on, walked back along its bends. The log says which ("Go to start: the car set down (stage line)") | Kuhnle, Dalles Mtn Down, Schafer: on the road |
+| 9 | Junctions from BeamNG.Earth's road data in `match_roads.py` (3+ roads, a side road 40 m+ long): a turn there "at junction" on its corner, straight on "past junction", a fork "keep left / right". Rematched all 18 stages (Maryhill 5, Kuhnle 9, Dalles 13-14, Nahwatzel 22). Only on stages with a matched line (all 18 here), whichever line the stage runs on | Whether the calls are right and not too many (side roads of 40 m+ count) |
+| 10 | (1.2.0, with the UI) | |
+| 11 | Bridges from BeamNG.Earth's bridge ranges: "over bridge" where the stage runs along a deck 10 m+ (Kuhnle 1, Stillwater 4). No "under bridge" yet | The bridge on Kuhnle |
+| 12 | The skip: the game's Interact (Shift+E), held on the start line and stopped, more than 6 s to go: the clock jumps to 6 s before the start, only 5-4-3-2-1-go plays; not again for 2 s. The "Wait for your minute" message says so when the wait is long. No ATC skip: our ATC has no target time to wait for (the wait is on the start line) | Shift+E on the line; on a pad the modifier + Y |
+| 13 | Covered by 3 (the start line itself was right) | Schafer's start boards |
+| - | Vehicle Lua globals set with rawset: no more "set new global variable" lines | |

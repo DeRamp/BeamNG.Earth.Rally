@@ -22,6 +22,7 @@ Status: alpha (1.1.0). Needs BeamNG.drive 0.40.5 and BeamNG.Earth with modding A
 3. **Run** the stage, through its controls as in a real rally:
    - The mod takes you just before the arrival time control (ATC) and moves BeamNG.Earth's world origin to the middle
      of the stage, so the world does not shift under you on any stage up to ~26 km across.
+   - Once you check in at the ATC the game's traffic and parked cars are cleared for the stage (back after it).
    - The game's route arrows lead to each control. In a control's zone the brakes come on at 30 % (brake harder
      yourself if you like) and a sound says you are in once you stop.
    - At the ATC you get your start time on the rally clock: the next half minute at least 30 s on (30-60 s), more
@@ -30,7 +31,8 @@ Status: alpha (1.1.0). Needs BeamNG.drive 0.40.5 and BeamNG.Earth with modding A
    - On the start line you are held until GO (the game's own hold, as its rally countdown does: rev freely, the car
      does not move), with the car's launch control switched on where it has one. The start tree's LED clock counts down, with the game's
      picture-in-picture view of it at the top of the screen; the co-driver says 30 s, good luck, 10 s, 5-4-3-2-1, go.
-     Moving off before GO is a jump start (+10 s); reaching the line after your start time is late (+10 s a minute,
+     Early? The game's **Interact** control (Shift+E; the modifier + Y on a pad), stopped on the line, skips to 6 s
+     before your start, as its rally mode does. Moving off before GO is a jump start (+10 s); reaching the line after your start time is late (+10 s a minute,
      and the next half minute).
    - The clock stops at the flying finish (a sound) and the notes stop; you drive on to the stop control. A few
      seconds after you stop there, the boards, the co-driver and the stage layout are tidied away.
@@ -38,7 +40,8 @@ Status: alpha (1.1.0). Needs BeamNG.drive 0.40.5 and BeamNG.Earth with modding A
      start and stop. The pacenote cards show during the run. Times and penalties are kept.
 
 Pacenotes: corners are found from the stage's line; the game works out each one's severity and the distance calls
-and voices them with its own co-driver voice pack.
+and voices them with its own co-driver voice pack. On stages matched to the roads (below), junctions and bridges are
+called too: "at junction" on a turn there, "past junction", "keep left / right" at a fork, "over bridge".
 
 ## Install
 
@@ -52,7 +55,8 @@ python tools/install.py
 
 In game: Freeroam > BeamNG.Earth, then **Ctrl+Alt+K** opens the Earth Rally window (or type
 `earthRally_main.toggle()` in the console, `~`). Pick a stage, then **Run stage** (or **Go to start** and
-**Start recce** first, for a stage that needs one).
+**Start recce** first, for a stage that needs one). **Route to start** sets BeamNG.Earth's GPS to the stage's ATC
+(or its start) so you can drive there instead of teleporting.
 
 ## Adding a rally
 
