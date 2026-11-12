@@ -160,7 +160,7 @@ local function drawWindow()
         if im.Button('Go to start') then
           local s = stage.controls and stage.controls.start or { lat = stage.line[1][1], lon = stage.line[1][2] }
           local tok, terr = earth.teleport(s.lat, s.lon, stage.name .. ' start')
-          message = tok and nil or tostring(terr)
+          message = tok and 'Waiting for the world to load...' or ('Could not go there: ' .. tostring(terr))
           if tok then facing = { stage = stage, t = 0, ready = 0 } end
         end
         im.SameLine()
@@ -226,8 +226,12 @@ function M.onUpdate(dtReal, dtSim)
     facing.ready = earth.ready() and facing.t > 2 and (facing.ready + dtReal) or 0
     if facing.ready >= runner.TELEPORT_SETTLE_S then
       pcall(runner.faceStage, facing.stage)
+      if message == 'Waiting for the world to load...' then message = nil end
       facing = nil
-    elseif facing.t > 120 then facing = nil end
+    elseif facing.t > 120 then
+      if message == 'Waiting for the world to load...' then message = 'The world is taking long to load here.' end
+      facing = nil
+    end
   end
   local ok, err = pcall(runner.update, dtReal, dtSim)
   if not ok then log('E', logTag, 'run: ' .. tostring(err)) runner.abort(true) message = 'Run stopped: ' .. tostring(err) end
