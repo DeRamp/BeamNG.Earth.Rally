@@ -1,19 +1,25 @@
--- earthRally/runner: one timed run of a stage, start to flying finish.
+-- earthRally/runner: one timed run of a stage, through its controls as in a real rally: arrival time control
+-- (ATC), start, flying finish, stop control.
 --
---   travel     the car to the start (a BeamNG.Earth teleport when it is far), the world loaded
+--   travel     the car to the ATC (else the start; a BeamNG.Earth teleport when it is far), the world loaded
 --   anchor     the world's origin moved to the stage's centre, so no world shift happens during the run for any
 --              stage up to ~26 km across (BeamNG.Earth shifts the world 15-16 km from its origin)
 --   build      the stage line (the recce) put into game coordinates now, the rally engine's files written and
 --              loaded: its co-driver calls the pacenotes
---   place      the car on the start line
+--   place      the car 40 m before the ATC (else on the start line), the controls' boards and tents put down
+--   toAtc      drive to the ATC and stop at it (checked in)
+--   toStart    drive to the start line and stop on it
 --   countdown  5 s; moving before the end is a jump start (+10 s)
---   running    our clock (game time: a pause stops it); progress along the line; the finish at the flying finish
---   finished   the time kept in earthRally/results
+--   running    our clock (game time: a pause stops it); progress along the line; the clock stops at the flying finish
+--              and the time is kept in earthRally/results
+--   toStop     drive on to the stop control and stop at it
+--   finished
 --
 -- Everything is kept as lat / lon and put into game coordinates again whenever the world's origin moves, so the
 -- clock and the finish never go wrong; the co-driver's own copy is not moved yet (milestone 5), and the run's
 -- checks say whether that happened.
 local geo = require('earthRally/geo')
+local props = require('earthRally/props')
 local earth = require('earthRally/earthAdapter')
 local rallyA = require('earthRally/rallyAdapter')
 local writer = require('earthRally/stageWriter')
@@ -39,6 +45,14 @@ M.RUNTIME_DIR = '/earthRally/runtime/'
 M.MAX_REBASE_M = 16000
 M.FACE_AHEAD_M = 25            -- the car faces the stage line this far ahead (a few metres of recce can wobble)
 M.TELEPORT_SETTLE_S = 2        -- BeamNG.Earth sets the car down a moment after the world is ready: wait for it
+M.ATC_MAX_FROM_START_M = 1500  -- an ATC farther from the start than this is not this stage's (left out)
+M.STOP_MAX_FROM_FINISH_M = 3000
+M.CAR_BEFORE_ATC_M = 40
+M.CONTROL_RADIUS_M = 12        -- stopped this close to a control's board: checked in
+M.STOP_CONTROL_RADIUS_M = 25
+M.STOPPED_MS = 1.0
+M.START_ZONE_BEFORE_M = 12     -- stopped this far before the start line (or less), beside it: on the line
+M.START_ZONE_OFF_M = 8
 
 local run = nil
 
@@ -177,10 +191,22 @@ function M.start(event, stage)
   }
   run.moveHandle = earth.onMoved(function(info) M._moved(info) end)
 
-  local s = latlon[1]
+  -- the time controls round the stage (from the event's map), when they are near enough to be its own
+  local ctl = stage.controls or {}
+  local st0 = ctl.start or { lat = latlon[1][1], lon = latlon[1][2] }
+  if ctl.atc then
+    local d = geo.metres(ctl.atc.lat, ctl.atc.lon, st0.lat, st0.lon)
+    if d <= M.ATC_MAX_FROM_START_M and d >= 5 then run.atc = ctl.atc end
+  end
+  local ff0 = ctl.ff or { lat = latlon[#latlon][1], lon = latlon[#latlon][2] }
+  if ctl.stop and geo.metres(ctl.stop.lat, ctl.stop.lon, ff0.lat, ff0.lon) <= M.STOP_MAX_FROM_FINISH_M then
+    run.stopCtl = ctl.stop
+  end
+
+  local s = run.atc and { run.atc.lat, run.atc.lon } or latlon[1]
   local p = earth.pose()
   if p and geo.metres(p.lat, p.lon, s[1], s[2]) > M.TRAVEL_IF_FARTHER_M then
-    local tok, twhy = earth.teleport(s[1], s[2], stage.name .. ' start')
+    local tok, twhy = earth.teleport(s[1], s[2], stage.name .. (run.atc and ' ATC' or ' start'))
     if not tok then fail('could not go to the start: ' .. tostring(twhy)) return false, twhy end
     run.teleported = true
   end
@@ -191,13 +217,14 @@ end
 -- The world's origin moved (earthAdapter): our line follows; the co-driver's does not (yet).
 function M._moved(info)
   if not run then return end
-  if run.state == 'running' or run.state == 'countdown' or run.state == 'place' then
+  if run.state == 'running' or run.state == 'countdown' or run.state == 'toStart' or run.state == 'toAtc' then
     run.checks.shifts = run.checks.shifts + 1
     run.shiftedAtNote = run.checks.notesCalled
     log('W', logTag, string.format('the world shifted during the run (%s, %s): the co-driver keeps its old positions',
       tostring(info.purpose), tostring(info.source)))
   end
   if run.line then project() end
+  props.reset()            -- (put down again where they belong, in the new frame)
   run.lastMove = info
 end
 
@@ -270,20 +297,6 @@ local function stepBuild()
   setState('place')
 end
 
-local function stepPlace()
-  local dir, s = aheadDir(run.line, run.cum, run.startM)
-  local l = math.sqrt(dir.x * dir.x + dir.y * dir.y)
-  local pos = { x = s.x - dir.x / l * M.CAR_BEHIND_LINE_M, y = s.y - dir.y / l * M.CAR_BEHIND_LINE_M, z = (s.z or 0) + 1.0 }
-  local _, veh = carPos()
-  if not veh then fail('no car') return end
-  M.placeCar(veh, pos, dir)
-  rallyA.resync()
-  layoutOn()
-  run.home = pos
-  setState('countdown')
-  run.lastShown = nil
-end
-
 local function progress(p)
   local n = #run.line
   local lo = (run.seg or 1) - 30
@@ -294,8 +307,126 @@ local function progress(p)
   return along, off
 end
 
+-- (a control's place in game coordinates now)
+local function ctlGame(c)
+  local x, y = earth.toGame(c.lat, c.lon, 0)
+  return x and { x = x, y = y } or nil
+end
+
+-- The controls' boards and tents (props.lua), each facing the way the car comes through it.
+local function setupProps()
+  props.clear()
+  local sdir, sp = aheadDir(run.line, run.cum, run.startM)
+  local slat, slon = earth.toGeo(sp.x, sp.y, sp.z)
+  props.setSite('start', slat, slon, sdir, sp.z)
+  local fdir, fp = aheadDir(run.line, run.cum, run.finishM)
+  local flat, flon = earth.toGeo(fp.x, fp.y, fp.z)
+  props.setSite('ff', flat, flon, fdir, fp.z)
+  if run.atc then
+    local a = ctlGame(run.atc)
+    if a then props.setSite('atc', run.atc.lat, run.atc.lon, { x = sp.x - a.x, y = sp.y - a.y }) end
+  end
+  if run.stopCtl then
+    local b = ctlGame(run.stopCtl)
+    if b then props.setSite('stop', run.stopCtl.lat, run.stopCtl.lon, { x = b.x - fp.x, y = b.y - fp.y }) end
+  end
+end
+
+-- The car on the start line, facing the stage.
+local function toStartLine(veh)
+  local dir, s = aheadDir(run.line, run.cum, run.startM)
+  local l = math.sqrt(dir.x * dir.x + dir.y * dir.y)
+  local pos = { x = s.x - dir.x / l * M.CAR_BEHIND_LINE_M, y = s.y - dir.y / l * M.CAR_BEHIND_LINE_M, z = (s.z or 0) + 1.0 }
+  M.placeCar(veh, pos, dir)
+end
+
+-- The ground near the car (the ATC's spot has no height of its own): a ray down, trees above it left out.
+local function groundNear(x, y, z0)
+  local ray = rawget(_G, 'castRayStatic')
+  if ray then
+    for _, t in ipairs({ { 8, 40 }, { 25, 80 } }) do
+      local top = z0 + t[1]
+      local d = ray(vec3(x, y, top), vec3(0, 0, -1), t[2])
+      if d and d < t[2] and math.abs(top - d - z0) <= t[1] + 2 then return top - d end
+    end
+  end
+  return z0
+end
+
+local function stepPlace()
+  local p, veh = carPos()
+  if not veh then fail('no car') return end
+  setupProps()
+  local a = run.atc and ctlGame(run.atc)
+  if a then
+    -- 40 m before the ATC, on the way from it to the start (the road the ATC is on, as near as the map tells)
+    local _, sp = aheadDir(run.line, run.cum, run.startM)
+    local dx, dy = sp.x - a.x, sp.y - a.y
+    local l = math.sqrt(dx * dx + dy * dy)
+    local pos = { x = a.x - dx / l * M.CAR_BEFORE_ATC_M, y = a.y - dy / l * M.CAR_BEFORE_ATC_M }
+    pos.z = groundNear(pos.x, pos.y, p.z) + 1.0
+    M.placeCar(veh, pos, { x = dx, y = dy, z = 0 })
+    setState('toAtc')
+    say('Earth Rally: drive to the time control and stop at its red board', 6)
+  else
+    toStartLine(veh)
+    setState('countdown')
+    run.lastShown = nil
+  end
+  rallyA.resync()
+  layoutOn()
+end
+
+local function speed()
+  local p = earth.pose()
+  return p and p.speed or 0
+end
+
+local function stepToAtc(dt)
+  run.t = run.t + dt
+  local p = carPos()
+  local a = ctlGame(run.atc)
+  if not (p and a) then return end
+  props.update(p, earth.toGame)
+  local d = math.sqrt((p.x - a.x) ^ 2 + (p.y - a.y) ^ 2)
+  run.toControlM = d
+  if d <= M.CONTROL_RADIUS_M and speed() < M.STOPPED_MS then
+    run.checks.atc = 'checked in'
+    setState('toStart')
+    say('Checked in. Drive to the start line and stop on it.', 5)
+    return
+  end
+  -- (driven on past it to the start: the ATC missed)
+  local along, off = progress(p)
+  if along >= run.startM - M.START_ZONE_BEFORE_M and off <= M.START_ZONE_OFF_M then
+    run.checks.atc = 'missed'
+    setState('toStart')
+  end
+end
+
+local function stepToStart(dt)
+  run.t = run.t + dt
+  local p = carPos()
+  if not p then return end
+  props.update(p, earth.toGame)
+  local along, off = progress(p)
+  run.toControlM = run.startM - along
+  if along > run.startM + 2 and off <= M.START_ZONE_OFF_M then
+    if not run.overLine then say('Back up behind the start line.', 3) end
+    run.overLine = true
+    return
+  end
+  run.overLine = false
+  if along >= run.startM - M.START_ZONE_BEFORE_M and off <= M.START_ZONE_OFF_M and speed() < M.STOPPED_MS then
+    setState('countdown')
+    run.lastShown = nil
+  end
+end
+
+
 local function stepCountdown(dt)
   run.t = run.t + dt
+  do local cp = carPos() if cp then props.update(cp, earth.toGame) end end
   -- (the car settles when set down: where it stands after the first second is where it must stay)
   local p = carPos()
   if p and run.t >= 1 and not run.settled then run.settled = p end
@@ -327,6 +458,7 @@ local function stepRunning(dtSim)
   if earth.rebasing() then return end
   local p = carPos()
   if not p then return end
+  props.update(p, earth.toGame)
   local along, off = progress(p)
   run.along, run.off = along, off
   if off > run.checks.maxOffM then run.checks.maxOffM = off end
@@ -336,10 +468,32 @@ local function stepRunning(dtSim)
     local best = events.addResult(run.event.id, run.stage.id, { finished = true, timeS = time,
       jumpStart = run.jumpStart == true, date = os.date('!%Y-%m-%dT%H:%M:%SZ'), checks = checks })
     run.finalTime, run.best = time, best
-    setState('finished')
-    say(string.format('%s: %s%s', run.stage.name, M.formatTime(time), best and best < time and
-      ('  (best ' .. M.formatTime(best) .. ')') or '  (best)'), 8)
     log('I', logTag, 'run checks: ' .. dumps(checks))
+    local text = string.format('%s: %s%s', run.stage.name, M.formatTime(time), best and best < time and
+      ('  (best ' .. M.formatTime(best) .. ')') or '  (best)')
+    if run.stopCtl then
+      setState('toStop')
+      say(text .. '. Drive on to the stop control and stop at it.', 8)
+    else
+      setState('finished')
+      say(text, 8)
+      M.release()
+    end
+  end
+end
+
+local function stepToStop(dt)
+  run.t = run.t + dt
+  local p = carPos()
+  local b = ctlGame(run.stopCtl)
+  if not (p and b) then return end
+  props.update(p, earth.toGame)
+  local d = math.sqrt((p.x - b.x) ^ 2 + (p.y - b.y) ^ 2)
+  run.toControlM = d
+  if d <= M.STOP_CONTROL_RADIUS_M and speed() < M.STOPPED_MS then
+    run.checks.stopControl = 'stopped'
+    setState('finished')
+    say('Stage complete: ' .. M.formatTime(run.finalTime), 6)
     M.release()
   end
 end
@@ -352,8 +506,11 @@ function M.update(dtReal, dtSim)
   elseif s == 'anchor' then stepAnchor(dtReal)
   elseif s == 'build' then stepBuild()
   elseif s == 'place' then stepPlace()
+  elseif s == 'toAtc' then stepToAtc(dtReal)
+  elseif s == 'toStart' then stepToStart(dtReal)
   elseif s == 'countdown' then stepCountdown(dtSim)
-  elseif s == 'running' then stepRunning(dtSim) end
+  elseif s == 'running' then stepRunning(dtSim)
+  elseif s == 'toStop' then stepToStop(dtReal) end
 end
 
 -- BeamNG.Earth's rebase distance back, the co-driver kept until the next run (its notes stay readable).
@@ -367,6 +524,7 @@ function M.abort(quiet)
   if not run then return end
   M.release()
   layoutOff()
+  props.clear()
   rallyA.unload()
   if not quiet and run.state ~= 'finished' then say('Earth Rally: run stopped') end
   run = nil

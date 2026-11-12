@@ -27,6 +27,8 @@ local function checksText(c)
   local lines = {}
   local function add(label, v) lines[#lines + 1] = label .. ': ' .. tostring(v) end
   add('Rally engine', c.rallyEngine or '-')
+  if c.atc then add('Time control', c.atc) end
+  if c.stopControl then add('Stop control', c.stopControl) end
   add('Corners found / notes loaded', tostring(c.cornersFound or '-') .. ' / ' .. tostring(c.notesLoaded or '-'))
   add('Notes called', c.notesCalled)
   add('Origin moved to the stage centre', c.originMoved or '-')
@@ -48,6 +50,13 @@ local function drawRun()
     im.TextColored(GREEN, string.format('%s   %s', r.stage.name, runner.formatTime(r.clock)))
     im.Text(string.format('%s of %s%s', km((r.along or 0) - r.startM), km(r.finishM - r.startM),
       (r.off or 0) > runner.OFF_ROUTE_M and '   OFF ROUTE' or ''))
+  elseif st == 'toStop' then
+    im.TextColored(GREEN, string.format('%s: %s   (flying finish)', r.stage.name, runner.formatTime(r.finalTime)))
+    im.TextColored(AMBER, string.format('Stop at the stop control: %.0f m', r.toControlM or 0))
+  elseif st == 'toAtc' then
+    im.TextColored(AMBER, string.format('Drive to the time control (red clock board) and stop: %.0f m', r.toControlM or 0))
+  elseif st == 'toStart' then
+    im.TextColored(AMBER, string.format('Drive to the start line and stop on it: %.0f m', math.max(0, r.toControlM or 0)))
   elseif st == 'finished' then
     im.TextColored(GREEN, string.format('%s: %s%s', r.stage.name, runner.formatTime(r.finalTime),
       r.jumpStart and ' (jump start +10 s)' or ''))

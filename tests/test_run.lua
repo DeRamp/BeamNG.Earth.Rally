@@ -64,7 +64,8 @@ beamngEarth_api = {
   rebasing = function() return false end,
   pose = function()
     local x, y, z = toGame(car.lat, car.lon, car.alt)
-    return { lat = car.lat, lon = car.lon, alt = car.alt, x = x, y = y, z = z, anchorLat = anchor.lat, anchorLon = anchor.lon }
+    return { lat = car.lat, lon = car.lon, alt = car.alt, x = x, y = y, z = z, anchorLat = anchor.lat, anchorLon = anchor.lon,
+             speed = car.speed or 0 }
   end,
   toGame = toGame, toGeo = toGeo,
   teleport = function(lat, lon) car.lat, car.lon = lat, lon return true end,
@@ -87,6 +88,23 @@ local veh = {
   setPositionRotation = function(_, x, y, z) car.lat, car.lon = toGeo(x, y) car.alt = z end,
 }
 function getPlayerVehicle() return veh end
+
+-- scene objects (the controls' boards and tents)
+local objects, nextObj = {}, 0
+function createObject(class)
+  nextObj = nextObj + 1
+  local o = { class = class, fields = {}, id = nextObj }
+  function o:setField(k, _, v) self.fields[k] = v end
+  function o:setPosRot(x, y, z, qx, qy, qz, qw) self.pos = { x, y, z } self.q = { qx, qy, qz, qw } end
+  function o:registerObject() objects[self.id] = self end
+  function o:getID() return self.id end
+  function o:delete() objects[self.id] = nil end
+  return o
+end
+scenetree = { MissionGroup = { addObject = function() end }, findObjectById = function(_, id) return objects[id] end }
+setmetatable(scenetree, { __index = function(t, k) return rawget(t, k) end })
+scenetree.findObjectById = function(id) return objects[id] end
+local function countObjects() local n = 0 for _ in pairs(objects) do n = n + 1 end return n end
 
 -- the game's rally engine: loads the files, and its driveline load sets heights down on the terrain (z = 0)
 -- unless the snap is replaced, as the real one does on BeamNG.Earth outside the loaded kilometre
@@ -291,5 +309,69 @@ local high = 0
 for _, z in ipairs(zs) do if math.abs(z - 101) > high then high = math.abs(z - 101) end end
 T.check(#zs > 40 and high < 0.6, 'the line on the ground, under the trees (' .. #zs .. ' ends, worst ' .. high .. ' m)')
 recce.stop(false)
+
+
+-- a stage with its time controls: an ATC 150 m before the start, a stop control 300 m past the finish
+do
+  local ev2 = { format = 1, id = 'test2', name = 'Test Rally 2', stages = { {
+    id = 'hill', name = 'Hill', lengthM = 3000, radiusM = 1200, centre = event.stages[1].centre,
+    controls = { start = event.stages[1].controls.start, ff = event.stages[1].controls.ff,
+                 atc = { lat = full[11][1] - 150 / 111195, lon = full[11][2] },
+                 stop = { lat = full[#full][1], lon = full[#full][2] + 0.0005 } },
+    line = event.stages[1].line } } }
+  files['/earthRally/events/test2.json'] = ev2
+  events.saveRecce('test2', 'hill', { format = 1, points = recFrom, lengthM = 3000 })
+  anchor = { lat = 47.0, lon = -123.0 }
+  car.lat, car.lon, car.speed = full[1][1] - 0.01, full[1][2], 0      -- 1 km away: a teleport to the ATC
+  local ok2, why2 = runner.start(ev2, ev2.stages[1])
+  T.check(ok2, 'the run with controls starts (' .. tostring(why2) .. ')')
+  frames(80)     -- (the teleport: 2 s, the world 2 s settled, the origin moved, the stage built)
+  local r2 = runner.current()
+  T.check(runner.state() == 'toAtc', 'driving to the ATC (' .. runner.state() .. ')')
+  local ax, ay = toGame(ev2.stages[1].controls.atc.lat, ev2.stages[1].controls.atc.lon)
+  local cp3 = veh.getPosition()
+  local dAtc = math.sqrt((cp3.x - ax) ^ 2 + (cp3.y - ay) ^ 2)
+  T.check(dAtc > 30 and dAtc < 50, 'the car put ~40 m before the ATC (' .. string.format('%.0f', dAtc) .. ' m)')
+  T.check(countObjects() >= 6, 'the ATC and start boards and tents put down (' .. countObjects() .. ')')
+  local shapes = {}
+  for _, o in pairs(objects) do shapes[o.fields.shapeName:match('([^/]+)%.dae$')] = true end
+  T.check(shapes.s_rally_signboard_time_control and shapes.s_rally_signboard_start and shapes.s_rally_gazebo_mod_frame_3x3,
+    'the time control and start boards and a gazebo')
+  -- roll up to the ATC and stop
+  car.speed = 8
+  car.lat, car.lon = toGeo(ax, ay - 5)
+  frames(2)
+  T.check(runner.state() == 'toAtc', 'not checked in while moving')
+  car.speed = 0
+  frames(2)
+  T.check(runner.state() == 'toStart' and r2.checks.atc == 'checked in', 'checked in at the ATC')
+  -- on to the start line
+  car.lat, car.lon, car.speed = full[11][1], full[11][2], 6
+  frames(2)
+  T.check(runner.state() == 'toStart', 'no countdown while still rolling')
+  car.lat, car.lon, car.speed = full[9][1], full[9][2], 0
+  frames(2)
+  T.check(runner.state() == 'countdown', 'stopped on the start line: countdown (' .. runner.state() .. ')')
+  frames(55)
+  T.check(runner.state() == 'running', 'GO (with controls)')
+  car.speed = 30
+  for i = 11, #full, 25 do
+    car.lat, car.lon = full[i][1], full[i][2]
+    frames(1, 1.0)
+    if runner.state() ~= 'running' then break end
+  end
+  T.check(runner.state() == 'toStop' and r2.finalTime, 'the clock stopped at the flying finish, on to the stop control')
+  local shapes2 = {}
+  for _, o in pairs(objects) do shapes2[o.fields.shapeName:match('([^/]+)%.dae$')] = true end
+  T.check(shapes2.s_rally_signboard_finish and shapes2.s_rally_signboard_finish_entry, 'the finish boards put down')
+  car.lat, car.lon = ev2.stages[1].controls.stop.lat, ev2.stages[1].controls.stop.lon
+  frames(2)
+  T.check(shapes2.s_rally_signboard_stop or countObjects() > 0, 'the stop board')
+  car.speed = 0
+  frames(2)
+  T.check(runner.state() == 'finished' and r2.checks.stopControl == 'stopped', 'stopped at the stop control: stage complete')
+  runner.abort(true)
+  T.check(countObjects() == 0, 'the boards and tents taken away with the run')
+end
 
 T.done('test_run')
