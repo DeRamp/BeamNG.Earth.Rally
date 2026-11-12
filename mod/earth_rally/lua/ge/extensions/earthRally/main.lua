@@ -355,7 +355,7 @@ local function runSummary()
   return out
 end
 
--- Everything the Rallies and Settings pages show, and the page to open at (once).
+-- Everything the Rallies and Settings pages show.
 function M.uiState()
   local s = runSummary()
   local ok, why = earth.check()
@@ -366,8 +366,14 @@ function M.uiState()
   s.importFolder = importer.folderPath()
   s.lastImport = lastImport
   s.message = message
-  s.openAt, openAt = openAt, nil
   return s
+end
+
+-- The page to open at, once (the menu page asks as it opens): { view, eventId, stageId } or nil.
+function M.uiOpenAt()
+  local at = openAt
+  openAt = nil
+  return at
 end
 
 function M.uiRally(eventId)

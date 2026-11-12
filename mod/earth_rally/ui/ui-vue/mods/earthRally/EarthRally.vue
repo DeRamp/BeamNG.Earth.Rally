@@ -152,7 +152,7 @@ import { ref, computed, onMounted, onUnmounted } from "vue"
 import { BngButton, ACCENTS } from "@/common/components/base"
 import EarthRallySettings from "./EarthRallySettings.vue"
 import {
-  state, rally, stage, busyMsg, action as luaAction, refreshState, loadRally, loadStage, closeMenu, previewHud,
+  state, rally, stage, busyMsg, action as luaAction, refreshState, takeOpenAt, loadRally, loadStage, closeMenu, previewHud,
   arr, units, len, lenNum, time, when, STATUS, RUN_WORDS,
 } from "./store.js"
 
@@ -227,8 +227,8 @@ function poll() {
 }
 onMounted(() => {
   // (opened at a page: the results card's Rally menu, a pause-menu rally)
-  refreshState(s => {
-    const at = s && s.openAt
+  refreshState()
+  takeOpenAt(at => {
     if (at && at.view === "stage" && at.eventId && at.stageId) openStage(at.eventId, at.stageId)
     else if (at && at.view === "rally" && at.eventId) openRally(at.eventId)
     else if (at && at.view === "settings") go("settings")

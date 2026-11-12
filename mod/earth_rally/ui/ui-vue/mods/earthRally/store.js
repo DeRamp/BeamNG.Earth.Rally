@@ -28,6 +28,9 @@ export function refreshState(cb) {
     if (cb) cb(s)
   })
 }
+export function takeOpenAt(cb) {
+  engineLua("earthRally_main and earthRally_main.uiOpenAt() or nil", at => cb(at))
+}
 export function loadRally(id) {
   engineLua(`earthRally_main and earthRally_main.uiRally(${q(id)}) or nil`, r => { if (r) rally.value = r })
 }

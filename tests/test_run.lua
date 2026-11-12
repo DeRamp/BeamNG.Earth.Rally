@@ -1185,8 +1185,9 @@ do
   -- the results card's Rally menu: the card closed, the page opened at the rally
   navs = {}
   T.check(main.uiResults('menu').ok == false and navs[1] == 'earthRally', 'Rally menu with no run: still opens the page')
-  local st2 = main.uiState()
-  T.check(st2.openAt and st2.openAt.view == 'rally' and main.uiState().openAt == nil, 'the page told where to open, once')
+  main.uiState()
+  local at = main.uiOpenAt()
+  T.check(at and at.view == 'rally' and main.uiOpenAt() == nil, 'the page told where to open, once (not taken by a poll)')
   -- the developer panel follows its setting
   settings.set('devPanel', true)
   T.check(main.onUpdate ~= nil, 'main loaded')
