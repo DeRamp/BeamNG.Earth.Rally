@@ -54,6 +54,13 @@ def main():
     if not os.path.isdir(args.user_dir):
         print(f'No BeamNG.drive user folder at {args.user_dir}: give it with --user-dir')
         return 1
+    # (a release zip of the mod in the mods folder too: both would load)
+    mods = os.path.join(args.user_dir, 'mods')
+    zips = [f for f in (os.listdir(mods) if os.path.isdir(mods) else []) if f.lower().startswith('earth_rally')
+            and f.lower().endswith('.zip')]
+    if zips:
+        print('Warning: ' + ', '.join(zips) + ' is also in ' + mods + ': two copies of Earth Rally would load. '
+              'Remove the zip (or this unpacked copy) so only one is there.')
     dest = os.path.join(args.user_dir, 'mods', 'unpacked', NAME)
     if os.path.isdir(dest):
         shutil.rmtree(dest)

@@ -5,14 +5,17 @@ local earth = require('earthRally/earthAdapter')
 local events = require('earthRally/events')
 local recce = require('earthRally/recce')
 local runner = require('earthRally/runner')
+local importer = require('earthRally/importer')
 
 local M = {}
 local logTag = 'earthRally'
+M.VERSION = '1.1.0'
 
 local show = im.BoolPtr(false)
 local selEvent, selStage = 1, 1
 local message = nil
 local facing = nil       -- after Go to start: turn the car along the stage once BeamNG.Earth has set it down
+local scanIn = nil       -- seconds until the import folder is looked at (a file changed in it)
 
 function M.toggle() show[0] = not show[0] end
 function M.show() show[0] = true end
@@ -26,6 +29,7 @@ local function checksText(c)
   if not c then return {} end
   local lines = {}
   local function add(label, v) lines[#lines + 1] = label .. ': ' .. tostring(v) end
+  add('Stage line', c.line == 'matched' and 'the map line on the roads (no recce)' or (c.line or '-'))
   add('Rally engine', c.rallyEngine or '-')
   if c.atc then add('Time control', c.atc) end
   if c.stopControl then add('Stop control', c.stopControl) end
@@ -86,15 +90,21 @@ end
 
 local function drawWindow()
   im.SetNextWindowSize(im.ImVec2(460, 560), im.Cond_FirstUseEver)
-  if not im.Begin('Earth Rally', show) then im.End() return end
+  if not im.Begin('Earth Rally ' .. M.VERSION .. '###earthRallyWindow', show) then im.End() return end
 
   local ok, why = earth.check()
   if not ok then im.TextColored(AMBER, why) end
 
   local list = events.list()
   if #list == 0 then
-    im.TextWrapped('No rallies yet. Import one with tools/import_kml.py (see the README), then press Reload.')
+    im.TextWrapped('No rallies yet. Put a rally map (.kml, .kmz or .gpx) in the import folder: it is imported at once.')
   end
+  if im.Button('Open import folder') then
+    if not importer.openFolder() then message = 'The import folder: ' .. importer.folderPath() end
+  end
+  im.SameLine()
+  if im.Button('Re-scan') then M.scanImports(true) end
+  im.SameLine()
   if im.Button('Reload') then events.list(true) selEvent, selStage = 1, 1 end
 
   for i, e in ipairs(list) do
@@ -103,9 +113,20 @@ local function drawWindow()
   local ev = list[selEvent]
   if ev then
     im.Separator()
+    local rep = importer.lastReports[ev.id]
+    if rep and #rep.lines > 0 and im.TreeNode1('Import report (' .. tostring(rep.file) .. ')##imp' .. ev.id) then
+      for _, l in ipairs(rep.lines) do im.TextWrapped(l) end
+      im.TreePop()
+    end
     for i, s in ipairs(ev.stages) do
-      local has = events.recce(ev.id, s.id) ~= nil
-      local label = string.format('%s  (%s)%s##st%d', s.name, km(s.lengthM), has and '' or '  - no recce', i)
+      local line, kind = events.stageLine(ev.id, s.id)
+      local note = '  - recce needed'
+      if kind == 'recce' then note = ''
+      elseif kind == 'matched' then
+        note = (line.gapM or 0) > 0 and string.format('  - on the map roads (%s not on the map: a recce is better)',
+          km(line.gapM)) or '  - on the map roads'
+      end
+      local label = string.format('%s  (%s)%s##st%d', s.name, km(s.lengthM), note, i)
       if im.Selectable1(label, selStage == i) then selStage = i end
     end
     local stage = ev.stages[selStage]
@@ -115,8 +136,12 @@ local function drawWindow()
       im.TextColored(GREY, string.format('%s, fits a %s circle', km(stage.lengthM), km(stage.radiusM)))
       local busy = recce.active() or (runner.current() and runner.state() ~= 'finished' and runner.state() ~= 'failed')
       if recce.active() then
-        local share, len, n, off = recce.progress()
-        im.TextColored(GREEN, string.format('Recce: %.0f %% (%s, %d points)', share * 100, km(len), n))
+        local share, len, n, off, started = recce.progress()
+        if started then
+          im.TextColored(GREEN, string.format('Recce: %.0f %% (%s, %d points)', share * 100, km(len), n))
+        else
+          im.TextColored(AMBER, 'Recce: drive to the start of the stage; recording begins there')
+        end
         if off and off > 60 then
           im.TextColored(AMBER, string.format('%.0f m from the stage line: follow the orange line', off))
         end
@@ -125,7 +150,10 @@ local function drawWindow()
           message = saved and 'Recce saved.' or err
         end
         im.SameLine()
-        if im.Button('Save anyway') then recce.stop(true, true) message = 'Recce saved.' end
+        if im.Button('Save anyway') then
+          local saved, err = recce.stop(true, true)
+          message = saved and 'Recce saved.' or err
+        end
         im.SameLine()
         if im.Button('Cancel recce') then recce.stop(false) end
       elseif not busy then
@@ -137,7 +165,7 @@ local function drawWindow()
         end
         im.SameLine()
         if im.Button('Start recce') then recce.start(ev, stage) message = 'Follow the orange line on the road to the flying finish (the green ball); the recce saves itself there.' end
-        if events.recce(ev.id, stage.id) then
+        if events.stageLine(ev.id, stage.id) then
           im.SameLine()
           if im.Button('Run stage') then
             local rok, rerr = runner.start(ev, stage)
@@ -145,9 +173,7 @@ local function drawWindow()
           end
         end
       end
-      local res = events.results(ev.id, stage.id)
-      local best
-      for _, r in ipairs(res.runs or {}) do if r.finished and (not best or r.timeS < best) then best = r.timeS end end
+      local best = events.best(ev.id, stage.id)
       if best then im.Text('Best time: ' .. runner.formatTime(best)) end
     end
   end
@@ -156,7 +182,39 @@ local function drawWindow()
   im.End()
 end
 
+-- The import folder looked at: new or changed maps imported, the list read again, a message for each.
+function M.scanImports(always)
+  local ok, done = pcall(importer.scan)
+  if not ok then log('E', logTag, 'import: ' .. tostring(done)) message = 'Import failed: ' .. tostring(done) return end
+  if #done > 0 or always then
+    events.list(true)
+    selEvent, selStage = 1, 1
+  end
+  local said = {}
+  for _, d in ipairs(done) do
+    local text
+    if d.removed then text = 'Removed the rally of ' .. d.file
+    elseif d.ok then text = string.format('Imported %s: %d stage%s', tostring(d.name), d.stages, d.stages == 1 and '' or 's')
+    else text = 'Could not import ' .. d.file .. ': ' .. tostring(d.why) end
+    said[#said + 1] = text
+    earth.notify('Earth Rally: ' .. text, 6)
+  end
+  if #said > 0 then message = table.concat(said, '
+')
+  elseif always then message = 'Nothing new in the import folder.' end
+end
+
+-- A file changed in the game's user folder: one in the import folder is looked at a moment later (it may still be
+-- being written).
+function M.onFileChanged(filename)
+  if type(filename) == 'string' and filename:lower():find(importer.IMPORT_DIR:lower(), 1, true) then scanIn = 1.0 end
+end
+
 function M.onUpdate(dtReal, dtSim)
+  if scanIn then
+    scanIn = scanIn - (dtReal or 0)
+    if scanIn <= 0 then scanIn = nil M.scanImports(false) end
+  end
   earth.update()
   if recce.active() and recce.update() == 'done' then
     local saved, err = recce.stop(true)
@@ -187,9 +245,13 @@ function M.onClientEndMission()
 end
 
 function M.onExtensionLoaded()
-  -- (boards and tents a run left before a Lua reload: taken away)
+  -- (boards and tents a run left before a Lua reload: taken away; the car's brake / clutch overrides handed back)
   pcall(require('earthRally/props').sweep)
-  log('I', logTag, 'Earth Rally loaded (Ctrl+Alt+K opens its window)')
+  local veh = getPlayerVehicle and getPlayerVehicle(0)
+  if veh then pcall(runner._vehCtl, veh, 'off') end
+  -- (new maps in the import folder)
+  scanIn = 0.5
+  log('I', logTag, 'Earth Rally ' .. M.VERSION .. ' loaded (Ctrl+Alt+K opens its window)')
 end
 
 return M

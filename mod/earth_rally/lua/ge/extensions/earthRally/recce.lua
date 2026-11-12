@@ -18,6 +18,10 @@ M.GUIDE_BEHIND_M = 40
 M.GUIDE_LIFT_M = 1.0        -- over the ground
 M.GUIDE_WIDTH = 6
 M.GUIDE_STEP_M = 15
+M.START_NEAR_M = 60         -- recording begins once the car is this close to the stage line ...
+M.START_WITHIN_M = 300      -- ... within this far of its start (the drive there is not the stage)
+M.JUMP_M = 40               -- moved further than this between two points (a reset, a recovery): not driven
+M.OFF_LINE_M = 150          -- progress counts only this close to the map line
 
 local rec = nil             -- { event, stage, points, lastLat, lastLon, lengthM, mapPts, mapCum, origin, best, ... }
 local guideColor, endColor = nil, nil
@@ -53,17 +57,28 @@ function M.update()
   local p = earth.pose()
   if not p or p.camera then return end
   local q = toFlat(rec.origin, p.lat, p.lon)
-  local _, _, along, off = geo.locate(rec.mapPts, rec.mapCum, q)
+  -- (followed from where it was: a stage passing close to itself does not make it jump ahead)
+  local along, off = geo.follow(rec.mapPts, rec.mapCum, q, rec.here, 300, 1500, M.OFF_LINE_M)
   rec.here, rec.off = along, off
+  if not rec.started then
+    -- not recording until the car is at the stage: the drive to it is not the stage
+    if off > M.START_NEAR_M or along > M.START_WITHIN_M then return end
+    rec.started = true
+    log('I', 'earthRally', 'recce: recording from here')
+  end
   if rec.lastLat then
     local d = geo.metres(rec.lastLat, rec.lastLon, p.lat, p.lon)
     if d < M.RECORD_EVERY_M then return end
-    rec.lengthM = rec.lengthM + d
+    if d > M.JUMP_M then
+      rec.jumps = (rec.jumps or 0) + 1     -- (a reset or a recovery: the line goes on from here, not driven between)
+    else
+      rec.lengthM = rec.lengthM + d
+    end
   end
   rec.points[#rec.points + 1] = { p.lat, p.lon, p.alt }
   rec.lastLat, rec.lastLon = p.lat, p.lon
   -- progress along the map line (never backwards), and the end
-  if off < 150 and along > rec.best then rec.best = along end
+  if off < M.OFF_LINE_M and along > rec.best then rec.best = along end
   local total = rec.mapCum[#rec.mapCum]
   -- (level with the end: the car has come as far along the line as it goes, beside it)
   if rec.best >= total * M.END_SHARE and (geo.dist2d(q, rec.mapPts[#rec.mapPts]) <= M.END_RADIUS_M
@@ -150,21 +165,25 @@ end
 
 function M.progress()
   if not rec then return nil end
-  return rec.best / rec.mapCum[#rec.mapCum], rec.lengthM, #rec.points, rec.off
+  return rec.best / rec.mapCum[#rec.mapCum], rec.lengthM, #rec.points, rec.off, rec.started == true
 end
 
--- Stop; keep: save what was recorded (only when it covers most of the stage, unless forced).
+-- Stop; keep: save what was recorded (only when it covers most of the stage, unless forced). When it does not, the
+-- recce goes on (nothing is lost): false and why.
 function M.stop(keep, force)
   if not rec then return false end
   local r = rec
-  rec = nil
-  if not keep then log('I', 'earthRally', 'recce cancelled') return false, 'cancelled' end
+  if not keep then rec = nil log('I', 'earthRally', 'recce cancelled') return false, 'cancelled' end
   local share = r.best / r.mapCum[#r.mapCum]
   if share < M.END_SHARE and not force then
-    return false, string.format('only %.0f %% of the stage was driven: not saved', share * 100)
+    return false, string.format('only %.0f %% of the stage driven so far: drive on, or Save anyway', share * 100)
   end
+  if #r.points < 2 then
+    return false, 'nothing recorded yet: drive to the start of the stage'
+  end
+  rec = nil
   events.saveRecce(r.event.id, r.stage.id, { format = 1, stage = r.stage.id, lengthM = r.lengthM,
-    date = os.date('!%Y-%m-%dT%H:%M:%SZ'), points = r.points })
+    date = os.date('!%Y-%m-%dT%H:%M:%SZ'), points = r.points, jumps = r.jumps })
   log('I', 'earthRally', string.format('recce saved: %s, %.0f m, %d points', r.stage.name, r.lengthM, #r.points))
   return true
 end

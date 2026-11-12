@@ -68,6 +68,49 @@ function M.locate(pts, cum, p, lo, hi)
   return bi, bt, cum[bi] + (cum[bi + 1] - cum[bi]) * bt, sqrt(bd)
 end
 
+-- (the first segment i whose end is at or past s along the line)
+local function segAt(cum, s)
+  local lo, hi = 1, #cum
+  while hi - lo > 1 do
+    local mid = floor((lo + hi) / 2)
+    if cum[mid] <= s then lo = mid else hi = mid end
+  end
+  return lo
+end
+M.segAt = segAt
+
+-- Progress along a line, followed from where it was (prevAlong, m along the line; nil: not known yet), so it does not
+-- jump to another part of the line where the line passes close to itself (a super special crossing itself, a road
+-- back down a valley). The stretch from backM behind to aheadM ahead of prevAlong first; when the point is more than
+-- maxOff from that stretch (or no prevAlong), the whole line, and among the parts of it within reach of the point
+-- (maxOff, or 20 m more than the nearest) the one nearest prevAlong along the line. Returns along, off, i.
+function M.follow(pts, cum, p, prevAlong, backM, aheadM, maxOff)
+  local n = #pts
+  if prevAlong then
+    local lo = segAt(cum, math.max(0, prevAlong - backM))
+    local hi = math.min(n - 1, segAt(cum, prevAlong + aheadM))
+    local i, _, along, off = M.locate(pts, cum, p, lo, hi)
+    if off <= maxOff then return along, off, i end
+  end
+  -- the whole line (two passes, nothing kept: this can run every frame)
+  local nearI, _, nearAlong, nearOff = M.locate(pts, cum, p)
+  if not prevAlong then return nearAlong, nearOff, nearI end
+  local reach = math.max(maxOff, nearOff + 20)
+  local bAlong, bScore = nearAlong, abs(nearAlong - prevAlong)
+  for i = 1, n - 1 do
+    local _, _, along, off = M.locate(pts, cum, p, i, i)
+    if off <= reach then
+      local score = abs(along - prevAlong)
+      if score < bScore then bAlong, bScore = along, score end
+    end
+  end
+  -- (that part of the line chosen, the point on it nearest p: not the end of the segment nearest prevAlong)
+  local lo = segAt(cum, math.max(0, bAlong - reach - 50))
+  local hi = math.min(n - 1, segAt(cum, bAlong + reach + 50))
+  local i, _, along, off = M.locate(pts, cum, p, lo, hi)
+  return along, off, i
+end
+
 -- The point at distance s along the line (clamped), and the unit direction of travel there (in plan).
 function M.pointAt(pts, cum, s)
   local n = #pts

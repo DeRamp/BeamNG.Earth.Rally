@@ -3,47 +3,58 @@
 Real-world rally stages for [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth): drive a real rally's stages
 on the real roads, timed, with BeamNG.drive's own co-driver calling pacenotes made from the road.
 
-Status: alpha. Needs BeamNG.drive 0.40.5 and BeamNG.Earth with
-modding API 1.6 or newer (1.7, with the `onBeamNGEarthRebased` event, is used when present).
+Status: alpha (1.1.0). Needs BeamNG.drive 0.40.5 and BeamNG.Earth with modding API 1.6 or newer (1.7, with the
+`onBeamNGEarthRebased` event, is used when present).
 
 ## How it works
 
-1. **Import** a rally's map (KML or GPX) with `tools/import_kml.py`. Each line becomes a stage; the named points
-   next to it (start, flying finish, stop, ATC) become its controls. The event file goes to your game's user folder,
-   not to this repository: organisers' maps are theirs.
-2. **Recce** each stage once in game: the stage's map line is drawn on the road ahead of you (orange; a green ball at
-   the flying finish) and the mod records the line you drive (with real heights). Not the GPS: its route planner does
-   not take cars on forest roads. Hand-drawn maps cut corners and have no heights; the recce line is what stages are timed and called on.
-3. **Run** the stage, through its controls as in a real rally. The mod takes you just before the arrival time
-   control (ATC), moves BeamNG.Earth's world origin to the middle of the stage (so the world does not shift under you
-   for any stage up to ~26 km across) and writes the stage for the game's rally engine. The game's route arrows lead
-   to each control; in a control's zone the brakes come on at 30 % and a sound says you are in once you stop. At the ATC you are
-   given your start time on the rally clock: the next half minute at least 30 s on (never more than 60 s). Wait on the start line for it, held still until the countdown
-   (the co-driver counts the last five seconds down); moving off early is a jump start (+10 s), arriving after it is
-   late (+10 s a minute, and the next minute). The clock stops at the flying finish (a sound), and you drive on to
-   the stop control. Each control has the game's own rally boards just off the road edge, and a gazebo at the ATC,
-   start, finish and stop. The pacenote cards show during the run. Times and penalties are kept.
+1. **Add a rally**: drop its map (`.kml`, `.kmz` or `.gpx`) into the import folder. Each line becomes a stage; the
+   named points next to it (start, flying finish, stop, ATC) become its controls. No command line.
+2. **The stage's line on the road.** A stage is timed and called on one of these:
+   - **a recce** you drive once in game: the stage's map line is drawn on the road ahead of you (orange; a green ball
+     at the flying finish) and the mod records the line you drive, with real heights;
+   - **its map line matched to BeamNG.Earth's roads** (`tools/match_roads.py`, a developer tool for now): no recce
+     needed. Where the map has no road the organisers' line is used, and the window says a recce is better there.
 
-Pacenotes: corners are found from the recce line; the game works out each one's severity and the distance calls and
-voices them with its own co-driver voice pack.
+   A recce, when there is one, is used first.
+3. **Run** the stage, through its controls as in a real rally:
+   - The mod takes you just before the arrival time control (ATC) and moves BeamNG.Earth's world origin to the middle
+     of the stage, so the world does not shift under you on any stage up to ~26 km across.
+   - The game's route arrows lead to each control. In a control's zone the brakes come on at 30 % (brake harder
+     yourself if you like) and a sound says you are in once you stop.
+   - At the ATC you get your start time on the rally clock: the next half minute at least 30 s on (never more than
+     60 s). Driving past the ATC is a missed time control (+60 s).
+   - On the start line you are held until GO: 30 % brake, the clutch in on a manual gearbox (rev in gear), and the
+     car's launch control switched on where it has one. The start tree's LED clock counts down, with the game's
+     picture-in-picture view of it at the top of the screen; the co-driver says 30 s, good luck, 10 s, 5-4-3-2-1, go.
+     Moving off before GO is a jump start (+10 s); reaching the line after your start time is late (+10 s a minute,
+     and the next half minute).
+   - The clock stops at the flying finish (a sound) and the notes stop; you drive on to the stop control. Then the
+     boards, the co-driver and the stage layout are tidied away.
+   - Each control has the game's own rally boards beside the road, following its bends, and a gazebo at the ATC,
+     start and stop. The pacenote cards show during the run. Times and penalties are kept.
 
-## Install (from this folder)
+Pacenotes: corners are found from the stage's line; the game works out each one's severity and the distance calls
+and voices them with its own co-driver voice pack.
+
+## Install
+
+Put the release zip in `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\mods\`, or from this folder:
 
 ```
 python tools/install.py
 ```
 
-Or put the release zip in `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\mods\`. Then add a rally (below).
+(Only one of the two: both in the mods folder would load two copies; the install script warns about it.)
 
 In game: Freeroam > BeamNG.Earth, then **Ctrl+Alt+K** opens the Earth Rally window (or type
-`earthRally_main.toggle()` in the console, `~`). Pick a stage, **Go to start**, **Start recce**, drive it to the
-flying finish; then **Run stage**.
+`earthRally_main.toggle()` in the console, `~`). Pick a stage, then **Run stage** (or **Go to start** and
+**Start recce** first, for a stage that needs one).
 
-## Adding a rally from a KML or GPX file
+## Adding a rally
 
-You need [Python 3.10+](https://www.python.org/downloads/) and a map of the rally's stages: a `.kml` (Google Earth,
-Google My Maps, or what most organisers publish) or a `.gpx` file. A `.kmz` is a zipped KML: rename it to `.zip`,
-unzip it, and use the `doc.kml` inside.
+You need a map of the rally's stages: a `.kml` or `.kmz` (Google Earth, Google My Maps, or what most organisers
+publish) or a `.gpx` file.
 
 ### 1. Check the map
 
@@ -61,87 +72,89 @@ The importer reads two kinds of thing from the file:
   | `Stop` | stop control (optional; used when within 3 km of the finish) |
 
   For a line called `Maryhill Up`, points called `Maryhill Up Start`, `Maryhill Up FF` and `Maryhill Up Stop`
-  match it. Case, years (`26`, `2026`) and version tags (`V2`) are ignored, and a shorter name works when only one
-  stage starts with it (`Maryhill FF`). Points with words like `Service`, `Regroup`, `Spectator` or `Jump` are kept as
-  plain points, not controls.
+  match it. Case, years (`26`, `2026`), version tags (`V2`) and stage numbers (`SS3`) are ignored, and a shorter name
+  works when only one stage starts with it (`Maryhill FF`). Points with words like `Service`, `Regroup`, `Spectator`
+  or `Jump` are kept as plain points, not controls.
 
 Without a start point a stage starts at the line's first point; without a flying finish it ends at the line's last
 point. So the smallest file that works is one line per stage, drawn in the driving direction.
 
 Making your own: in [Google My Maps](https://www.google.com/mymaps), draw a line along the stage's roads and add
-markers named as above, then Export to KML/KMZ (tick "Export to a .KML file").
+markers named as above, then Export to KML/KMZ.
 
-### 2. Import it
+### 2. Drop it in the import folder
 
-From this folder:
+In the Earth Rally window press **Open import folder** (it is
+`%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\earthRally\import\`) and put the file there. It is imported at once if
+the game is running, else when the game next starts (**Re-scan** looks again). A message says what was imported, and
+the rally's **Import report** in the window lists each stage with its length and controls, and anything to fix:
 
-```
-python tools/import_kml.py "path/to/your rally.kml" --id myrally --name "My Rally 2026"
-```
-
-- `--id`: a short name for the event file (letters, numbers, dashes). Importing again with the same id replaces it.
-- `--name`: what the window shows. Both are optional (the file's name is used).
-
-It prints each stage with its length and the controls it found, for example:
-
-```
-My Rally 2026: 2 stages -> C:\Users\you\AppData\Local\BeamNG\BeamNG.drive\current\earthRally\events\myrally.json
-  maryhill-up        4.1 km, fits a  1.2 km circle; controls: atc start ff stop
-  kuhnle             8.4 km, fits a  1.7 km circle, 3 pieces (largest gap 60 m); controls: start ff
-  controls not matched to a stage (kept as plain points): Kuhnel Stop
-```
-
-Check that list:
-
-- **controls not matched**: a point's name doesn't match any stage's name (often a typo). Rename it in the map and
-  import again.
+- **"... matches no stage: did you mean ...?"**: a point's name doesn't match a stage's (often a typo). Rename it in
+  the map and save the file again: it is imported again by itself.
 - **its start control is ... m from the line**: the point is in the wrong place, or matched the wrong stage.
-- **gaps between pieces**: fine; the recce drive fills them in.
-- **fits a ... km circle** over 13 km: too wide for now (the world would shift during the stage).
+- **drawn in pieces with gaps**: fine; the recce (or the road matching) fills them in.
+- **too wide to run for now**: the stage is more than ~26 km across (the world would shift during it).
 
-### 3. Load it in game
+Change the file and it is imported again; take it out of the folder and its rally goes (its recces and times stay).
+A rally imported before with `tools/import_kml.py` from the same file keeps its id, so its recces and times still
+belong to it.
 
-In the Earth Rally window press **Reload** (no restart needed); the rally and its stages appear in the list. Each
-stage needs one recce before it can be run: the map line is only a guide, and the recce records the road you
-actually drive.
-
-The event files are kept in your BeamNG user folder, not in this repository. Organisers' maps are theirs; don't
-commit or share them.
+The organisers' maps are theirs: the import folder and the event files are in your BeamNG user folder, not in this
+repository. Don't commit or share them.
 
 Where things are kept (your BeamNG.drive user folder, `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current` on Windows):
-`earthRally/events/` (imported rallies), `earthRally/recce/` (recce lines), `earthRally/results/` (times),
+`earthRally/import/` (the maps you dropped in), `earthRally/events/` (imported rallies), `earthRally/recce/` (recce
+lines), `earthRally/matched/` (map lines matched to the roads), `earthRally/results/` (times),
 `earthRally/runtime/` (the stage files written for the rally engine at each run).
 
-## The run's checks (milestone 0)
+### 3. Matching stages to the roads (developer tool, for now)
 
-The window lists what each run found out, also saved with its time:
+`tools/match_roads.py` routes each stage's map line along BeamNG.Earth's own roads (the ones the game draws, bends
+rounded as it rounds them) and takes heights from BeamNG.Earth's elevation data, so the stage runs without a recce.
+It needs BeamNG.Earth's source and its Python environment:
+
+```
+<beamng.earth>/.venv/Scripts/python.exe tools/match_roads.py --earth <beamng.earth> --event olympus26
+```
+
+On the two stages with a recce to compare (OTR's Maryhill Up and Boyd Loop) the matched line is 0.6-0.7 m from the
+driven line (median), heights within ~0.1 m, and ~90 % of the corners the same. The plan is to move it into
+BeamNG.Earth's server as an API call so players need nothing.
+
+`tools/import_kml.py` still imports a map from the command line (the same result as the import folder).
+
+## The run's checks
+
+The developer window lists what each run found out, also saved with its time:
 
 | check | what it tells |
 |---|---|
+| Stage line | the recce, or the map line on the roads |
 | Rally engine | the game's rally engine took the stage on this level |
 | Corners found / notes loaded | our corners, and the notes the co-driver has |
 | Notes called | the co-driver spoke |
 | Origin moved to the stage centre | BeamNG.Earth moved its world origin when asked |
-| World shifts during the run | should be 0; if not, the co-driver's positions are stale after it (milestone 5) |
-| Heights kept | near 0: the game kept the recce heights instead of setting the line down on missing terrain |
+| World shifts during the run | should be 0; if not, the co-driver's positions are stale after it |
+| Heights kept | near 0: the game kept our heights instead of setting the line down on missing terrain |
 | World not ready during the run | the world fell behind the car |
-| Furthest off the line | the recce line against where you drove |
+| Furthest off the line | the stage line against where you drove |
 
 ## Development
 
 - `mod/earth_rally/lua/ge/extensions/earthRally/`: `main.lua` (window), `runner.lua` (a run), `recce.lua`,
-  `stageWriter.lua` (the rally engine's files), `geo.lua` (geometry, corner detection), `events.lua` (files),
+  `importer.lua` (maps from the import folder), `stageWriter.lua` (the rally engine's files), `geo.lua` (geometry,
+  corner detection, progress along a line), `events.lua` (files), `props.lua` (boards, tents, start tree),
   `earthAdapter.lua` (the only file using BeamNG.Earth), `rallyAdapter.lua` (the only file using the game's rally
   engine).
-- Tests, no game needed: `pip install lupa`, then `python tests/run_tests.py`.
+- Tests, no game needed: `pip install lupa`, then `python tests/run_tests.py` (the importer is also checked against
+  `tools/import_kml.py` on the maps in `../Rally Docs/` when they are there).
+- `docs/plan-1.1.0.md`: this version's plan and what is left.
 
 ## Plan
 
-0. In-game proof on one stage (now).
-1. Importer matched to OpenStreetMap roads.
-2. One timed stage, polished (the stage area downloaded ahead).
-3. Recce refinements. 4. Better pacenotes (crests, cautions). 5. Stages wider than ~26 km (the co-driver re-placed
-   when the world shifts). 6. Itineraries: loops, road sections, time controls, service. 7. An in-game editor.
+Next: the player UI (menus, stage select, the game's rally HUD), road matching inside BeamNG.Earth (no Python),
+better pacenotes (crests, cautions), stages wider than ~26 km, itineraries (loops, road sections, service), an
+in-game editor.
 
 ## License
 

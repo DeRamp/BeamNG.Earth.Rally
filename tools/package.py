@@ -28,6 +28,8 @@ def main():
                 rel = os.path.relpath(full, SRC).replace(os.sep, '/')
                 z.write(full, rel)
                 n += 1
+        z.write(os.path.join(ROOT, 'LICENSE'), 'LICENSE')     # (the licence goes with every copy)
+        n += 1
     print(f'{out}: {n} files')
     return 0
 

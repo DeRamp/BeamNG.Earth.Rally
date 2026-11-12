@@ -152,6 +152,14 @@ core_vehicleBridge = { executeAction = function(_, action, on) if action == 'set
 core_groundMarkers = { setPath = function(t) routes[#routes + 1] = t or false end }
 local function has(list, v) for _, x in ipairs(list) do if x == v then return true end end return false end
 local layout = 'beamngEarth'
+-- (the rally clock from a fixed time of day, 18:00:00: the start times do not depend on when the test runs)
+core_environment = { getTimeOfDay = function() return { time = 0.25 } end }
+local function lastCtl()
+  for i = #inputs, 1, -1 do
+    local m = inputs[i]:match('earthRally_ctl%("(%a+)"')
+    if m then return m, inputs[i] end
+  end
+end
 core_gamestate = { getGameState = function() return { appLayout = layout } end,
   setGameState = function(_, l) layout = l or layout end }
 
@@ -248,7 +256,8 @@ local firstCs = files[r.dir .. '/rally/notebooks/structured.notebook.json'].pace
 T.check(nodeDist(firstCs, race.startPositions[1].pos) >= 20, 'no note on the start line')
 T.check(runner.state() == 'toStart', 'on the start line (' .. runner.state() .. ')')
 frames(8)
-T.check(frozen == true and has(sounds, 'event:UI_Checkpoint'), 'stopped on the line: held, a sound')
+T.check(lastCtl() == 'hold' and frozen == nil and has(sounds, 'event:UI_Checkpoint'),
+  'stopped on the line: held (brake, clutch, launch control; not frozen), a sound')
 T.check(camResets >= 2, 'the camera reset after the origin moved and the car was placed (' .. camResets .. ')')
 T.check(layout == 'earthRallyStage', 'the pacenote cards layout on for the run (' .. layout .. ')')
 -- the car stands on the start line, in game coordinates of the new origin
@@ -258,7 +267,7 @@ T.check(math.sqrt((cp.x - sx) ^ 2 + (cp.y - sy) ^ 2) < 6, 'the car on the start 
 
 frames(120)
 T.check(runner.state() == 'running', 'GO (' .. runner.state() .. ')')
-T.check(frozen == false, 'let go before the start')
+T.check(lastCtl() == 'off', 'let go at GO')
 T.check(has(lines, 'countdown3') and has(lines, 'countdown1') and has(lines, 'countdowngo'),
   'the co-driver counted down')
 T.check(not r.jumpStart, 'no jump start')
@@ -370,7 +379,7 @@ do
   inputs = {}
   frames(2)
   T.check(runner.state() == 'toAtc', 'not checked in while moving')
-  T.check(inputs[1] and inputs[1]:find("'brake', 0.30"), 'braked at 30 % in the ATC zone')
+  T.check(inputs[1] and inputs[1]:find('earthRally_ctl("zone", 0.30)', 1, true), 'braked at 30 % in the ATC zone')
   car.speed = 0
   frames(2)
   local clk = runner.clock()
@@ -379,9 +388,9 @@ do
     runner.formatClock(clk) .. ')')
   T.check(r2.checks.atc:find('checked in') ~= nil, 'checked in at the ATC')
   T.check(has(lines, 'commsCheck') and has(lines, 'beltsCheck'), 'the co-driver at the ATC: intercom check, belts')
-  T.check(inputs[#inputs]:find("'brake', 0, 2", 1, true) ~= nil, 'the brake let go once stopped')
+  T.check(lastCtl() == 'off', 'the brake let go once stopped')
   frames(20)
-  T.check(runner.state() == 'toStart' and frozen == false, 'let go: on to the start line')
+  T.check(runner.state() == 'toStart' and lastCtl() == 'off', 'let go: on to the start line')
   -- on to the start line
   car.lat, car.lon, car.speed = full[11][1], full[11][2], 6
   frames(2)
@@ -392,7 +401,7 @@ do
   frames(1)
   T.check(routes[#routes] == false, 'no route arrows once at the start')
   T.check(manager.notesOn == false, 'no stage notes called before the start')
-  T.check(frozen == true, 'held on the line while waiting')
+  T.check(lastCtl() == 'hold', 'held on the line while waiting')
   local drawn = 0
   debugDrawer = debugDrawer or {}
   debugDrawer.drawSquarePrism = function() drawn = drawn + 1 end
@@ -403,14 +412,18 @@ do
   local tcBoards = 0
   for _, o in pairs(objects) do if (o.fields.shapeName or ''):find('signboard_time_control.dae') then tcBoards = tcBoards + 1 end end
   T.check(tcBoards == 2, 'a time control board on each side of the road (' .. tcBoards .. ')')
-  local releasedAt = nil
+  local releasedAt, heldAll = nil, true
   lines = {}
   for _ = 1, 1200 do
+    inputs = {}
     frames(1)
-    if not releasedAt and frozen == false then releasedAt = r2.startAt - runner.clock() end
+    local m = lastCtl()
+    if runner.state() == 'waitStart' and m ~= 'hold' then heldAll = false end
+    if not releasedAt and m == 'off' then releasedAt = r2.startAt - runner.clock() end
     if runner.state() == 'running' then break end
   end
-  T.check(releasedAt and releasedAt <= 5.05 and releasedAt > 4, 'let go 5 s before the start (' .. tostring(releasedAt) .. ')')
+  T.check(heldAll, 'held every frame while waiting (the player cannot undo it with a brake tap)')
+  T.check(releasedAt and releasedAt <= 0.001 and releasedAt > -0.2, 'let go at GO, not before (' .. tostring(releasedAt) .. ')')
   T.check(manager.notesOn == true, 'the stage notes on from GO')
   T.check(runner.state() == 'running', 'GO at the start minute (with controls)')
   T.check(math.abs(runner.clock() - r2.startAt) < 0.2, 'the stage clock from the minute itself')
@@ -428,6 +441,7 @@ do
     if runner.state() ~= 'running' then break end
   end
   T.check(runner.state() == 'toStop' and r2.finalTime, 'the clock stopped at the flying finish, on to the stop control')
+  T.check(manager.notesOn == false, 'the stage notes off at the flying finish')
   T.check(has(sounds, 'event:UI_CountdownGo'), 'a sound at the flying finish')
   local ffx2, ffy2 = toGame(full[2900][1], full[2900][2])
   local tentAtFinish, tents = false, 0
@@ -455,8 +469,218 @@ do
   frames(20)
   T.check(runner.state() == 'finished' and r2.checks.stopControl:find('stopped') ~= nil,
     'stopped at the stop control: stage complete')
+  T.check(countObjects() == 0 and manager == nil and layout == 'beamngEarth',
+    'stage done: boards, co-driver and stage layout taken away at once (not left until Close)')
   runner.abort(true)
-  T.check(countObjects() == 0, 'the boards and tents taken away with the run')
+end
+
+------------------------------------------------------------------------------------------ the car's controls (vehicle Lua)
+do
+  local ts = { enabled = false }
+  ts.setTwoStep = function(on) ts.enabled = on end
+  ts.getState = function() return { twoStepLaunch_enabled = ts.enabled, twoStepLaunch_rpm = 4000 } end
+  local gearbox = 'manualGearbox'
+  local env = { electrics = { values = {} }, input = { brake = 0, state = { throttle = { filter = 0 } } },
+    FILTER_KBD = 0, FILTER_KBD2 = 3, math = math, pairs = pairs, ipairs = ipairs, pcall = pcall, type = type,
+    next = next,
+    powertrain = { getDevicesByType = function(t) return t == gearbox and { { type = t } } or {} end },
+    controller = { getControllersByType = function(t) return t == 'twoStepLaunch' and { ts } or {} end } }
+  local function vrun(mode, level)
+    local f = assert(loadstring(runner.VEH_CTL .. string.format('earthRally_ctl(%q, %.2f)', mode, level or 0)))
+    setfenv(f, env)
+    f()
+  end
+  local ev = env.electrics.values
+  vrun('zone', 0.3)
+  T.check(ev.brakeOverride == 0.3 and ev.clutchOverride == nil, 'zone: 30 % brake, no clutch')
+  env.input.brake = 1
+  vrun('zone', 0.3)
+  T.check(ev.brakeOverride == 1, 'zone: the player\'s own harder braking kept')
+  env.input.brake = 0
+  vrun('hold', 0.3)
+  T.check(ev.brakeOverride == 0.3 and ev.clutchOverride == 1 and ts.enabled == true,
+    'hold on a keyboard: 30 % brake, clutch in, launch control on')
+  env.input.state.throttle.filter = 1          -- (a gamepad / pedals)
+  vrun('hold', 0.3)
+  T.check(ev.brakeOverride == 0.8, 'hold on an analog throttle with launch control: 80 % brake (it arms there)')
+  vrun('off')
+  T.check(ev.brakeOverride == nil and ev.clutchOverride == nil and ts.enabled == false,
+    'off: brake and clutch handed back, launch control as the player had it')
+  gearbox, ts.enabled = 'automaticGearbox', true
+  env.controller.getControllersByType = function() return {} end
+  vrun('hold', 0.3)
+  T.check(ev.brakeOverride == 0.3 and ev.clutchOverride == nil, 'an automatic: the brake held, no clutch')
+  vrun('off')
+end
+
+------------------------------------------------------------------------------------------ props on a winding road
+do
+  local props = require('earthRally/props')
+  props.clear()
+  -- the road map: a right-hand bend of radius 100 m round (0, 0), nodes every 10 m, and a side road at its middle
+  local nodes, R0 = {}, 100
+  local names = {}
+  for i = 0, 60 do
+    local a = math.pi - i * (10 / R0)
+    local n = 'n' .. i
+    nodes[n] = { pos = vec3(R0 * math.cos(a), R0 * math.sin(a), 50), radius = 3.5, links = {} }
+    names[i] = n
+    if i > 0 then nodes[n].links[names[i - 1]] = {} nodes[names[i - 1]].links[n] = {} end
+  end
+  local mid = nodes[names[30]].pos
+  nodes.side = { pos = vec3(mid.x * 1.3, mid.y * 1.3, 50), radius = 3, links = { [names[30]] = {} } }
+  nodes[names[30]].links.side = {}
+  map = { getMap = function() return { nodes = nodes } end }
+  local toGameId = function(lat, lon) return lon, lat, 0 end      -- (the site's lat / lon read as x / y here)
+  local function onArc(o) return math.abs(math.sqrt(o.pos[1] ^ 2 + o.pos[2] ^ 2) - R0) end
+  -- the time control at the side road's junction, driven along the bend (clockwise)
+  local a30 = math.pi - 30 * (10 / R0)
+  local dir = { x = math.sin(a30), y = -math.cos(a30) }
+  props.setSite('atc', mid.y, mid.x, dir, nil)
+  props.update({ x = mid.x, y = mid.y, z = 0 }, toGameId)      -- (the car 50 m below: its height is not the road's)
+  local entries, worst, zs = 0, 0, true
+  for _, o in pairs(objects) do
+    local shape = o.fields.shapeName or ''
+    if not o.pos then shape = '' end
+    if shape:find('signboard_time_control') then
+      worst = math.max(worst, math.abs(onArc(o) - 3.2))
+      if shape:find('entry') then entries = entries + 1 end
+    end
+    if o.pos and math.abs(o.pos[3] - 50) > 0.01 then zs = false end
+  end
+  T.check(entries == 2 and worst < 0.6, 'the ATC boards beside the bend, 50 m back round it too (worst ' ..
+    string.format('%.2f', worst) .. ' m off)')
+  T.check(zs, 'every object at the road\'s height, not the car\'s')
+  local e = props.roadAt(mid.x, mid.y, dir)
+  T.check(e and e.a ~= 'side' and e.b ~= 'side', 'at the junction, the road along the driving direction (not the side road)')
+  props.clear()
+  -- the flying finish along the stage line: the board 150 m before it, round the bend
+  local function path(fwd)
+    local a = a30 - fwd / R0
+    return { x = R0 * math.cos(a), y = R0 * math.sin(a), z = 50, dx = math.sin(a), dy = -math.cos(a) }
+  end
+  props.setSite('ff', mid.y, mid.x, dir, 50, path)
+  props.update({ x = mid.x, y = mid.y, z = 0 }, toGameId)
+  local fe = 0
+  for _, o in pairs(objects) do
+    if (o.fields.shapeName or ''):find('finish_entry') and math.abs(onArc(o) - (3.5 + 0.5)) < 0.6 then fe = fe + 1 end
+  end
+  T.check(fe == 2, 'the finish warning boards 150 m back along the stage line, beside the road (' .. fe .. ')')
+  props.clear()
+  map = nil
+end
+
+------------------------------------------------------------------------------------------ progress on a stage that passes close by
+do
+  local geo = require('earthRally/geo')
+  local line = {}
+  for y = 0, 500, 10 do line[#line + 1] = { x = 0, y = y } end
+  for y = 500, 0, -10 do line[#line + 1] = { x = 15, y = y } end      -- (back down 15 m beside itself)
+  local cum = geo.cumulative(line)
+  local along = geo.follow(line, cum, { x = 1, y = 250 }, 240, 150, 600, 60)
+  T.near(along, 250, 1, 'on the way up, beside the way down: still on the way up')
+  local along2 = geo.follow(line, cum, { x = 14, y = 250 }, 760, 150, 600, 60)
+  T.near(along2, 515 + 250, 1, 'on the way down: on the way down')
+  local along3 = geo.follow(line, cum, { x = 40, y = 250 }, 240, 150, 600, 20)
+  T.near(along3, 250, 1, 'well off the line: the part nearest where it was along it')
+end
+
+------------------------------------------------------------------------------------------ the recce's fixes
+do
+  local recce = require('earthRally/recce')
+  car.lat, car.lon, car.alt = full[1][1] + 0.01, full[1][2], 100       -- 1 km from the stage
+  recce.start(event, event.stages[1])
+  recce.update()
+  local _, _, n, _, started = recce.progress()
+  T.check(n == 0 and not started, 'not recording on the way to the stage')
+  for i = 1, 600, 3 do
+    car.lat, car.lon, car.alt = full[i][1], full[i][2], full[i][3]
+    recce.update()
+  end
+  local _, len0 = recce.progress()
+  car.lat, car.lon = full[900][1], full[900][2]          -- (a reset: 300 m on in one go)
+  recce.update()
+  local _, len1, n1, _, started1 = recce.progress()
+  T.check(started1 and n1 > 100, 'recording from the start')
+  T.check(len1 - len0 < 5, 'a reset\'s jump not counted as driven (' .. string.format('%.0f', len1 - len0) .. ' m)')
+  local ok, why = recce.stop(true)
+  T.check(not ok and why:find('drive on') and recce.active(), 'Save before the end: not saved, and the recce goes on')
+  recce.stop(false)
+  T.check(not recce.active(), 'cancelled')
+end
+
+------------------------------------------------------------------------------------------ late rule, missed ATC, start clock, a matched line
+do
+  local hooks, loaded = {}, {}
+  extensions.load = function(n) loaded[n] = true if n == 'gameplay_rallyStartClock' then gameplay_rallyStartClock = {} end end
+  extensions.unload = function(n) loaded[n] = nil _G[n] = nil end
+  extensions.hook = function(name, d) if name == 'onRallyDataUpdated' then hooks[#hooks + 1] = d end end
+  local ev3 = { format = 1, id = 'test3', name = 'Test Rally 3', stages = { {
+    id = 'hill', name = 'Hill', lengthM = 3000, radiusM = 1200, centre = event.stages[1].centre,
+    controls = { start = event.stages[1].controls.start, ff = event.stages[1].controls.ff,
+                 atc = { lat = full[11][1] - 150 / 111195, lon = full[11][2] } },
+    line = event.stages[1].line } } }
+  files['/earthRally/events/test3.json'] = ev3
+  -- no recce: the map line matched to the roads (tools/match_roads.py) instead
+  files['/earthRally/matched/test3__hill.json'] = { format = 1, points = recFrom }
+  local function toAtcRun()
+    anchor = { lat = 47.0, lon = -123.0 }
+    car.lat, car.lon, car.speed = full[1][1] - 0.01, full[1][2], 0
+    local ok3, why3 = runner.start(ev3, ev3.stages[1])
+    frames(80)
+    return ok3, why3
+  end
+  local ok3, why3 = toAtcRun()
+  local r3 = runner.current()
+  T.check(ok3 and r3.checks.line == 'matched' and runner.state() == 'toAtc',
+    'a stage with no recce runs on its matched line (' .. tostring(why3) .. ')')
+  T.check(loaded.gameplay_rallyStartClock, 'the game\'s start clock loaded for the run')
+  local tree = false
+  for _, o in pairs(objects) do if (o.fields.shapeName or ''):find('s_rally_start_tree') then tree = true end end
+  T.check(tree, 'the start tree at the start (the start clock\'s board)')
+  -- check in at the ATC
+  local ax, ay = toGame(ev3.stages[1].controls.atc.lat, ev3.stages[1].controls.atc.lon)
+  car.lat, car.lon = toGeo(ax, ay - 5)
+  car.speed = 8 frames(1) car.speed = 0 frames(3)
+  T.check(r3.startAt ~= nil, 'checked in')
+  frames(20)
+  -- arrive on the start line 3 s before the start time: not late
+  while runner.clock() < r3.startAt - 3 do frames(1) end
+  car.lat, car.lon, car.speed = full[9][1], full[9][2], 0
+  local startAt = r3.startAt
+  frames(1)
+  T.check(not r3.latePenalty and r3.startAt == startAt, 'on the line 3 s before the start time: not late')
+  hooks = {}
+  for _ = 1, 100 do frames(1) if runner.state() == 'running' then break end end
+  local countdown = false
+  for _, d in ipairs(hooks) do
+    if d.activeState == 'countdown' and d.countdownData and d.countdownData.timeUntilLaunch > 0 then countdown = true end
+  end
+  T.check(countdown, 'the start clock fed its countdown while the car waits (its picture-in-picture view)')
+  T.check(runner.state() == 'running', 'GO')
+  runner.abort(true)
+  T.check(not loaded.gameplay_rallyStartClock, 'the start clock unloaded with the run')
+  -- again, driving past the ATC to the start: missed, +60 s
+  toAtcRun()
+  local r4 = runner.current()
+  car.lat, car.lon, car.speed = full[9][1], full[9][2], 6
+  frames(2)
+  T.check(r4.missedAtc and runner.state() == 'toStart', 'the ATC driven past: missed')
+  car.speed = 0
+  frames(3)
+  T.check(r4.startAt and r4.startAt - runner.clock() >= 25, 'a start time as if checked in on the line')
+  for _ = 1, 1000 do frames(1) if runner.state() == 'running' then break end end
+  car.speed = 30
+  for i = 11, #full, 25 do
+    car.lat, car.lon = full[i][1], full[i][2]
+    frames(1, 1.0)
+    if runner.state() ~= 'running' then break end
+  end
+  local res4 = events.results('test3', 'hill').runs
+  local last4 = res4[#res4]
+  T.check(last4 and last4.missedAtc and last4.penaltyS == 60, 'the missed time control in the result: +60 s')
+  T.check(events.best('test3', 'hill') == last4.timeS, 'its best time')
+  runner.abort(true)
 end
 
 T.done('test_run')

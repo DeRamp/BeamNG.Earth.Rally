@@ -26,12 +26,18 @@ def main():
     if len(sys.argv) > 2 and sys.argv[1] == '--child':
         run_one(Path(sys.argv[2]))
         return 0
-    names = sys.argv[1:] or [p.stem for p in sorted(TESTS.glob('test_*.lua'))]
+    names = sys.argv[1:] or [p.name for p in sorted(TESTS.glob('test_*.lua'))] + \
+        [p.name for p in sorted(TESTS.glob('test_*.py'))]
     failed = 0
     for name in names:
-        path = TESTS / (Path(name).stem + '.lua')
+        path = TESTS / name
+        if not path.suffix:
+            path = path.with_suffix('.py' if (TESTS / (name + '.py')).exists() else '.lua')
         # (each in its own process: a test's globals and os.exit stay its own)
-        r = subprocess.run([sys.executable, __file__, '--child', str(path)])
+        if path.suffix == '.py':
+            r = subprocess.run([sys.executable, str(path)])
+        else:
+            r = subprocess.run([sys.executable, __file__, '--child', str(path)])
         if r.returncode != 0:
             failed += 1
             print(f'{path.name}: FAILED (exit {r.returncode})')

@@ -133,7 +133,16 @@ def coords(text):
 
 
 def read_kml(path):
-    root = ET.parse(path).getroot()
+    if path.lower().endswith('.kmz'):
+        import zipfile
+        with zipfile.ZipFile(path) as z:
+            names = [n for n in z.namelist() if n.lower().endswith('.kml')]
+            pick = next((n for n in names if n.lower().endswith('doc.kml')), names[0] if names else None)
+            if not pick:
+                raise SystemExit(f'{path}: no KML inside the .kmz')
+            root = ET.fromstring(z.read(pick))
+    else:
+        root = ET.parse(path).getroot()
     lines, points = [], []
     for pm in root.iter():
         if strip_ns(pm.tag) != 'Placemark':
@@ -190,12 +199,13 @@ def words(name):
 
 
 def stage_key(name):
-    """The words that name a stage: role words, years and version tags left out ('Dayton 26 V2' -> dayton)."""
+    """The words that name a stage: role words, years, version tags and stage numbers left out ('SS3 Dayton 26 V2' ->
+    dayton)."""
     out = []
     for w in words(name):
         if w in ROLE_WORDS or w in ROLE_SKIP:
             continue
-        if re.fullmatch(r'\d{2}|\d{4}|v\d+', w):
+        if re.fullmatch(r'\d{2}|\d{4}|v\d+|ss\d+', w):
             continue
         out.append(w)
     return out
@@ -330,7 +340,7 @@ def default_out_dir():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('file', help='a .kml or .gpx file')
+    ap.add_argument('file', help='a .kml, .kmz or .gpx file')
     ap.add_argument('--id', help="the event's id (default: from the file name)")
     ap.add_argument('--name', help="the event's name (default: the file name)")
     ap.add_argument('--out', help=f'output folder (default: {default_out_dir()})')
