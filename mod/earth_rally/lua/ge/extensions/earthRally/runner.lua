@@ -414,6 +414,29 @@ local function startClockOff()
   if run then run.clockExtOwned = nil end
 end
 
+-- The start clock's picture-in-picture on the right of the screen, above the speedometers (the game puts it at the top
+-- in the middle, in the driver's view). The game's extension sets its place every frame from fixed values; this moves
+-- it after that, in onDrawDebug (main.lua): the last hook before the frame is drawn. Its size stays the game's.
+M.CLOCK_VIEW_NAME = 'rallyStartClockView'
+M.CLOCK_VIEW_RIGHT = 0.015      -- (gap to the screen's right edge, share of its width)
+M.CLOCK_VIEW_BOTTOM = 0.36      -- (the view's bottom this share of the screen's height above its bottom edge)
+function M.placeClockView()
+  if not (run and rawget(_G, M.CLOCK_EXT)) then return end     -- (only in our runs: the game's rally mode keeps its own)
+  local rvm = rawget(_G, 'RenderViewManagerInstance')
+  if not (rvm and rvm.getView) then return end
+  local ok, view = pcall(rvm.getView, rvm, M.CLOCK_VIEW_NAME)
+  if not (ok and view and view.active) then return end
+  local canvas = scenetree.findObject and scenetree.findObject('Canvas')
+  if not (canvas and canvas.getWindowClientSizeXY) then return end
+  local W, H = canvas:getWindowClientSizeXY()
+  local res = view.resolution
+  local w, h = res and res.x, res and res.y
+  if not (W and H and w and h and w > 1 and h > 1) then return end
+  local x = math.floor(W - w - W * M.CLOCK_VIEW_RIGHT + 0.5)
+  local y = math.floor(H - h - H * M.CLOCK_VIEW_BOTTOM + 0.5)
+  view.compositeRect = RectI(math.max(0, x), math.max(0, y), w, h)
+end
+
 -- (a control's place in game coordinates now)
 local function ctlGame(c)
   local x, y = earth.toGame(c.lat, c.lon, 0)
@@ -484,6 +507,64 @@ local function groundNear(x, y, z0)
   return z0
 end
 
+
+-- The game's traffic and parked cars out of the way for the stage, as its own missions do it (missionManager: the
+-- traffic, police and parking systems frozen with gameplay_traffic.freezeState, their cars stashed with
+-- setActive(0)); put back as they were at the tidy-up (the cars shown again, then gameplay_traffic.unfreezeState).
+local function trafficOff()
+  if not run or run.trafficStash then return end
+  local gt, gp = rawget(_G, 'gameplay_traffic'), rawget(_G, 'gameplay_parking')
+  local getObj = rawget(_G, 'getObjectByID')
+  local player = getPlayerVehicle and getPlayerVehicle(0)
+  local playerId = player and player.getID and player:getID()
+  local stash = { ids = {} }
+  local ids = {}
+  if gt and gt.getTrafficList then
+    local ok, l = pcall(gt.getTrafficList)
+    if ok and type(l) == 'table' then for _, id in ipairs(l) do ids[#ids + 1] = id end end
+  end
+  if gp and gp.getParkedCarsList then
+    local ok, l = pcall(gp.getParkedCarsList)
+    if ok and type(l) == 'table' then for _, id in ipairs(l) do ids[#ids + 1] = id end end
+  end
+  if gt and gt.freezeState then
+    local ok, a, b, c = pcall(gt.freezeState, { exceptVehicleId = playerId })
+    if ok then stash.traffic, stash.police, stash.parking = a, b, c end
+  end
+  if getObj then
+    for _, id in ipairs(ids) do
+      if id ~= playerId then
+        local o = getObj(id)
+        if o and o.getActive and o:getActive() then
+          pcall(o.setActive, o, 0)
+          stash.ids[#stash.ids + 1] = id
+        end
+      end
+    end
+  end
+  run.trafficStash = stash
+  run.checks.trafficHidden = #stash.ids
+  if #stash.ids > 0 then log('I', logTag, 'traffic and parked cars out of the way for the stage: ' .. #stash.ids) end
+end
+
+local function trafficOn()
+  local stash = run and run.trafficStash
+  if not stash then return end
+  run.trafficStash = nil
+  local getObj = rawget(_G, 'getObjectByID')
+  if getObj then
+    for _, id in ipairs(stash.ids) do
+      local o = getObj(id)
+      if o then pcall(o.setActive, o, 1) end
+    end
+  end
+  local gt = rawget(_G, 'gameplay_traffic')
+  if gt and gt.unfreezeState and (stash.traffic or stash.parking) then
+    pcall(gt.unfreezeState, stash.traffic, stash.police, stash.parking)
+  end
+end
+M._trafficOff = function() trafficOff() end
+
 local function stepPlace()
   local p, veh = carPos()
   if not veh then fail('no car') return end
@@ -502,6 +583,7 @@ local function stepPlace()
     say('Earth Rally: drive to the time control and stop at its red board', 6)
   else
     toStartLine(veh)
+    trafficOff()
     setState('toStart')
   end
   rallyA.resync()
@@ -681,6 +763,7 @@ local function stepToAtc(dt)
     local gap = math.max(M.START_GAP_S, far / M.LIAISON_MS + M.STOP_ALLOW_S)
     run.startAt = math.ceil((now + gap) / 30) * 30
     run.checks.atc = 'checked in ' .. M.formatClock(now)
+    trafficOff()
     say(string.format('Checked in at %s. Your start time: %s. Move up to the start line.', M.formatClock(now),
       M.formatClock(run.startAt)), 8)
     -- (the co-driver's own pre-start lines: the voice packs have no "move up" line)
@@ -697,6 +780,7 @@ local function stepToAtc(dt)
     if near and along >= run.startM - M.START_ZONE_BEFORE_M and off <= M.START_ZONE_OFF_M then
       run.checks.atc = 'missed'
       run.missedAtc = true
+      trafficOff()
       say(string.format('Time control missed: +%d s', M.MISSED_TC_PENALTY_S), 5)
       setState('toStart')
     end
@@ -927,6 +1011,7 @@ end
 
 -- Everything the run put in the game taken away (the result stays in `run` for the window until it is closed).
 tidy = function()
+  trafficOn()
   earth.originMoved()
   zoneRelease()
   routeOff()

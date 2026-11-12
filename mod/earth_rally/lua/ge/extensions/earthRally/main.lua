@@ -121,7 +121,10 @@ local function drawWindow()
     for i, s in ipairs(ev.stages) do
       local line, kind = events.stageLine(ev.id, s.id, s)
       local note = '  - recce needed'
-      if kind == 'recce' then note = ''
+      local shortM = events.recceShortM(events.recce(ev.id, s.id), s)
+      if kind == 'recce' then
+        note = shortM >= events.RECCE_SHORT_OF_FF_M and
+          string.format('  - recce stops %d m before the flying finish: drive it again', math.floor(shortM)) or ''
       elseif kind == 'matched' then
         note = (line.gapM or 0) > 0 and string.format('  - on the map roads (%s not on the map: a recce is better)',
           km(line.gapM)) or '  - on the map roads'
@@ -240,6 +243,11 @@ function M.onUpdate(dtReal, dtSim)
     local okW, errW = pcall(drawWindow)
     if not okW then log('E', logTag, 'window: ' .. tostring(errW)) pcall(im.End) end
   end
+end
+
+-- (after every other extension's frame work: the start clock's view moved where we want it)
+function M.onDrawDebug()
+  pcall(runner.placeClockView)
 end
 
 function M.onClientEndMission()

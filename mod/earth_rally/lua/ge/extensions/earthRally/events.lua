@@ -75,14 +75,40 @@ function M.mapKey(line)
   return string.format('%d:%.6f:%.6f:%.6f:%.6f', #line, a[1], a[2], b[1], b[2])
 end
 
--- The line a stage runs on: its recce (what the player drove) first, unless it was saved short of the end ("Save
--- anyway") and a matched line covers the whole stage; else the matched map line (when it was made from this map).
--- stage: the event's stage (for the map check). Returns the line and 'recce' / 'matched', or nil.
+-- How far a line comes to a point at the nearest (m, flat): how close a recce gets to the flying finish.
+local function nearestM(points, lat, lon)
+  local best = math.huge
+  local kx = 111195 * math.cos(math.rad(lat))
+  for _, p in ipairs(points) do
+    local d = ((p[1] - lat) * 111195) ^ 2 + ((p[2] - lon) * kx) ^ 2
+    if d < best then best = d end
+  end
+  return math.sqrt(best)
+end
+
+-- A recce that never reaches the flying finish (stopped this far before it, or more) is short: e.g. one recorded by
+-- 1.0, which saved where the recce ended, not where the stage did.
+M.RECCE_SHORT_OF_FF_M = 25
+
+-- How far a stage's recce stops short of its flying finish (m; 0 when it reaches it, or the stage has none), worked out
+-- once per recce.
+function M.recceShortM(r, stage)
+  local ff = stage and stage.controls and stage.controls.ff
+  if not (r and ff and r.points) then return 0 end
+  if not r._shortM then r._shortM = nearestM(r.points, ff.lat, ff.lon) end
+  return r._shortM
+end
+
+-- The line a stage runs on: its recce (what the player drove) first, unless it is short (saved before the end with
+-- "Save anyway", or stopping before the flying finish) and a matched line covers the whole stage; else the matched map
+-- line (when it was made from this map). stage: the event's stage (for the map check). Returns the line and
+-- 'recce' / 'matched', or nil.
 function M.stageLine(eventId, stageId, stage)
   local r = M.recce(eventId, stageId)
   local m = M.matched(eventId, stageId)
   if m and stage and m.mapKey and m.mapKey ~= M.mapKey(stage.line) then m = nil end
-  if r and (not m or type(r.share) ~= 'number' or r.share >= 0.9) then return r, 'recce' end
+  local short = r and ((type(r.share) == 'number' and r.share < 0.9) or M.recceShortM(r, stage) >= M.RECCE_SHORT_OF_FF_M)
+  if r and (not m or not short) then return r, 'recce' end
   if m then return m, 'matched' end
   return nil
 end
