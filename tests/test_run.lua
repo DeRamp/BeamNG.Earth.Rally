@@ -370,7 +370,7 @@ do
   inputs = {}
   frames(2)
   T.check(runner.state() == 'toAtc', 'not checked in while moving')
-  T.check(#inputs == 0, 'no braking of ours in the ATC zone')
+  T.check(inputs[1] and inputs[1]:find("'brake', 0.30"), 'braked at 30 % in the ATC zone')
   car.speed = 0
   frames(2)
   local clk = runner.clock()
@@ -378,6 +378,7 @@ do
     'checked in: the start time the next half minute at least 30 s on, never 60 s past (' .. runner.formatClock(r2.startAt) .. ', now ' ..
     runner.formatClock(clk) .. ')')
   T.check(r2.checks.atc:find('checked in') ~= nil, 'checked in at the ATC')
+  T.check(inputs[#inputs]:find("'brake', 0, 2", 1, true) ~= nil, 'the brake let go once stopped')
   frames(20)
   T.check(runner.state() == 'toStart' and frozen == false, 'let go: on to the start line')
   -- on to the start line

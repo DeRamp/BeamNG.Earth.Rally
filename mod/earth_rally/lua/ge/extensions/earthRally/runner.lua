@@ -63,6 +63,7 @@ M.HOLD_RELEASE_S = 5           -- on the start line the car is held until this l
 M.START_LINE_SHOW_M = 250      -- the start line drawn on the road while the car is this close to it
 M.NO_ATC_START_S = 12          -- without an ATC: the start this long after stopping on the line (the 10 s call fits)
 M.LATE_PENALTY_S = 10          -- a minute (or part) late at the start
+M.BRAKE_LEVEL = 0.30           -- the brake applied in a control zone (0..1): the car slows, the driver stops it
 M.ZONE_HOLD_S = 1.5            -- the car held still this long after it stops in a control zone
 M.ROUTE_REFRESH_S = 5          -- the route arrows planned again this often (BeamNG.Earth's road map changes as you go)
 M.SOUND_STOPPED = 'event:UI_Checkpoint'
@@ -444,14 +445,23 @@ local function sound(ev)
   if eng and eng.Audio and eng.Audio.playOnce then pcall(eng.Audio.playOnce, 'AudioGui', ev) end
 end
 
+-- The car braked in a control zone (the game's brake input, at BRAKE_LEVEL), and the brake let go.
+local function brakes(veh, on)
+  if not veh then return end
+  pcall(function()
+    veh:queueLuaCommand(on and string.format("input.event('brake', %.2f, 2)", M.BRAKE_LEVEL)
+      or "input.event('brake', 0, 2)")
+  end)
+end
+
 -- The car held still (the game's freeze, as its own rally countdowns hold a staged car).
 local function freeze(veh, on)
   local vb = rawget(_G, 'core_vehicleBridge')
   if veh and vb and vb.executeAction then pcall(vb.executeAction, veh, 'setFreeze', on) end
 end
 
--- A control zone: inZone each frame; once the car stops in it (the driver stops it: no braking of ours) a sound, and
--- 'stopped' in that frame, 'done' the next. keepHeld (the start line): the car is held still from then on (the game's
+-- A control zone: inZone each frame; the car braked (BRAKE_LEVEL) from the moment it is in it, the brake let go once
+-- it stops (a sound, 'stopped' in that frame, 'done' the next) or leaves the zone. keepHeld (the start line): the car is held still from then on (the game's
 -- freeze) until zoneRelease(), so it cannot roll into a jump start while it waits.
 local function zone(inZone, dt, keepHeld)
   local _, veh = carPos()
@@ -460,6 +470,7 @@ local function zone(inZone, dt, keepHeld)
     if not inZone then return nil end
     z = { t = 0 }
     run.zone = z
+    brakes(veh, true)
   end
   if z.stopped then
     z.t = z.t + dt
@@ -468,11 +479,13 @@ local function zone(inZone, dt, keepHeld)
     return 'done'
   end
   if not inZone then
+    brakes(veh, false)
     run.zone = nil
     return nil
   end
   if speed() < M.STOPPED_MS then
     z.stopped = true
+    brakes(veh, false)
     if keepHeld then freeze(veh, true) end
     sound(M.SOUND_STOPPED)
     return 'stopped'
@@ -483,6 +496,7 @@ local function zoneRelease()
   if run and run.zone then
     local _, veh = carPos()
     freeze(veh, false)
+    brakes(veh, false)
     run.zone = nil
   end
 end
