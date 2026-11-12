@@ -44,14 +44,17 @@ local TENT = function(fwd)
 end
 local function join(a, b) for _, x in ipairs(b) do a[#a + 1] = x end return a end
 local B = M.BOARD_OUT_M
+M.FINISH_BOARD_OUT_M = 0.5  -- the flying finish's boards just outside the road (cars pass them at speed)
 -- (a board on both sides of the road: the 5th field is the side, -1 the left)
-local function both(name, fwd)
-  return { { name, fwd, B, 0, 1 }, { name, fwd, B, 0, -1 } }
+local function both(name, fwd, out)
+  out = out or B
+  return { { name, fwd, out, 0, 1 }, { name, fwd, out, 0, -1 } }
 end
+local F = M.FINISH_BOARD_OUT_M
 M.LAYOUTS = {
   atc = join(join(both('tcEntry', -50), both('tc', 0)), TENT(4)),
   start = join(join(both('start', 0), { { 'clock', 1.5, B + 0.5, 0 } }), TENT(-6)),
-  ff = join(join(both('finishEntry', -150), both('finish', 0)), TENT(6)),
+  ff = join(both('finishEntry', -150, F), both('finish', 0, F)),
   stop = join(both('stop', 0), TENT(4)),
 }
 
@@ -187,6 +190,8 @@ local function spawn(s, toGame, carZ)
   local rx, ry = fy, -fx
   local z0 = s.z or carZ
   s.objs = {}
+  log('I', 'earthRally', string.format('props: %s put down (%d objects, %s, road half width %.1f m)', s.kind, #layout,
+    road and 'on the road map\'s road' or 'no road on the map there: at the control\'s own spot', half))
   for _, it in ipairs(layout) do
     local shape = M.SHAPES[it[1]]
     local out = (half + it[3]) * (it[5] or 1)

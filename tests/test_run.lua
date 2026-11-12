@@ -135,7 +135,10 @@ gameplay_rally = {
     manager = { notebook = { pacenotes = { sorted = nb.pacenotes } }, drivelineV3 = { spline = spline },
                 lastPlayedPacenoteIdx = nil, resyncAfterTeleport = function() end, race = race, dl = dl,
                 enqueueRandomSystemPacenote = function(_, name) lines[#lines + 1] = name end,
-                setPacenoteProcessingEnabled = function(self, on) self.notesOn = on end }
+                setPacenoteProcessingEnabled = function(self, on) self.notesOn = on end,
+                triggerPacenote = function(self, pn) self.firstCalls = (self.firstCalls or 0) + 1 lines[#lines + 1] = 'note:' .. pn.name end,
+                drivelineRoute = { events = {} } }
+    for i, pn in ipairs(nb.pacenotes) do pn.id = i end
     return true
   end,
   unloadMission = function() manager = nil return true end,
@@ -410,6 +413,13 @@ do
   T.check(runner.state() == 'running', 'GO at the start minute (with controls)')
   T.check(math.abs(runner.clock() - r2.startAt) < 0.2, 'the stage clock from the minute itself')
   T.check(has(lines, 'countdown5') and has(lines, 'countdowngo') and not r2.jumpStart, 'counted down, no jump start')
+  local order = table.concat(lines, ' ')
+  T.check(order:find('warningSeconds30 precountdown') ~= nil, '"30 seconds", then good luck (' .. order .. ')')
+  T.check(order:find('warningSeconds10 note:Pacenote 1') ~= nil, '"10 seconds", then the first note')
+  T.check(order:find('countdowngo note:Pacenote 1') ~= nil, 'go, then the first note again')
+  T.check(manager.firstCalls == 2, 'the first note called twice before the stage (' .. tostring(manager.firstCalls) .. ')')
+  local ev1 = manager.drivelineRoute.events[1]
+  T.check(ev1 and ev1.audioTriggerComplete and ev1.csImmediateHit, 'the engine told the first note is called')
   sounds = {}
   car.speed = 30
   for i = 11, #full, 25 do
@@ -419,15 +429,28 @@ do
   end
   T.check(runner.state() == 'toStop' and r2.finalTime, 'the clock stopped at the flying finish, on to the stop control')
   T.check(has(sounds, 'event:UI_CountdownGo'), 'a sound at the flying finish')
-  local ffShapes = 0
-  for _, o in pairs(objects) do if (o.fields.shapeName or ''):find('gazebo_mod_frame') then ffShapes = ffShapes + 1 end end
-  T.check(ffShapes >= 3, 'a tent at the ATC, the start and the finish (' .. ffShapes .. ')')
+  local ffx2, ffy2 = toGame(full[2900][1], full[2900][2])
+  local tentAtFinish, tents = false, 0
+  for _, o in pairs(objects) do
+    if (o.fields.shapeName or ''):find('gazebo_mod_frame') then
+      tents = tents + 1
+      if (o.pos[1] - ffx2) ^ 2 + (o.pos[2] - ffy2) ^ 2 < 20 ^ 2 then tentAtFinish = true end
+    end
+  end
+  T.check(not tentAtFinish and tents >= 2, 'no tent at the flying finish, tents at the controls (' .. tents .. ')')
   local shapes2 = {}
   for _, o in pairs(objects) do if o.fields.shapeName then shapes2[o.fields.shapeName:match('([^/]+)%.dae$')] = true end end
   T.check(shapes2.s_rally_signboard_finish and shapes2.s_rally_signboard_finish_entry, 'the finish boards put down')
   car.lat, car.lon = ev2.stages[1].controls.stop.lat, ev2.stages[1].controls.stop.lon
   frames(2)
-  T.check(shapes2.s_rally_signboard_stop or countObjects() > 0, 'the stop board')
+  local stopTent = false
+  local sx2, sy2 = toGame(ev2.stages[1].controls.stop.lat, ev2.stages[1].controls.stop.lon)
+  for _, o in pairs(objects) do
+    if (o.fields.shapeName or ''):find('gazebo_mod_frame') and (o.pos[1] - sx2) ^ 2 + (o.pos[2] - sy2) ^ 2 < 15 ^ 2 then
+      stopTent = true
+    end
+  end
+  T.check(stopTent, 'a tent at the stop control')
   car.speed = 0
   frames(20)
   T.check(runner.state() == 'finished' and r2.checks.stopControl:find('stopped') ~= nil,

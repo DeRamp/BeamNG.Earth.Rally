@@ -62,7 +62,7 @@ M.LATE_GAP_S = 10              -- late at the start: the next half-minute mark a
 M.BRAKE_LEVEL = 0.35           -- the brake applied in a control zone (0..1): the car slows, the driver still stops it
 M.HOLD_RELEASE_S = 5           -- on the start line the car is held until this long before the start (the countdown)
 M.START_LINE_SHOW_M = 250      -- the start line drawn on the road while the car is this close to it
-M.NO_ATC_START_S = 8           -- without an ATC: the start this long after stopping on the line
+M.NO_ATC_START_S = 12          -- without an ATC: the start this long after stopping on the line (the 10 s call fits)
 M.LATE_PENALTY_S = 10          -- a minute (or part) late at the start
 M.ZONE_HOLD_S = 1.5            -- the car held still this long after it stops in a control zone
 M.ROUTE_REFRESH_S = 5          -- the route arrows planned again this often (BeamNG.Earth's road map changes as you go)
@@ -588,6 +588,7 @@ local function stepToStart(dt)
       run.checks.lateMinutes = mins
       say(string.format('Late at the start: +%d s. New start time %s', run.latePenalty, M.formatClock(newStart)), 6)
       run.startAt = newStart
+      rallyA.systemNote('rescheduled')
     else
       say('Start time ' .. M.formatClock(run.startAt) .. '. Wait for your minute.', 5)
     end
@@ -641,6 +642,18 @@ local function stepWaitStart(dt)
     rallyA.systemNote('falseStart')
     say('Jump start: +' .. M.JUMP_START_PENALTY_S .. ' s', 3)
   end
+  -- the co-driver: "30 seconds", "good luck"; "10 seconds" and the first note; 5..1; go and the first note again
+  local before = run.prevLeft or math.huge
+  run.prevLeft = left
+  if before > 30 and left <= 30 and left > 25 then
+    rallyA.systemNote('warningSeconds30')
+    rallyA.systemNote('precountdown')
+  end
+  if not run.firstNoteCalled and left <= 10 and left > 5.5 then
+    run.firstNoteCalled = true
+    if before > 10 then rallyA.systemNote('warningSeconds10') end
+    rallyA.callFirstNote(false)
+  end
   local n = math.ceil(left)
   if n >= 1 and n <= 5 and n ~= run.lastShown then
     run.lastShown = n
@@ -651,6 +664,7 @@ local function stepWaitStart(dt)
     if run.zone then zoneRelease() end
     rallyA.notesOn(true)       -- (the stage's notes from GO only)
     rallyA.systemNote('countdowngo')
+    rallyA.callFirstNote(true)   -- (again after go; the engine's own call of it held back)
     if ui_message then ui_message('GO', 1.5, 'earthRallyCount') end
     run.clock = -left          -- (from the minute itself, not this frame)
     setState('running')
