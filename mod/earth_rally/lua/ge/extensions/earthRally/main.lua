@@ -167,6 +167,15 @@ local function drawWindow()
           if tok then facing = { stage = stage, eventId = ev.id, t = 0, ready = 0 } end
         end
         im.SameLine()
+        -- (BeamNG.Earth's GPS: the way there on the roads, arrows on the road; drive it, no teleport)
+        if im.Button('Route to start') then
+          local lat, lon, what = runner.arrivalPoint(stage)
+          local gok, gwhy = false, 'the stage has no start'
+          if lat then gok, gwhy = earth.gpsSet(lat, lon, stage.name .. ' ' .. what) end
+          message = gok and ('Route set to ' .. stage.name .. "'s " .. what .. ': follow the arrows on the road.')
+            or ('Could not set a route: ' .. tostring(gwhy))
+        end
+        im.SameLine()
         if im.Button('Start recce') then recce.start(ev, stage) message = 'Follow the orange line on the road to the flying finish (the green ball); the recce saves itself there.' end
         if events.stageLine(ev.id, stage.id, stage) then
           im.SameLine()

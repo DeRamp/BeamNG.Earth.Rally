@@ -30,6 +30,9 @@ function M.teleport(lat, lon, name) local a = api() if not a then return false, 
 function M.notify(text, s) local a = api() if a then a.notify(text, s) end end
 function M.gpsRoute(points) local a = api() if a and a.has('gpsRoute') then return a.gpsSetRoute(points) end return false, 'no GPS routes' end
 function M.gpsClear() local a = api() if a then a.gpsClear() end end
+-- (BeamNG.Earth's GPS to one place: the route planned on its roads, on the map and with arrows on the road)
+function M.gpsSet(lat, lon, name) local a = api() if not (a and a.gpsSet) then return false, 'no BeamNG.Earth GPS' end
+  local ok, r, why = pcall(a.gpsSet, lat, lon, name) if not ok then return false, tostring(r) end return r, why end
 
 -- The world's origin now (lat, lon), or nil.
 function M.anchor()

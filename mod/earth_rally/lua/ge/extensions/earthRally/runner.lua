@@ -1042,6 +1042,19 @@ function M.abort(quiet)
   run = nil
 end
 
+-- Where a stage's run begins: its ATC when it has one of its own (near enough the start), else its start.
+-- Returns lat, lon, what ('ATC' / 'start').
+function M.arrivalPoint(stage)
+  local ctl = stage.controls or {}
+  local st = ctl.start or (stage.line and stage.line[1] and { lat = stage.line[1][1], lon = stage.line[1][2] })
+  if not st then return nil end
+  if ctl.atc then
+    local d = geo.metres(ctl.atc.lat, ctl.atc.lon, st.lat, st.lon)
+    if d <= M.ATC_MAX_FROM_START_M and d >= 5 then return ctl.atc.lat, ctl.atc.lon, 'ATC' end
+  end
+  return st.lat, st.lon, 'start'
+end
+
 -- After a 'Go to start' teleport (to the organisers' start point, which can be metres off the road): the car put on
 -- the road behind the start line, facing along the stage. On the stage's line on the roads (recce or matched) when it
 -- has one; else on the road map's road beside the start; else where it stands, turned along the stage. Returns true

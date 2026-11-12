@@ -798,6 +798,12 @@ do
     'Run stage: the car on the road 40 m before an ATC drawn off it (' .. string.format('%.1f, %.1f', x, y - atcY) .. ')')
   runner.abort(true)
 
+  -- Route to start: to the ATC when the stage has its own, else to the start
+  local la, lo, what = runner.arrivalPoint(ev7.stages[1])
+  T.check(what == 'ATC' and la == alat and lo == alon, 'Route to start: to the stage\'s ATC (' .. tostring(what) .. ')')
+  la, lo, what = runner.arrivalPoint(event.stages[1])
+  T.check(what == 'start' and la == full[11][1], 'Route to start: to the start when there is no ATC')
+
   -- traffic and parked cars: out of the way once checked in at the ATC, back at the tidy-up
   local cars = {}
   for id = 101, 103 do cars[id] = { active = true } end
