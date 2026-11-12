@@ -375,11 +375,24 @@ do
   -- roll up to the ATC and stop
   T.check(#routes > 0 and routes[#routes] ~= false, 'route arrows to the ATC')
   car.speed = 8
-  car.lat, car.lon = toGeo(ax, ay - 5)
+  -- the brake eases in: a little at the zone's edge, more nearer the board, full at it, never less again
+  local function brakeNow() local _, cmd = lastCtl() return cmd and tonumber(cmd:match('"zone", ([%d%.]+)')) end
+  car.lat, car.lon = toGeo(ax, ay - 10)
   inputs = {}
-  frames(2)
+  frames(1)
+  local atEdge = brakeNow()
+  car.lat, car.lon = toGeo(ax, ay - 5)
+  frames(1)
+  local nearer = brakeNow()
   T.check(runner.state() == 'toAtc', 'not checked in while moving')
-  T.check(inputs[1] and inputs[1]:find('earthRally_ctl("zone", 0.30)', 1, true), 'braked at 30 % in the ATC zone')
+  T.check(atEdge and nearer and atEdge < 0.1 and nearer > atEdge and nearer < 0.3,
+    'the brake eases in towards the board (' .. tostring(atEdge) .. ' at 10 m, ' .. tostring(nearer) .. ' at 5 m)')
+  car.lat, car.lon = toGeo(ax, ay)
+  frames(1)
+  T.check(math.abs((brakeNow() or 0) - 0.30) < 0.01, '30 % at the board')
+  car.lat, car.lon = toGeo(ax, ay + 4)
+  frames(1)
+  T.check(math.abs((brakeNow() or 0) - 0.30) < 0.01, 'past the board: still 30 %')
   car.speed = 0
   frames(2)
   local clk = runner.clock()

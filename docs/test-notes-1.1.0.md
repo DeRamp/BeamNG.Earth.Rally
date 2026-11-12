@@ -73,3 +73,9 @@ Scope: 1.1.0 is these fixes and polish; new ideas and the player UI go to 1.2.0 
   to one side (positions do not depend on the turn). Check the log line for Schafer's start and Maryhill's finish.
 - Not changed, to check in game: the clock view may overlap the turbo gauge (bottom right) at 1080p and the tacho on
   small screens; tell me where it should go.
+
+## Second session (2026-11-12, testing the installed build)
+
+| # | What | Wanted | Status |
+|---|---|---|---|
+| 14 | The control zones' brake: the full 30 % at the zone's edge stops the car short of the boards and tent; uncomfortable | The brake easing in as you get closer, so you can roll up to the boards | built, not installed yet: from nothing at the zone's edge (ATC 12 m, stop 25 m, 12 m before the start line) to 30 % at the board / line, never easing off again inside the zone; stopping anywhere in the zone still counts |

@@ -696,7 +696,11 @@ end
 -- A control zone: inZone each frame. The car braked (BRAKE_LEVEL) from the moment it is in it; once it stops a sound
 -- ('stopped' in that frame, 'done' a frame later) and the brake let go, or let go when it leaves the zone. keepHeld
 -- (the start line): once stopped the car is held (freeze, launch control) until zoneRelease() at GO.
-local function zone(inZone, dt, keepHeld)
+-- near: how close to the control's point (0 at the zone's edge, 1 at the board / the start line): the brake eases in
+-- with it, from nothing at the edge to BRAKE_LEVEL at the board, so the player can roll right up to the boards and
+-- tent (the user, 2026-11-12: the full brake at the edge stopped the car short of them). It never eases off again
+-- in the zone (a car past the board keeps the full brake).
+local function zone(inZone, dt, keepHeld, near)
   local _, veh = carPos()
   local z = run.zone
   if not z then
@@ -726,7 +730,9 @@ local function zone(inZone, dt, keepHeld)
     sound(M.SOUND_STOPPED)
     return 'stopped'
   end
-  vehCtl(veh, 'zone', M.BRAKE_LEVEL)
+  local want = M.BRAKE_LEVEL * math.max(0, math.min(1, near or 1))
+  z.level = math.max(z.level or 0, want)
+  vehCtl(veh, 'zone', z.level)
   return 'moving'
 end
 -- Brake, freeze and launch control handed back (GO, the end of a run), on every car they were sent to.
@@ -778,7 +784,7 @@ local function stepToAtc(dt)
   run.atcTarget = run.atcTarget or {}
   run.atcTarget.pos = { x = a.x, y = a.y, z = p.z }
   if not (run.zone and run.zone.stopped) then routeTo(run.atcTarget, dt) end   -- (none once stopped in the zone)
-  local zs = zone(d <= M.CONTROL_RADIUS_M, dt)
+  local zs = zone(d <= M.CONTROL_RADIUS_M, dt, false, 1 - d / M.CONTROL_RADIUS_M)
   if zs == 'stopped' then
     local now = M.clock()
     run.atcTime = now
@@ -830,7 +836,7 @@ local function stepToStart(dt)
   end
   run.overLine = false
   local zs = zone(along >= run.startM - M.START_ZONE_BEFORE_M and along <= run.startM + 3 and off <= M.START_ZONE_OFF_M, dt,
-    true)
+    true, 1 - (run.startM - along) / M.START_ZONE_BEFORE_M)
   if zs == 'stopped' then
     routeOff()
     run.staged = p              -- (where it stopped: moving away from here before GO is a jump start)
@@ -1010,7 +1016,7 @@ local function stepToStop(dt)
   run.stopTarget = run.stopTarget or {}
   run.stopTarget.pos = { x = b.x, y = b.y, z = p.z }
   if not (run.zone and run.zone.stopped) then routeTo(run.stopTarget, dt) end   -- (none once stopped in the zone)
-  local zs = zone(d <= M.STOP_CONTROL_RADIUS_M, dt)
+  local zs = zone(d <= M.STOP_CONTROL_RADIUS_M, dt, false, 1 - d / M.STOP_CONTROL_RADIUS_M)
   if zs == 'stopped' then
     routeOff()
     run.checks.stopControl = 'stopped ' .. M.formatClock(M.clock())
