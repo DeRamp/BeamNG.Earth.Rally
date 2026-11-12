@@ -3,7 +3,7 @@
 Real-world rally stages for [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth): drive a real rally's stages
 on the real roads, timed, with BeamNG.drive's own co-driver calling pacenotes made from the road.
 
-Status: alpha (1.1.0). Needs BeamNG.drive 0.40.5 and BeamNG.Earth with modding API 1.6 or newer (1.7, with the
+Status: alpha (1.2.0, in development: the player UI). Needs BeamNG.drive 0.40.5 and BeamNG.Earth with modding API 1.6 or newer (1.7, with the
 `onBeamNGEarthRebased` event, is used when present).
 
 ## How it works
@@ -30,12 +30,17 @@ Status: alpha (1.1.0). Needs BeamNG.drive 0.40.5 and BeamNG.Earth with modding A
      control (+60 s).
    - On the start line you are held until GO (the game's own hold, as its rally countdown does: rev freely, the car
      does not move), with the car's launch control switched on where it has one. The start tree's LED clock counts down, with the game's
-     picture-in-picture view of it at the top of the screen; the co-driver says 30 s, good luck, 10 s, 5-4-3-2-1, go.
+     picture-in-picture view of it on the right (a setting); the game's rally countdown shows the squares and the
+     rally clock, a big 5-4-3-2-1 and GO; the co-driver says 30 s, good luck, 10 s, 5-4-3-2-1, go.
      Early? The game's **Interact** control (Shift+E; the modifier + Y on a pad), stopped on the line, skips to 6 s
      before your start, as its rally mode does. Moving off before GO is a jump start (+10 s); reaching the line after your start time is late (+10 s a minute,
      and the next half minute).
-   - The clock stops at the flying finish (a sound) and the notes stop; you drive on to the stop control. A few
-     seconds after you stop there, the boards, the co-driver and the stage layout are tidied away.
+   - On the stage: the game's own stage clock and progress bar, the km done, and an OFF ROUTE warning (how far, and
+     which way back) when you leave the stage's line. Each car reset during the timed stage costs 10 s (a setting).
+   - The clock stops at the flying finish (a sound): your time big, against your best; the notes stop and you drive on
+     to the stop control. Stopped there, the stage's results card: the time, each penalty, your best, and **Next
+     stage**, **Retry**, **Rally menu** (or just drive off). The boards and the co-driver are tidied away a few
+     seconds after you stop.
    - Each control has the game's own rally boards beside the road, following its bends, and a gazebo at the ATC,
      start and stop. The pacenote cards show during the run. Times and penalties are kept.
 
@@ -53,10 +58,15 @@ python tools/install.py
 
 (Only one of the two: both in the mods folder would load two copies; the install script warns about it.)
 
-In game: Freeroam > BeamNG.Earth, then **Ctrl+Alt+K** opens the Earth Rally window (or type
-`earthRally_main.toggle()` in the console, `~`). Pick a stage, then **Run stage** (or **Go to start** and
-**Start recce** first, for a stage that needs one). **Route to start** sets BeamNG.Earth's GPS to the stage's ATC
-(or its start) so you can drive there instead of teleporting.
+In game: Freeroam > BeamNG.Earth, then **Ctrl+Alt+K** opens Earth Rally (also the pause menu's **Earth Rally** tab):
+your rallies, each rally's stages, a stage's page with **Drive stage**, **Route to start** (BeamNG.Earth's GPS to the
+stage's ATC, or its start, so you can drive there instead of teleporting) and **Recce** (for a stage that needs one),
+and your times.
+
+**Settings** (in the menu and the pause-menu tab, saved in `settings/earthRally.json` in the user folder): units
+(km / miles), time controls (full, or a quick start on the line without the ATC), the reset penalty, the
+control-zone brake, where the start clock's close-up shows (right / top / off), and the developer panel (the old
+Earth Rally window with each run's checks; `earthRally_main.toggle()` in the console opens it too).
 
 ## Adding a rally
 
@@ -133,7 +143,7 @@ BeamNG.Earth's server as an API call so players need nothing.
 
 ## The run's checks
 
-The developer window lists what each run found out, also saved with its time:
+The developer panel (Settings > Developer panel) lists what each run found out, also saved with its time:
 
 | check | what it tells |
 |---|---|
@@ -149,18 +159,23 @@ The developer window lists what each run found out, also saved with its time:
 
 ## Development
 
-- `mod/earth_rally/lua/ge/extensions/earthRally/`: `main.lua` (window), `runner.lua` (a run), `recce.lua`,
+- `mod/earth_rally/lua/ge/extensions/earthRally/`: `main.lua` (the menu's Lua side, the HUD's streams, the developer
+  panel), `runner.lua` (a run), `hudFrame.lua` (what the HUD shows, one pure function), `settings.lua`, `menu.lua` (the
+  menu's data), `preview.lua` (the HUD preview: `earthRally_main.previewHud()`), `recce.lua`,
   `importer.lua` (maps from the import folder), `stageWriter.lua` (the rally engine's files), `geo.lua` (geometry,
   corner detection, progress along a line), `events.lua` (files), `props.lua` (boards, tents, start tree),
   `earthAdapter.lua` (the only file using BeamNG.Earth), `rallyAdapter.lua` (the only file using the game's rally
   engine).
+- `mod/earth_rally/ui/`: the HUD apps (`modules/apps/EarthRallyHud`, `EarthRallyResults`; their `.vue` in
+  `modules/apps/earthRally/`, as the game's rally apps) and the menu (`ui-vue/mods/earthRally/`: a page of its own and
+  the pause-menu tab). The stage layout (`settings/ui_apps/.../earthRallyStage`) puts them with the game's rally apps.
 - Tests, no game needed: `pip install lupa`, then `python tests/run_tests.py` (the importer is also checked against
   `tools/import_kml.py` on the maps in `../Rally Docs/` when they are there).
-- `docs/plan-1.1.0.md`: this version's plan and what is left.
+- `docs/plan-1.2.0.md`: this version's plan (the player UI), what was built and what is to check in game.
 
 ## Plan
 
-Next: the player UI (menus, stage select, the game's rally HUD), road matching inside BeamNG.Earth (no Python),
+Next: course tape across side roads and junction direction signs (1.2.0), road matching inside BeamNG.Earth (no Python),
 better pacenotes (crests, cautions), stages wider than ~26 km, itineraries (loops, road sections, service), an
 in-game editor.
 

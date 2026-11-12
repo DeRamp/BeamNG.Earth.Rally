@@ -8,7 +8,8 @@ Decided so far (the user, 2026-11-12): no split times, no stage sketches or elev
 from the 1.1.0 test notes come with it: the reset penalty switch (item 2), the off-route warning (item 10), the
 start-line skip hint (item 12).
 
-Status: mock-ups and this research done (2026-11-12); nothing built.
+Status: mock-ups and this research done (2026-11-12). The UI built (build order 1-8, 2026-11-12), offline-tested,
+not yet tried in game: see "Built" and "Defaults chosen, to confirm" below. Course tape and junction signs not started.
 
 ## The mock-ups
 
@@ -209,7 +210,59 @@ along the road):
   the user wants boards there too.
 - Tests offline: positions and turns from a junction table (as test_props), roads in every direction.
 
-## Open questions for the user
+## Built (2026-11-12, not yet installed or tried in game)
+
+| piece | files | wired to |
+|---|---|---|
+| Settings | `earthRally/settings.lua` (`/settings/earthRally.json`) | runner (`timeControls`, `resetPenalty`, `zoneBrake`, `clockView`), the HUD (`units`), main (`devPanel`) |
+| Reset penalty | `runner.onVehicleResetted` (main.lua's `onVehicleResetted` hook) | +10 s a reset while `running` (not within 2 s of an origin move, debounced 0.5 s); `resets`, `resetPenaltyS` in the result |
+| uiFrame | `earthRally/hudFrame.lua` (pure), `runner.uiFrame()` | main.lua queues `rallyLoop` and `earthRally` at 30 Hz (2 Hz once over; `inactive` once at the end); `rallyLoop` left alone while `gameplay_rallyLoop` is loaded |
+| Stock apps | `settings/ui_apps/.../earthRallyStage.uilayout.json` (version 5) | RallyCountdown (top 82, centred), RallyStageTiming (left 0, top 64), RallyStageProgress (left 288, top 64: under BeamNG.Earth's status bar, left where it is); the game's toasts box (`topLeftApps`) moved to 1467 / 42 as in the game's rally layout |
+| Our HUD | `ui/modules/apps/EarthRallyHud/app.json` + `ui/modules/apps/earthRally/app.earthRallyHud.vue` (full screen, click-through) | stream `earthRally`, its `show` table |
+| Results card | `ui/modules/apps/EarthRallyResults/app.json` + `.../earthRally/app.earthRallyResults.vue` (interactive) | `earthRally_main.uiResults('next' / 'retry' / 'menu')`; the stage layout kept until a button, driving 100 m on from where the car stopped, or 2 min |
+| Toasts | `runner.say(text, s, kind, title)` | `guihooks.trigger('toastrMsg', ...)`, BeamNG.Earth's notify without guihooks |
+| Menu | `ui/ui-vue/mods/earthRally/` (index.js, EarthRally.vue, EarthRallyTab.vue, EarthRallySettings.vue, EarthRallySide.vue, store.js); `earthRally/menu.lua` | route `earthRally` (Ctrl+Alt+K: `earthRally_main.toggleMenu`), pause-menu tab "Earth Rally" (Rallies, Settings); `uiState`, `uiRally`, `uiStage`, `uiAction` (drive = `runner.start`, route = `earth.gpsSet` to `runner.arrivalPoint`, recce = `recce.start` with a teleport first when 300 m+ away, openFolder, rescan, abort, recce save / cancel), `uiSet` |
+| Developer panel | main.lua's ImGui window | shown only with the setting on (or `earthRally_main.toggle()` in the console) |
+| HUD preview | `earthRally/preview.lua`; `earthRally_main.previewHud()` (also a button in Settings and the developer panel) | about a minute of sample moments through `hudFrame.build`, the stage layout on for it |
+
+Tests: `tests/test_hud.lua` (settings, every state of both streams, the preview, the menu's data),
+`tests/test_run.lua` (the reset penalty, quick start, zone brake off, clock view off, off route with the way back,
+the HUD across a real run, Retry, main.lua's page API, streams, preview and Ctrl+Alt+K).
+
+### Defaults chosen, to confirm
+
+The open questions below, answered with these defaults (the user had not answered yet); each is one place to change:
+
+1. Countdown: the stock squares (RallyCountdown) plus our big numeral for the last 5 s (`hudFrame.BIG_COUNT_FROM`), and
+   GO for 1.5 s (`GO_SHOW_S`). `ui_message` no longer shows the numbers.
+2. "gravel" dropped: the next-stage card says the length only.
+3. Km done: a small readout of ours beside the stock progress bar (`.er-km` in app.earthRallyHud.vue).
+4. The stop control's SLOW + distance: kept (stock RallyCountdown, `eventType = 'ss_stop'`).
+5. Results: a card in the HUD (an interactive app) at the stop control, after the flying finish's big time (4 s,
+   `FINISH_CARD_S`); without a stop control it comes up at the flying finish. Closes on a button, driving 100 m on
+   (`runner.RESULTS_CLOSE_M`), or after 2 min (`RESULTS_TIMEOUT_S`).
+6. Pacenote cards dimmed while off route: a dark panel of ours over the stock app's place (`.er-dim-notes`).
+7. BeamNG.Earth's status app left alone; the stock stage time and progress bar moved down to top 64 px under it
+   (the layout file), our km readout and off-route card with them.
+8. The turbo gauge left where it is; the clock view's place is the setting (right / top / off).
+9. SS numbers in map order (the stage's place in the rally's file).
+10. Pause menu: its own "Earth Rally" tab (Rallies, Settings).
+
+### To check in game (not verifiable offline)
+
+- The Vue files compile and mount (the game compiles them at runtime: errors in the UI and the DevTools console);
+  `app.<directive>.vue` found for our two apps' `app.json` as for the stock rally apps.
+- The layout: the stage layout file's version 5 replaces a saved version 4; positions at 1920x1080 and other
+  resolutions; our full-screen HUD drawn above the stock apps (the off-route card covering the progress bar).
+- The results card's buttons clickable while driving (an interactive app; the mouse cursor), and the empty card area
+  not catching the mouse.
+- The route opens with Ctrl+Alt+K and closes with Esc / Ctrl+Alt+K; `onUiChangedState` names it `earthRally`.
+- The pause-menu tab, its two pages, the `flag` icon.
+- The toasts (titles, one per message), their place (topLeftApps moved).
+- The reset hook: one `onVehicleResetted` per reset (R, Insert, recover), none from BeamNG.Earth's own car moves.
+- Settings saved to `settings/earthRally.json` and read back after a restart.
+
+## Open questions for the user (answered for now by the defaults above)
 
 1. Countdown on the line: the stock 5 squares + rally clock, a big 5-4-3-2-1-GO numeral, or both?
 2. "8.4 km gravel": the surface is not known now. Drop it, or find it (Overture road `surface` / class in

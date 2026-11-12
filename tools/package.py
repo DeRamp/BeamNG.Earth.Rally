@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Build the Earth Rally mod zip for a release: dist/earth_rally-<version>.zip, the mod's folders (lua/, scripts/,
-settings/) at the top of the zip as BeamNG.drive's mod manager (and BeamNG.Earth's add-on list) expect.
+settings/, ui/) at the top of the zip as BeamNG.drive's mod manager (and BeamNG.Earth's add-on list) expect.
 
     python tools/package.py 1.0.0-alpha
 """
