@@ -486,7 +486,11 @@ do
     FILTER_KBD = 0, FILTER_KBD2 = 3, math = math, pairs = pairs, ipairs = ipairs, pcall = pcall, type = type,
     next = next,
     powertrain = { getDevicesByType = function(t) return t == gearbox and { { type = t } } or {} end },
-    controller = { getControllersByType = function(t) return t == 'twoStepLaunch' and { ts } or {} end } }
+    controller = { getControllersByType = function(t) return t == 'twoStepLaunch' and { ts } or {} end },
+    rawset = rawset, rawget = rawget }
+  -- (as the vehicle's Lua, which warns on a new global set plainly: a write to env that is not rawset fails here)
+  env._G = env
+  setmetatable(env, { __newindex = function(_, k) error('a plain global set in the vehicle: ' .. tostring(k)) end })
   local function vrun(mode, level)
     local f = assert(loadstring(runner.VEH_CTL .. string.format('earthRally_ctl(%q, %.2f)', mode, level or 0)))
     setfenv(f, env)
@@ -701,6 +705,14 @@ do
   events.forget()
   _, kind = events.stageLine('test5', 'hill', st)
   T.check(kind == 'recce', 'a full recce first')
+  -- the junctions and bridges kept with the matched line, as the notes take them
+  files['/earthRally/matched/test5__hill.json'].junctions = { { 47.0, -123.0, 'turn', '' }, { 47.0, -123.0, 'straight', '' },
+    { 47.0, -123.0, 'fork', 'left' }, { 47.0, -123.0, 'fork', 'right' } }
+  files['/earthRally/matched/test5__hill.json'].bridges = { { 47.0, -123.0, 47.0001, -123.0 } }
+  local types = {}
+  for _, l in ipairs(events.landmarks('test5', 'hill', st)) do types[#types + 1] = l.type end
+  T.check(table.concat(types, ' ') == 'atJunction pastJunction keepLeft keepRight overBridge',
+    'junctions and bridges from the matched line (' .. table.concat(types, ' ') .. ')')
   -- a matched line from an older version of the map is not used
   files['/earthRally/recce/test5__hill.json'] = nil
   files['/earthRally/matched/test5__hill.json'].mapKey = '1:0:0:0:0'
@@ -725,6 +737,30 @@ do
   local muted = writer.build(line, { startM = 100, finishM = 2900, quatFn = qf, mute = { { 1950, 2100 } } })
   T.check(all.corners == 2 and muted.corners == 1, 'the corner on the stretch with no road gets no note (' ..
     all.corners .. ' / ' .. muted.corners .. ')')
+
+  -- junctions and bridges: a turn at a junction on the first bend, a side road and a bridge on the straight, a fork,
+  -- and a junction on the stretch with no road (no call)
+  local lm = writer.build(line, { startM = 100, finishM = 2900, quatFn = qf, mute = { { 1950, 2100 } }, landmarks = {
+    { s = 1020, type = 'atJunction' }, { s = 500, type = 'pastJunction' }, { s = 700, type = 'overBridge' },
+    { s = 1500, type = 'keepLeft' }, { s = 2020, type = 'pastJunction' } } })
+  local found = {}
+  for _, pn in ipairs(lm.notebook.pacenotes) do
+    local it = pn.structured.items
+    local kinds = {}
+    for k = 1, 6 do if it[tostring(k)].type then kinds[#kinds + 1] = k .. ':' .. it[tostring(k)].type end end
+    found[#found + 1] = table.concat(kinds, ',')
+  end
+  local got = table.concat(found, ' | ')
+  T.check(got == '5:pastJunction | 5:overBridge | 4:corner,5:atJunction | 2:keepLeft',
+    'junctions and bridges called, in order, on their corner or on their own, none where there is no road (' .. got .. ')')
+  T.check(lm.landmarks == 4 and lm.corners == 1, 'four calls, the one corner (' .. lm.landmarks .. ', ' .. lm.corners .. ')')
+  local inOrder = true
+  for k = 2, #lm.notebook.pacenotes do
+    local a = lm.notebook.pacenotes[k - 1].pacenoteWaypoints[1].pos
+    local b = lm.notebook.pacenotes[k].pacenoteWaypoints[1].pos
+    if b[2] < a[2] and b[1] >= a[1] then inOrder = false end
+  end
+  T.check(inOrder and lm.notebook.pacenotes[1].triggerType == 15, 'notes in driving order, the first one immediate')
 end
 
 ------------------------------------------------------------------------------------------ a far ATC, late minutes

@@ -113,6 +113,24 @@ function M.stageLine(eventId, stageId, stage)
   return nil
 end
 
+-- The junctions and bridges along a stage (found by tools/match_roads.py on the map's roads, kept with its matched
+-- line, as lat / lon: they hold whichever line the stage runs on). Returns { { lat, lon, type }... } with type a key
+-- of stageWriter.LANDMARKS; empty without a matched line made from this map.
+function M.landmarks(eventId, stageId, stage)
+  local m = M.matched(eventId, stageId)
+  if not m or (stage and m.mapKey and m.mapKey ~= M.mapKey(stage.line)) then return {} end
+  local out = {}
+  for _, j in ipairs(m.junctions or {}) do
+    local t = j[3] == 'turn' and 'atJunction' or j[3] == 'straight' and 'pastJunction' or
+      (j[3] == 'fork' and (j[4] == 'left' and 'keepLeft' or 'keepRight')) or nil
+    if t then out[#out + 1] = { lat = j[1], lon = j[2], type = t } end
+  end
+  for _, b in ipairs(m.bridges or {}) do
+    out[#out + 1] = { lat = b[1], lon = b[2], type = 'overBridge' }
+  end
+  return out
+end
+
 function M.results(eventId, stageId)
   return readOnce(M.RESULTS_DIR .. key(eventId, stageId)) or { runs = {} }
 end

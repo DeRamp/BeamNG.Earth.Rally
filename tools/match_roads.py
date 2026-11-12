@@ -39,6 +39,13 @@ BRIDGE_ON_LINE_M = 25.0 # ... or this close when both lie on the organisers' lin
 ON_LINE_M = 12.0        # map's road where the stage plainly goes on
 OUT_STEP_M = 4.0        # the matched line's point spacing (as a recce's)
 HEIGHT_OFFSET_M = 0.2   # a recce's heights (the car's position) sit this far above the elevation data
+JUNCTION_LOOK_M = 15.0  # a junction's roads: their way this far from it
+SIDE_ROAD_MIN_M = 40.0  # a side road shorter than this (a dead end: a driveway, a stub of track) is no junction
+TURN_DEG = 30.0         # the stage turning more than this at a junction: a turn there ("at junction")
+FORK_DEG = 35.0         # a side road within this of the stage's way on: a fork ("keep left / right")
+JUNCTION_GAP_M = 25.0   # junctions closer than this along the stage: one
+BRIDGE_NEAR_M = 3.0     # the stage this close to a bridge's road ...
+BRIDGE_MIN_M = 10.0     # ... for at least this far: over the bridge (a road crossing under one is near it for less)
 NOT_ROADS = {'footway', 'path', 'cycleway', 'steps', 'pedestrian', 'bridleway', 'corridor', 'sidewalk', 'crosswalk'}
 
 
@@ -82,6 +89,32 @@ def resample(xy, step):
     return out, along
 
 
+def _sub_ring(ring, a, b):
+    """The part of a ring (lon, lat points) from fraction a to b of its length (flat lengths: short pieces)."""
+    pts = [(float(p[0]), float(p[1])) for p in ring]
+    cum = [0.0]
+    for p, q in zip(pts, pts[1:]):
+        cum.append(cum[-1] + math.dist(p, q))
+    total = cum[-1]
+    if total <= 0:
+        return pts[:1]
+
+    def at(f):
+        s = f * total
+        for k in range(1, len(pts)):
+            if cum[k] >= s:
+                t = (s - cum[k - 1]) / max(cum[k] - cum[k - 1], 1e-12)
+                return (pts[k - 1][0] + (pts[k][0] - pts[k - 1][0]) * t, pts[k - 1][1] + (pts[k][1] - pts[k - 1][1]) * t)
+        return pts[-1]
+    out = [at(a)] + [p for p, c in zip(pts, cum) if a * total < c < b * total] + [at(b)]
+    return out
+
+
+def _angle(u, v):
+    """The signed angle from u to v (degrees, + to the left)."""
+    return math.degrees(math.atan2(u[0] * v[1] - u[1] * v[0], u[0] * v[0] + u[1] * v[1]))
+
+
 def seg_dist(np, P, A, B):
     """Distance of each point of P (n, 2) to the polyline segments A -> B (m, 2) each: (n,) minimum."""
     best = np.full(len(P), np.inf)
@@ -99,8 +132,9 @@ class Roads:
     """BeamNG.Earth's drivable roads round a line, as a graph: a node per vertex (merged within 0.5 m), an edge per
     piece between two vertices, weighted by its length and how far it is from the line."""
 
-    def __init__(self, np, md, mapcells, frame, line_xy):
+    def __init__(self, np, md, mapcells, frame, line_xy, roadsmod=None):
         self.np = np
+        self.bridges = []       # each bridge's deck as a polyline (frame xy), from BeamNG.Earth's level ranges
         keys = set()
         pad = CORRIDOR_M + 200
         along_line, _ = resample(line_xy, 200.0)
@@ -121,6 +155,16 @@ class Roads:
                 if cls is not None and str(cls[i]) in NOT_ROADS:
                     continue
                 fid = str(r.ids[i])
+                spans = []
+                if roadsmod is not None:
+                    try:
+                        spans = [(a, b) for a, b, k in roadsmod.level_ranges(r, i) if k == 'bridge']
+                    except Exception:       # (no level data: no bridges known here)
+                        spans = []
+                for part in r.parts(i):
+                    for ring in part:
+                        for a, b in spans:
+                            self.bridges.append([frame.xy(la, lo) for lo, la in _sub_ring(ring, a, b)])
                 for part in r.parts(i):
                     for ring in part:
                         # (every piece: a road crossing a cell's edge may come clipped in each cell; exact copies once)
@@ -222,6 +266,34 @@ class Roads:
                     eb.append(b)
         self.ea, self.eb = np.array(ea, dtype=np.int64), np.array(eb, dtype=np.int64)
 
+    def neighbours(self, n):
+        return {m for m, _, _ in self.adj.get(n, ())}
+
+    def branch(self, n, m):
+        """Walking from node n through m, the road turning least at each node: its way at JUNCTION_LOOK_M from n, and
+        how far it goes (up to SIDE_ROAD_MIN_M; less at a dead end)."""
+        prev, cur, dist = n, m, math.dist(self.node_xy[n], self.node_xy[m])
+        x0, y0 = self.node_xy[n]
+        way = None
+        while True:
+            if way is None and dist >= JUNCTION_LOOK_M:
+                x, y = self.node_xy[cur]
+                way = (x - x0, y - y0)
+            if dist >= SIDE_ROAD_MIN_M:
+                break
+            h = (self.node_xy[cur][0] - self.node_xy[prev][0], self.node_xy[cur][1] - self.node_xy[prev][1])
+            nxt = [k for k in self.neighbours(cur) if k != prev]
+            if not nxt:
+                break
+            best = min(nxt, key=lambda k: abs(_angle(h, (self.node_xy[k][0] - self.node_xy[cur][0],
+                                                          self.node_xy[k][1] - self.node_xy[cur][1]))))
+            prev, cur = cur, best
+            dist += math.dist(self.node_xy[prev], self.node_xy[cur])
+        if way is None:
+            x, y = self.node_xy[cur]
+            way = (x - x0, y - y0)
+        return way, dist
+
     def snap(self, p, direction):
         """The road point nearest p within SNAP_M on an edge not across `direction` (more than ~60 degrees off):
         (a, b, t, point) or None."""
@@ -298,12 +370,85 @@ class Roads:
         return pts, sum(math.dist(a, b) for a, b in zip(pts, pts[1:]))
 
 
-def match_stage(np, md, mapcells, dem, stage):
+def landmarks(np, roads, res, res_along, flags):
+    """The junctions and bridges along the matched line (res, every OUT_STEP_M; flags: 1 on a stretch with no road).
+    Junctions: [(along, kind, side)] with kind 'turn' (the stage turns there), 'straight' (on past a side road) or
+    'fork' (side: 'left' / 'right', the way the stage keeps); bridges: [(from, to)] along the line."""
+    juncs, bridges = [], []
+    if roads.edges == 0 or len(res) < 3:
+        return juncs, bridges
+    P = np.array(res)
+    # junctions: nodes with 3+ roads, on the line (not on a stretch with no road)
+    deg3 = [n for n, lst in roads.adj.items() if len({m for m, _, _ in lst}) >= 3]
+    if deg3:
+        XY = np.array([roads.node_xy[n] for n in deg3])
+        on_line = seg_dist(np, XY, P[:-1], P[1:]) <= 1.5      # (on the line itself, not only near its points)
+        last = -math.inf
+        cand = []
+        for n, (x, y), ok in zip(deg3, XY, on_line):
+            if not ok:
+                continue
+            d = np.hypot(P[:, 0] - x, P[:, 1] - y)
+            k = int(d.argmin())
+            if flags[k] or k < 1 or k >= len(res) - 1:
+                continue
+            cand.append((res_along[k], n, x, y, k))
+        cand.sort()
+        for _s, n, x, y, k in cand:
+            look = max(1, int(JUNCTION_LOOK_M / OUT_STEP_M))
+            a, b = res[max(0, k - look)], res[min(len(res) - 1, k + look)]
+            w_in = (x - a[0], y - a[1])
+            w_out = (b[0] - x, b[1] - y)
+            ways = [(m, roads.branch(n, m)) for m in roads.neighbours(n)]
+            # the stage's own two roads: the one it comes in on and the one it leaves by
+            back = (-w_in[0], -w_in[1])
+            m_in = min(ways, key=lambda t: abs(_angle(back, t[1][0])))[0]
+            m_out = min((t for t in ways if t[0] != m_in), key=lambda t: abs(_angle(w_out, t[1][0])))[0]
+            sides = [w for m, (w, length) in ways if m not in (m_in, m_out) and length >= SIDE_ROAD_MIN_M]
+            if not sides:
+                continue
+            s = res_along[k]
+            turn = _angle(w_in, w_out)
+            if abs(turn) >= TURN_DEG:
+                kind, side = 'turn', ''
+            else:
+                close = [w for w in sides if abs(_angle(w_out, w)) < FORK_DEG]
+                if close:
+                    # (our way to the left of the other road: keep left)
+                    kind, side = 'fork', 'left' if _angle(close[0], w_out) > 0 else 'right'
+                else:
+                    kind, side = 'straight', ''
+            if s - last < JUNCTION_GAP_M:
+                continue
+            last = s
+            juncs.append((s, kind, side))
+    # bridges: the line along a bridge's deck for BRIDGE_MIN_M or more
+    on = np.zeros(len(res), dtype=bool)
+    for deck in roads.bridges:
+        if len(deck) < 2:
+            continue
+        D = np.array(deck)
+        on |= seg_dist(np, P, D[:-1], D[1:]) <= BRIDGE_NEAR_M
+    k = 0
+    while k < len(res):
+        if on[k] and not flags[k]:
+            j = k
+            while j + 1 < len(res) and on[j + 1]:
+                j += 1
+            if res_along[j] - res_along[k] >= BRIDGE_MIN_M:
+                bridges.append((res_along[k], res_along[j]))
+            k = j + 1
+        else:
+            k += 1
+    return juncs, bridges
+
+
+def match_stage(np, md, mapcells, dem, stage, roadsmod=None):
     line = stage['line']
     frame = Frame(line[0][0], line[0][1])
     kml = [frame.xy(la, lo) for la, lo in line]
     t0 = time.time()
-    roads = Roads(np, md, mapcells, frame, kml)
+    roads = Roads(np, md, mapcells, frame, kml, roadsmod)
     wps, along = resample(kml, WAYPOINT_M)
     fine, fine_along = resample(kml, 5.0)
 
@@ -397,6 +542,11 @@ def match_stage(np, md, mapcells, dem, stage):
     res, res_along = resample(out, OUT_STEP_M)
     flags = [1 if any(g0 <= s <= g1 for g0, g1 in gap_ranges) else 0 for s in res_along]
     lat_lon = [frame.latlon(x, y) for x, y in res]
+    juncs, bridges = landmarks(np, roads, res, res_along, flags)
+
+    def ll(s):
+        k = min(len(res_along) - 1, max(0, int(round(s / OUT_STEP_M))))
+        return [round(lat_lon[k][0], 7), round(lat_lon[k][1], 7)]
     lats = np.array([p[0] for p in lat_lon])
     lons = np.array([p[1] for p in lat_lon])
     z = dem.sample(lats, lons, 16) + HEIGHT_OFFSET_M
@@ -411,6 +561,9 @@ def match_stage(np, md, mapcells, dem, stage):
         'maxOffMapLineM': round(float(off_line.max()), 1),
         'cells': roads.cells, 'roadEdges': roads.edges, 'seconds': round(time.time() - t0, 1),
         'mapKey': map_key(stage['line']),
+        # (where they are on the road, as lat / lon: the mod finds them on whichever line the stage runs on, a recce's too)
+        'junctions': [ll(s) + [kind, side] for s, kind, side in juncs],
+        'bridges': [ll(a) + ll(b) for a, b in bridges],
         'points': [[round(la, 7), round(lo, 7), round(float(h), 2)] + ([1] if f else [])
                    for (la, lo), h, f in zip(lat_lon, z, flags)],
     }
@@ -439,6 +592,7 @@ def main():
     import mapdata
     import mapcells
     import dem as demmod
+    import roads as roadsmod
     md = mapdata.MapData(args.cache_dir)
     dem = demmod.Dem(args.cache_dir)
     with open(os.path.join(args.user_dir, 'earthRally', 'events', args.event + '.json'), encoding='utf-8') as f:
@@ -448,7 +602,7 @@ def main():
     for stage in event['stages']:
         if args.stage and stage['id'] != args.stage:
             continue
-        m = match_stage(np, md, mapcells, dem, stage)
+        m = match_stage(np, md, mapcells, dem, stage, roadsmod)
         if not m:
             print(f"{stage['id']:<45} no roads found")
             continue
@@ -457,6 +611,7 @@ def main():
             json.dump(m, f)
         print(f"{stage['id']:<45} {m['lengthM'] / 1000:5.1f} km (map line {m['mapLineM'] / 1000:5.1f}), "
               f"no road on the map for {m['gapM']:.0f} m in {len(m['gaps'])} stretch(es), "
+              f"{len(m['junctions'])} junction(s), {len(m['bridges'])} bridge(s), "
               f"{m['seconds']:.0f} s")
     return 0
 

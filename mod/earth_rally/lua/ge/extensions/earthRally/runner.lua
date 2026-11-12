@@ -54,6 +54,7 @@ M.TELEPORT_SETTLE_S = 2        -- BeamNG.Earth sets the car down a moment after 
 M.ATC_MAX_FROM_START_M = 1500  -- an ATC farther from the start than this is not this stage's (left out)
 M.STOP_MAX_FROM_FINISH_M = 3000
 M.CAR_BEFORE_ATC_M = 40
+M.LANDMARK_OFF_M = 15          -- a junction or bridge this close to the stage line is on it
 M.CONTROL_RADIUS_M = 12        -- stopped this close to a control's board: checked in
 M.STOP_CONTROL_RADIUS_M = 25
 M.STOPPED_MS = 1.0
@@ -360,8 +361,17 @@ local function stepBuild()
   if from then mute[#mute + 1] = { from - M.MUTE_PAD_M, run.cum[#run.cum] } end
   run.checks.notesMutedKm = 0
   for _, r in ipairs(mute) do run.checks.notesMutedKm = run.checks.notesMutedKm + (r[2] - r[1]) / 1000 end
+  -- junctions and bridges (from the matched line's map data) found on the line the stage runs on
+  local lms = {}
+  for _, lm in ipairs(events.landmarks(run.event.id, run.stage.id, run.stage)) do
+    local x, y = earth.toGame(lm.lat, lm.lon, 0)
+    if x then
+      local _, _, s, off = geo.locate(run.line, run.cum, { x = x, y = y })
+      if s and off and off <= M.LANDMARK_OFF_M then lms[#lms + 1] = { s = s, type = lm.type } end
+    end
+  end
   local okB, built = pcall(writer.build, run.line, { startM = run.startM, finishM = run.finishM, name = run.stage.name,
-    mute = mute,
+    mute = mute, landmarks = lms,
     quatFn = function(x, y, z) local q = quatFromDir(vec3(x, y, z), vec3(0, 0, 1)) return q.x, q.y, q.z, q.w end })
   if not okB then fail('could not build the stage: ' .. tostring(built)) return end
   writer.write(run.dir, built)
@@ -370,6 +380,7 @@ local function stepBuild()
   rallyA.notesOn(false)        -- (no calls on the way to the start: on at GO)
   run.checks.rallyEngine = ok and 'loaded' or ('failed: ' .. tostring(why))
   run.checks.cornersFound = built.corners
+  run.checks.junctionsBridges = built.landmarks
   if not ok then
     log('E', logTag, 'rally engine: ' .. tostring(why) .. ' (the run goes on without a co-driver)')
   else
@@ -618,19 +629,20 @@ end
 --   'zone'    the brake override at least `level`
 --   'launch'  launch control on (its state before kept)
 --   'off'     the override cleared, launch control as the player had it
+-- (its two globals set with rawset / read with rawget: the vehicle's Lua logs a warning for each new global otherwise)
 M.VEH_CTL = [[
-earthRally_ctl = function(mode, level)
+rawset(_G, 'earthRally_ctl', function(mode, level)
   local ev = electrics.values
-  local st = earthRally_st
+  local st = rawget(_G, 'earthRally_st')
   if mode == 'off' then
     ev.brakeOverride = nil
     if st and st.ts then
       for _, c in ipairs(st.ts) do if c.setTwoStep then pcall(c.setTwoStep, st.tsWas == true, true) end end
     end
-    earthRally_st = nil
+    rawset(_G, 'earthRally_st', nil)
     return
   end
-  if not st then st = {} earthRally_st = st end
+  if not st then st = {} rawset(_G, 'earthRally_st', st) end
   if mode == 'launch' then
     ev.brakeOverride = nil
     if not st.ts then
@@ -645,7 +657,7 @@ earthRally_ctl = function(mode, level)
     return
   end
   ev.brakeOverride = math.max(input.brake or 0, level or 0)
-end
+end)
 ]]
 -- (every car sent a control since the last 'off', so a car the player switched away from is let go too)
 local ctlCars = {}           -- vehicle id (or the object) -> the vehicle

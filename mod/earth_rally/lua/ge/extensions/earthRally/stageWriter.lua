@@ -28,8 +28,19 @@ M.LEAD_IN_M = 60            -- of route before the start line, at least
 M.RUN_OUT_M = 150           -- of route past the finish, at least (the stop control at its end)
 M.NOTE_CLEAR_M = 25         -- no note's corner starting this close to the start line or past the finish
 
+-- Junctions and bridges (opts.landmarks) as the game's structured notes carry them (its own stages: the english
+-- style's modifiers): on the corner they are part of, else a note of their own. slot: the note's item they go in
+-- (2 before the corner, 5 after it).
+M.LANDMARKS = {
+  atJunction = { slot = 5 }, pastJunction = { slot = 5 }, overBridge = { slot = 5 },
+  keepLeft = { slot = 2 }, keepRight = { slot = 2 },
+}
+M.LANDMARK_BEFORE_M = 20    -- a landmark this far before a corner's start, or in it, or ...
+M.LANDMARK_AFTER_M = 10     -- ... this far past its end, is called with the corner
+
 -- line: { {x, y, z}... } in game coordinates, the stage from (about) its start to (about) its finish.
--- opts: startM, finishM (distances along the line), name, quatFn.
+-- opts: startM, finishM (distances along the line), name, quatFn, mute, landmarks ({ { s (along the line as given),
+-- type (a key of M.LANDMARKS) }... }).
 function M.build(line, opts)
   local quatFn = opts.quatFn
   local cum0 = geo.cumulative(line)
@@ -126,24 +137,59 @@ function M.build(line, opts)
     return { name = name, normal = l > 1e-9 and { dx / l, dy / l, 0 } or { 0, 1, 0 }, oldId = nid,
              pos = arr(stagePts[i]), radius = 8, waypointType = kind }
   end
-  for n, c in ipairs(corners) do
+  -- the notes: one per corner, with the junctions and bridges on it; those on no corner a note of their own
+  local entries = {}
+  for _, c in ipairs(corners) do
+    entries[#entries + 1] = { i0 = c.i0, i1 = c.i1, corner = c,
+      items = { ['1'] = {}, ['2'] = {}, ['3'] = {}, ['4'] = { type = 'corner' }, ['5'] = {}, ['6'] = {} } }
+  end
+  local function put(items, kind)
+    local slot = M.LANDMARKS[kind].slot
+    for _, k in ipairs(slot == 5 and { '5', '6' } or { '2' }) do
+      if not items[k].type then items[k].type = kind return true end
+    end
+    return false
+  end
+  local landmarks = 0
+  local before = math.ceil(M.LANDMARK_BEFORE_M / M.NOTE_STEP_M)
+  local after = math.ceil(M.LANDMARK_AFTER_M / M.NOTE_STEP_M)
+  for _, lm in ipairs(opts.landmarks or {}) do
+    local i = math.floor((lm.s + lead - startM) / M.NOTE_STEP_M + 0.5) + 1
+    if M.LANDMARKS[lm.type] and i > clear and i < #stagePts and not muted(i) then
+      local host = nil
+      for _, e in ipairs(entries) do
+        if e.corner and i >= e.i0 - before and i <= e.i1 + after then host = e break end
+      end
+      if host then
+        if put(host.items, lm.type) then landmarks = landmarks + 1 end
+      else
+        local items = { ['1'] = {}, ['2'] = {}, ['3'] = {}, ['4'] = {}, ['5'] = {}, ['6'] = {} }
+        put(items, lm.type)
+        entries[#entries + 1] = { i0 = math.max(1, i - 1), i1 = math.min(#stagePts, i + 1), items = items }
+        landmarks = landmarks + 1
+      end
+    end
+  end
+  table.sort(entries, function(a, b) return a.i0 < b.i0 end)
+  for n, e in ipairs(entries) do
     nid = nid + 1
     local noteId = nid
+    local c = e.corner
     pacenotes[n] = {
-      audioMode = 1, distanceBeforeModifier = false, ignoreDistanceCalls = false, includeLinkWord = true,
-      isolate = false, metadata = { earthRally = { dir = c.dir, angleDeg = c.angleDeg, minRadius = c.minRadius } },
+      audioMode = 1, distanceBeforeModifier = false, ignoreDistanceCalls = false, includeLinkWord = c ~= nil,
+      isolate = false,
+      metadata = { earthRally = c and { dir = c.dir, angleDeg = c.angleDeg, minRadius = c.minRadius } or { landmark = true } },
       name = 'Pacenote ' .. n, oldId = noteId,
-      pacenoteWaypoints = { wp('corner start', 'cornerStart', c.i0), wp('corner end', 'cornerEnd', c.i1) },
+      pacenoteWaypoints = { wp('corner start', 'cornerStart', e.i0), wp('corner end', 'cornerEnd', e.i1) },
       pk = string.format('%08x', (n * 2654435761) % 4294967296), slowCorner = false, slowCornerReleaseType = 30,
-      structured = { items = { ['1'] = {}, ['2'] = {}, ['3'] = {}, ['4'] = { type = 'corner' }, ['5'] = {},
-                               ['6'] = {} }, schemaVersion = 3 },
+      structured = { items = e.items, schemaVersion = 3 },
       todo = false, triggerType = n == 1 and 15 or 1,
     }
   end
   local notebook = { audioMode = 4, authors = 'Earth Rally', created_at = 0, description = '', metadata = {},
                      name = 'structured', pacenotes = pacenotes, updated_at = 0, version = '4' }
 
-  return { race = race, driveline = driveline, notebook = notebook, nodes = nodes, corners = #corners,
+  return { race = race, driveline = driveline, notebook = notebook, nodes = nodes, corners = #corners, landmarks = landmarks,
            startM = startM, finishM = finishM, lengthM = finishM - startM, leadM = lead }
 end
 
