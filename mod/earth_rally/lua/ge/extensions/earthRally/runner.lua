@@ -125,6 +125,28 @@ local function project()
   return true
 end
 
+-- The camera reset (as the game's own camera reset key): asked for after the world's origin moves and after the car is
+-- moved, when a chase camera's own smoothing still follows the old place. Done the next frame and again a little
+-- later, once the car has settled. pending: { seconds from now... }.
+local camResets = {}
+function M.resetCameraSoon()
+  camResets[#camResets + 1] = 0.05
+  camResets[#camResets + 1] = 0.6
+end
+local function camUpdate(dt)
+  if #camResets == 0 then return end
+  local due = false
+  for i = #camResets, 1, -1 do
+    camResets[i] = camResets[i] - dt
+    if camResets[i] <= 0 then table.remove(camResets, i) due = true end
+  end
+  if due then
+    local cam = rawget(_G, 'core_camera')
+    if cam and cam.resetCamera then pcall(cam.resetCamera, 0) end
+  end
+end
+M._camUpdate = camUpdate
+
 -- Put the car at pos facing along dir (game coordinates; dir may climb or fall), as the game's own start positions do
 -- (gameplay/race/startPosition.lua: quatFromDir(forward, up), turned half round for the vehicle's frame).
 function M.placeCar(veh, pos, dir)
@@ -132,6 +154,7 @@ function M.placeCar(veh, pos, dir)
   if l < 1e-6 then return false end
   local q = quatFromEuler(0, 0, math.pi) * quatFromDir(vec3(dir.x / l, dir.y / l, (dir.z or 0) / l), vec3(0, 0, 1))
   veh:setPositionRotation(pos.x, pos.y, pos.z, q.x, q.y, q.z, q.w)
+  M.resetCameraSoon()
   return true
 end
 
@@ -266,6 +289,7 @@ local function stepAnchor(dt)
   local la, lo = earth.anchor()
   if la and geo.metres(la, lo, c.lat, c.lon) <= M.ANCHOR_CLOSE_M and not earth.rebasing() and earth.ready() then
     run.checks.originMoved = 'yes'
+    M.resetCameraSoon()
     setState('build')
   elseif run.t > M.ANCHOR_WAIT_S then
     run.checks.originMoved = 'timed out'
@@ -500,6 +524,7 @@ end
 
 -- Every frame (main.lua).
 function M.update(dtReal, dtSim)
+  camUpdate(dtReal or 0)
   if not run then return end
   local s = run.state
   if s == 'travel' then stepTravel(dtReal)

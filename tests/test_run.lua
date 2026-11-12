@@ -133,6 +133,8 @@ gameplay_rally = {
   getRallyManager = function() return manager end,
 }
 extensions = { load = function() end }
+local camResets = 0
+core_camera = { resetCamera = function() camResets = camResets + 1 end }
 local layout = 'beamngEarth'
 core_gamestate = { getGameState = function() return { appLayout = layout } end,
   setGameState = function(_, l) layout = l or layout end }
@@ -227,6 +229,8 @@ T.check(nodeDist(race.pathnodes[#race.pathnodes].pos, dlNodes[#dlNodes]) >= 100,
 local firstCs = files[r.dir .. '/rally/notebooks/structured.notebook.json'].pacenotes[1].pacenoteWaypoints[1].pos
 T.check(nodeDist(firstCs, race.startPositions[1].pos) >= 20, 'no note on the start line')
 T.check(runner.state() == 'countdown', 'counting down (' .. runner.state() .. ')')
+frames(8)
+T.check(camResets >= 2, 'the camera reset after the origin moved and the car was placed (' .. camResets .. ')')
 T.check(layout == 'earthRallyStage', 'the pacenote cards layout on for the run (' .. layout .. ')')
 -- the car stands on the start line, in game coordinates of the new origin
 local sx, sy = toGame(full[11][1], full[11][2])
