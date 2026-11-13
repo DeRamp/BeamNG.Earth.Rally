@@ -33,6 +33,8 @@ local scanIn = nil       -- seconds until the import folder is looked at (a file
 local menuOpen = false   -- the menu page is the screen now (onUiChangedState)
 local openAt = nil       -- the page to show when the menu opens next: { view, eventId, stageId }
 local lastImport = nil   -- the last import: { at, lines = { { text, ok }... } }
+local selftest = nil     -- the self-test (earthRally/selftest.lua), loaded only when one is asked for
+M.SELFTEST_REQUEST = '/earthRally/selftest/request.json'
 
 -- The developer panel (the ImGui window): console toggle; the setting shows / hides it.
 function M.toggle() show[0] = not show[0] end
@@ -527,6 +529,10 @@ function M.onUpdate(dtReal, dtSim)
   if not ok then log('E', logTag, 'run: ' .. tostring(err)) runner.abort(true) message = 'Run stopped: ' .. tostring(err) end
   local okS, errS = pcall(sendStreams, dtReal or 0)
   if not okS then log('E', logTag, 'HUD: ' .. tostring(errS)) end
+  if selftest then
+    local okT, errT = pcall(selftest.update, dtReal, M.VERSION)
+    if not okT then log('E', logTag, 'self-test: ' .. tostring(errT)) pcall(selftest.stop, 'error: ' .. tostring(errT)) end
+  end
   if show[0] then
     local okW, errW = pcall(drawWindow)
     if not okW then log('E', logTag, 'window: ' .. tostring(errW)) pcall(im.End) end
@@ -553,7 +559,21 @@ function M.onDrawDebug()
   pcall(runner.placeClockView)
 end
 
+-- The in-game self-test (developer tool; tools/selftest.py starts it through a request file, see selftest.lua): a
+-- stage run end to end by the game's AI, with checks, and a report in earthRally/selftest/. From the console, in the
+-- BeamNG.Earth level: earthRally_main.selfTest('otr24', 'maryhill-up'); earthRally_main.selfTestStop() stops it.
+function M.selfTest(eventId, stageId, opts)
+  opts = opts or {}
+  selftest = selftest or require('earthRally/selftest')
+  local ok, why = selftest.start({ event = eventId, stage = stageId, token = opts.token, quit = opts.quit,
+    loadLevel = opts.loadLevel, budgetS = opts.budgetS, main = M })
+  if not ok then log('W', logTag, 'self-test not started: ' .. tostring(why)) end
+  return ok, why
+end
+function M.selfTestStop() if selftest then selftest.stop('stopped from the console') end end
+
 function M.onClientEndMission()
+  if selftest then pcall(selftest.onClientEndMission) end
   if recce.active() then recce.stop(false) end
   if previewT then M.previewStop() end
   runner.abort(true)
@@ -570,6 +590,16 @@ function M.onExtensionLoaded()
   -- (new maps in the import folder)
   scanIn = 0.5
   log('I', logTag, 'Earth Rally ' .. M.VERSION .. ' loaded (Ctrl+Alt+K opens its menu)')
+  -- a self-test asked for (tools/selftest.py): only then is selftest.lua loaded; the request is used once
+  local fs = rawget(_G, 'FS')
+  if fs and fs.fileExists and fs:fileExists(M.SELFTEST_REQUEST) then
+    selftest = selftest or require('earthRally/selftest')
+    local req = selftest.readRequest()
+    if req then
+      M.selfTest(req.event, req.stage, { token = req.token, quit = req.quit == true, loadLevel = req.loadLevel ~= false,
+        budgetS = req.budgetS })
+    end
+  end
 end
 
 return M
