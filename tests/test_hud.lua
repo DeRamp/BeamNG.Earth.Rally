@@ -136,8 +136,9 @@ do
     'our km readout: 3.1 of 8.4')
   rl, ours = hud.build(run('running', { clock = 200, along = 4000, off = 85, offRoute = true, backBearing = -130 }),
     { now = 38810, units = 'mi' })
-  T.check(ours.show.offRoute and ours.show.dimNotes and not ours.show.km and ours.offM == 85 and ours.backBearing == -130,
-    'off route: the amber card in the bar\'s place, the notes dimmed')
+  T.check(ours.show.offRoute and ours.show.dimNotes == nil and not ours.show.km and ours.offM == 85
+    and ours.backBearing == -130,
+    'off route: the amber card in the bar\'s place, and no dim over the notes (1.2.3)')
   T.check(rl.stageData.unit == 'mi' and rl.stageData.splits[1].splitLabel == '5.2' and ours.units == 'mi', 'miles')
 
   -- the flying finish, on to the stop control
@@ -190,7 +191,7 @@ do
     t = t + 0.25
   end
   T.check(t >= dur - 0.25, 'played to the end')
-  for _, k in ipairs({ 'next', 'timecard', 'bigCount', 'go', 'jump', 'km', 'offRoute', 'dimNotes', 'finish', 'results' }) do
+  for _, k in ipairs({ 'next', 'timecard', 'bigCount', 'go', 'jump', 'km', 'offRoute', 'finish', 'results' }) do
     T.check(seen[k], 'the preview shows ' .. k)
   end
   for _, s in ipairs({ 'toAtc', 'toStart', 'waitStart', 'running', 'toStop', 'finished' }) do

@@ -183,7 +183,7 @@
         "left": "0px",
         "position": "absolute",
         "right": "",
-        "top": "64px",
+        "top": "0px",
         "width": "288px"
       }
     },
@@ -195,7 +195,7 @@
         "left": "288px",
         "position": "absolute",
         "right": "",
-        "top": "64px",
+        "top": "0px",
         "width": "780px"
       }
     },

@@ -4,8 +4,6 @@
        earthRally/hudFrame.lua, its `show` table). Placed by hand at the mock-up's places for 1920x1080. The game's
        own rally apps (countdown, stage time, progress bar) sit beside it in the same layout. -->
   <div class="er-hud" v-if="f">
-    <!-- pacenote cards dimmed while off route (the stock app's place: top 17.5 %, 75 % wide, 20 % high) -->
-    <div v-if="show.dimNotes" class="er-dim-notes"></div>
     <!-- the game dimmed behind the results card -->
     <div v-if="show.results" class="er-dim-all"></div>
 
@@ -132,7 +130,6 @@ const penWords = computed(() => {
 .er-tc { background: var(--er-tc); box-shadow: 0 0 10px 0 rgba(43, 136, 194, 0.7); }
 .er-kbd { font-family: "Overpass Mono", monospace; font-weight: 700; padding: 1px 8px; border-radius: 4px; background: #fff; color: #111; }
 
-.er-dim-notes { position: absolute; left: 12.5%; width: 75%; top: 17.5%; height: 20%; background: rgba(0, 0, 0, 0.55); border-radius: 0.5rem; }
 .er-dim-all { position: absolute; inset: 0; background: rgba(8, 10, 14, 0.55); }
 
 .er-next {
@@ -169,15 +166,16 @@ const penWords = computed(() => {
   small { display: block; font-size: 20px; font-weight: 500; letter-spacing: 0; opacity: 0.9; }
 }
 
-/* beside the stock progress bar (our layout: left 288, top 64, 780 wide) */
+/* beside the stock progress bar (our layout: left 288, top 0, 780 wide). Move the bar in
+   earthRallyStage.uilayout.json and this and .er-offroute below have to move with it. */
 .er-km {
-  position: absolute; left: 1068px; top: 64px; height: 68px; padding: 0 16px; background: rgba(0, 0, 0, 0.8);
+  position: absolute; left: 1068px; top: 0; height: 68px; padding: 0 16px; background: rgba(0, 0, 0, 0.8);
   display: flex; align-items: center; gap: 8px; font: 700 28px "Overpass Mono", monospace;
   border-left: 1px solid rgba(255, 255, 255, 0.1);
   small { font-size: 17px; color: var(--er-muted); font-weight: 600; }
 }
 .er-offroute {
-  position: absolute; left: 288px; top: 64px; width: 780px; height: 96px; background: rgba(255, 176, 0, 0.95); color: #111;
+  position: absolute; left: 288px; top: 0; width: 780px; height: 96px; background: rgba(255, 176, 0, 0.95); color: #111;
   display: flex; align-items: center; gap: 22px; padding: 0 26px; box-shadow: 0 0 30px rgba(255, 176, 0, 0.6);
   .er-arrow { width: 70px; height: 70px; border-radius: 50%; background: #111; display: flex; align-items: center; justify-content: center; }
   .er-off-w { font-size: 40px; font-weight: 800; letter-spacing: 0.04em; }

@@ -138,6 +138,20 @@ function M.moveOriginTo(lat, lon)
   return res == true, why
 end
 
+-- BeamNG.Earth's status strip (the place name at the top of the screen), off while a stage runs and back after: the
+-- stage's own clock and progress bar want that strip of screen (the user, 2026-11-13).
+--
+-- Its own flag, not the player's setting: beamngEarth_settings.set('statusBar', ...) saves their settings file, so a
+-- run that ended badly would leave their preference changed for good. Taking the app out of our layout does not work
+-- either -- BeamNG.Earth draws the bar with ImGui whenever its app is not mounted (its core.lua), near the top edge,
+-- which is worse than leaving it alone. Returns true when it could be set.
+function M.setStatusBar(on)
+  local ok, sb = pcall(require, 'beamngEarth/statusbar')
+  if not (ok and type(sb) == 'table' and sb.enabled ~= nil) then return false end
+  sb.enabled = on and true or false
+  return true
+end
+
 -- BeamNG.Earth's rebase distance (m from the origin before it moves the world), and setting it (clamped by it to
 -- 2000..16000). nil when it cannot be read.
 function M.rebaseDistance()

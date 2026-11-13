@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Rally HUD 1.2.3</title>
+<!-- Mock-up for 1.2.3. The on-stage display: what the user asked for after testing 1.2.2 -- the stage clock and
+     progress meter hard against the top of the screen with BeamNG.Earth's place-name strip off for the stage, the
+     grey-out over the pacenote cards gone, the card shown before the stage moved to the top left corner, and
+     BeamNG.Earth's banner put directly under it instead of across the middle.
+     Positions are the game's own at 1920x1080. Sibling of docs/mockups-1.2.0/hud.html. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700;800&family=Overpass+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --fnt-defs: "Noto Sans", system-ui, sans-serif;
+  --fnt-mono: "Overpass Mono", ui-monospace, monospace;
+  --theme: #1f8fff;                     /* the stage colour (gameplay/rally/loop/uiColors.lua) */
+  --black-80: rgba(0, 0, 0, .8);
+  --dash: rgba(66, 70, 81, .8);
+  --amber: #ffb000;
+  --orange-500: oklch(61.95% 0.1801 43.40);
+  --cg-300: oklch(75.07% 0.0256 267.86);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: var(--fnt-defs); }
+.mock-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 16px; background: #1a1d22; border-bottom: 1px solid #2a2e35; position: sticky; top: 0; z-index: 10; }
+.mock-bar b { margin-right: 8px; font-weight: 600; }
+.mock-bar .sep { width: 1px; height: 22px; background: #3a3f48; margin: 0 8px; }
+.mock-bar button { font: inherit; font-size: 13px; padding: 6px 11px; border-radius: 4px; border: 1px solid #3a3f48; background: #23272e; color: #ddd; cursor: pointer; }
+.mock-bar button.on { background: var(--orange-500); border-color: var(--orange-500); color: #fff; }
+.note-line { padding: 12px 16px 0; color: var(--cg-300); font-size: 14px; max-width: 1150px; line-height: 1.55; }
+.note-line b { color: #f0f0f0; }
+.note-line code { color: #ffc69b; }
+.stage-wrap { padding: 16px; }
+.screen-box { position: relative; width: 100%; max-width: 1920px; margin: 0 auto; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 6px; box-shadow: 0 0 0 1px #2a2e35; }
+.screen { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-size: 16px; overflow: hidden; }
+.abs { position: absolute; }
+/* the only way a piece is hidden: a class, so it cannot lose to an element's own display (it did, in the first
+   version of this mock-up, and the progress bar never drew at all) */
+.hide { display: none !important; }
+.no-tags .tag { display: none !important; }
+
+/* a bright scene behind it: the grey-out's problem only shows over sky and road, not over black */
+.scene { inset: 0; background: linear-gradient(#8fc7f0 0%, #cfe4f2 38%, #b9ad8e 38%, #9b8f70 100%); }
+.scene .road { position: absolute; left: 50%; top: 38%; width: 46%; height: 62%; transform: translateX(-50%); background: linear-gradient(#6c6a66, #57555200); clip-path: polygon(42% 0, 58% 0, 100% 100%, 0 100%); }
+.scene .tree { position: absolute; bottom: 44%; width: 26px; height: 54px; background: #46603c; border-radius: 40% 40% 12% 12%; }
+
+/* ---------- BeamNG.Earth's own top strip (its status app: top 0, 700x64, centred) ---------- */
+.earthbar { left: 610px; top: 0; width: 700px; height: 64px; background: rgba(0,0,0,.55); border-radius: 0 0 8px 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+.earthbar .pl { font-size: 23px; font-weight: 600; }
+.earthbar .ld { font-size: 15px; color: var(--cg-300); }
+
+/* ---------- BeamNG.Earth's banner (its app: 700x60, only when something is wrong) ---------- */
+.banner { width: 700px; height: 60px; background: rgba(104, 72, 8, .92); border: 1px solid rgba(255,176,0,.5); border-radius: 8px; display: flex; align-items: center; gap: 12px; padding: 0 16px; font-size: 16px; line-height: 1.25; }
+.banner .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--amber); flex: none; }
+
+/* ---------- our card before the stage (.er-next: the rally clock, the stage, the time control) ---------- */
+.ernext { width: 750px; background: var(--dash); border-radius: .5rem; padding: 14px 20px 16px; display: grid; grid-template-columns: 170px 1fr; gap: 6px 22px; }
+.ernext .clk { grid-row: span 2; display: flex; flex-direction: column; align-items: center; justify-content: center; border-right: 1px solid rgba(255,255,255,.15); padding-right: 18px; }
+.ernext .clk .l { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; opacity: .85; }
+.ernext .clk .v { font: 700 32px var(--fnt-mono); color: #e17be1; text-shadow: 0 0 10px rgba(225,123,225,.5); }
+.ernext .what { font-size: 30px; font-weight: 700; line-height: 1.2; }
+.ernext .what .ss { color: var(--cg-300); font-weight: 600; margin-right: 6px; }
+.ernext .what .sub { font-size: 22px; font-weight: 500; color: var(--cg-300); }
+.ernext .to { display: flex; align-items: center; gap: 16px; }
+.ernext .to .b { background: #2b88c2; border-radius: 10px; font-weight: 700; font-size: 26px; padding: 2px 12px; box-shadow: 0 0 10px 0 rgba(43,136,194,.7); }
+.ernext .to .d { font: 700 40px var(--fnt-mono); }
+
+/* ---------- the stock stage apps ---------- */
+.timing { left: 0; width: 288px; font-family: var(--fnt-defs); }
+.timing .h { background: var(--black-80); text-align: center; font-style: italic; letter-spacing: .08rem; font-size: 19px; padding: 4px; }
+.timing .t { background: var(--theme); text-align: center; font-size: 48px; font-weight: 600; }
+.progress { left: 288px; width: 780px; height: 68px; background: var(--black-80); padding: 4px 26px 4px 20px; display: flex; align-items: center; }
+.track { position: relative; width: 100%; height: 5px; background: #fff; }
+.track .fill { position: absolute; left: 0; top: 0; height: 100%; background: var(--theme); }
+.track .sq { position: absolute; top: 50%; width: 14px; height: 14px; transform: translate(-50%, -50%); }
+.track .sq.theme { background: var(--theme); }
+.track .sq.out { background: #202020; border: 2px solid #fff; }
+.track .lab { position: absolute; top: 12px; transform: translateX(-50%); font: 600 17px var(--fnt-mono); white-space: nowrap; }
+.kmread { left: 1068px; height: 68px; padding: 0 16px; background: var(--black-80); display: flex; align-items: center; gap: 8px; font: 700 28px var(--fnt-mono); border-left: 1px solid rgba(255,255,255,.1); }
+.kmread small { font-size: 17px; color: var(--cg-300); font-weight: 600; }
+.offroute { left: 288px; width: 780px; height: 96px; background: rgba(255,176,0,.95); color: #111; display: flex; align-items: center; gap: 22px; padding: 0 26px; box-shadow: 0 0 30px rgba(255,176,0,.6); }
+.offroute .w { font-size: 40px; font-weight: 800; letter-spacing: .04em; }
+.offroute .d { font: 700 40px var(--fnt-mono); }
+.offroute .s { font-size: 26px; font-weight: 600; }
+.offroute .arrow { width: 70px; height: 70px; border-radius: 50%; background: #111; display: flex; align-items: center; justify-content: center; }
+
+/* ---------- the pacenote cards (stock RallyVisualPacenotes: top 17.5 %, 75 % wide, 20 % high) ---------- */
+.notes { left: 240px; top: 189px; width: 1440px; height: 216px; display: flex; align-items: center; justify-content: center; gap: 22px; }
+.note { position: relative; width: 132px; height: 132px; display: flex; align-items: center; justify-content: center; }
+.note .hex { position: absolute; inset: 0; background: #3b4250; border: 3px solid #8a94a6; clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); }
+.note .num { position: relative; font: 700 46px var(--fnt-defs); color: #fff; }
+.note.current { transform: scale(1.12); }
+.note.later { opacity: .8; transform: scale(.88); }
+/* the thing being removed: a plain box over the cards' whole slot (app.earthRallyHud.vue .er-dim-notes) */
+.dimnotes { left: 240px; top: 189px; width: 1440px; height: 216px; background: rgba(0,0,0,.55); border-radius: .5rem; }
+
+/* ---------- tags (same as the 1.2.0 mock-up) ---------- */
+.tag { position: absolute; z-index: 6; font: 700 12px var(--fnt-defs); padding: 2px 7px; border-radius: 3px; white-space: nowrap; }
+.tag.stock { background: #2b88c2; color: #fff; }
+.tag.ours { background: #ff6b1a; color: #fff; }
+.tag.have { background: #555; color: #fff; }
+.tag.gone { background: #a3263b; color: #fff; }
+
+/* ---------- now (1.2.2) vs proposed (1.2.3) ---------- */
+/* now: BeamNG.Earth's strip owns the top 64 px, so the stage apps sit under it; our pre-stage card and the
+   banner are centred across the middle of the top */
+.v-now .timing, .v-now .progress, .v-now .kmread, .v-now .offroute { top: 64px; }
+.v-now .ernext { left: 585px; top: 82px; }
+.v-now .banner { left: 610px; top: 36px; }
+/* proposed: the strip is off for the stage, everything of ours goes to the top left corner, the banner directly
+   under it, and no grey box */
+.v-new .timing, .v-new .progress, .v-new .kmread, .v-new .offroute { top: 0; }
+.v-new .earthbar { display: none; }
+.v-new .dimnotes { display: none; }
+.v-new .ernext { left: 0; top: 0; }
+.v-new .banner { left: 0; top: 128px; }
+</style>
+</head>
+<body>
+
+<div class="mock-bar">
+  <b>Earth Rally 1.2.3</b>
+  <button id="bNow" class="on">Now (1.2.2)</button>
+  <button id="bNew">Proposed (1.2.3)</button>
+  <span class="sep"></span>
+  <button id="bPre">Before the stage</button>
+  <button id="bOn" class="on">On the stage</button>
+  <button id="bOff">Off route</button>
+  <span class="sep"></span>
+  <button id="bTags" class="on">Labels</button>
+  <button id="bBanner" class="on">Earth banner</button>
+</div>
+
+<div class="note-line" id="blurb"></div>
+
+<div class="stage-wrap">
+  <div class="screen-box" id="box">
+    <div class="screen v-now" id="screen">
+
+      <div class="abs scene">
+        <div class="road"></div>
+        <div class="tree" style="left:340px"></div>
+        <div class="tree" style="left:430px; height:40px"></div>
+        <div class="tree" style="left:1500px"></div>
+        <div class="tree" style="left:1610px; height:44px"></div>
+      </div>
+
+      <!-- BeamNG.Earth's own place-name strip -->
+      <div class="abs earthbar">
+        <div class="pl">Maryhill, Klickitat County</div>
+        <div class="ld">Washington, United States</div>
+      </div>
+      <span class="tag have" id="tagEarth">BeamNG.Earth: place-name strip</span>
+
+      <!-- the pacenote cards, and the grey box over them -->
+      <div class="abs dimnotes" data-m="on off"></div>
+      <div class="abs notes" data-m="on off">
+        <div class="note later"><span class="hex"></span><span class="num">4</span></div>
+        <div class="note current"><span class="hex"></span><span class="num">3</span></div>
+        <div class="note later"><span class="hex"></span><span class="num">5</span></div>
+      </div>
+      <span class="tag stock" style="left:250px; top:412px" id="tagNotes" data-m="on off">stock: RallyVisualPacenotes</span>
+      <span class="tag gone" style="left:500px; top:412px" id="tagDim" data-m="on off">ours: .er-dim-notes &mdash; to go</span>
+
+      <!-- our card before the stage -->
+      <div class="abs ernext" data-m="pre">
+        <div class="clk"><div class="l">Rally clock</div><div class="v">10:42:58</div></div>
+        <div class="what"><span class="ss">SS4</span>Maryhill Up <span class="sub">4.1 km</span></div>
+        <div class="to"><span class="b">ATC</span><span class="d">380 m</span><span style="font-size:18px;color:#e8e8e8">check in and wait for your start time</span></div>
+      </div>
+      <span class="tag ours" id="tagNext" data-m="pre">ours: EarthRallyHud.vue (.er-next)</span>
+
+      <!-- BeamNG.Earth's banner: only when something is wrong, but then it is across the screen -->
+      <div class="abs banner" id="banner">
+        <span class="dot"></span>
+        <span>Server OK &mdash; some internet data sources not answering:<br>basemap.nationalmap.gov unreachable</span>
+      </div>
+      <span class="tag have" id="tagBanner">BeamNG.Earth: banner</span>
+
+      <!-- the stock stage apps -->
+      <div class="abs timing" data-m="on off">
+        <div class="h">SS4 &middot; MARYHILL UP</div>
+        <div class="t">2:41.7</div>
+      </div>
+      <div class="abs progress" data-m="on">
+        <div class="track"><div class="fill" style="width:37%"></div>
+          <span class="sq theme" style="left:0"></span>
+          <span class="sq out" style="left:100%"></span><span class="lab" style="left:100%; transform:translateX(-90%)">4.1 km</span>
+          <span class="sq theme" style="left:37%"></span>
+        </div>
+      </div>
+      <div class="abs kmread" data-m="on">1.5 <small>/ 4.1 km</small></div>
+
+      <div class="abs offroute" data-m="off">
+        <div class="arrow"><svg width="44" height="44" viewBox="0 0 44 44" style="transform:rotate(-130deg)"><path d="M22 4 L36 24 L27 24 L27 40 L17 40 L17 24 L8 24 Z" fill="#ffb000"/></svg></div>
+        <span class="w">OFF ROUTE</span><span class="d">85 m</span><span class="s">&middot; turn back</span>
+      </div>
+
+      <span class="tag stock" id="tagTiming" data-m="on off">stock: RallyStageTiming</span>
+      <span class="tag stock" id="tagProg" data-m="on">stock: RallyStageProgress</span>
+      <span class="tag ours" id="tagKm" data-m="on">ours: km readout</span>
+      <span class="tag ours" id="tagOff" data-m="off">ours: EarthRallyHud.vue</span>
+    </div>
+  </div>
+</div>
+
+<script>
+const screen = document.getElementById('screen'), box = document.getElementById('box');
+let version = 'now', moment = 'on', tags = true, banner = true;
+
+const BLURB = {
+  now: "<b>Now (1.2.2).</b> BeamNG.Earth's place-name strip owns the top 64 px, so the stage clock, progress meter and km readout sit underneath it. The card before a stage (<code>.er-next</code>: rally clock, stage, time control) is centred at <code>top: 82px</code>, and BeamNG.Earth's banner lands across the top middle, over the rally apps. The grey box is <code>.er-dim-notes</code>, sized to the pacenote app's whole slot (1440&times;216) while the cards fill about a fifth of it &mdash; so most of it dims scenery.",
+  new: "<b>Proposed (1.2.3).</b> The place-name strip is off for the stage and back afterwards. Everything of ours goes to the top left corner, flush with the edge: the pre-stage card at <code>0, 0</code>, the stage clock and progress meter at <code>top: 0</code>. BeamNG.Earth's banner is not hidden &mdash; it still carries real warnings &mdash; but moves directly under the rally block at <code>0, 128</code>, out of the middle of the screen. The grey box goes altogether: the approved 1.2.0 mock-up never had one."
+};
+
+function apply() {
+  screen.classList.toggle('v-now', version === 'now');
+  screen.classList.toggle('v-new', version === 'new');
+  screen.classList.toggle('no-tags', !tags);
+  for (const el of document.querySelectorAll('[data-m]')) {
+    el.classList.toggle('hide', !el.dataset.m.split(' ').includes(moment));
+  }
+  document.getElementById('banner').classList.toggle('hide', !banner);
+  document.getElementById('tagBanner').classList.toggle('hide', !banner);
+  // the labels follow whatever the apps are doing
+  const top = version === 'now' ? 64 : 0;
+  document.getElementById('tagTiming').style.cssText = `left:4px; top:${top + 118}px`;
+  document.getElementById('tagProg').style.cssText = `left:300px; top:${top + 72}px`;
+  document.getElementById('tagKm').style.cssText = `left:1072px; top:${top + 72}px`;
+  document.getElementById('tagOff').style.cssText = `left:300px; top:${top + 100}px`;
+  document.getElementById('tagNext').style.cssText = version === 'now'
+    ? 'left:585px; top:60px' : 'left:762px; top:4px';
+  document.getElementById('tagBanner').style.cssText = version === 'now'
+    ? 'left:1318px; top:44px' : 'left:712px; top:134px';
+  document.getElementById('tagEarth').style.cssText = 'left:610px; top:70px';
+  document.getElementById('tagEarth').classList.toggle('hide', version !== 'now');
+  document.getElementById('tagDim').classList.toggle('hide',
+    version !== 'now' || !['on', 'off'].includes(moment));
+  document.getElementById('blurb').innerHTML = BLURB[version];
+  for (const [id, on] of [['bNow', version === 'now'], ['bNew', version === 'new'],
+                          ['bPre', moment === 'pre'], ['bOn', moment === 'on'], ['bOff', moment === 'off'],
+                          ['bTags', tags], ['bBanner', banner]]) {
+    document.getElementById(id).classList.toggle('on', on);
+  }
+}
+function fit() { screen.style.transform = `scale(${box.clientWidth / 1920})`; }
+document.getElementById('bNow').onclick = () => { version = 'now'; apply(); };
+document.getElementById('bNew').onclick = () => { version = 'new'; apply(); };
+document.getElementById('bPre').onclick = () => { moment = 'pre'; apply(); };
+document.getElementById('bOn').onclick = () => { moment = 'on'; apply(); };
+document.getElementById('bOff').onclick = () => { moment = 'off'; apply(); };
+document.getElementById('bTags').onclick = () => { tags = !tags; apply(); };
+document.getElementById('bBanner').onclick = () => { banner = !banner; apply(); };
+addEventListener('resize', fit);
+fit(); apply();
+</script>
+</body>
+</html>

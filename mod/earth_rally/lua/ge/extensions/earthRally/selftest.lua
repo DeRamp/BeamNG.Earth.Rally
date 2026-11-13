@@ -108,7 +108,6 @@ function M.frameProblem(rl, ours)
     if rl.showStageApps ~= true then return 'running: showStageApps not true' end
     if not (type(rl.uiColors) == 'table' and rl.uiColors.theme) then return 'running: no uiColors.theme (the stage apps hide)' end
     if not (show.km or show.offRoute) then return 'running: neither show.km nor show.offRoute' end
-    if show.offRoute and not show.dimNotes then return 'running: off route without show.dimNotes' end
   elseif s == 'toStop' then
     if rl.showStageApps ~= true then return 'toStop: showStageApps not true' end
     if rl.activeState ~= 'vehicleProximity' then return 'toStop: rallyLoop activeState ' .. tostring(rl.activeState) end
@@ -531,11 +530,11 @@ local function stepOffroute()
   elseif st == 'off' then
     if r.offRoute and T.lastOurs and T.lastOurs.state == 'running' and T.lastOurs.show and T.lastOurs.show.offRoute then
       check('forced off route: offRoute set', true, string.format('%.0f m off', r.off or -1))
-      check('off route on the HUD (show.offRoute, notes dimmed)', T.lastOurs.show.dimNotes == true)
+      check('off route on the HUD (show.offRoute)', T.lastOurs.show.offRoute == true)
       step('back')
     elseif inStep() > M.OFFROUTE_WAIT_S then
       check('forced off route: offRoute set', r.offRoute == true, string.format('%.0f m off', r.off or -1))
-      check('off route on the HUD (show.offRoute, notes dimmed)', T.sawOffRouteShow == true, 'not in the earthRally stream')
+      check('off route on the HUD (show.offRoute)', T.sawOffRouteShow == true, 'not in the earthRally stream')
       step('back')
     end
   elseif st == 'back' then

@@ -304,8 +304,10 @@ local function layoutOn()
   run.oldLayout = stateLayout() or 'beamngEarth'
   if run.oldLayout ~= M.STAGE_LAYOUT then pcall(gs.setGameState, nil, M.STAGE_LAYOUT) end
   run.layoutCheckIn = M.LAYOUT_CHECK_S
-  log('I', logTag, string.format('stage layout put on (was %s; game state now %s)', tostring(run.oldLayout),
-    tostring(stateLayout())))
+  -- BeamNG.Earth's status strip out of the way: the stage clock and progress bar sit at the top of the screen
+  run.statusBarOff = earth.setStatusBar(false)
+  log('I', logTag, string.format('stage layout put on (was %s; game state now %s)%s', tostring(run.oldLayout),
+    tostring(stateLayout()), run.statusBarOff and "; BeamNG.Earth's status strip off for the stage" or ''))
 end
 local function layoutOff()
   local gs = rawget(_G, 'core_gamestate')
@@ -313,6 +315,11 @@ local function layoutOff()
     local back = run.oldLayout ~= M.STAGE_LAYOUT and run.oldLayout or 'beamngEarth'
     pcall(gs.setGameState, nil, back)
     log('I', logTag, 'stage layout off: ' .. tostring(back) .. ' back')
+  end
+  -- (outside the check above: the strip goes back even when the layout never went on)
+  if run and run.statusBarOff then
+    earth.setStatusBar(true)
+    run.statusBarOff = nil
   end
   if run then run.oldLayout = nil end
 end

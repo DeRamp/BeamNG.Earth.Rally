@@ -19,7 +19,7 @@ local preview = require('earthRally/preview')
 
 local M = {}
 local logTag = 'earthRally'
-M.VERSION = '1.2.2'
+M.VERSION = '1.2.3'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_HZ = 30                  -- the HUD's streams this often while something moves on it
 M.STREAM_IDLE_HZ = 2              -- ... and this often once the run is over
@@ -581,8 +581,10 @@ function M.onClientEndMission()
 end
 
 function M.onExtensionLoaded()
-  -- (boards and tents a run left before a Lua reload: taken away; the car's brake / clutch overrides handed back)
+  -- (boards and tents a run left before a Lua reload: taken away; the car's brake / clutch overrides handed back,
+  --  and BeamNG.Earth's status strip back on in case a run was cut short with it off)
   pcall(require('earthRally/props').sweep)
+  pcall(earth.setStatusBar, true)
   local veh = getPlayerVehicle and getPlayerVehicle(0)
   if veh then pcall(runner._vehCtl, veh, 'off') end
   settings.load()

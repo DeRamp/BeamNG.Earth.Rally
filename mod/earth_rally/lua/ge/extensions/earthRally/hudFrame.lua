@@ -13,6 +13,9 @@
 --               - countdownData.countdown whole seconds (5 squares from 5, GO at 0; null reads as GO)
 --               - scheduleData.timeDiff a string ("0:58"); eventType 'tc' is never sent (it prints a speed limit
 --                 we do not have: our own card covers the drive to the ATC)
+-- (1.2.3: there is no longer a dim over the pacenote cards while off route. It was a plain box the size of the
+--  stock app's whole slot, and the cards fill about a fifth of that, so most of it dimmed the scenery -- "just a big
+--  rectangle" (the user, 2026-11-13). The 1.2.0 mock-up never had one.)
 --   earthRally  ours (ui/modules/apps/EarthRallyHud, EarthRallyResults): the run's numbers in metres and seconds
 --               and a `show` table saying which piece is up, so the Vue side only draws (units and words are its)
 local M = {}
@@ -163,7 +166,6 @@ function M.build(run, ctx)
       rl.activeState = 'stageActive'
       ours.offM, ours.backBearing = run.off, run.backBearing
       show.offRoute = run.offRoute or nil
-      show.dimNotes = run.offRoute or nil
       show.km = not run.offRoute or nil
       show.go = (run.clock or 0) < M.GO_SHOW_S or nil
     else

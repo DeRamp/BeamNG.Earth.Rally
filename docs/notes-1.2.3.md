@@ -1,15 +1,19 @@
 # Earth Rally 1.2.3: notes from testing 1.2.2
 
-Items the user reports while testing 1.2.2, to build into 1.2.3. Logged only: no changes until the user says so.
-UI items get a mock-up before any code.
+Items the user reported while testing 1.2.2. Both are built (mock-up agreed first:
+docs/mockups-1.2.3/hud.html).
 
-1. **The progress meter sits too low.** It should be closer to the top of the screen.
-   - With it: while a stage is running, the upper part of BeamNG.Earth's own UI should be turned off temporarily, so
-     the two do not stack up. Back as it was when the stage ends.
+1. **The progress meter sat too low.** *Built.* The stage clock, the progress meter and the km readout moved from
+   `top: 64px` to the top of the screen, where the 1.2.0 mock-up had them. Three places had to move together: the
+   layout file, and the hard-coded `.er-km` and `.er-offroute` in app.earthRallyHud.vue.
+   - With it: BeamNG.Earth's place-name strip is switched off for the stage and back afterwards
+     (`earthAdapter.setStatusBar`, from the runner's layoutOn / layoutOff, and again when the mod loads in case a run
+     was cut short). Its own flag, not the player's setting, which would be saved over.
 
-2. **The grey-out for the stage notes is just a big rectangle.** It reads as a block of flat grey rather than as the
-   notes being dimmed. The user's suggestion: get rid of it. (It is `show.dimNotes`, set while off route —
-   hudFrame.lua sets the flag, the Vue side draws it.)
+2. **The grey-out over the stage notes.** *Built: removed.* It was a plain box the size of the pacenote app's whole
+   slot (1440x216) while the cards fill about a fifth of it, so most of it dimmed the scenery. The approved 1.2.0
+   mock-up never had one. `show.dimNotes` is gone from hudFrame.lua, with the element, its CSS, and the assertions in
+   selftest.lua and tests/test_hud.lua.
 
 ## Still open from 1.2.2
 
