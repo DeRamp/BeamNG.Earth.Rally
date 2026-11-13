@@ -625,6 +625,7 @@ local function groundNear(x, y, z0)
   end
   return z0, ray and false or nil      -- (false: looked and found no ground near z0; nil: no ray to look with)
 end
+M.groundNear = groundNear     -- (the self-test puts the car down with it)
 
 
 -- The game's traffic and parked cars out of the way for the stage: their systems' active amounts set to 0 (the cars

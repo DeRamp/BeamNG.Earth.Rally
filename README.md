@@ -202,6 +202,20 @@ The developer panel (Settings > Developer panel) lists what each run found out, 
   the pause-menu tab). The stage layout (`settings/ui_apps/.../earthRallyStage`) puts them with the game's rally apps.
 - Tests, no game needed: `pip install lupa`, then `python tests/run_tests.py` (the importer is also checked against
   `tools/import_kml.py` on the maps in `../Rally Docs/` when they are there).
+- **In-game self-test** (before a release; `tools/selftest.py`, the mod's `earthRally/selftest.lua`):
+  - `python tools/selftest.py --check-install`: the installed mod against this repository (read-only, fine while the
+    game runs): every file, the version, the stage layout's apps (the 1.2.1 fault: an old layout with no HUD app),
+    a saved copy of the layout, two copies installed, the mod switched off, the version the game last loaded.
+  - `python tools/selftest.py` (the game closed; BeamNG.Earth's source next to this folder, or `--earth <folder>`):
+    installs the mod, checks the install, starts BeamNG.Earth's launcher (`--no-beammp --gfx dx11`), and the mod runs
+    OTR 2024's Maryhill Up by itself (`--event`, `--stage` for another): the car put at the ATC and the start line,
+    the wait skipped, the game's AI driving the stage line, a forced off route, Back on the road, Flip upright, the
+    stop control, the results card. It checks the stage layout on screen with all its apps, both HUD streams in
+    each state, the pacenotes called, and errors logged; it then closes the game, prints each check and exits 1 on a
+    failure (~10 min). The report: `earthRally/selftest/report-<time>.json` in the user folder. The stage's times are
+    put back as they were (the AI's time is not kept).
+  - In game, from the console in the BeamNG.Earth level: `earthRally_main.selfTest('otr24', 'maryhill-up')`
+    (`earthRally_main.selfTestStop()` stops it). Without a request the self-test is never loaded.
 - `docs/plan-1.2.0.md`: this version's plan (the player UI), what was built and what is to check in game.
 
 ## Plan
