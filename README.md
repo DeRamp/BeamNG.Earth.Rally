@@ -3,8 +3,8 @@
 Real-world rally stages for [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth): drive a real rally's stages
 on the real roads, timed, with BeamNG.drive's own co-driver calling pacenotes made from the road.
 
-Status: alpha (1.2.0, in development: the player UI). Needs BeamNG.drive 0.40.5 and BeamNG.Earth with modding API 1.6 or newer (1.7, with the
-`onBeamNGEarthRebased` event, is used when present).
+Status: alpha (1.2.0: the player UI). Needs BeamNG.drive 0.40.5 and BeamNG.Earth with modding API 1.6 or newer (1.7, with the
+`onBeamNGEarthRebased` event, is used when present: BeamNG.Earth's dev builds from 1.9.1-beta.dev.398).
 
 ## How it works
 
@@ -23,14 +23,14 @@ Status: alpha (1.2.0, in development: the player UI). Needs BeamNG.drive 0.40.5 
    - The mod takes you just before the arrival time control (ATC) and moves BeamNG.Earth's world origin to the middle
      of the stage, so the world does not shift under you on any stage up to ~26 km across.
    - Once you check in at the ATC the game's traffic and parked cars are cleared for the stage (back after it).
-   - The game's route arrows lead to each control. In a control's zone the brakes come on at 30 % (brake harder
-     yourself if you like) and a sound says you are in once you stop.
+   - The game's route arrows lead to each control. In a control's zone the brakes ease in as you near the board (none at
+     the zone's edge, 30 % at the board, so you can roll up to the boards and tent; brake harder yourself if you like) and a sound says you are in once you stop.
    - At the ATC you get your start time on the rally clock: the next half minute at least 30 s on (30-60 s), more
      when the start line is far from the ATC (time to drive there at ~36 km/h). Driving past the ATC is a missed time
      control (+60 s).
    - On the start line you are held until GO (the game's own hold, as its rally countdown does: rev freely, the car
      does not move), with the car's launch control switched on where it has one. The start tree's LED clock counts down, with the game's
-     picture-in-picture view of it on the right (a setting); the game's rally countdown shows the squares and the
+     picture-in-picture view of it on the right above the gauges (a setting); the game's rally countdown shows the squares and the
      rally clock, a big 5-4-3-2-1 and GO; the co-driver says 30 s, good luck, 10 s, 5-4-3-2-1, go.
      Early? The game's **Interact** control (Shift+E; the modifier + Y on a pad), stopped on the line, skips to 6 s
      before your start, as its rally mode does. Moving off before GO is a jump start (+10 s); reaching the line after your start time is late (+10 s a minute,
@@ -50,13 +50,16 @@ called too: "at junction" on a turn there, "past junction", "keep left / right" 
 
 ## Install
 
-Put the release zip in `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\mods\`, or from this folder:
+Download `earth_rally-<version>.zip` from [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases) and put it in `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\mods\`. Updating? Delete the old version's zip first. Or, from this folder:
 
 ```
 python tools/install.py
 ```
 
 (Only one of the two: both in the mods folder would load two copies; the install script warns about it.)
+
+Ctrl+Alt+K does nothing (`earthRally_main` is nil in the console)? The mod is not loaded: check it is on in the
+game's Mods menu. BeamMP switches local mods off when you join a server, so switch it back on after playing online.
 
 In game: Freeroam > BeamNG.Earth, then **Ctrl+Alt+K** opens Earth Rally (also the pause menu's **Earth Rally** tab):
 your rallies, each rally's stages, a stage's page with **Drive stage**, **Route to start** (BeamNG.Earth's GPS to the
