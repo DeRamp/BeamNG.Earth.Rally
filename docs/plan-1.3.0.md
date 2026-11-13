@@ -84,6 +84,44 @@ long enough to load that it is already running when the player can drive. When a
 before the start along the stage's road (the user: "just up the road from the stage start"), so the player checks in
 and gets a start time as usual. Put in 1.3.0 by the user (2026-11-13), with the pacenote overhaul.
 
+## Carried out of 1.2
+
+Two things 1.2 left behind, both worth doing early because the rest of 1.3 leans on them.
+
+### The self-test cannot check the co-driver
+
+`tools/selftest.py` walks the car along the stage line: deterministic, about four minutes, 22 of 23 checks. The one
+it cannot make is the co-driver, and the reason is in the game rather than in us. `drivelineRoute:onUpdate` only
+looks at its pacenotes when `updateSpeedMph > minEvalSpeedMph` (1 mph), and that speed comes from
+`getPlayerVehicle(0):getVelocityXYZ()` through `VehicleTracker:speedMs()`. A car set down frame by frame has no
+rigid-body velocity, so the gate never opens and not one note is called. Position is only read after that gate.
+
+The game's own AI does make them play, but it cannot drive a BeamNG.Earth stage: `ai.driveUsingPath` with a script
+keeps its route in a private graph installed through `mapmgr.setCustomMap()`, and BeamNG.Earth's navgraph tells every
+vehicle to `mapmgr.requestMap()` whenever it streams new roads, which throws that route away. In game it then drove
+in straight lines off the stage. Giving the path a 5 m corridor (`r`, which otherwise defaults to the car's own
+width) got it round a stage once, in 8.6 minutes with six rescues and a 229 m excursion: a pass, propped up, and not
+the same way twice.
+
+The lead worth following is `drivelineRoute:setVehicleTracker()` -- public, and used by the rally manager itself. A
+duck-typed tracker reporting a synthetic speed and position would drive the whole pacenote pipeline with no vehicle
+involved, which would give the walked run its co-driver check and keep it deterministic. Setting the car's velocity
+with `applyClusterVelocityScaleAdd` was tried and did not work: the velocity is real enough to move the car, but the
+teleport each frame leaves the tracker reading zero.
+
+### A pull request to BeamNG.Earth for `api.hudHide`
+
+Earth Rally takes BeamNG.Earth's place-name strip and connection banner off screen for a stage by dropping the apps
+from its stage layout and then telling BeamNG.Earth they are mounted anyway (`core.hudApp`, its own published call),
+so it does not draw them with ImGui instead. That touches no data path and no player setting, and it is the only
+option available today -- but it is a polite fiction, and upstream could tidy it away without warning.
+
+The clean shape is about 30 lines and no JS: `hudapps.setHidden(name, by, on)` and `hudapps.hidden(name)` beside the
+mount registry, four `and not hudapps.hidden(...)` terms in `core.hudTexts` and its two ImGui draw calls, and
+`api.hudHide` / `hudShow` / `hudHidden` behind `has('hud')` with a minor bump. The same size and shape as the
+`onBeamNGEarthRebased` contribution. Earth Rally would gate on `api.has('hud')` and drop the mount call where it is
+available.
+
 ## Also for later
 
 - Maps that group each stage with its controls in folders (SOFR, and one with points named "ATC 10, 14", "Start",
