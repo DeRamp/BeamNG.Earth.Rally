@@ -29,7 +29,7 @@ release zips were fine). Fixed (e4148b6), plus: the 1 s layout hold no longer fi
 (`stage layout put on`, `stage layout: game state ...; on screen ...`, `HUD streams (run ...)`, `off route` /
 `back on route`); long rally names cut short in the menu. Next: install, drive Maryhill Up (OTR 2024), check the
 display end to end. The 1.2.1 release notes and main's README say the display doesn't work in 1.2.1: that is wrong
-for the zip (it was our install script), still to correct.
+for the zip (it was our install script): corrected 2026-11-13.
 
 **Self-test (roadmap item 30, built, offline only).** `tools/selftest.py`: with the game closed, installs, launches
 BeamNG.Earth, the game's AI drives Maryhill Up, checks the HUD, calls, off route, recovery, finish and results, writes
