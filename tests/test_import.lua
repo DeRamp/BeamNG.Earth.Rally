@@ -81,7 +81,7 @@ FS = {
   fileExists = function(_, f) return files[f] ~= nil end,
   removeFile = function(_, f) files[f] = nil removed[#removed + 1] = f end,
   findFiles = function(_, dir, pat)
-    local ext = pat:match('%*%.(%a+)$')
+    local ext = pat:match('^%*%.(.+)$'):gsub('%.', '%%.')
     local out = {}
     for f in pairs(files) do
       if f:sub(1, #dir) == dir and not f:sub(#dir + 1):find('/') and f:match('%.' .. ext .. '$') then out[#out + 1] = f end
@@ -127,6 +127,11 @@ ZipArchive = function() return { openArchiveName = function() return true end,
 local r6 = imp.scan()
 T.check(#r6 == 1 and r6[1].ok and r6[1].eventId == 'same-2', 'a .kmz beside a .kml of the same name: its own rally ('
   .. tostring(r6[1] and r6[1].eventId) .. ')')
+-- a KML saved by a browser as X.kml.xml: imported, named without either extension
+files['/earthRally/import/2026 SOFR Friday KML.kml.xml'] = kml
+local r7 = imp.scan()
+T.check(#r7 == 1 and r7[1].ok and r7[1].eventId == '2026-sofr-friday-kml', 'a .kml.xml imported as a KML ('
+  .. tostring(r7[1] and (r7[1].eventId or r7[1].why)) .. ')')
 T.check(imp._text('Craig&#8217;s') == 'Craig\226\128\153s', 'a numeric entity as UTF-8')
 
 T.done('test_import')

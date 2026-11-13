@@ -486,7 +486,10 @@ local function fingerprint(s)
 end
 M._fingerprint = fingerprint
 
-local function stem(path) return (path:match('([^/]+)$') or path):gsub('%.[^.]+$', '') end
+local function stem(path)
+  local s = (path:match('([^/]+)$') or path):gsub('%.[xX][mM][lL]$', '')   -- (X.kml.xml: as some browsers save a KML)
+  return (s:gsub('%.[^.]+$', ''))
+end
 local function idFrom(name) return ((name:lower():gsub('[^a-z0-9]+', '-'):gsub('^-+', ''):gsub('-+$', ''))) end
 
 -- (a .kmz's KML: the zip's doc.kml, else its first .kml)
@@ -530,12 +533,12 @@ function M.scan(force)
   local index = readIndex()
   local seen = {}
   local found = {}
-  for _, pat in ipairs({ '*.kml', '*.kmz', '*.gpx', '*.KML', '*.KMZ', '*.GPX' }) do
+  for _, pat in ipairs({ '*.kml', '*.kmz', '*.gpx', '*.KML', '*.KMZ', '*.GPX', '*.kml.xml', '*.KML.xml', '*.kml.XML' }) do
     for _, f in ipairs(FS:findFiles(M.IMPORT_DIR, pat, 0, false, false) or {}) do found[f] = true end
   end
   for path in pairs(found) do
     local fileName = path:match('([^/]+)$')
-    local ext = fileName:lower():match('%.(%a+)$')
+    local ext = fileName:lower():gsub('%.xml$', ''):match('%.(%a+)$')
     seen[fileName] = true
     local raw = readFile(path)
     if raw then
