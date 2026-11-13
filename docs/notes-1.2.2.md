@@ -28,6 +28,18 @@ Items the user reports while testing 1.2.1, to build into 1.2.2. Logged only: no
    If the layout route can't be made reliable, the user's fallback: the rally HUD as its own full-screen overlay,
    shown by the mod itself during a run, independent of the game's app layouts (mock-up to the user first).
 
+   - **Found (1.2.2):** the layout was applied, but the layout file in the game was not ours. `tools/install.py`
+     still ran its 1.1.0 step that wrote its own stage layout over the mod's (BeamNG.Earth's layout + the pacenote
+     cards only), so the installed `earthRallyStage.uilayout.json` (version 4, written 11:30 on 2026-11-13) had none
+     of rallyCountdown, rallyStageTiming, rallyStageProgress, earthRallyResults, earthRallyHud. Only the pacenote
+     cards could show. Fixed: install.py copies the layout as it is and warns if an app is missing (tests/
+     test_install.py). The release zip (tools/package.py) was never affected.
+   - Also fixed: the 1 s layout hold put ours back over the radial menu's own layout (log 1036.8 s); it now puts ours
+     back only over the plain driving layouts (freeroam, beamngEarth, beamngEarthMP, the one before the run).
+   - New log lines for the next test: `stage layout put on`, `stage layout: game state ...; on screen: ...` (2 s
+     later: the layout the UI shows and any stage app it lacks), `HUD streams (run ...)` on each change, `off route` /
+     `back on route`.
+
 (Moved to 1.3.0 by the user: a stage with no ATC gets one added before the start; docs/plan-1.3.0.md.)
 
 ## 1.2.1 checks passed

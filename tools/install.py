@@ -24,27 +24,22 @@ def default_user_dir():
 
 
 LAYOUT_REL = os.path.join('settings', 'ui_apps', 'originalLayouts', 'default')
-EARTH_LAYOUT = 'beamngEarth.uilayout.json'
+USER_LAYOUT_REL = os.path.join('settings', 'ui_apps', 'layouts', 'default')
 OUR_LAYOUT = 'earthRallyStage.uilayout.json'
-# the game's own rally stage layout's pacenote cards (settings/ui_apps/originalLayouts/mission/rallyModeStage)
-PACENOTE_APP = {
-    'appName': 'rallyVisualPacenotes', 'appVersion': 1,
-    'placement': {'bottom': '', 'height': '20%', 'left': '0px', 'margin': 'auto', 'position': 'absolute',
-                  'right': '0px', 'top': '17.5%', 'width': '75%'},
-}
+# The apps the stage layout must carry for the on-stage HUD (the runner logs the same check in game).
+# (1.1.0 to 1.2.1: this script wrote its own stage layout over the mod's, BeamNG.Earth's with only the pacenote cards
+# added, so the HUD apps and the game's rally apps 1.2.0 put in the layout never reached the game: nothing but the
+# pacenote cards showed on a stage. The mod's layout file is copied as it is now.)
+STAGE_APPS = ('earthRallyHud', 'earthRallyResults', 'rallyCountdown', 'rallyStageTiming', 'rallyStageProgress',
+              'rallyVisualPacenotes')
 
 
-def make_layout(earth_layout_path, out_path):
-    """The run's layout: BeamNG.Earth's own (its status bar, map, credits) with the game's pacenote cards added."""
-    with open(earth_layout_path, encoding='utf-8') as f:
+def check_layout(path):
+    """The stage apps missing from the layout file at path (empty: all there)."""
+    with open(path, encoding='utf-8') as f:
         layout = json.load(f)
-    layout['apps'] = [a for a in layout.get('apps', []) if a.get('appName') != PACENOTE_APP['appName']]
-    layout['apps'].append(PACENOTE_APP)
-    layout['title'] = 'Earth Rally stage'
-    layout['type'] = 'earthRallyStage'
-    layout['description'] = 'BeamNG.Earth with the rally pacenote cards (Earth Rally, during a stage)'
-    with open(out_path, 'w', encoding='utf-8') as f:
-        json.dump(layout, f, indent=2)
+    have = {a.get('appName') for a in layout.get('apps', [])}
+    return [n for n in STAGE_APPS if n not in have]
 
 
 def main():
@@ -65,10 +60,16 @@ def main():
     if os.path.isdir(dest):
         shutil.rmtree(dest)
     shutil.copytree(SRC, dest)
-    # the stage layout from the BeamNG.Earth installed now (else the copy in this repository stays)
-    earth_layout = os.path.join(args.user_dir, 'mods', 'unpacked', 'beamng_earth', LAYOUT_REL, EARTH_LAYOUT)
-    if os.path.isfile(earth_layout):
-        make_layout(earth_layout, os.path.join(dest, LAYOUT_REL, OUR_LAYOUT))
+    missing = check_layout(os.path.join(dest, LAYOUT_REL, OUR_LAYOUT))
+    if missing:
+        print('Warning: the stage layout installed lacks ' + ', '.join(missing) + ': the HUD would not show.')
+    # (a copy of the layout the player saved from the game's layout editor is used before the mod's)
+    user_layout = os.path.join(args.user_dir, USER_LAYOUT_REL, OUR_LAYOUT)
+    if os.path.isfile(user_layout):
+        user_missing = check_layout(user_layout)
+        if user_missing:
+            print(f'Warning: {user_layout} (a saved copy of the stage layout) lacks ' + ', '.join(user_missing)
+                  + ': delete it (or reset the layout in the game) so the mod\'s is used.')
     os.makedirs(os.path.join(args.user_dir, 'earthRally', 'events'), exist_ok=True)
     print(f'Earth Rally installed in {dest}')
     print('In game: load the BeamNG.Earth level, then Ctrl+Alt+K opens the Earth Rally window.')

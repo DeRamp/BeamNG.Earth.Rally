@@ -19,7 +19,7 @@ local preview = require('earthRally/preview')
 
 local M = {}
 local logTag = 'earthRally'
-M.VERSION = '1.2.1'
+M.VERSION = '1.2.2'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_HZ = 30                  -- the HUD's streams this often while something moves on it
 M.STREAM_IDLE_HZ = 2              -- ... and this often once the run is over
@@ -427,10 +427,36 @@ function M.previewStop()
   inactiveSent = false
 end
 
+-- What the HUD's streams carry, logged once each time it changes (the run's state, the stock apps' state, the pieces
+-- of ours that are up): in game, "not sent" told apart from "sent but not shown". rl nil: the rallyLoop stream is
+-- left alone (the extension gameplay_rallyLoop is loaded: the game's own rally mode sends it).
+local streamLogKey = nil
+local function showKeys(ours)
+  local keys = {}
+  for k, v in pairs(type(ours) == 'table' and type(ours.show) == 'table' and ours.show or {}) do
+    if v and k ~= 'bigCount' and k ~= 'go' then keys[#keys + 1] = k end
+  end
+  table.sort(keys)
+  return table.concat(keys, ',')
+end
+function M.streamsKey(rl, ours)
+  return table.concat({ tostring(ours and ours.state), tostring(rl and rl.activeState or 'none'),
+    tostring(rl and rl.showStageApps), showKeys(ours) }, '|')
+end
+function M.streamsLine(rl, ours)
+  local rlText = rl and string.format('activeState %s, showStageApps %s, theme %s', tostring(rl.activeState),
+    tostring(rl.showStageApps), tostring(rl.uiColors and rl.uiColors.theme)) or
+    'NOT sent (noRallyLoop: gameplay_rallyLoop is loaded)'
+  return string.format('HUD streams (run %s): rallyLoop %s; earthRally show [%s]', tostring(ours and ours.state),
+    rlText, showKeys(ours))
+end
+
 local function sendStreams(dt)
   local gh = rawget(_G, 'guihooks')
   if not (gh and gh.queueStream) then return end
   if previewT then
+    -- (the layout on screen checked once, as for a run)
+    if previewT < runner.LAYOUT_CHECK_S and previewT + dt >= runner.LAYOUT_CHECK_S then pcall(runner._logLayout) end
     previewT = previewT + dt
     local rl, ours = preview.frameAt(previewT, settings.get('units'))
     if not rl then M.previewStop() return end
@@ -449,6 +475,8 @@ local function sendStreams(dt)
       ours.state, ours.show = 'idle', {}
       gh.queueStream('earthRally', ours)
       inactiveSent = true
+      if streamLogKey then log('I', logTag, 'HUD streams: the run over, the HUD hidden') end
+      streamLogKey = nil
     end
     return
   end
@@ -460,6 +488,11 @@ local function sendStreams(dt)
   local rl, ours = runner.uiFrame()
   if rl then gh.queueStream('rallyLoop', rl) end
   gh.queueStream('earthRally', ours)
+  local key = M.streamsKey(rl, ours)
+  if key ~= streamLogKey then
+    streamLogKey = key
+    log('I', logTag, M.streamsLine(rl, ours))
+  end
 end
 M._sendStreams = sendStreams
 
