@@ -83,7 +83,13 @@ M.ROUTE_REFRESH_S = 5          -- the route arrows planned again this often (Bea
 M.RESET_PENALTY_S = 10         -- each car reset during the timed stage (setting resetPenalty)
 M.RESET_DEBOUNCE_S = 0.5       -- (one reset can be heard more than once)
 M.RESET_AFTER_MOVE_S = 2       -- (no reset counted this soon after the world's origin moved: not the player's)
-M.OFF_ROUTE_CLEAR_M = 40       -- off route from OFF_ROUTE_M, back on it within this (no flicker at the edge)
+M.OFF_ROUTE_CLEAR_M = 40       -- (where the line is the organisers': off route from OFF_ROUTE_M, back within this)
+-- Off route where the line follows the road (a recce, or matched to the map's roads: within a metre or so of the
+-- road's middle): off the road and away, not only on a wrong road 60 m off as in 1.2.0, which never showed for a car
+-- off the track (in game, 2026-11-13). Back on the route within OFF_ROUTE_ON_ROAD_CLEAR_M (no flicker at the edge).
+M.OFF_ROUTE_ON_ROAD_M = 20
+M.OFF_ROUTE_ON_ROAD_CLEAR_M = 12
+M.TRAFFIC_HOLD_S = 1           -- traffic and parked cars kept away this often during the stage
 M.RESULTS_CLOSE_M = 100        -- the results card closes once the car is driven this far from where it stopped ...
 M.RESULTS_TIMEOUT_S = 120      -- ... or after this long
 M.SOUND_STOPPED = 'event:UI_Checkpoint'
@@ -573,19 +579,30 @@ local function systems()
   return out
 end
 
-local function trafficOff()
-  if not run or run.trafficStash then return end
-  local stash = {}
+-- Held, not set once: each TRAFFIC_HOLD_S until the tidy-up, any system showing cars again is set back to 0. BeamNG.Earth
+-- holds its parked cars at 0 over a teleport and puts its amount back once the place is built, and starts its parking
+-- only once it knows the place's driveways: at the check-in either can still be to come, and the parked cars came back
+-- at Maryhill's start (in game, 2026-11-13). The first amount seen that is not 0 is the player's, given back after.
+local function trafficHold()
+  local stash = run and run.trafficStash
+  if not stash then return end
   for name, s in pairs(systems()) do
     local ok, cur = pcall(s.get)
-    -- (0 now: none showing, or BeamNG.Earth holding them over a teleport; nothing to do, nothing to give back)
+    -- (0 now: none showing, or BeamNG.Earth holding them over a teleport: looked at again next time)
     if ok and cur ~= nil and cur ~= 0 then
-      if pcall(s.set, 0) then stash[name] = cur end
+      if pcall(s.set, 0) and stash[name] == nil then
+        stash[name] = cur
+        log('I', logTag, (name == 'parking' and 'parked cars' or 'traffic') .. ' out of the way for the stage')
+      end
     end
   end
-  run.trafficStash = stash
   run.checks.trafficHidden = (stash.traffic and 'traffic ' or '') .. (stash.parking and 'parked cars' or '')
-  if next(stash) then log('I', logTag, 'traffic and parked cars out of the way for the stage') end
+end
+
+local function trafficOff()
+  if not run or run.trafficStash then return end
+  run.trafficStash, run.trafficHoldT = {}, 0
+  trafficHold()
 end
 
 local function trafficOn()
@@ -1022,7 +1039,10 @@ local function stepRunning(dtSim)
   if off > run.checks.maxOffM then run.checks.maxOffM = off end
   -- off route (a wrong turn): on beyond OFF_ROUTE_M, off again within OFF_ROUTE_CLEAR_M; the way back to the line (its
   -- point level with the car) against the car's heading, for the HUD's arrow
-  if off > M.OFF_ROUTE_M then run.offRoute = true elseif off <= M.OFF_ROUTE_CLEAR_M then run.offRoute = false end
+  local onOff, clearOff = M.OFF_ROUTE_ON_ROAD_M, M.OFF_ROUTE_ON_ROAD_CLEAR_M
+  local pt = run.line[geo.segAt(run.cum, along)]
+  if pt and pt.gap then onOff, clearOff = M.OFF_ROUTE_M, M.OFF_ROUTE_CLEAR_M end
+  if off > onOff then run.offRoute = true elseif off <= clearOff then run.offRoute = false end
   if run.offRoute then
     local back = geo.pointAt(run.line, run.cum, along)
     local okD, d = pcall(function() return veh:getDirectionVector() end)
@@ -1127,6 +1147,10 @@ function M.update(dtReal, dtSim)
   end
   if s == 'toAtc' or s == 'toStart' or s == 'waitStart' or (s == 'running' and (run.clock or 0) < 8) then
     feedStartClock()
+  end
+  if run.trafficStash then
+    run.trafficHoldT = (run.trafficHoldT or 0) + (dtReal or 0)
+    if run.trafficHoldT >= M.TRAFFIC_HOLD_S then run.trafficHoldT = 0 trafficHold() end
   end
   if s == 'finished' and run.tidyIn then
     run.tidyIn = run.tidyIn - (dtReal or 0)
@@ -1255,10 +1279,12 @@ function M.faceStage(stage, eventId)
   return M.placeCar(veh, { x = p.x, y = p.y, z = p.z + 0.3 }, { x = dir.x, y = dir.y, z = 0 }), 'turned only'
 end
 
--- A vehicle reset (the game's onVehicleResetted, from main.lua): the player's car reset during the timed stage costs
--- RESET_PENALTY_S each (setting resetPenalty), counted in the result. Not one heard again within RESET_DEBOUNCE_S, nor
--- one just after the world's origin moved (BeamNG.Earth moving the car is not the player's reset).
-function M.onVehicleResetted(vid)
+-- A reset by the player (the game's trackVehReset hook, from main.lua: once a press of reset, recover or the radial
+-- menu's reset, as the game's own modes count them; not onVehicleResetted, which a held recover (the rewind) fires
+-- when pressed and again when let go: two resets for one, in game 2026-11-13): the player's car reset during the
+-- timed stage costs RESET_PENALTY_S each (setting resetPenalty), counted in the result. Not one heard again within
+-- RESET_DEBOUNCE_S, nor one just after the world's origin moved (BeamNG.Earth moving the car is not the player's).
+function M.onReset(vid)
   if not (run and run.state == 'running') then return false end
   if settings.get('resetPenalty') == false then return false end
   local _, veh = carPos()

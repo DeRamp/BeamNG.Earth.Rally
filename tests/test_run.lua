@@ -889,8 +889,24 @@ do
   car.lat, car.lon = toGeo(ax1 - 8, ay1 - 5)
   car.speed = 8 frames(1) car.speed = 0 frames(3)
   T.check(runner.current().startAt and tAmount == 0 and pAmount == 0, 'checked in at the ATC: traffic and parked cars out of the way')
+  pAmount = 5                     -- (BeamNG.Earth putting its amount back after a teleport's hold)
+  frames(12)
+  T.check(pAmount == 0, 'parked cars put back by someone else during the stage: out of the way again')
   runner.abort(true)
   T.check(tAmount == 8 and pAmount == math.huge, 'after the run: the player amounts back')
+  -- parked cars held at 0 by BeamNG.Earth at the check-in, its amount put back later: held, and that amount given back
+  pAmount = 0
+  car.lat, car.lon, car.speed = full[1][1] - 0.02, full[1][2], 0
+  runner.start(ev7, ev7.stages[1])
+  frames(80)
+  car.lat, car.lon = toGeo(ax1 - 8, ay1 - 5)
+  car.speed = 8 frames(1) car.speed = 0 frames(3)
+  T.check(runner.current().startAt and pAmount == 0, 'checked in while BeamNG.Earth holds the parked cars')
+  pAmount = 6
+  frames(12)
+  T.check(pAmount == 0, 'its amount put back after the check-in: out of the way again')
+  runner.abort(true)
+  T.check(pAmount == 6, 'after the run: that amount back')
   getObjectByID, gameplay_traffic, gameplay_parking = nil, nil, nil
 
   -- Go to start with the stage's line on the roads: on it, 4 m behind the start, whatever the organisers' point
@@ -983,20 +999,20 @@ end
 do
   settings.reset()
   local r5 = toTheLine(event)
-  T.check(not runner.onVehicleResetted(1), 'a reset before the start costs nothing')
+  T.check(not runner.onReset(1), 'a reset before the start costs nothing')
   go(r5)
   T.check(runner.state() == 'running', 'running (reset penalty run)')
-  T.check(runner.onVehicleResetted(1) == true and r5.resets == 1, 'a reset on the stage: counted')
+  T.check(runner.onReset(1) == true and r5.resets == 1, 'a reset on the stage: counted')
   T.check(toastTitled('Reset: %+10 s') ~= nil, 'a toast says so')
-  T.check(not runner.onVehicleResetted(1) and r5.resets == 1, 'the same reset heard twice: counted once')
+  T.check(not runner.onReset(1) and r5.resets == 1, 'the same reset heard twice: counted once')
   frames(10)
   moveAnchor(anchor.lat, anchor.lon, 'rebase')
-  T.check(not runner.onVehicleResetted(1) and r5.resets == 1, 'just after the world moved: not the player\'s reset')
+  T.check(not runner.onReset(1) and r5.resets == 1, 'just after the world moved: not the player\'s reset')
   frames(30)
-  T.check(runner.onVehicleResetted(1) == true and r5.resets == 2, 'a second reset')
+  T.check(runner.onReset(1) == true and r5.resets == 2, 'a second reset')
   settings.set('resetPenalty', false)
   frames(10)
-  T.check(not runner.onVehicleResetted(1) and r5.resets == 2, 'setting off: not counted')
+  T.check(not runner.onReset(1) and r5.resets == 2, 'setting off: not counted')
   settings.set('resetPenalty', true)
   driveTo(11, #full)
   T.check(runner.state() == 'finished', 'finished (reset penalty run: ' .. runner.state() .. ')')
@@ -1110,10 +1126,27 @@ do
   car.lat, car.lon = toGeo(fx + 50, fy)
   frames(1)
   T.check(r9.offRoute, 'still off route at 50 m (no flicker)')
-  car.lat, car.lon = toGeo(fx + 20, fy)
+  car.lat, car.lon = toGeo(fx + 15, fy)
+  frames(1)
+  T.check(r9.offRoute, 'still off route at 15 m (back within 12 m clears it)')
+  car.lat, car.lon = toGeo(fx + 8, fy)
   frames(1)
   _, ours = runner.uiFrame()
   T.check(not r9.offRoute and not ours.show.offRoute and ours.show.km, 'back on the line: the card gone')
+  -- off the track, not on another road: 25 m off a line on the roads is off route (1.2.0 needed 60 m: never seen)
+  car.lat, car.lon = toGeo(fx + 25, fy)
+  frames(1)
+  _, ours = runner.uiFrame()
+  T.check(r9.offRoute and ours.show.offRoute, '25 m off the road: off route')
+  car.lat, car.lon = toGeo(fx + 5, fy)
+  frames(1)
+  -- where the line is the organisers' (no road on the map) the old 60 m stands
+  local seg = require('earthRally/geo').segAt(r9.cum, r9.along)
+  r9.line[seg].gap = true
+  car.lat, car.lon = toGeo(fx + 25, fy)
+  frames(1)
+  T.check(not r9.offRoute, '25 m off where the line is the organisers own: not off route')
+  r9.line[seg].gap = nil
   veh.getDirectionVector = nil
   runner.abort(true)
 end

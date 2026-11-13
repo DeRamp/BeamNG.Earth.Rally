@@ -19,7 +19,7 @@ local preview = require('earthRally/preview')
 
 local M = {}
 local logTag = 'earthRally'
-M.VERSION = '1.2.0'
+M.VERSION = '1.2.1'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_HZ = 30                  -- the HUD's streams this often while something moves on it
 M.STREAM_IDLE_HZ = 2              -- ... and this often once the run is over
@@ -505,9 +505,10 @@ function M.onGameplayInteract()
   pcall(runner.onGameplayInteract)
 end
 
--- A vehicle reset: +10 s during the timed stage (setting resetPenalty).
-function M.onVehicleResetted(vid)
-  pcall(runner.onVehicleResetted, vid)
+-- A reset by the player (the game's trackVehReset hook: once a press, a held rewind included): +10 s during the timed
+-- stage (setting resetPenalty).
+function M.trackVehReset(vid)
+  pcall(runner.onReset, vid)
 end
 
 -- (after every other extension's frame work: the start clock's view moved where we want it)
