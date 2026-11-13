@@ -4,8 +4,6 @@
        earthRally/hudFrame.lua, its `show` table). Placed by hand at the mock-up's places for 1920x1080. The game's
        own rally apps (countdown, stage time, progress bar) sit beside it in the same layout. -->
   <div class="er-hud" v-if="f">
-    <!-- the game dimmed behind the results card -->
-    <div v-if="show.results" class="er-dim-all"></div>
 
     <!-- 1 driving to the stage: the stock dashboard's look, in the countdown's place -->
     <div v-if="show.next" class="er-panel er-next">
@@ -130,10 +128,12 @@ const penWords = computed(() => {
 .er-tc { background: var(--er-tc); box-shadow: 0 0 10px 0 rgba(43, 136, 194, 0.7); }
 .er-kbd { font-family: "Overpass Mono", monospace; font-weight: 700; padding: 1px 8px; border-radius: 4px; background: #fff; color: #111; }
 
-.er-dim-all { position: absolute; inset: 0; background: rgba(8, 10, 14, 0.55); }
 
+/* the rally block lives in the top left corner, hard against the edge, as the stage clock and progress meter do
+   (the user, 2026-11-13). .er-next and .er-timecard never show at once (hudFrame: show.next is the drive to the
+   stage, show.timecard the start line), so they share the corner. */
 .er-next {
-  left: 50%; transform: translateX(-50%); top: 82px; width: 750px; padding: 14px 20px 16px;
+  left: 0; top: 0; width: 750px; padding: 14px 20px 16px;
   display: grid; grid-template-columns: 170px 1fr; gap: 6px 22px;
   .er-next-clock {
     grid-row: span 2; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -148,7 +148,7 @@ const penWords = computed(() => {
 }
 
 .er-timecard {
-  left: 50%; transform: translateX(-50%); top: 318px; width: 450px; padding: 10px 16px;
+  left: 0; top: 0; width: 450px; padding: 10px 16px;
   display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
   .er-timecard-hint { grid-column: span 2; font-size: 15px; color: #ddd; padding-top: 4px; }
 }

@@ -115,10 +115,10 @@
       "appName": "beamngEarthStatus",
       "appVersion": 1,
       "placement": {
-        "top": "0px",
-        "left": 0,
-        "right": 0,
-        "margin": "auto",
+        "top": "128px",
+        "left": "184px",
+        "right": "",
+        "margin": "",
         "position": "absolute",
         "width": "700px",
         "height": "64px"
@@ -128,10 +128,10 @@
       "appName": "beamngEarthBanner",
       "appVersion": 1,
       "placement": {
-        "top": "36px",
-        "left": 0,
-        "right": 0,
-        "margin": "auto",
+        "top": "196px",
+        "left": "184px",
+        "right": "",
+        "margin": "",
         "position": "absolute",
         "width": "700px",
         "height": "60px"
