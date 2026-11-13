@@ -203,6 +203,10 @@ The developer panel (Settings > Developer panel) lists what each run found out, 
 - `mod/earth_rally/ui/`: the HUD apps (`modules/apps/EarthRallyHud`, `EarthRallyResults`; their `.vue` in
   `modules/apps/earthRally/`, as the game's rally apps) and the menu (`ui-vue/mods/earthRally/`: a page of its own and
   the pause-menu tab). The stage layout (`settings/ui_apps/.../earthRallyStage`) puts them with the game's rally apps.
+- **Branches:** work on `main`. A release is a tag on it (`vX.Y.Z-alpha`) and a GitHub pre-release carrying the zip
+  from `python tools/package.py <version>`. `v1.2.0`, `v1.1.0` and `auto-test` are kept as history and nothing new
+  goes on them: everything they hold is in `main` and in the tags. (`v1.2.0` was the working branch from 1.2.0 all
+  the way to 1.2.5, by which point its name said nothing and `main` had sat at the 1.2.1 release for days.)
 - Tests, no game needed: `pip install lupa`, then `python tests/run_tests.py` (the importer is also checked against
   `tools/import_kml.py` on the maps in `../Rally Docs/` when they are there).
 - **In-game self-test** (before a release; `tools/selftest.py`, the mod's `earthRally/selftest.lua`):
