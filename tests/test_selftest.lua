@@ -202,13 +202,9 @@ do
   local ev = st.evaluateStreams(slog, { 'travel', 'running', 'waitStart', 'toStop' })
   T.check(#ev == 3 and ev[1].ok and not ev[2].ok and ev[2].detail:match('1 wrong') and not ev[3].ok
     and ev[3].detail:match('no frame'), 'evaluateStreams: per state, the wrong frames and the missing ones')
-  -- the AI's path: every 8 m from s0 to s1, ends included; the off-route spot to the right of the line
+  -- the off-route spot to the right of the line
   local line = { { x = 0, y = 0, z = 1 }, { x = 0, y = 100, z = 2 }, { x = 100, y = 100, z = 3 } }
   local cum = geo.cumulative(line)
-  local sc = st.aiScript(line, cum, 10, 150, 8)
-  T.check(#sc == 19 and math.abs(sc[1].y - 10) < 1e-9 and math.abs(sc[#sc].x - 50) < 1e-9 and sc[1].z > 1,
-    'aiScript: from s0 to s1 every 8 m, with heights (' .. #sc .. ')')
-  T.check(#st.aiScript(line, cum, 150, 1000, 8) >= 2, 'aiScript: past the end clamped to the end')
   local p = st.offsetPoint(line, cum, 50, 30)
   T.check(math.abs(p.x - 30) < 1e-9 and math.abs(p.y - 50) < 1e-9, 'offsetPoint: 30 m to the right of the way north')
   local ok, pa, fa = st.summary({ { ok = true }, { ok = true } }, nil)
@@ -219,9 +215,6 @@ end
 
 ------------------------------------------------------------------------------------------ the fake game seam
 
-local ai = nil            -- the fake AI: { script, i, s (m along its path) }
-local aiStuck = false
-local AI_MS = 25
 local quitCalled, levelAsked = false, nil
 local onScreen = { type = 'earthRallyStage', filename = '/settings/ui_apps/layouts/default/earthRallyStage.uilayout.json',
   version = 5, apps = {} }
@@ -237,11 +230,6 @@ st.game.place = function(_, pos, _, upsideDown)
   return true
 end
 st.game.upZ = function() return car.up end
-st.game.driveStart = function(_, script)
-  ai = { script = script, i = 1, s = 0 }
-  placeAt(script[1].x, script[1].y, script[1].z)
-end
-st.game.driveStop = function() ai = nil car.speed = 0 end
 st.game.layout = function() return onScreen, layout end
 st.game.inLevel = function() return true end
 st.game.loadLevel = function(name) levelAsked = name return true end
@@ -249,27 +237,16 @@ st.game.quit = function() quitCalled = true end
 st.game.removeFile = function(path) files[path] = nil end
 st.game.date = function() return '20261113-120000', '2026-11-13T12:00:00Z' end
 
-local notesCalled = 0
-local function aiStep(dt)
-  if not ai or aiStuck then return end
-  local sc = ai.script
-  local left = AI_MS * dt
-  while left > 0 and ai.i < #sc do
-    local a, b = sc[ai.i], sc[ai.i + 1]
-    local seg = math.sqrt((b.x - a.x) ^ 2 + (b.y - a.y) ^ 2)
-    local rest = seg - ai.s
-    if left < rest then ai.s = ai.s + left left = 0
-    else left = left - rest ai.i, ai.s = ai.i + 1, 0 end
-  end
-  local a, b = sc[ai.i], sc[math.min(#sc, ai.i + 1)]
-  local seg = math.max(1e-9, math.sqrt((b.x - a.x) ^ 2 + (b.y - a.y) ^ 2))
-  local t = math.min(1, ai.s / seg)
-  placeAt(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
-  car.speed = ai.i < #sc and AI_MS or 0
-  -- the co-driver: a note every ~500 m, once the stage's notes are on (from GO)
-  if manager and manager.notesOn then
-    ai.dist = (ai.dist or 0) + AI_MS * dt
-    if ai.dist > 500 then ai.dist = 0 notesCalled = notesCalled + 1 manager.lastPlayedPacenoteIdx = notesCalled end
+-- The car itself is walked by selftest.lua (st.game.place, faked above): the test only has to voice the co-driver.
+-- A note every ~500 m of the walk, once the stage's notes are on (from GO).
+local notesCalled, noteDist = 0, 0
+local function noteStep(dt)
+  if not (manager and manager.notesOn and runner.state() == 'running') then return end
+  noteDist = noteDist + st.STEP_SPEED_MS * dt
+  if noteDist > 500 then
+    noteDist = 0
+    notesCalled = notesCalled + 1
+    manager.lastPlayedPacenoteIdx = notesCalled
   end
 end
 
@@ -283,7 +260,7 @@ local function frame(dt)
       moveAsk = nil
     end
   end
-  aiStep(dt)
+  noteStep(dt)
   main.onUpdate(dt, dt)
 end
 
@@ -292,7 +269,7 @@ local function selfTest(maxS, req)
   for k in pairs(files) do if k:match('^/earthRally/selftest/report') then files[k] = nil end end
   anchor = { lat = 47.0, lon = -123.0 }
   car.lat, car.lon, car.speed, car.up = full[1][1] - 0.02, full[1][2], 0, 1
-  ai, quitCalled = nil, false
+  noteDist, quitCalled = 0, false
   files[st.REQUEST] = req or { event = 'st', stage = 'hill', token = 'tok1', quit = true }
   main.onExtensionLoaded()
   local dt = 0.1
@@ -330,6 +307,8 @@ do
     local c = checkNamed(rep, name)
     T.check(c and c.ok, 'check passed: ' .. name .. (c and (' (' .. tostring(c.detail) .. ')') or ' (missing)'))
   end
+  T.check(rep and type(rep.steppedTo) == 'number' and rep.steppedTo > 0,
+    'the report says how far along the line the car was walked (' .. tostring(rep and rep.steppedTo) .. ')')
   T.check(quitCalled, 'the game asked to quit at the end (the request said so)')
   T.check(files['/earthRally/results/st__hill.json'] == nil, 'the self-test\'s time taken out of the stage\'s times')
   T.check(runner.current() == nil and layout == 'beamngEarth', 'the run closed, the layout back')
@@ -365,16 +344,6 @@ do
   T.check(rep and not rep.ok and c and not c.ok and c.detail:match('rallyLoop not sent'),
     'no rallyLoop stream: the streams\' check fails (' .. tostring(c and c.detail) .. ')')
   rallyLoopLoaded = false
-end
-
--- the AI stuck on the stage: a stall, reported within the budget
-do
-  aiStuck = true
-  local rep = selfTest(1500)
-  T.check(rep and not rep.ok and tostring(rep.abortReason):match('stalled') and rep.elapsedS < 600,
-    'the car stuck: the self-test stops with "stalled" (' .. tostring(rep and rep.abortReason) .. ')')
-  T.check(runner.current() == nil, 'the run closed after a stall')
-  aiStuck = false
 end
 
 -- the world never loads: stopped at the world's budget, not left hanging

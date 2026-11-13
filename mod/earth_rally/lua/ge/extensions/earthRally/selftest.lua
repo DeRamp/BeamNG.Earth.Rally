@@ -13,10 +13,17 @@
 --   boot      a few seconds for the game to settle; the BeamNG.Earth level loaded when the game is not in it
 --   world     until BeamNG.Earth is in its world, ready, with a car (WORLD_BUDGET_S)
 --   prep      the run started (runner.start): travel, origin moved, stage built, car placed (PREP_BUDGET_S)
---   liaison   the car put at the ATC (checked in), then on the start line; the wait skipped (runner.skipCountdown, the
---             Interact key's skip) (LIAISON_BUDGET_S)
---   stage     the game's AI drives the stage line (ai.driveUsingPath with a script: the line itself, no road graph
---             needed); a stall (no progress for STALL_S) fails. Once OFFROUTE_AT_M into the stage:
+--   liaison   the car put at the ATC (checked in), then on the start line; the wait skipped (runner.skipCountdown,
+--             the Interact key's skip) once the world is quiet (M.settled) (LIAISON_BUDGET_S)
+--   stage     the car is walked along the stage line at STEP_SPEED_MS, set down on it frame by frame. NOT the
+--             game's AI: ai.driveUsingPath({script=...}) keeps its route in a private graph installed with
+--             mapmgr.setCustomMap(), and BeamNG.Earth's navgraph.lua tells every vehicle to mapmgr.requestMap()
+--             whenever it streams new roads, which throws that route away. The AI then drives at a target in a
+--             straight line, off the stage (in game, 2026-11-13: three runs, never past 1.7 km of 4.1, the car
+--             going forwards and backwards). Walking the line is what the test wants anyway: Earth Rally is under
+--             test here, not the game's driving. The car is given a velocity to match (M.game.setVelocity), which
+--             is what the game's co-driver reads to decide whether to call its notes at all.
+--             Once OFFROUTE_AT_M into the stage:
 --   offroute  the car moved OFFROUTE_M off the line (off route and the HUD's card expected), Backspace's action
 --             (back on the road: on the line, one more reset), then the car turned on its roof and Shift+Backspace's
 --             (flip upright: on its wheels, no reset); the AI drives on
@@ -48,8 +55,8 @@ M.WORLD_BUDGET_S = 420      -- the level and BeamNG.Earth's world loaded, a car 
 M.WORLD_SETTLE_S = 5
 M.PREP_BUDGET_S = 300       -- travel (the world at the ATC), origin, build, place
 M.LIAISON_BUDGET_S = 180    -- ATC check-in, start line, the skipped wait, GO
-M.STALL_S = 60              -- on the stage: no STALL_M of progress for this long is a stall
-M.STALL_M = 25
+M.ROOF_DWELL_S = 1.2        -- on its roof before the flip: brief, so the engine is not hurt by running inverted
+M.ROOF_LIFT_M = 0.5         -- ... and set down gently, not dropped
 M.STOP_BUDGET_S = 90
 M.RESULTS_WAIT_S = hudFrame.FINISH_CARD_S + 6
 M.DEFAULT_BUDGET_S = 1500   -- the whole test
@@ -60,11 +67,21 @@ M.OFFROUTE_AT_M = 800       -- ... this far into the stage (a third of it on a s
 M.OFFROUTE_WAIT_S = 4
 M.BACK_ON_LINE_M = 6        -- back on the road: within this of the line
 M.UPRIGHT_Z = 0.7           -- the car's up vector's height on its wheels (on its roof: below 0)
-M.AI_STEP_M = 8             -- the AI's script: a point this often along the line
-M.AI_SPEED_MS = 22          -- at most (80 km/h): finishing matters, not the time
-M.AI_AGGRESSION = 0.45
-M.AI_PAST_FINISH_M = 150
+M.STEP_SPEED_MS = 25        -- the car walked along the line this fast (90 km/h): a 4 km stage in under three
+                            -- minutes, and the same distance every run
+M.STEP_LIFT_M = 0.5         -- ... set down this far above the ground under the line
+M.STEP_PAST_FINISH_M = 150  -- ... and carried this far past the flying finish, towards the stop control
+M.STEP_VEL_AHEAD_M = 5      -- the line's way this far on gives the velocity's direction (with its climb)
 M.MAX_ERRORS = 60
+-- The stage is not begun while the world is still arriving. BeamNG.Earth streams the ground, the roads and the trees
+-- round the car, and on the first run (2026-11-13) the stage began mid-stream: 21 frame hitches, the worst 31.6 s, 18
+-- fps, no road on the map at either the ATC or the start, and the car off the line 280 m in. A player gets that time
+-- back by waiting their half minute at the ATC and on the line; the test's countdown skip takes it away, so the skip
+-- holds off until the frames have been quiet. It never delays GO past the player's own start time: the most it can do
+-- is give back the wait a player would have had.
+M.SETTLE_HITCH_S = 0.1      -- a frame longer than this is a hitch (the world loading)
+M.SETTLE_QUIET_S = 6        -- no hitch for this long: the world has caught up round the car
+M.SETTLE_GIVE_UP_S = 75     -- still not quiet after this long on the line: skip anyway, and say so in the report
 
 ------------------------------------------------------------------------------------------ pure parts
 
@@ -133,24 +150,6 @@ function M.evaluateStreams(slog, statesReached)
   return out
 end
 
--- The AI's path: the line from s0 to s1 every `step` m (x, y, z), starting on s0 (the AI puts the car on its first
--- point). line, cum: runner's run.line / run.cum (game coordinates now).
-function M.aiScript(line, cum, s0, s1, step)
-  step = step or M.AI_STEP_M
-  local total = cum[#cum]
-  s1 = math.min(s1, total)
-  local out = {}
-  local s = math.max(0, s0)
-  while s < s1 do
-    local p = geo.pointAt(line, cum, s)
-    out[#out + 1] = { x = p.x, y = p.y, z = p.z or 0 }
-    s = s + step
-  end
-  local p = geo.pointAt(line, cum, s1)
-  out[#out + 1] = { x = p.x, y = p.y, z = p.z or 0 }
-  return out
-end
-
 -- A point `off` m to the right of the line at s (left for off < 0), and the line's direction there.
 function M.offsetPoint(line, cum, s, off)
   local p, dir = geo.pointAt(line, cum, s)
@@ -181,23 +180,28 @@ function M.game.place(veh, pos, dir, upsideDown)
   runner.resetCameraSoon()
   return true
 end
+-- The car's velocity set to (vx, vy, vz) without moving it (the engine's own way, as spawn.lua zeroes velocity on a
+-- safe teleport: scale the cluster's velocity by 0, then add ours).
+--
+-- The co-driver needs this. The game decides whether to look at its pacenotes at all from the car's rigid-body
+-- velocity -- gameplay/rally/driveline/drivelineRoute.lua onUpdate: `if updateSpeedMph > self.minEvalSpeedMph (1 mph)
+-- ... then self:evaluatePacenotesWindow()`, with the speed coming from getPlayerVehicle(0):getVelocityXYZ() through
+-- VehicleTracker:speedMs(). A car set down frame by frame has no velocity, so that gate never opened and not one of
+-- the stage's notes was called (in game, 2026-11-13: 0 of 32, the whole driveline covered). Position is only read
+-- after the gate passes, and there are no trigger volumes or timers to fall back on.
+--
+-- It is given the speed the car is really being walked at, so the game's `timeToCs = distance / speed` works out and
+-- each note is called where it should be rather than on top of its corner.
+function M.game.setVelocity(veh, vx, vy, vz)
+  local okR, ref = pcall(function() return veh:getRefNodeId() end)
+  if not (okR and ref) then return false end
+  return (pcall(function() veh:applyClusterVelocityScaleAdd(ref, 0, vx, vy, vz) end))
+end
+
 -- The height of the car's up vector (1 on its wheels on the flat, -1 on its roof), or nil.
 function M.game.upZ(veh)
   local ok, u = pcall(function() return veh:getDirectionVectorUp() end)
   return ok and u and u.z or nil
-end
--- The car's own AI along `script` ({ x, y, z }...): the game's driveUsingPath with a script (vehicle/ai.lua: its own
--- path graph from the points, no road map needed; it sets the car on the first point). Speed and aggression first:
--- the script branch keeps the ones set before.
-function M.game.driveStart(veh, script)
-  local parts = {}
-  for i, p in ipairs(script) do parts[i] = string.format('{x=%.2f,y=%.2f,z=%.2f}', p.x, p.y, p.z) end
-  local cmd = string.format('ai.setSpeed(%.1f) ai.setSpeedMode("limit") ai.setAggression(%.2f) ai.setAvoidCars("off") '
-    .. 'ai.driveUsingPath({script = {%s}})', M.AI_SPEED_MS, M.AI_AGGRESSION, table.concat(parts, ','))
-  veh:queueLuaCommand(cmd)
-end
-function M.game.driveStop(veh, hold)
-  veh:queueLuaCommand(hold and 'ai.setMode("stop")' or 'ai.setMode("disabled")')
 end
 function M.game.layout()
   local ui = rawget(_G, 'ui_appLayouts')
@@ -227,6 +231,10 @@ local T = nil           -- the test under way: nil when none
 
 function M.active() return T ~= nil and not T.closed end
 function M.current() return T end
+
+-- The world has been quiet (no frame hitch) for SETTLE_QUIET_S: BeamNG.Earth has caught up round the car.
+-- (below `local T`: above it this would close over a nil global and never be true)
+function M.settled() return T ~= nil and (T.t - (T.hitchAt or 0)) >= M.SETTLE_QUIET_S end
 
 local function now() return T and T.t or 0 end
 
@@ -326,7 +334,8 @@ function M.start(opts)
   if not (opts.event and opts.stage) then return false, 'give an event and a stage id' end
   T = { eventId = opts.event, stageId = opts.stage, token = opts.token, quit = opts.quit == true,
     loadLevel = opts.loadLevel ~= false, budgetS = tonumber(opts.budgetS) or M.DEFAULT_BUDGET_S, main = opts.main,
-    t = 0, checks = {}, timings = {}, states = {}, streams = M.newStreamLog(), errors = {}, closed = false }
+    t = 0, checks = {}, timings = {}, states = {}, streams = M.newStreamLog(), errors = {}, closed = false,
+    hitchAt = 0, hitches = 0 }
   local _, iso = M.game.date()
   T.startedAt = iso
   log('I', logTag, string.format('self-test: %s / %s (budget %d s)', T.eventId, T.stageId, T.budgetS))
@@ -351,18 +360,21 @@ local function carAt(veh, pos, dir, lift, upsideDown)
   return M.game.place(veh, { x = pos.x, y = pos.y, z = z + (lift or 1.0) }, { x = dir.x, y = dir.y, z = 0 }, upsideDown)
 end
 
-local function driveFrom(r, veh, along)
-  local script = M.aiScript(r.line, r.cum, along, r.finishM + M.AI_PAST_FINISH_M)
-  if #script < 2 then return false end
-  M.game.driveStart(veh, script)
-  T.driving = true
-  T.progressAt, T.progressM = now(), along
-  return true
-end
-
-local function stopDriving(veh, hold)
-  if T.driving and veh then M.game.driveStop(veh, hold) end
-  T.driving = false
+-- The car walked one frame further along the stage line and set down on it, facing along. Returns false once it has
+-- been taken as far as it goes (STEP_PAST_FINISH_M past the flying finish).
+local function stepCar(r, veh, dt)
+  local to = r.finishM + M.STEP_PAST_FINISH_M
+  T.stepAlong = math.min(to, (T.stepAlong or r.startM) + M.STEP_SPEED_MS * (dt or 0))
+  local p, dir = geo.pointAt(r.line, r.cum, T.stepAlong)
+  carAt(veh, p, dir, M.STEP_LIFT_M)
+  -- the velocity the co-driver reads (M.game.setVelocity): along the line, including its climb, at the walking speed
+  local ahead = geo.pointAt(r.line, r.cum, math.min(to, T.stepAlong + M.STEP_VEL_AHEAD_M))
+  local dx, dy, dz = ahead.x - p.x, ahead.y - p.y, (ahead.z or 0) - (p.z or 0)
+  local l = math.sqrt(dx * dx + dy * dy + dz * dz)
+  if l < 1e-6 then dx, dy, dz, l = dir.x, dir.y, 0, 1 end
+  local v = M.STEP_SPEED_MS
+  T.velOk = M.game.setVelocity(veh, dx / l * v, dy / l * v, dz / l * v)
+  return T.stepAlong < to
 end
 
 local function layoutCheck()
@@ -455,40 +467,50 @@ local function stepLiaison()
   elseif s == 'waitStart' then
     if T.step ~= 'wait' then step('wait') T.skipped = nil end
     if not T.skipped and runner.canSkip() then
-      T.skipped = runner.skipCountdown()
-      check('the start wait skipped (Interact)', T.skipped)
+      if M.settled() then
+        T.skipped = runner.skipCountdown()
+        T.settledAtSkip = true
+        check('the start wait skipped (Interact)', T.skipped,
+          string.format('the world quiet for %d s first', M.SETTLE_QUIET_S))
+      elseif inStep() > M.SETTLE_GIVE_UP_S then
+        T.skipped = runner.skipCountdown()
+        T.settledAtSkip = false
+        check('the start wait skipped (Interact)', T.skipped,
+          string.format('the world was still arriving after %d s (%d hitches): the stage may be rough',
+          M.SETTLE_GIVE_UP_S, T.hitches or 0))
+      end
     end
     if inStep() > 90 then fail('no GO within 90 s on the start line') end
   elseif s == 'running' then
+    if T.skipped == nil then
+      T.settledAtSkip = M.settled()
+      check('the start wait ran its course (not skipped: the world was still arriving)', true,
+        string.format('%d hitches so far', T.hitches or 0))
+    end
     check('GO: the stage clock runs', true, string.format('start %s', runner.formatClock(r.startAt)))
     T.offrouteAt = r.startM + math.min(M.OFFROUTE_AT_M, (r.finishM - r.startM) / 3)
-    -- (from where the car stands on the line: the AI sets the car on its path's first point)
-    driveFrom(r, veh, (geo.follow(r.line, r.cum, M.game.pos(veh), r.startM, 200, 200, 1e9)))
+    T.stepAlong = select(1, geo.follow(r.line, r.cum, M.game.pos(veh), r.startM, 200, 200, 1e9))
     phase('stage')
     return
   end
   if inPhase() > M.LIAISON_BUDGET_S then fail(string.format('no GO in %d s (stuck in %s)', M.LIAISON_BUDGET_S, s)) end
 end
 
-local function stepStage()
+local function stepStage(dt)
   local r, s = T.run, runner.state()
   local veh = M.game.vehicle()
   if s == 'toStop' or s == 'finished' then
-    stopDriving(veh, true)
     check('flying finish reached', r.finalTime ~= nil, r.finalTime and runner.formatTime(r.finalTime))
     phase(s == 'toStop' and 'stop' or 'results')
     return
   end
   if s ~= 'running' or not veh then fail('the run left the stage: ' .. tostring(s) .. ' ' .. tostring(r.error or '')) return end
   local along = r.along or r.startM
-  if along > (T.progressM or 0) + M.STALL_M then T.progressM, T.progressAt = along, now() end
-  if now() - (T.progressAt or now()) > M.STALL_S then
-    fail(string.format('the car stalled %.0f m into the stage (no progress for %d s: the AI stuck?)', along - r.startM,
-      M.STALL_S))
-    return
-  end
   if r.offRoute and not T.forcedOff then T.strayOffRoute = (T.strayOffRoute or 0) + 1 end
-  if not T.offrouteDone and along >= T.offrouteAt then phase('offroute') end
+  if not T.offrouteDone and along >= T.offrouteAt then phase('offroute') return end
+  if not stepCar(r, veh, dt) then
+    fail(string.format('the line ran out %.0f m into the stage and the flying finish never came', along - r.startM))
+  end
 end
 
 local function stepOffroute()
@@ -497,7 +519,6 @@ local function stepOffroute()
   if runner.state() ~= 'running' or not veh then fail('the run left the stage during the recovery checks') return end
   local st = T.step
   if not st then
-    stopDriving(veh, true)
     step('settle')
   elseif st == 'settle' and inStep() >= 1.5 then
     local along = r.along or r.startM
@@ -533,9 +554,9 @@ local function stepOffroute()
     -- on its roof where it is, then flip upright
     local p = M.game.pos(veh)
     local _, dir = geo.pointAt(r.line, r.cum, r.along or T.offAlong)
-    carAt(veh, p, dir, 0.8, true)
+    carAt(veh, p, dir, M.ROOF_LIFT_M, true)
     step('roof')
-  elseif st == 'roof' and inStep() >= 2.5 then
+  elseif st == 'roof' and inStep() >= M.ROOF_DWELL_S then
     T.roofUp = M.game.upZ(veh)
     T.resetsBefore = r.resets or 0
     local fn = T.main and T.main.flipUpright or runner.flipUpright
@@ -548,8 +569,7 @@ local function stepOffroute()
       T.roofUp or -9, up or -9, T.resetsBefore, r.resets or 0))
     T.offrouteDone, T.forcedOff = true, false
     -- on along the stage from where the car stands
-    local along = select(1, geo.follow(r.line, r.cum, M.game.pos(veh), r.along or T.offAlong, 200, 200, 1e9))
-    driveFrom(r, veh, along)
+    T.stepAlong = select(1, geo.follow(r.line, r.cum, M.game.pos(veh), r.along or T.offAlong, 200, 200, 1e9))
     phase('stage')
   end
 end
@@ -590,6 +610,67 @@ local function stepResults()
   end
 end
 
+-- the test window ------------------------------------------------------------------------
+
+-- A window on screen while the test runs: the phase, how far along the stage the car is, and every check as it is
+-- made. Without it a watcher can only guess from the car's behaviour what is being tested (the user, 2026-11-13:
+-- "I don't see what its testing"). ImGui, as the developer panel; nothing of it runs offline.
+M.WINDOW = 'Earth Rally self-test###earthRallySelfTest'
+M.WINDOW_W, M.WINDOW_H = 520, 440
+M.WINDOW_FONT = 1.35        -- the checks read from across the room, and from a game window on a second screen
+local col = nil
+local function drawWindow()
+  local im = rawget(_G, 'ui_imgui')
+  if not (im and T and im.Begin) then return end
+  if not col then
+    col = { grey = im.ImVec4(0.6, 0.6, 0.6, 1), green = im.ImVec4(0.4, 0.9, 0.4, 1),
+            amber = im.ImVec4(1, 0.75, 0.2, 1), red = im.ImVec4(1, 0.4, 0.4, 1) }
+  end
+  -- The size is forced once per test (Cond_Always on the first frame): ImGui remembers a window's geometry in
+  -- settings/imgui.ini, and a run that left it filling the screen would otherwise leave it that way for good.
+  -- After that first frame it is FirstUseEver, so dragging it to another size during a run still works.
+  if T.windowSized then
+    im.SetNextWindowSize(im.ImVec2(M.WINDOW_W, M.WINDOW_H), im.Cond_FirstUseEver)
+  else
+    im.SetNextWindowSize(im.ImVec2(M.WINDOW_W, M.WINDOW_H), im.Cond_Always or im.Cond_FirstUseEver)
+    T.windowSized = true
+  end
+  if not im.Begin(M.WINDOW) then im.End() return end
+  if im.SetWindowFontScale then pcall(im.SetWindowFontScale, M.WINDOW_FONT) end
+  local r = T.run
+  im.Text(string.format('%s / %s', tostring(T.eventId), tostring(T.stageId)))
+  im.TextColored(col.grey, string.format('phase %s%s      %.0f s of %d', tostring(T.phase),
+    T.step and (' - ' .. tostring(T.step)) or '', T.t, T.budgetS))
+  if r and r.startM and r.finishM then
+    local done, total = (r.along or r.startM) - r.startM, r.finishM - r.startM
+    im.Text(string.format('run %s', tostring(r.state)))
+    im.TextColored(r.offRoute and col.amber or col.grey,
+      string.format('%.0f m of %.0f (%.0f %%)   %.0f m off the line%s', done, total,
+        total > 0 and done / total * 100 or 0, r.off or 0, r.offRoute and '   OFF ROUTE' or ''))
+  end
+  if T.velOk == false then im.TextColored(col.red, 'the car\'s velocity could not be set: no pacenotes') end
+  im.TextColored(col.grey, string.format('%d frame hitches%s', T.hitches or 0,
+    T.settledAtSkip == false and '   (the world was still arriving at GO)' or ''))
+  im.Separator()
+  local passed, failed = 0, 0
+  for _, c in ipairs(T.checks) do
+    if c.ok then passed = passed + 1 else failed = failed + 1 end
+  end
+  im.TextColored(failed > 0 and col.red or col.green, string.format('%d passed, %d failed', passed, failed))
+  for _, c in ipairs(T.checks) do
+    im.TextColored(c.ok and col.green or col.red, (c.ok and 'ok    ' or 'FAIL  ') .. tostring(c.name))
+    if c.detail then im.TextColored(col.grey, '        ' .. tostring(c.detail)) end
+  end
+  if T.closed then
+    im.Separator()
+    im.TextColored(T.abortReason and col.red or col.green,
+      T.abortReason and ('stopped: ' .. tostring(T.abortReason)) or 'done')
+    if T.reportPath then im.TextColored(col.grey, tostring(T.reportPath)) end
+  end
+  im.End()
+end
+M._drawWindow = drawWindow
+
 -- the report ------------------------------------------------------------------------------
 
 local function report()
@@ -601,7 +682,8 @@ local function report()
     stage = T.stageId, startedAt = T.startedAt, elapsedS = math.floor(now() + 0.5), ok = ok, passed = passed,
     failed = failed, abortReason = T.abortReason, checks = T.checks, timings = T.timings, states = T.states,
     streams = T.streams, errors = T.errors, settings = T.settings, levelLoadAsked = T.levelLoadAsked or nil,
-    strayOffRouteFrames = T.strayOffRoute, hookError = T.hookError,
+    strayOffRouteFrames = T.strayOffRoute, hookError = T.hookError, hitches = T.hitches,
+    settledAtSkip = T.settledAtSkip, steppedTo = T.stepAlong, velocitySet = T.velOk,
     run = r and { finalTime = r.finalTime, stageTime = r.stageTime, penalty = r.penalty, resets = r.resets,
       checks = r.checks } or nil,
   }
@@ -620,9 +702,6 @@ finish = function()
   if not T or T.closed then return end
   T.closed = true
   if T.phase then T.timings[T.phase] = math.floor((now() - T.phaseAt) * 10 + 0.5) / 10 end
-  local veh = M.game.vehicle()
-  if veh and T.run then pcall(M.game.driveStop, veh, false) end
-  T.driving = false
   for _, c in ipairs(M.evaluateStreams(T.streams, T.stateOrder or {})) do
     T.checks[#T.checks + 1] = { name = c.name, ok = c.ok, detail = c.detail, t = math.floor(now() * 10 + 0.5) / 10 }
   end
@@ -644,7 +723,9 @@ function M.update(dtReal, version)
   if not T then return end
   dtReal = dtReal or 0
   T.t = T.t + dtReal
+  if dtReal > M.SETTLE_HITCH_S then T.hitchAt, T.hitches = T.t, (T.hitches or 0) + 1 end
   T.version = T.version or version
+  pcall(drawWindow)
   if T.closed then
     if T.quitIn then
       T.quitIn = T.quitIn - dtReal
@@ -675,7 +756,7 @@ function M.update(dtReal, version)
   elseif p == 'world' then stepWorld(dtReal)
   elseif p == 'prep' then stepPrep()
   elseif p == 'liaison' then stepLiaison()
-  elseif p == 'stage' then stepStage()
+  elseif p == 'stage' then stepStage(dtReal)
   elseif p == 'offroute' then stepOffroute()
   elseif p == 'stop' then stepStop()
   elseif p == 'results' then stepResults() end
