@@ -3,7 +3,7 @@
 Real-world rally stages for [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth): drive a real rally's stages
 on the real roads, timed, with BeamNG.drive's own co-driver calling pacenotes made from the road.
 
-Status: alpha (1.2.0: the player UI). Needs BeamNG.drive 0.40.5 and BeamNG.Earth with modding API 1.6 or newer (1.7, with the
+Status: alpha (1.2.1: fixes and recovery keys; known issue: the on-stage display does not show, fix due in 1.2.2). Needs BeamNG.drive 0.40.5 and BeamNG.Earth with modding API 1.6 or newer (1.7, with the
 `onBeamNGEarthRebased` event, is used when present: BeamNG.Earth's dev builds from 1.9.1-beta.dev.398).
 
 **Open it in game with Ctrl + Alt + K**, or from the pause menu's **Earth Rally** tab ([all controls](#controls)).
@@ -97,7 +97,7 @@ controller button works there.
      `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\mods\`. BeamMP switches local mods off when you join a server,
      so switch it back on after playing online. Only one Earth Rally zip at a time.
 3. Still nothing: `beamng.log` in `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\` should have the line
-   `Earth Rally 1.2.0 loaded`; open an issue with the lines that mention `earth_rally` or `earthRally`.
+   `Earth Rally 1.2.1 loaded`; open an issue with the lines that mention `earth_rally` or `earthRally`.
 
 ## Adding a rally
 
@@ -206,7 +206,9 @@ The developer panel (Settings > Developer panel) lists what each run found out, 
 
 ## Plan
 
-Next: course tape across side roads and junction direction signs (1.2.0), road matching inside BeamNG.Earth (no Python),
+Next: 1.2.2, the on-stage display fixed. 1.3.0 (`docs/plan-1.3.0.md`): road matching for every player (a BeamNG.Earth
+add-on, no Python), the pacenote generator overhauled, an ATC added to stages without one. Later: course tape, junction
+direction signs,
 better pacenotes (crests, cautions), stages wider than ~26 km, itineraries (loops, road sections, service), an
 in-game editor.
 
