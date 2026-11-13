@@ -1,6 +1,17 @@
 {
   "displayName": "Keyboard",
-  "bindings":[
-    {"control":"ctrl alt k", "action":"earthRally_window"}
+  "bindings": [
+    {
+      "control": "ctrl alt k",
+      "action": "earthRally_window"
+    },
+    {
+      "control": "backspace",
+      "action": "earthRally_backOnRoad"
+    },
+    {
+      "control": "shift backspace",
+      "action": "earthRally_flipUpright"
+    }
   ]
 }

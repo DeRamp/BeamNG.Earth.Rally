@@ -1110,6 +1110,46 @@ do
   settings.reset()
 end
 
+-- recovery: back on the road (+10 s on the stage), flip upright (free); the stage layout held
+do
+  settings.reset()
+  local teleports = {}
+  spawn = { safeTeleport = function(v, pos, rot, _, _, _, _, resetVeh)
+    teleports[#teleports + 1] = { pos = pos, rot = rot, reset = resetVeh }
+    v:setPositionRotation(pos.x, pos.y, pos.z)
+  end }
+  local layout = 'beamngEarth'
+  local oldGs, oldSpawn = core_gamestate, spawn
+  core_gamestate = { getGameState = function() return { appLayout = layout } end,
+    setGameState = function(_, l) layout = l end }
+  local r10 = toTheLine(event)
+  go(r10)
+  car.speed = 20
+  driveTo(11, 600)
+  local fx, fy = toGame(full[600][1], full[600][2])
+  car.lat, car.lon = toGeo(fx + 30, fy)
+  frames(1)
+  local before = r10.resets or 0
+  T.check(runner.backOnRoad() == true and #teleports == 1 and teleports[1].reset == false,
+    'back on the road: moved as the game flips a car (damage kept)')
+  local bx, by = toGame(car.lat, car.lon)
+  T.check(math.abs(bx - fx) < 3 and math.abs(by - fy) < 15 and (r10.resets or 0) == before + 1,
+    'back on the road: on the stage line where it had got to, +1 reset (' .. string.format('%.1f, %.1f', bx - fx, by - fy) .. ')')
+  frames(10)
+  veh.getDirectionVector = function() return { x = 0, y = 1, z = 0 } end
+  veh.getID = function() return 1 end
+  T.check(runner.flipUpright() == true and #teleports == 2 and (r10.resets or 0) == before + 1, 'flip upright: no penalty')
+  -- the layout: something puts its own on mid-stage (a car reloaded): ours back within a second
+  T.check(layout == 'earthRallyStage', 'the stage layout on for the run')
+  layout = 'beamngEarth'
+  frames(12)
+  T.check(layout == 'earthRallyStage', 'the stage layout put back after something else put its own on')
+  runner.abort(true)
+  T.check(layout == 'beamngEarth', 'after the run: the layout before it')
+  veh.getDirectionVector, veh.getID = nil, nil
+  spawn, core_gamestate = oldSpawn, oldGs
+end
+
 -- off route on a real run, with the way back
 do
   local r9 = toTheLine(event)

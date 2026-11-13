@@ -505,6 +505,10 @@ function M.onGameplayInteract()
   pcall(runner.onGameplayInteract)
 end
 
+-- Recovery keys (Backspace: back on the road, +10 s on the stage; Shift+Backspace: flip upright).
+function M.backOnRoad() local ok, r = pcall(runner.backOnRoad) return ok and r end
+function M.flipUpright() local ok, r = pcall(runner.flipUpright) return ok and r end
+
 -- A reset by the player (the game's trackVehReset hook: once a press, a held rewind included): +10 s during the timed
 -- stage (setting resetPenalty).
 function M.trackVehReset(vid)

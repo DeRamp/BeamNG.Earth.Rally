@@ -6,5 +6,21 @@
 "onDown": "if earthRally_main then earthRally_main.toggleMenu() end",
 "title": "Earth Rally: menu",
 "desc": "Opens or closes the Earth Rally menu (rallies, stages, settings)."
+},
+"earthRally_backOnRoad": {
+"cat": "gameplay",
+"order": 121,
+"ctx": "tlua",
+"onDown": "if earthRally_main then earthRally_main.backOnRoad() end",
+"title": "Earth Rally: back on the road",
+"desc": "Puts the car back on the stage's road where it got to, facing on along the stage (+10 s on a timed stage with the reset penalty on)."
+},
+"earthRally_flipUpright": {
+"cat": "gameplay",
+"order": 122,
+"ctx": "tlua",
+"onDown": "if earthRally_main then earthRally_main.flipUpright() end",
+"title": "Earth Rally: flip upright",
+"desc": "Turns the car back onto its wheels where it is (no penalty)."
 }
 }

@@ -90,6 +90,8 @@ M.OFF_ROUTE_CLEAR_M = 40       -- (where the line is the organisers': off route 
 M.OFF_ROUTE_ON_ROAD_M = 20
 M.OFF_ROUTE_ON_ROAD_CLEAR_M = 12
 M.TRAFFIC_HOLD_S = 1           -- traffic and parked cars kept away this often during the stage
+M.LAYOUT_HOLD_S = 1            -- the stage layout put back this often if something else put its own on
+M.RECOVER_UP_M = 0.5           -- a car put back on the road / upright: this far above the ground
 M.RESULTS_CLOSE_M = 100        -- the results card closes once the car is driven this far from where it stopped ...
 M.RESULTS_TIMEOUT_S = 120      -- ... or after this long
 M.SOUND_STOPPED = 'event:UI_Checkpoint'
@@ -1148,6 +1150,20 @@ function M.update(dtReal, dtSim)
   if s == 'toAtc' or s == 'toStart' or s == 'waitStart' or (s == 'running' and (run.clock or 0) < 8) then
     feedStartClock()
   end
+  -- the stage layout held while the run has it on: a car reloaded (Ctrl+R) or replaced mid-stage put the game's own
+  -- layout back, and the progress bar, the finish time and the results card were gone (in game, 2026-11-13)
+  if run.oldLayout then
+    run.layoutHoldT = (run.layoutHoldT or 0) + (dtReal or 0)
+    if run.layoutHoldT >= M.LAYOUT_HOLD_S then
+      run.layoutHoldT = 0
+      local gs = rawget(_G, 'core_gamestate')
+      local ok, cur = pcall(function() return gs and gs.getGameState and gs.getGameState() end)
+      if ok and cur and cur.appLayout and cur.appLayout ~= M.STAGE_LAYOUT and gs.setGameState then
+        pcall(gs.setGameState, nil, M.STAGE_LAYOUT)
+        log('I', logTag, 'stage layout back on (' .. tostring(cur.appLayout) .. ' had been put on)')
+      end
+    end
+  end
   if run.trafficStash then
     run.trafficHoldT = (run.trafficHoldT or 0) + (dtReal or 0)
     if run.trafficHoldT >= M.TRAFFIC_HOLD_S then run.trafficHoldT = 0 trafficHold() end
@@ -1298,6 +1314,54 @@ function M.onReset(vid)
   run.resets = (run.resets or 0) + 1
   say(string.format('%d reset%s on this stage.', run.resets, run.resets == 1 and '' or 's'), 3, 'warning',
     string.format('Reset: +%d s', M.RESET_PENALTY_S))
+  return true
+end
+
+-- Recovery, as rally games have it (the player's ask, 2026-11-13): the car moved as the game's own radial-menu "flip
+-- upright" moves it (spawn.safeTeleport, the damage kept), not reset or rewound.
+local function recoverTo(veh, pos, dir)
+  local sp = rawget(_G, 'spawn')
+  local l = math.sqrt(dir.x * dir.x + dir.y * dir.y)
+  if l < 1e-6 then return false end
+  local d = vec3(dir.x / l, dir.y / l, 0)
+  if sp and sp.safeTeleport then
+    local ok = pcall(sp.safeTeleport, veh, vec3(pos.x, pos.y, pos.z), quatFromDir(d), nil, nil, nil, nil, false)
+    if ok then M.resetCameraSoon() return true end
+  end
+  return M.placeCar(veh, pos, d)
+end
+
+-- Back on the road: the car on the stage line where it had got to, facing on along the stage. A reset (RESET_PENALTY_S
+-- on the timed stage, setting resetPenalty). On the way to the start and the stop control too (no penalty there).
+function M.backOnRoad()
+  if not (run and run.line and (run.state == 'toAtc' or run.state == 'toStart' or run.state == 'running'
+    or run.state == 'toStop')) then
+    say('Back on the road: during a stage only.', 3, 'info')
+    return false
+  end
+  local p, veh = carPos()
+  if not p then return false end
+  local along = run.along or select(1, progress(p))
+  local dir, at = aheadDir(run.line, run.cum, along)
+  local pos = { x = at.x, y = at.y }
+  pos.z = groundNear(pos.x, pos.y, at.z or p.z) + M.RECOVER_UP_M
+  if not recoverTo(veh, pos, dir) then return false end
+  if run.state == 'running' then M.onReset(nil) end
+  run.offRoute, run.backBearing = false, nil
+  return true
+end
+
+-- Flip upright: the car turned back onto its wheels where it is, facing the way it faced. No penalty: it gains
+-- nothing (the time lost on its roof is the cost), as a push back over by the marshals.
+function M.flipUpright()
+  local p, veh = carPos()
+  if not p then return false end
+  local okD, d = pcall(function() return veh:getDirectionVector() end)
+  if not (okD and d) then return false end
+  local pos = { x = p.x, y = p.y }
+  pos.z = groundNear(pos.x, pos.y, p.z) + M.RECOVER_UP_M
+  if not recoverTo(veh, pos, { x = d.x, y = d.y }) then return false end
+  pcall(extensions.hook, 'onVehicleFlippedUpright', veh:getID())
   return true
 end
 

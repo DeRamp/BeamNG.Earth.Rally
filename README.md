@@ -77,9 +77,11 @@ Earth Rally window with each run's checks; `earthRally_main.toggle()` in the con
 | **Open / close the Earth Rally menu** | **Ctrl + Alt + K** (Esc closes it too) | none by default: bind one (below) | the pause menu (Esc) > **Earth Rally** tab; or the console (**`~`**): `earthRally_main.toggleMenu()` |
 | Skip the wait on the start line (stopped on the line, before your start) | **Shift + E** (the game's Interact) | the modifier + **Y** (Interact) | |
 | Reset the car (+10 s on a stage when the reset penalty is on) | **R** / **Insert** (the game's own) | the game's own | |
+| **Back on the road**: the car on the stage's road where you got to, facing on (+10 s on a stage, as a reset) | **Backspace** | none by default: bind one | |
+| **Flip upright**: back on its wheels where it is (no penalty) | **Shift + Backspace** | none by default: bind one | the game's radial menu |
 | Developer panel (each run's checks) | | | Settings > developer panel, or the console: `earthRally_main.toggle()` |
 
-**Change the key:** Options > Controls > Bindings, category **Gameplay**, action **Earth Rally: menu**. Any key or
+**Change a key:** Options > Controls > Bindings, category **Gameplay**, the actions starting **Earth Rally:**. Any key or
 controller button works there.
 
 **The menu does not open?**
