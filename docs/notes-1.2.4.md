@@ -5,7 +5,7 @@ into 1.2.5. Nothing is built until the user says so, and UI items get a mock-up 
 
 Built into 1.2.4: 1, 2, 4, 5, and BeamNG.Earth's place name and banner centred under the top row (x 184..884,
 against the row's own 0..1068) rather than left-aligned.
-Built into 1.2.5: 6, 7, 8, 9, 12. Still open: 3 (retest), 10 and 11 (blocked, see below).
+Built into 1.2.5: 6, 7, 8, 9, 12. Built into 1.2.5: 2, 3 (by 6), 6, 7, 8, 9, 10, 11, 12. Nothing from this file is open.
 
 1. *Built.* **The rally block belongs in the top left corner.** The card shown before a stage (the rally clock, the stage, the
    ATC and its distance: `.er-next` in app.earthRallyHud.vue) is centred at `top: 82px`. It should sit in the top
@@ -18,16 +18,26 @@ Built into 1.2.5: 6, 7, 8, 9, 12. Still open: 3 (retest), 10 and 11 (blocked, se
    Move it directly under the rally block in the top left (`beamngEarthBanner` in earthRallyStage.uilayout.json).
    - In the same mock-up, with a toggle for it.
 
-3. **The yellow warning boards before the ATC stand off to the right of the road, not either side of it**
-   (Maryhill Up). *Tried and did not work.* The first guess was that the organisers' pin sits further from the road
+3. *Fixed in 1.2.5, by item 6.* **The yellow warning boards before the ATC stand off to the right of the road**
+   (Maryhill Up). *The first attempt did not work.* The first guess was that the organisers' pin sits further from the road
    than `props.SNAP_M` (30 m), so `roadAt` found nothing and the boards were set out along a straight line from the
    pin. A second, wider look (`SNAP_FAR_M`, 60 m) was added -- and the log says exactly the same thing afterwards:
    `props: atc put down (8 objects, 0 placed by the road map, no road on the map there: straight from the control)`.
    So the road map is genuinely **empty** at the ATC when the props go down, not merely far away.
    Why: the props are put down as soon as the car is within `props.SPAWN_M` of the site, and the run starts with the
    car already beside the ATC, seconds after the level loaded -- BeamNG.Earth has not streamed the roads there yet.
-   Two ways out, and they may be the same fix as item 6: start the run further from the ATC so the roads arrive
-   first, or let a site put its props down again once a road appears (today `s.objs` is set once and never revisited).
+   It was the first, and item 6's fix did it without touching props.lua at all. Confirmed in game (2026-11-13),
+   one session, before and after:
+
+       42.5  atc put down (8 objects, 0 placed by the road map, no road on the map there: straight from the control)
+      170.9  atc put down (8 objects, 8 placed by the road map, road map 0.8 m from the control, heading 351 deg)
+
+   The road is **0.8 m** from the organisers' pin -- it was never far away, BeamNG.Earth simply had not streamed it
+   yet. Starting the run with the car 40 m before the control instead of on top of it gives those seconds back.
+   The user, 2026-11-13: "Those yellow boards are right where they need to be."
+   Note the first run after a cold start still gets the old behaviour (nothing has streamed yet at all); every run
+   after it in the same session is placed by the road map. `SNAP_FAR_M` (60 m) is kept -- a genuinely far pin is
+   still worth catching -- but it was aimed at the wrong cause.
 
 4. *Built.* **The "checked in / your start time" card is in the way of the skip-the-wait prompt** (right bumper + Y on a pad).
    `.er-timecard` is centred at `top: 318px`; the game's own prompt for Interact lands under or behind it. Either
