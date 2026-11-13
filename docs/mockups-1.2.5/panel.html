@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Rally one panel</title>
+<!-- Mock-up for 1.2.5 (not built): BeamNG.Earth's place-name strip and connection banner stop being their own
+     boxes and become rows of ours. Today they are three slabs at three widths in three styles, and the strip
+     overlaps the bottom of our card (in game, 2026-11-13).
+     How it is possible: the apps are not switched off (statusbar.enabled = false also kills the `where` request
+     that fills the place -- statusbar.lua:77), they are moved off screen in our own layout. The app stays mounted,
+     so the data keeps flowing and BeamNG.Earth's ImGui fallback never fires.
+     Positions are the game's own at 1920x1080. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700;800&family=Overpass+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --fnt: "Noto Sans", system-ui, sans-serif;
+  --mono: "Overpass Mono", ui-monospace, monospace;
+  --theme: #1f8fff;
+  --dash: rgba(66, 70, 81, .8);
+  --black-80: rgba(0, 0, 0, .8);
+  --amber: #ffb000;
+  --pink: #e17be1;
+  --tc: #2b88c2;
+  --orange-500: oklch(61.95% 0.1801 43.40);
+  --cg-300: oklch(75.07% 0.0256 267.86);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: var(--fnt); }
+.bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 16px; background: #1a1d22; border-bottom: 1px solid #2a2e35; position: sticky; top: 0; z-index: 10; }
+.bar b { margin-right: 8px; }
+.bar .sep { width: 1px; height: 22px; background: #3a3f48; margin: 0 8px; }
+.bar button { font: inherit; font-size: 13px; padding: 6px 11px; border-radius: 4px; border: 1px solid #3a3f48; background: #23272e; color: #ddd; cursor: pointer; }
+.bar button.on { background: var(--orange-500); border-color: var(--orange-500); color: #fff; }
+.blurb { padding: 12px 16px 0; color: var(--cg-300); font-size: 14px; max-width: 1150px; line-height: 1.55; }
+.blurb b { color: #f0f0f0; } .blurb code { color: #ffc69b; }
+.wrap { padding: 16px; }
+.box { position: relative; width: 100%; max-width: 1920px; margin: 0 auto; aspect-ratio: 16/9; overflow: hidden; border-radius: 6px; box-shadow: 0 0 0 1px #2a2e35; }
+.screen { position: absolute; inset: 0 auto auto 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-size: 16px; overflow: hidden; }
+.abs { position: absolute; }
+.hide { display: none !important; }
+
+.scene { inset: 0; background: linear-gradient(#8fc7f0 0%, #cfe4f2 40%, #c3b492 40%, #9b8f70 100%); }
+.scene .road { position: absolute; left: 50%; top: 40%; width: 30%; height: 60%; transform: translateX(-50%); background: linear-gradient(#78766f, #5d5b5700); clip-path: polygon(44% 0, 56% 0, 100% 100%, 0 100%); }
+
+/* ---------------- NOW: three separate boxes ---------------- */
+.n-card { left: 0; top: 0; width: 750px; background: var(--dash); border-radius: .5rem; padding: 14px 20px 16px; display: grid; grid-template-columns: 170px 1fr; gap: 6px 22px; }
+.n-card .clk { grid-row: span 2; display: flex; flex-direction: column; align-items: center; justify-content: center; border-right: 1px solid rgba(255,255,255,.15); padding-right: 18px; }
+.n-card .clk .l { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; opacity: .85; }
+.n-card .clk .v { font: 700 32px var(--mono); color: var(--pink); }
+.n-card .what { font-size: 30px; font-weight: 700; line-height: 1.2; }
+.n-card .what .ss { color: var(--cg-300); font-weight: 600; margin-right: 6px; }
+.n-card .what .sub { font-size: 22px; font-weight: 500; color: var(--cg-300); }
+.n-card .to { display: flex; align-items: center; gap: 16px; }
+.n-card .to .b { background: var(--tc); border-radius: 10px; font-weight: 700; font-size: 26px; padding: 2px 12px; }
+.n-card .to .d { font: 700 40px var(--mono); }
+.n-card .to .t { font-size: 18px; color: #e8e8e8; line-height: 1.3; }
+/* BeamNG.Earth's own two, where 1.2.4 put them: the strip lands under the card's bottom edge */
+.n-strip { left: 0; top: 128px; width: 700px; height: 64px; display: flex; align-items: center; justify-content: center; }
+.n-strip span { background: rgba(0,0,0,.5); padding: 3px 10px; border-radius: 3px; font-size: 19px; }
+.n-banner { left: 0; top: 196px; width: 700px; height: 60px; background: rgba(104,72,8,.92); border: 1px solid rgba(255,176,0,.5); border-radius: 6px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 0 14px; font-size: 16px; line-height: 1.25; }
+.clash { left: 0; top: 128px; width: 750px; height: 36px; border: 2px dashed #ff5d5d; border-radius: 4px; }
+.clash b { position: absolute; left: 758px; top: 6px; color: #ff8a8a; font-size: 14px; white-space: nowrap; }
+
+/* ---------------- PROPOSED: one panel, ours ---------------- */
+.p-card { left: 0; top: 0; width: 750px; background: var(--dash); border-radius: .5rem; overflow: hidden; }
+.p-main { padding: 14px 20px 14px; display: grid; grid-template-columns: 170px 1fr; gap: 6px 22px; }
+.p-main .clk { grid-row: span 2; display: flex; flex-direction: column; align-items: center; justify-content: center; border-right: 1px solid rgba(255,255,255,.15); padding-right: 18px; }
+.p-main .clk .l { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; opacity: .85; }
+.p-main .clk .v { font: 700 32px var(--mono); color: var(--pink); }
+.p-main .what { font-size: 30px; font-weight: 700; line-height: 1.2; }
+.p-main .what .ss { color: var(--cg-300); font-weight: 600; margin-right: 6px; }
+.p-main .what .sub { font-size: 22px; font-weight: 500; color: var(--cg-300); }
+.p-main .to { display: flex; align-items: center; gap: 16px; }
+.p-main .to .b { background: var(--tc); border-radius: 10px; font-weight: 700; font-size: 26px; padding: 2px 12px; }
+.p-main .to .d { font: 700 40px var(--mono); }
+.p-main .to .t { font-size: 18px; color: #e8e8e8; line-height: 1.3; }
+/* the road: a row of the same panel, divided by a hairline, not a box of its own */
+.p-where { border-top: 1px solid rgba(255,255,255,.12); padding: 7px 20px; display: flex; align-items: center; gap: 10px; font-size: 16px; color: var(--cg-300); }
+.p-where .pin { width: 7px; height: 7px; border-radius: 50%; background: var(--cg-300); opacity: .7; flex: none; }
+.p-where .road { color: #fff; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.p-where .rest { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.p-where .load { margin-left: auto; font: 600 15px var(--mono); color: var(--amber); flex: none; }
+/* a warning: another row of the same panel, amber, with room to wrap */
+.p-warn { border-top: 1px solid rgba(255,176,0,.35); background: rgba(104,72,8,.55); padding: 8px 20px; display: flex; gap: 10px; font-size: 15px; line-height: 1.3; color: #ffd98a; }
+.p-warn .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--amber); flex: none; margin-top: 5px; }
+
+/* ---------------- on stage ---------------- */
+.timing { left: 0; top: 0; width: 288px; }
+.timing .h { background: var(--black-80); text-align: center; font-style: italic; letter-spacing: .08rem; font-size: 19px; padding: 4px; }
+.timing .t { background: var(--theme); text-align: center; font-size: 48px; font-weight: 600; }
+.progress { left: 288px; top: 0; width: 780px; height: 68px; background: var(--black-80); padding: 4px 26px 4px 20px; display: flex; align-items: center; }
+.track { position: relative; width: 100%; height: 5px; background: #fff; }
+.track .fill { position: absolute; left: 0; top: 0; height: 100%; background: var(--theme); }
+.track .sq { position: absolute; top: 50%; width: 14px; height: 14px; transform: translate(-50%,-50%); }
+.track .sq.theme { background: var(--theme); } .track .sq.out { background: #202020; border: 2px solid #fff; }
+.track .lab { position: absolute; top: 12px; transform: translateX(-50%); font: 600 17px var(--mono); white-space: nowrap; }
+.kmread { left: 1068px; top: 0; height: 68px; padding: 0 16px; background: var(--black-80); display: flex; align-items: center; gap: 8px; font: 700 28px var(--mono); border-left: 1px solid rgba(255,255,255,.1); }
+.kmread small { font-size: 17px; color: var(--cg-300); font-weight: 600; }
+/* On stage: the sliver beside the blue stage time and under the progress bar. The blue block runs to about
+   y 85 and the bar's art ends at 68, so the gap is ~18 px -- the row is that thin and no thicker, and the
+   warning is a dot and a word or two rather than a sentence. */
+.s-where { left: 288px; top: 68px; width: 780px; height: 18px; background: var(--black-80); display: flex; align-items: center; gap: 8px; padding: 0 14px; font: 500 13px/1 var(--fnt); color: var(--cg-300); border-radius: 0 0 .3rem .3rem; }
+.s-where .pin { width: 5px; height: 5px; border-radius: 50%; background: var(--cg-300); opacity: .7; flex: none; }
+.s-where .road { color: #fff; font-weight: 600; white-space: nowrap; }
+.s-where .rest { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.s-where .load { font: 600 12px var(--mono); color: var(--amber); flex: none; }
+.s-where .gap { margin-left: auto; }
+/* the warning on stage: a dot the colour of its level and one or two words, from BeamNG.Earth's banner id
+   (banner.lua: 'noserver' / 'lost' / 'edge' / 'drophold' / 'starting'), never its sentence */
+.s-where .warn { display: flex; align-items: center; gap: 6px; flex: none; font-weight: 600; }
+.s-where .warn .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.s-where .warn.warn-warn { color: var(--amber); } .s-where .warn.warn-warn .dot { background: var(--amber); }
+.s-where .warn.warn-error { color: #ff6b6b; } .s-where .warn.warn-error .dot { background: #ff5d5d; }
+.s-where .warn.warn-info { color: var(--cg-300); } .s-where .warn.warn-info .dot { background: var(--cg-300); }
+
+.tag { position: absolute; z-index: 6; font: 700 12px var(--fnt); padding: 2px 7px; border-radius: 3px; white-space: nowrap; }
+.tag.ours { background: #ff6b1a; color: #fff; }
+.tag.gone { background: #a3263b; color: #fff; }
+.tag.stock { background: #2b88c2; color: #fff; }
+.no-tags .tag { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <b>Earth Rally &mdash; one panel</b>
+  <button id="bNow" class="on">Now (1.2.4)</button>
+  <button id="bNew">Proposed</button>
+  <span class="sep"></span>
+  <button id="bPre" class="on">Before the stage</button>
+  <button id="bOn">On stage</button>
+  <span class="sep"></span>
+  <button id="bWarn" class="on">Data warning</button>
+  <button id="bLoad">World loading</button>
+  <button id="bTags" class="on">Labels</button>
+</div>
+
+<div class="blurb" id="blurb"></div>
+
+<div class="wrap"><div class="box" id="box"><div class="screen" id="screen">
+  <div class="abs scene"><div class="road"></div></div>
+
+  <!-- ============ NOW ============ -->
+  <div class="abs n-card" data-v="now" data-m="pre">
+    <div class="clk"><div class="l">Rally clock</div><div class="v">08:24:52</div></div>
+    <div class="what"><span class="ss">Next</span>SS4 Maryhill Up <span class="sub">&middot; 2.6 mi</span></div>
+    <div class="to"><span class="b">ATC</span><span class="d">130 ft</span>
+      <span class="t">Stop at the time control (red clock board).<br>You get your start time there.</span></div>
+  </div>
+  <div class="abs n-strip" data-v="now"><span>Maryhill Loops Road | Washington, United States</span></div>
+  <div class="abs n-banner" data-v="now" data-w="1">Server OK, some internet data sources not answering:<br>basemap.nationalmap.gov unreachable</div>
+  <div class="abs clash" data-v="now" data-m="pre"><b>&larr; the strip runs under the card's bottom edge</b></div>
+  <span class="tag gone" style="left:0; top:270px" data-v="now">three boxes, three widths, three styles</span>
+
+  <!-- ============ PROPOSED, before the stage ============ -->
+  <div class="abs p-card" data-v="new" data-m="pre">
+    <div class="p-main">
+      <div class="clk"><div class="l">Rally clock</div><div class="v">08:24:52</div></div>
+      <div class="what"><span class="ss">Next</span>SS4 Maryhill Up <span class="sub">&middot; 2.6 mi</span></div>
+      <div class="to"><span class="b">ATC</span><span class="d">130 ft</span>
+        <span class="t">Stop at the time control (red clock board).<br>You get your start time there.</span></div>
+    </div>
+    <div class="p-where">
+      <span class="pin"></span>
+      <span class="road">Maryhill Loops Road</span>
+      <span class="rest">&middot; Klickitat County, Washington, United States</span>
+      <span class="load hide" data-l="1">world 150/433</span>
+    </div>
+    <div class="p-warn" data-w="1">
+      <span class="dot"></span>
+      <span>Server OK &mdash; some internet data sources not answering: basemap.nationalmap.gov unreachable
+        (US aerial photos; coarser satellite photos meanwhile)</span>
+    </div>
+  </div>
+  <span class="tag ours" style="left:758px; top:4px" data-v="new" data-m="pre">ours: one panel, rows</span>
+
+  <!-- ============ on stage (both) ============ -->
+  <div class="abs timing" data-m="on"><div class="h">SS4 &middot; MARYHILL UP</div><div class="t">40.0</div></div>
+  <div class="abs progress" data-m="on">
+    <div class="track"><div class="fill" style="width:4%"></div>
+      <span class="sq theme" style="left:0"></span>
+      <span class="sq out" style="left:100%"></span><span class="lab" style="left:100%; transform:translateX(-90%)">2.6 mi</span>
+      <span class="sq theme" style="left:4%"></span></div>
+  </div>
+  <div class="abs kmread" data-m="on">0.1 <small>/ 2.6 mi</small></div>
+  <div class="abs s-where" data-v="new" data-m="on">
+    <span class="pin"></span><span class="road">Maryhill Loops Road</span>
+    <span class="rest">&middot; Klickitat County, Washington</span>
+    <span class="gap"></span>
+    <span class="load hide" data-l="1">150/433</span>
+    <span class="warn warn-warn hide" data-w="1"><span class="dot"></span>imagery</span>
+  </div>
+  <span class="tag stock" style="left:4px; top:124px" data-v="now" data-m="on">stock row ends here</span>
+  <span class="tag ours" style="left:1076px; top:66px" data-v="new" data-m="on">ours: the sliver, 18 px</span>
+</div></div></div>
+
+<script>
+const screen = document.getElementById('screen'), box = document.getElementById('box');
+let version = 'now', moment = 'pre', warn = true, loading = false, tags = true;
+const BLURB = {
+  now: "<b>Now (1.2.4).</b> Our card, then BeamNG.Earth's place-name strip, then its banner &mdash; three boxes at three widths in three styles. The strip is at <code>top: 128px</code> and the card is about 160 px tall, so the strip runs under its bottom edge. Nudging the coordinates does not fix this; there being three panels is the problem.",
+  new: "<b>Proposed.</b> BeamNG.Earth's two apps are moved <i>off screen</i> in our layout &mdash; not disabled, because <code>statusbar.enabled = false</code> also kills the request that supplies the place name (statusbar.lua:77). The app stays mounted, the data keeps flowing, nothing is drawn, and no ImGui fallback fires. We then draw it: the road becomes a <b>row of our own panel</b> under a hairline, and a warning becomes an amber row of the same panel with room to wrap. On stage it is far smaller: the blue stage time runs to about y 85 and the progress bar's art ends at 68, so the row fits the <b>18 px sliver</b> between them, beside the timer rather than under it &mdash; <code>288..1068</code>, 13 px text. No sentence there: a dot the colour of the warning's level and <b>one or two words</b>, taken from BeamNG.Earth's banner <code>id</code> (<code>noserver</code>, <code>lost</code>, <code>edge</code>, <code>drophold</code>) rather than its prose. The full wording stays in the panel before the stage, where there is room for it. <b>World loading</b> shows the honest <code>150/433</code> rather than a percentage: the figure is a queue depth and it counts backwards."
+};
+function apply() {
+  screen.classList.toggle('no-tags', !tags);
+  for (const el of document.querySelectorAll('[data-v]')) el.classList.toggle('hide', el.dataset.v !== version);
+  for (const el of document.querySelectorAll('[data-m]')) {
+    if (el.dataset.m !== moment) el.classList.add('hide');
+    else if (!el.dataset.v || el.dataset.v === version) el.classList.remove('hide');
+  }
+  for (const el of document.querySelectorAll('[data-w]')) {
+    if (!warn) el.classList.add('hide');
+    else if ((!el.dataset.v || el.dataset.v === version) && (!el.dataset.m || el.dataset.m === moment)) el.classList.remove('hide');
+  }
+  for (const el of document.querySelectorAll('[data-l]')) el.classList.toggle('hide', !loading);
+  document.getElementById('blurb').innerHTML = BLURB[version];
+  for (const [id, on] of [['bNow', version==='now'], ['bNew', version==='new'], ['bPre', moment==='pre'],
+                          ['bOn', moment==='on'], ['bWarn', warn], ['bLoad', loading], ['bTags', tags]])
+    document.getElementById(id).classList.toggle('on', on);
+}
+const fit = () => screen.style.transform = `scale(${box.clientWidth / 1920})`;
+document.getElementById('bNow').onclick = () => { version='now'; apply(); };
+document.getElementById('bNew').onclick = () => { version='new'; apply(); };
+document.getElementById('bPre').onclick = () => { moment='pre'; apply(); };
+document.getElementById('bOn').onclick = () => { moment='on'; apply(); };
+document.getElementById('bWarn').onclick = () => { warn=!warn; apply(); };
+document.getElementById('bLoad').onclick = () => { loading=!loading; apply(); };
+document.getElementById('bTags').onclick = () => { tags=!tags; apply(); };
+addEventListener('resize', fit); fit(); apply();
+</script>
+</body>
+</html>

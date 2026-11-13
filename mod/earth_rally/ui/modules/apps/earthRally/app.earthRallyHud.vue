@@ -7,6 +7,7 @@
 
     <!-- 1 driving to the stage: the stock dashboard's look, in the countdown's place -->
     <div v-if="show.next" class="er-panel er-next">
+      <div class="er-next-main">
       <div class="er-next-clock">
         <div class="er-label">Rally clock</div>
         <div class="er-pink">{{ f.clockText }}</div>
@@ -23,21 +24,58 @@
       <div class="er-next-to" v-else>
         <span class="er-next-text">Getting ready: the world loading at the stage{{ f.preview ? " (preview)" : "" }}...</span>
       </div>
+      </div>
+      <!-- where you are, and what BeamNG.Earth has to say: rows of this panel, not boxes of its own -->
+      <div v-if="show.where === 'next'" class="er-where">
+        <span class="er-where-pin"></span>
+        <span v-if="f.where.road" class="er-where-road">{{ f.where.road }}</span>
+        <span v-if="f.where.rest" class="er-where-rest">{{ f.where.road ? "· " : "" }}{{ f.where.rest }}</span>
+        <span v-if="f.where.loading" class="er-where-load">world {{ f.where.loading }}</span>
+      </div>
+      <div v-if="show.where === 'next' && f.where.warn" class="er-where-warn" :class="'er-lv-' + f.where.warn.level">
+        <span class="er-where-dot"></span>
+        <span>{{ f.where.warn.text || f.where.warn.label }}</span>
+      </div>
     </div>
 
     <!-- 2 the timecard line under the stock countdown -->
     <div v-if="show.timecard" class="er-panel er-timecard">
+      <div class="er-timecard-main">
       <div v-if="f.atcTime"><div class="er-label">Checked in</div><div class="er-mono">{{ fmt.clock(f.atcTime) }}</div></div>
       <div v-else-if="f.missedAtc"><div class="er-label">Time control</div><div class="er-mono er-warn">missed +60 s</div></div>
       <div v-else><div class="er-label">Start</div><div class="er-mono">on the line</div></div>
       <div><div class="er-label">Your start</div><div class="er-mono er-pink">{{ f.startAt ? fmt.clock(f.startAt) : "when you stop" }}</div></div>
       <div v-if="f.state === 'toStart'" class="er-timecard-hint">On the line, stopped: <span class="er-kbd">Interact (Shift+E)</span> skips the wait</div>
+      </div>
+      <div v-if="show.where === 'timecard'" class="er-where">
+        <span class="er-where-pin"></span>
+        <span v-if="f.where.road" class="er-where-road">{{ f.where.road }}</span>
+        <span v-if="f.where.rest" class="er-where-rest">{{ f.where.road ? "· " : "" }}{{ f.where.rest }}</span>
+        <span v-if="f.where.loading" class="er-where-load">world {{ f.where.loading }}</span>
+      </div>
+      <div v-if="show.where === 'timecard' && f.where.warn" class="er-where-warn" :class="'er-lv-' + f.where.warn.level">
+        <span class="er-where-dot"></span>
+        <span>{{ f.where.warn.text || f.where.warn.label }}</span>
+      </div>
     </div>
 
     <!-- 3 the big numeral for the last seconds, GO, the jump start -->
     <div v-if="show.bigCount" class="er-bigcount">{{ f.countdown }}</div>
     <div v-else-if="show.go" class="er-bigcount er-go">GO</div>
     <div v-if="show.jump" class="er-jump">JUMP START +10 s<small>You moved before GO. The clock runs from your start time.</small></div>
+
+    <!-- 3b on stage there is no panel of ours: the same line is the thin sliver beside the stage time, under
+         the progress bar (18 px, between the bar's art at 68 and the blue block's foot at ~86) -->
+    <div v-if="show.where === 'sliver'" class="er-sliver">
+      <span class="er-where-pin"></span>
+      <span v-if="f.where.road" class="er-where-road">{{ f.where.road }}</span>
+      <span v-if="f.where.rest" class="er-sliver-rest">{{ f.where.road ? "· " : "" }}{{ f.where.rest }}</span>
+      <span class="er-sliver-gap"></span>
+      <span v-if="f.where.loading" class="er-where-load">{{ f.where.loading }}</span>
+      <span v-if="f.where.warn" class="er-sliver-warn" :class="'er-lv-' + f.where.warn.level">
+        <span class="er-where-dot"></span>{{ f.where.warn.label }}
+      </span>
+    </div>
 
     <!-- 4 km done beside the stock progress bar; off route in the bar's place -->
     <div v-if="show.km" class="er-km">{{ fmt.lenValue(f.doneM, units) }} <small>/ {{ fmt.len(f.totalM, units) }}</small></div>
@@ -132,8 +170,49 @@ const penWords = computed(() => {
 /* the rally block lives in the top left corner, hard against the edge, as the stage clock and progress meter do
    (the user, 2026-11-13). .er-next and .er-timecard never show at once (hudFrame: show.next is the drive to the
    stage, show.timecard the start line), so they share the corner. */
+/* The panel's rows: where you are, and BeamNG.Earth's warning. Rows of the same panel, divided by a hairline --
+   BeamNG.Earth's own strips are off screen during a stage (earthAdapter.holdStrips) and three boxes at three
+   widths in three styles was the thing the user objected to. */
+.er-where {
+  border-top: 1px solid rgba(255, 255, 255, 0.12); padding: 7px 20px;
+  display: flex; align-items: center; gap: 10px; font-size: 16px; color: var(--er-muted-c, #aab);
+  .er-where-pin { width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: .7; flex: none; }
+  .er-where-road { color: #fff; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .er-where-rest { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .er-where-load { margin-left: auto; font: 600 15px "Overpass Mono", monospace; color: #ffb000; flex: none; }
+}
+.er-where-warn {
+  border-top: 1px solid rgba(255, 176, 0, 0.35); background: rgba(104, 72, 8, 0.55);
+  padding: 8px 20px; display: flex; gap: 10px; font-size: 15px; line-height: 1.3; color: #ffd98a;
+  .er-where-dot { width: 8px; height: 8px; border-radius: 50%; background: #ffb000; flex: none; margin-top: 5px; }
+  &.er-lv-error { border-top-color: rgba(255, 93, 93, 0.45); background: rgba(104, 20, 20, 0.6); color: #ffc2c2;
+    .er-where-dot { background: #ff5d5d; } }
+}
+
+/* On stage there is no panel of ours, so the same line is the sliver between the progress bar's art (ends at 68)
+   and the foot of the blue stage time (~86): 18 px, beside the timer rather than under it. No sentence fits here,
+   so the warning is a dot of its level's colour and a word (hudFrame.WARN_WORDS). */
+.er-sliver {
+  position: absolute; left: 288px; top: 68px; width: 780px; height: 18px;
+  background: rgba(0, 0, 0, 0.8); border-radius: 0 0 0.3rem 0.3rem;
+  display: flex; align-items: center; gap: 8px; padding: 0 14px;
+  font: 500 13px/1 "Noto Sans", sans-serif; color: var(--er-muted-c, #aab);
+  .er-where-pin { width: 5px; height: 5px; }
+  .er-where-road { white-space: nowrap; }
+  .er-sliver-rest { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .er-sliver-gap { margin-left: auto; }
+  .er-where-load { font: 600 12px "Overpass Mono", monospace; color: #ffb000; flex: none; margin-left: 0; }
+  .er-sliver-warn { display: flex; align-items: center; gap: 6px; flex: none; font-weight: 600; color: #ffb000;
+    .er-where-dot { width: 7px; height: 7px; border-radius: 50%; background: #ffb000; flex: none; margin-top: 0; }
+    &.er-lv-error { color: #ff6b6b; .er-where-dot { background: #ff5d5d; } }
+    &.er-lv-info { color: var(--er-muted-c, #aab); .er-where-dot { background: currentColor; } } }
+}
+
 .er-next {
-  left: 0; top: 0; width: 750px; padding: 14px 20px 16px;
+  left: 0; top: 0; width: 750px; padding: 0; overflow: hidden;
+}
+.er-next-main {
+  padding: 14px 20px 16px;
   display: grid; grid-template-columns: 170px 1fr; gap: 6px 22px;
   .er-next-clock {
     grid-row: span 2; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -148,7 +227,10 @@ const penWords = computed(() => {
 }
 
 .er-timecard {
-  left: 0; top: 0; width: 450px; padding: 10px 16px;
+  left: 0; top: 0; width: 450px; padding: 0; overflow: hidden;
+}
+.er-timecard-main {
+  padding: 10px 16px;
   display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
   .er-timecard-hint { grid-column: span 2; font-size: 15px; color: #ddd; padding-top: 4px; }
 }

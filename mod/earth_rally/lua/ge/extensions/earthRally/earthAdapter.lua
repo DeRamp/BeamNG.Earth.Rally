@@ -138,6 +138,67 @@ function M.moveOriginTo(lat, lon)
   return res == true, why
 end
 
+-- BeamNG.Earth's place-name strip and connection banner, off screen while a stage runs: Earth Rally shows the same
+-- things in its own panel, and three boxes at three widths was a mess (the user, 2026-11-13).
+--
+-- Not by switching them off. `statusbar.enabled = false` also stops the 'where' request that fills the place
+-- (statusbar.lua: `function M.request(...) if not M.enabled ... then return nil end`), so the road name we want to
+-- show would freeze and the game's minimap would lose its label with it; and that flag is the player's own
+-- `statusBar` setting.
+--
+-- Instead the two apps are simply not in our stage layout, so nothing draws them -- and we tell BeamNG.Earth they
+-- are on screen, because otherwise it draws each with ImGui itself (its core.lua: `if not hudapps.mounted('status')
+-- then statusbar.draw(...)`), which would be worse than leaving them alone. `core.hudApp` is its own published
+-- entry point: the very call its apps make, every three seconds, to announce themselves.
+--
+-- Held, not set once: those apps fire `hudApp(name, false)` as they are destroyed in the layout swap, so the runner
+-- asserts this every frame while the stage layout is on, and gives them back at the end.
+M.EARTH_STRIPS = { 'status', 'banner' }
+function M.holdStrips(on)
+  local c = core()
+  if not (c and c.hudApp) then return false end
+  local ok = true
+  for _, n in ipairs(M.EARTH_STRIPS) do
+    if not pcall(c.hudApp, n, on and true or false) then ok = false end
+  end
+  return ok
+end
+
+-- Where the car is, from BeamNG.Earth's public API: { street, place, region, country }, each only when it has one.
+function M.place()
+  local a = api()
+  if not (a and a.has and a.has('place') and a.place) then return nil end
+  local ok, p = pcall(a.place)
+  return (ok and type(p) == 'table') and p or nil
+end
+
+-- What BeamNG.Earth's connection banner is saying: { id, level, text, visible }. The id is the stable part
+-- ('noserver', 'lost', 'edge', 'drophold', 'starting'); the HUD shows a word of its own for it rather than the
+-- sentence, which is far too long for a stage. nil when it cannot be read.
+function M.earthBanner()
+  local ok, bn = pcall(require, 'beamngEarth/banner')
+  if not (ok and type(bn) == 'table' and bn.current) then return nil end
+  local okC, c = pcall(bn.current)
+  if not (okC and type(c) == 'table') then return nil end
+  return { id = c.id, level = c.level, text = c.text, visible = c.visible }
+end
+
+-- How much of the world round the car is still arriving: { done, total }, nil once it is all there.
+--
+-- No API for this: BeamNG.Earth's status text carries `loading: done/total` (its statusbar.loadingLine reads the
+-- same thing), and that text is in core's state. It is a queue depth, not a share of the world -- the total grows
+-- as more is queued -- so it is shown as the fraction BeamNG.Earth itself shows, never as a percentage, which would
+-- appear to count backwards.
+function M.loading()
+  local c = core()
+  local ok, st = pcall(function() return c and c._state and c._state() end)
+  if not (ok and type(st) == 'table' and type(st.status) == 'string') then return nil end
+  local done, total = st.status:match('loading:%s*(%d+)/(%d+)')
+  done, total = tonumber(done), tonumber(total)
+  if not (done and total and total > 0 and done < total) then return nil end
+  return { done = done, total = total }
+end
+
 -- BeamNG.Earth's rebase distance (m from the origin before it moves the world), and setting it (clamped by it to
 -- 2000..16000). nil when it cannot be read.
 function M.rebaseDistance()

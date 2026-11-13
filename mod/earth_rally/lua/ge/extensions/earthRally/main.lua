@@ -19,7 +19,7 @@ local preview = require('earthRally/preview')
 
 local M = {}
 local logTag = 'earthRally'
-M.VERSION = '1.2.4'
+M.VERSION = '1.2.5'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_HZ = 30                  -- the HUD's streams this often while something moves on it
 M.STREAM_IDLE_HZ = 2              -- ... and this often once the run is over
@@ -39,7 +39,8 @@ M.SELFTEST_REQUEST = '/earthRally/selftest/request.json'
 -- loop is install, start the game, drive the stage, and doing the first two by hand each time wastes the evening.
 M.PLAYTEST_REQUEST = '/earthRally/playtest.json'
 M.PLAYTEST_WAIT_S = 420         -- the world given this long to come up before giving up on it
-M.PLAYTEST_SETTLE_S = 4         -- ... and this long settled before the stage is asked for
+M.PLAYTEST_SETTLE_S = 12        -- ... and this long settled before the stage is asked for, so BeamNG.Earth has
+                                -- streamed the roads round the control before the run puts its boards down
 local playtest = nil     -- { event, stage, what, t, levelAsked, ready }
 
 -- The developer panel (the ImGui window): console toggle; the setting shows / hides it.
@@ -76,8 +77,16 @@ function M.toggleMenu()
   end
   return M.openMenu()
 end
+-- The game's UI state. Our HUD is hidden while a menu is up: it is drawn over the pause menu otherwise, which is
+-- in the way now that the rally block sits in the top left corner where the menu draws (the user, 2026-11-13).
+-- BeamNG.Earth's own apps do the same (its credits.lua: `toState:sub(1, 4) == 'menu' or toState == 'loading'`).
 function M.onUiChangedState(toState)
-  if type(toState) == 'string' then menuOpen = toState == M.ROUTE end
+  if type(toState) ~= 'string' then return end
+  menuOpen = toState == M.ROUTE
+  -- Our own full-screen page counts too: it is not called 'menu...' but it is just as much in the way. So does
+  -- BeamNG.Earth's world map, a route of its own ('beamngEarthMap', its credits.lua MAP_ROUTE).
+  runner.uiHidden = toState:sub(1, 4) == 'menu' or toState == 'loading' or toState == M.ROUTE
+    or toState == 'beamngEarthMap'
 end
 
 ------------------------------------------------------------------------------------------ the developer panel
@@ -636,8 +645,10 @@ function M.onClientEndMission()
 end
 
 function M.onExtensionLoaded()
-  -- (boards and tents a run left before a Lua reload: taken away; the car's brake / clutch overrides handed back)
+  -- (boards and tents a run left before a Lua reload: taken away; the car's brake / clutch overrides handed back,
+  --  and BeamNG.Earth's strips given back in case a run was cut short holding them)
   pcall(require('earthRally/props').sweep)
+  pcall(earth.holdStrips, false)
   local veh = getPlayerVehicle and getPlayerVehicle(0)
   if veh then pcall(runner._vehCtl, veh, 'off') end
   settings.load()

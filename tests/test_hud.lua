@@ -121,6 +121,55 @@ do
   T.check(ours.show.jump, 'a jump start: our red card')
   rl, ours = hud.build(run('waitStart', { startAt = 38610, jumpStart = true, jumpStartAt = 38600 }), { now = 38609 })
   T.check(not ours.show.jump, '... for a few seconds only')
+  -- staged and ready (1.2.5): the stage apps are up through the countdown, reading zero, not only from GO
+  -- a minute out, our timecard has the corner to itself: the stock stage clock would sit on top of it
+  rl, ours = hud.build(run('waitStart', { startAt = 38610 }), { now = 38580 })
+  T.check(ours.show.timecard and not rl.showStageApps and not ours.show.km,
+    'waiting, a minute out: our timecard alone in the corner, no km readout without its bar')
+  -- inside the last seconds the timecard goes and they come up, reading zero
+  rl, ours = hud.build(run('waitStart', { startAt = 38610 }), { now = 38604 })
+  T.check(not ours.show.timecard and rl.showStageApps == true and rl.uiColors and rl.uiColors.theme
+    and rl.stageData and rl.stageData.currentSSTime == 0 and rl.stageData.isActive == false
+    and rl.stageData.completion.distM == 0 and rl.stageData.completion.distPct == 0,
+    'waiting, the last seconds: the stage clock and progress meter up, reading zero')
+  T.check(ours.show.km and ours.doneM == 0 and ours.totalM == rl.stageData.completion.totalDistM,
+    'waiting: our km readout up at 0 of the stage')
+
+
+  -- where the car is: BeamNG.Earth's strips are off screen during a stage, so the HUD carries it
+  local WHERE = { place = { street = 'Maryhill Loops Road', place = 'Klickitat County', region = 'Washington',
+                            country = 'United States' } }
+  rl, ours = hud.build(run('toAtc', { toControlM = 400 }), { now = 38500, place = WHERE.place })
+  T.check(ours.show.where == 'next' and ours.where.road == 'Maryhill Loops Road'
+    and ours.where.rest == 'Klickitat County, Washington, United States',
+    'driving to the stage: the road is a row of our own panel')
+  rl, ours = hud.build(run('toStart', { toControlM = 50, atcTime = 38400, startAt = 38600 }),
+    { now = 38500, place = WHERE.place })
+  T.check(ours.show.where == 'timecard', 'on the way to the line: the row goes on the timecard')
+  rl, ours = hud.build(run('running', { clock = 60, along = 1500 }), { now = 38700, place = WHERE.place })
+  T.check(ours.show.where == 'sliver', 'on the stage: the thin sliver beside the timer')
+  rl, ours = hud.build(run('running', { clock = 60, along = 1500 }), { now = 38700 })
+  T.check(ours.where == nil and not ours.show.where, 'nothing to say: no row at all')
+
+  -- the loading figure is BeamNG.Earth's own fraction, never a percentage (it is a queue depth: the total grows)
+  rl, ours = hud.build(run('running', { clock = 60, along = 1500 }),
+    { now = 38700, place = WHERE.place, loading = { done = 150, total = 433 } })
+  T.check(ours.where.loading == '150/433', 'the world still arriving: the fraction as it comes')
+
+  -- a warning is a word of ours from the banner's id, with its level; never the banner's sentence
+  rl, ours = hud.build(run('running', { clock = 60, along = 1500 }), { now = 38700, place = WHERE.place,
+    earthBanner = { id = 'noserver', level = 'error', text = 'a very long sentence about the server', visible = true } })
+  T.check(ours.where.warn and ours.where.warn.label == 'no server' and ours.where.warn.level == 'error'
+    and ours.where.warn.text, 'a warning: our word, its level, the full text kept for the panel')
+  rl, ours = hud.build(run('running', { clock = 60, along = 1500 }), { now = 38700, place = WHERE.place,
+    earthBanner = { id = 'ok', level = 'info', text = '', visible = false } })
+  T.check(ours.where and not ours.where.warn, 'all well: no warning, and the road still shown')
+
+  -- a menu is up: the HUD draws nothing (it is over the pause menu otherwise)
+  rl, ours = hud.build(run('running', { clock = 60, along = 1500, offRoute = true }),
+    { now = 38700, road = 'Maryhill Loops Road', uiHidden = true })
+  T.check(next(ours.show) == nil, 'a menu up: our HUD shows nothing')
+  T.check(rl ~= nil and rl.showStageApps == true, '... the stock apps are left to the game')
 
   -- on the stage
   rl, ours = hud.build(run('running', { clock = 0.4, along = 31 }), { now = 38610.4 })

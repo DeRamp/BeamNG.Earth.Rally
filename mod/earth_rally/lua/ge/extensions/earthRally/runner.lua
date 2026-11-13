@@ -56,7 +56,14 @@ M.TELEPORT_SETTLE_S = 2        -- BeamNG.Earth sets the car down a moment after 
 M.ATC_MAX_FROM_START_M = 1500  -- an ATC farther from the start than this is not this stage's (left out)
 M.STOP_MAX_FROM_FINISH_M = 3000
 M.CAR_BEFORE_ATC_M = 40
-M.NO_SET_DOWN_M = 150          -- a car driven to within this of the ATC is not moved
+M.NO_SET_DOWN_M = 150          -- a car driven to within this of the ATC is not moved ...
+M.DRIVEN_THERE_MIN_M = 15      -- ... unless it is this near or nearer, when it is set down before the control.
+                               -- A car standing on the control is stopped inside its zone, so the check-in fires at
+                               -- once and the drive up to it never happens (in game, 2026-11-13: `run: toAtc` and
+                               -- `Checked in` 0.03 s apart, the car having respawned beside the ATC). Derived from
+                               -- CONTROL_RADIUS_M (12) and a few metres over, not picked: the band between this and
+                               -- NO_SET_DOWN_M is where a player who drove up and parked keeps the spot they chose,
+                               -- and every metre added to it is a player moved who did not ask to be.
 M.LANDMARK_OFF_M = 15          -- a junction or bridge this close to the stage line is on it
 M.CONTROL_RADIUS_M = 12        -- stopped this close to a control's board: checked in
 M.STOP_CONTROL_RADIUS_M = 25
@@ -103,6 +110,7 @@ M.STAGE_APPS = { 'earthRallyHud', 'earthRallyResults', 'rallyCountdown', 'rallyS
 M.RECOVER_UP_M = 0.5           -- a car put back on the road / upright: this far above the ground
 M.RESULTS_CLOSE_M = 100        -- the results card closes once the car is driven this far from where it stopped ...
 M.RESULTS_TIMEOUT_S = 120      -- ... or after this long
+M.uiHidden = false             -- a game menu is up: the HUD draws nothing (main.lua's onUiChangedState sets it)
 M.SOUND_STOPPED = 'event:UI_Checkpoint'
 M.SOUND_FINISH = 'event:UI_CountdownGo'
 
@@ -304,8 +312,10 @@ local function layoutOn()
   run.oldLayout = stateLayout() or 'beamngEarth'
   if run.oldLayout ~= M.STAGE_LAYOUT then pcall(gs.setGameState, nil, M.STAGE_LAYOUT) end
   run.layoutCheckIn = M.LAYOUT_CHECK_S
-  log('I', logTag, string.format('stage layout put on (was %s; game state now %s)', tostring(run.oldLayout),
-    tostring(stateLayout())))
+  -- BeamNG.Earth's own strips off screen for the stage: the HUD shows what they carried, in its own panel
+  run.stripsHeld = earth.holdStrips(true)
+  log('I', logTag, string.format('stage layout put on (was %s; game state now %s)%s', tostring(run.oldLayout),
+    tostring(stateLayout()), run.stripsHeld and "; BeamNG.Earth's strips off screen" or ''))
 end
 local function layoutOff()
   local gs = rawget(_G, 'core_gamestate')
@@ -313,6 +323,11 @@ local function layoutOff()
     local back = run.oldLayout ~= M.STAGE_LAYOUT and run.oldLayout or 'beamngEarth'
     pcall(gs.setGameState, nil, back)
     log('I', logTag, 'stage layout off: ' .. tostring(back) .. ' back')
+  end
+  -- (outside the check above: the strips go back even when the layout never went on)
+  if run and run.stripsHeld then
+    earth.holdStrips(false)
+    run.stripsHeld = nil
   end
   if run then run.oldLayout = nil end
 end
@@ -538,7 +553,10 @@ end
 -- it after that, in onDrawDebug (main.lua): the last hook before the frame is drawn. Its size stays the game's.
 M.CLOCK_VIEW_NAME = 'rallyStartClockView'
 M.CLOCK_VIEW_RIGHT = 0.015      -- (gap to the screen's right edge, share of its width)
-M.CLOCK_VIEW_TOP = 0.03         -- (gap to the screen's top edge, share of its height)
+M.CLOCK_VIEW_CENTRE_Y = 0.5     -- (the view's middle this far down the screen, share of its height). It sat 3 %
+                                -- from the top until 1.2.5, where the game's own messages and toasts appear and it
+                                -- was in their way (the user, 2026-11-13). Halfway down the right edge clears both
+                                -- those and the boost gauge that covered it when 1.1.0 put it above the speedometers.
 function M.placeClockView()
   if not (run and rawget(_G, M.CLOCK_EXT)) then return end     -- (only in our runs: the game's rally mode keeps its own)
   if settings.get('clockView') ~= 'right' then return end       -- ('top': where the game puts it; 'off': not shown)
@@ -553,7 +571,7 @@ function M.placeClockView()
   local w, h = res and res.x, res and res.y
   if not (W and H and w and h and w > 1 and h > 1) then return end
   local x = math.floor(W - w - W * M.CLOCK_VIEW_RIGHT + 0.5)
-  local y = math.floor(H * M.CLOCK_VIEW_TOP + 0.5)
+  local y = math.floor(H * M.CLOCK_VIEW_CENTRE_Y - h / 2 + 0.5)
   view.compositeRect = RectI(math.max(0, x), math.max(0, y), w, h)
 end
 
@@ -706,7 +724,8 @@ local function stepPlace()
     -- start, walked back along its bends), facing along it; never the organisers' point itself, which can be metres
     -- off the road
     local _, sp = aheadDir(run.line, run.cum, run.startM)
-    local near = p and not run.teleported and (p.x - a.x) ^ 2 + (p.y - a.y) ^ 2 <= M.NO_SET_DOWN_M ^ 2
+    local d2a = p and ((p.x - a.x) ^ 2 + (p.y - a.y) ^ 2)
+    local near = p and not run.teleported and d2a <= M.NO_SET_DOWN_M ^ 2 and d2a > M.DRIVEN_THERE_MIN_M ^ 2
     if near then
       -- (driven here, e.g. by Route to start: left where it is)
       run.checks.atcSetDown = 'driven there'
@@ -1225,6 +1244,8 @@ function M.update(dtReal, dtSim)
   -- layout back, and the progress bar, the finish time and the results card were gone (in game, 2026-11-13)
   -- Only over the plain driving layouts (holdOver): the radial menu, the garage, photo mode keep theirs.
   if run.oldLayout then
+    -- (held, not set once: the strips' apps say "gone" as the layout swap destroys them)
+    if run.stripsHeld then earth.holdStrips(true) end
     if run.layoutCheckIn then
       run.layoutCheckIn = run.layoutCheckIn - (dtReal or 0)
       if run.layoutCheckIn <= 0 then run.layoutCheckIn = nil pcall(logLayout) end
@@ -1453,6 +1474,7 @@ end
 function M.uiFrame()
   return hudFrame.build(run, {
     now = M.clock() or 0, speed = run and speed() or 0, canSkip = M.canSkip(), units = settings.get('units'),
+    uiHidden = M.uiHidden, place = earth.place(), earthBanner = earth.earthBanner(), loading = earth.loading(),
     noRallyLoop = extensions and extensions.isExtensionLoaded and extensions.isExtensionLoaded('gameplay_rallyLoop')
       or false,
     c = { stoppedMs = M.STOPPED_MS, startZoneBeforeM = M.START_ZONE_BEFORE_M, stopRadiusM = M.STOP_CONTROL_RADIUS_M,
