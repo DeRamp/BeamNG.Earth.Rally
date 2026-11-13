@@ -32,7 +32,7 @@ Status: alpha (1.2.0: the player UI). Needs BeamNG.drive 0.40.5 and BeamNG.Earth
      control (+60 s).
    - On the start line you are held until GO (the game's own hold, as its rally countdown does: rev freely, the car
      does not move), with the car's launch control switched on where it has one. The start tree's LED clock counts down, with the game's
-     picture-in-picture view of it on the right above the gauges (a setting); the game's rally countdown shows the squares and the
+     picture-in-picture view of it in the top right corner (a setting); the game's rally countdown shows the squares and the
      rally clock, a big 5-4-3-2-1 and GO; the co-driver says 30 s, good luck, 10 s, 5-4-3-2-1, go.
      Early? The game's **Interact** control (Shift+E; the modifier + Y on a pad), stopped on the line, skips to 6 s
      before your start, as its rally mode does. Moving off before GO is a jump start (+10 s); reaching the line after your start time is late (+10 s a minute,

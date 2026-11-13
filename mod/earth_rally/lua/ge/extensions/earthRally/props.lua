@@ -43,8 +43,11 @@ M.BOARD_OUT_M = -0.3        -- (a little inside the road's edge, as the boards s
 M.TENT_OUT_M = 1.5          -- the gazebo's centre (it is 3 m square: its near side at the road's edge)
 M.FINISH_BOARD_OUT_M = 0.5  -- the flying finish's boards just outside the road (cars pass them at speed)
 -- the start tree as the game's stages stand it (measured on its 8 stock stages): a metre or two past the start
--- position, 1 m off the road's right edge, turned ~25 degrees towards the road so its clock faces the car
-M.TREE_FWD_M, M.TREE_OUT_M, M.TREE_YAW = 1.5, 1.0, -25
+-- position, 1 m off the road's right edge, turned ~25 degrees so its clock (on the model's -Y side) faces back
+-- towards the car and the road. (-25 before 1.2.1: measured from the stock stages' matrices read the other way round,
+-- so with the boards' rotation fixed the clock faced down the stage, away from the car, and the picture-in-picture
+-- looked at its back: found at Maryhill Up, 2026-11-12.)
+M.TREE_FWD_M, M.TREE_OUT_M, M.TREE_YAW = 1.5, 1.0, 25
 M.DEFAULT_HALF_WIDTH_M = 3.0
 M.SNAP_M = 30               -- a site this close to a road is on it
 M.TURN_MAX_DEG = 60         -- walking the road map: at a junction, the road on that turns at most this much

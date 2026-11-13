@@ -462,12 +462,12 @@ local function startClockOff()
   if run then run.clockExtOwned = nil end
 end
 
--- The start clock's picture-in-picture on the right of the screen, above the speedometers (the game puts it at the top
--- in the middle, in the driver's view). The game's extension sets its place every frame from fixed values; this moves
+-- The start clock's picture-in-picture in the top right corner of the screen (the game puts it at the top in the
+-- middle, in the driver's view; above the speedometers, as in 1.1.0, the boost gauge covered it). The game's extension sets its place every frame from fixed values; this moves
 -- it after that, in onDrawDebug (main.lua): the last hook before the frame is drawn. Its size stays the game's.
 M.CLOCK_VIEW_NAME = 'rallyStartClockView'
 M.CLOCK_VIEW_RIGHT = 0.015      -- (gap to the screen's right edge, share of its width)
-M.CLOCK_VIEW_BOTTOM = 0.36      -- (the view's bottom this share of the screen's height above its bottom edge)
+M.CLOCK_VIEW_TOP = 0.03         -- (gap to the screen's top edge, share of its height)
 function M.placeClockView()
   if not (run and rawget(_G, M.CLOCK_EXT)) then return end     -- (only in our runs: the game's rally mode keeps its own)
   if settings.get('clockView') ~= 'right' then return end       -- ('top': where the game puts it; 'off': not shown)
@@ -482,7 +482,7 @@ function M.placeClockView()
   local w, h = res and res.x, res and res.y
   if not (W and H and w and h and w > 1 and h > 1) then return end
   local x = math.floor(W - w - W * M.CLOCK_VIEW_RIGHT + 0.5)
-  local y = math.floor(H - h - H * M.CLOCK_VIEW_BOTTOM + 0.5)
+  local y = math.floor(H * M.CLOCK_VIEW_TOP + 0.5)
   view.compositeRect = RectI(math.max(0, x), math.max(0, y), w, h)
 end
 
