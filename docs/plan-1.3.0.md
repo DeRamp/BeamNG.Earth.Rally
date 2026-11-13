@@ -74,7 +74,8 @@ that needs Python and BeamNG.Earth's source. Players who import their own maps g
 
 ## Pacenote generator overhaul
 
-The user (2026-11-13): 1.3.0 is when the pacenote generator gets overhauled. Details to agree with the user.
+Moved to 1.4.0 (the co-driver) when the user split 1.3.0 in two (2026-11-13; docs/roadmap.md). Details to agree
+with the user.
 
 ## A stage with no ATC gets one
 

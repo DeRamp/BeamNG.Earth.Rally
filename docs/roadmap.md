@@ -17,7 +17,7 @@ from the planning list.
 
 ## 1.3.0: stages for everyone
 
-Any imported map drives well with no recce and no Python.
+Any imported map drives with no recce and no Python, and starts when you're ready.
 
 | Item | Size |
 |---|---|
@@ -25,11 +25,18 @@ Any imported map drives well with no recce and no Python.
 | Stage pre-loading: the stage corridor loaded before the start, a loaded % on screen, start any time (21) | M |
 | An ATC added to stages without one (3) | S |
 | Maps that group stages in folders import properly (4) | S |
-| Pacenote generator overhaul: crests, jumps, cautions from the height profile (2) | L |
-| Co-driver settings: call timing, detail, voice (26) | M |
 | Version checks at startup, a clear message when BeamNG or BeamNG.Earth changed (23) | S |
 
-## 1.4.0: make and share stages
+## 1.4.0: the co-driver
+
+Pacenotes worth trusting.
+
+| Item | Size |
+|---|---|
+| Pacenote generator overhaul: crests, jumps, cautions from the height profile (2) | L |
+| Co-driver settings: call timing, detail, voice (26) | M |
+
+## 1.5.0: make and share stages
 
 Players build their own stages and pass them around.
 
@@ -39,19 +46,6 @@ Players build their own stages and pass them around.
 | Rally setup mode: recce-drive any roads to make a stage, place your own ATC, start, finish and stop (18) | M |
 | In-game editor, top-down on the map: draw or reroute stages, drag controls, edit existing stages (11) | L |
 | Local leaderboards per rally file, friends' times through shared files (20) | S |
-
-## 1.5.0: the full rally
-
-From a single stage to a whole event.
-
-| Item | Size |
-|---|---|
-| Run the whole rally: stage order, running total, timecard (9) | M |
-| Itineraries: loops, road sections with target times, early / late penalties (10) | M |
-| Service: marked service areas, repairs in full-rally mode (24) | M |
-| Rally-mode recovery: the game's resets off on stage; prompts for back on stage after an off and a full reset when broken, with the controls shown (17) | S |
-| Weather and time of day per stage (25) | M |
-| Split times (15) | S |
 
 ## 1.6.0: on the stage
 
@@ -65,6 +59,19 @@ The stage looks and feels like an event.
 | Atmosphere: spectators, marshals, radio points (29) | M |
 | Stage sketches and height profiles (15) | S |
 | Stages wider than ~26 km (8) | L |
+
+## 1.7.0: the full rally
+
+From a single stage to a whole event.
+
+| Item | Size |
+|---|---|
+| Run the whole rally: stage order, running total, timecard (9) | M |
+| Itineraries: loops, road sections with target times, early / late penalties (10) | M |
+| Service: marked service areas, repairs in full-rally mode (24) | M |
+| Rally-mode recovery: the game's resets off on stage; prompts for back on stage after an off and a full reset when broken, with the controls shown (17) | S |
+| Weather and time of day per stage (25) | M |
+| Split times (15) | S |
 
 ## 2.0.0: public release
 
@@ -87,8 +94,11 @@ Ready for players who have never heard of it.
 
 - 1.3.0 first because it removes the biggest barrier: today other players can import but every stage needs a recce.
   Pre-loading and the automatic ATC fix the slow start seen on SnoDrift.
-- 1.4.0's rally file is the base for the editor, setup mode, leaderboards, the starter pack and full rallies, so it
+- 1.4.0 is the pacenote overhaul on its own (split from 1.3.0, the user, 2026-11-13): large, and best tested on
+  the matched lines 1.3.0 gives everyone.
+- 1.5.0's rally file is the base for the editor, setup mode, leaderboards, the starter pack and full rallies, so it
   comes before them.
-- 1.5.0 needs the rally file (itineraries, service areas live in it).
-- 1.6.0 is polish that builds on junction data (1.3.0's matcher) and the rally file.
+- 1.6.0 (on the stage) before the full rally (the user, 2026-11-13): it builds on junction data (1.3.0's matcher)
+  and the rally file.
+- 1.7.0 needs the rally file (itineraries, service areas live in it).
 - 2.0.0 gathers what a newcomer needs, once the content and tools exist to fill a starter pack.
