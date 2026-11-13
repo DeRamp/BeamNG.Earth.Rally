@@ -23,14 +23,14 @@ Status: alpha (1.1.0). Needs BeamNG.drive 0.40.5 and BeamNG.Earth with modding A
    - The mod takes you just before the arrival time control (ATC) and moves BeamNG.Earth's world origin to the middle
      of the stage, so the world does not shift under you on any stage up to ~26 km across.
    - Once you check in at the ATC the game's traffic and parked cars are cleared for the stage (back after it).
-   - The game's route arrows lead to each control. In a control's zone the brakes come on at 30 % (brake harder
-     yourself if you like) and a sound says you are in once you stop.
+   - The game's route arrows lead to each control. In a control's zone the brakes ease in as you near the board (none at
+     the zone's edge, 30 % at the board, so you can roll up to the boards and tent; brake harder yourself if you like) and a sound says you are in once you stop.
    - At the ATC you get your start time on the rally clock: the next half minute at least 30 s on (30-60 s), more
      when the start line is far from the ATC (time to drive there at ~36 km/h). Driving past the ATC is a missed time
      control (+60 s).
    - On the start line you are held until GO (the game's own hold, as its rally countdown does: rev freely, the car
      does not move), with the car's launch control switched on where it has one. The start tree's LED clock counts down, with the game's
-     picture-in-picture view of it at the top of the screen; the co-driver says 30 s, good luck, 10 s, 5-4-3-2-1, go.
+     picture-in-picture view of it on the right, above the gauges; the co-driver says 30 s, good luck, 10 s, 5-4-3-2-1, go.
      Early? The game's **Interact** control (Shift+E; the modifier + Y on a pad), stopped on the line, skips to 6 s
      before your start, as its rally mode does. Moving off before GO is a jump start (+10 s); reaching the line after your start time is late (+10 s a minute,
      and the next half minute).
@@ -45,7 +45,7 @@ called too: "at junction" on a turn there, "past junction", "keep left / right" 
 
 ## Install
 
-Put the release zip in `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\mods\`, or from this folder:
+Download `earth_rally-<version>.zip` from [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases) and put it in `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\mods\`. Updating? Delete the old version's zip first. Or, from this folder:
 
 ```
 python tools/install.py
