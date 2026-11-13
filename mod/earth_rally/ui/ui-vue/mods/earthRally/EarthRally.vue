@@ -29,8 +29,8 @@
       <section v-if="view === 'rallies'" class="er-rallies">
         <div v-for="r in arr(st.rallies)" :key="r.id" class="er-card er-rally-card">
           <div class="er-rc-head">
-            <div class="er-rc-name">{{ r.name }}</div>
-            <div v-if="r.file" class="er-dim">from {{ r.file }}</div>
+            <div class="er-rc-name er-clip" :title="r.name">{{ r.name }}</div>
+            <div v-if="r.file" class="er-dim er-clip" :title="r.file">from {{ r.file }}</div>
           </div>
           <div class="er-stats">
             <div class="er-stat"><div class="er-v">{{ r.stages }}</div><div class="er-l">stages</div></div>
@@ -65,7 +65,7 @@
       <!-- ===== a rally ===== -->
       <section v-else-if="view === 'rally' && rly">
         <div class="er-rally-head">
-          <div class="er-rh-name">{{ rly.name }}</div>
+          <div class="er-rh-name er-clip" :title="rly.name" style="min-width: 0; flex: 0 1 auto">{{ rly.name }}</div>
           <div class="er-stat"><div class="er-v">{{ rly.stages }}</div><div class="er-l">stages</div></div>
           <div class="er-stat"><div class="er-v">{{ len(rly.lengthM) }}</div><div class="er-l">of stages</div></div>
           <div class="er-stat"><div class="er-v">{{ rly.driven }} / {{ rly.stages }}</div><div class="er-l">driven</div></div>
@@ -284,6 +284,8 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .er-rallies { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 28px; }
 .er-rally-card { display: flex; flex-direction: column; min-height: 380px; border-top: 4px solid var(--er-orange); }
 .er-rc-head { padding: 26px 30px 10px; }
+.er-rally-card, .er-rc-head { min-width: 0; }   /* (a grid item: a long name must not widen the card) */
+.er-clip { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .er-rc-name { font-size: 30px; font-weight: 700; line-height: 1.15; }
 .er-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 16px 30px; }
 .er-driven { padding: 6px 30px 0; }
