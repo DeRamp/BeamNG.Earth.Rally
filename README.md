@@ -6,6 +6,8 @@ on the real roads, timed, with BeamNG.drive's own co-driver calling pacenotes ma
 Status: alpha (1.2.0: the player UI). Needs BeamNG.drive 0.40.5 and BeamNG.Earth with modding API 1.6 or newer (1.7, with the
 `onBeamNGEarthRebased` event, is used when present: BeamNG.Earth's dev builds from 1.9.1-beta.dev.398).
 
+**Open it in game with Ctrl + Alt + K**, or from the pause menu's **Earth Rally** tab ([all controls](#controls)).
+
 ## How it works
 
 1. **Add a rally**: drop its map (`.kml`, `.kmz` or `.gpx`) into the import folder. Each line becomes a stage; the
@@ -58,10 +60,7 @@ python tools/install.py
 
 (Only one of the two: both in the mods folder would load two copies; the install script warns about it.)
 
-Ctrl+Alt+K does nothing (`earthRally_main` is nil in the console)? The mod is not loaded: check it is on in the
-game's Mods menu. BeamMP switches local mods off when you join a server, so switch it back on after playing online.
-
-In game: Freeroam > BeamNG.Earth, then **Ctrl+Alt+K** opens Earth Rally (also the pause menu's **Earth Rally** tab):
+In game: Freeroam > BeamNG.Earth, then open the Earth Rally menu (see **Controls** below):
 your rallies, each rally's stages, a stage's page with **Drive stage**, **Route to start** (BeamNG.Earth's GPS to the
 stage's ATC, or its start, so you can drive there instead of teleporting) and **Recce** (for a stage that needs one),
 and your times.
@@ -70,6 +69,33 @@ and your times.
 (km / miles), time controls (full, or a quick start on the line without the ATC), the reset penalty, the
 control-zone brake, where the start clock's close-up shows (right / top / off), and the developer panel (the old
 Earth Rally window with each run's checks; `earthRally_main.toggle()` in the console opens it too).
+
+## Controls
+
+| what | keyboard | controller | other ways |
+|---|---|---|---|
+| **Open / close the Earth Rally menu** | **Ctrl + Alt + K** (Esc closes it too) | none by default: bind one (below) | the pause menu (Esc) > **Earth Rally** tab; or the console (**`~`**): `earthRally_main.toggleMenu()` |
+| Skip the wait on the start line (stopped on the line, before your start) | **Shift + E** (the game's Interact) | the modifier + **Y** (Interact) | |
+| Reset the car (+10 s on a stage when the reset penalty is on) | **R** / **Insert** (the game's own) | the game's own | |
+| Developer panel (each run's checks) | | | Settings > developer panel, or the console: `earthRally_main.toggle()` |
+
+**Change the key:** Options > Controls > Bindings, category **Gameplay**, action **Earth Rally: menu**. Any key or
+controller button works there.
+
+**The menu does not open?**
+
+1. Make sure you are in the BeamNG.Earth level (Freeroam > BeamNG.Earth), and try the pause menu's **Earth Rally**
+   tab instead of the key.
+2. Press **`~`** for the console and type `earthRally_main.toggleMenu()`.
+   - The menu opens: the mod works and only the key is not reaching the game. On some keyboard layouts (German,
+     French, Nordic...) Ctrl + Alt is AltGr, and some overlays or hotkey tools take Ctrl + Alt + K: bind another key
+     (above).
+   - `attempt to index global 'earthRally_main' (a nil value)`: the mod is not loaded. Main menu > **Mods**: switch
+     Earth Rally on. Not in the list? The zip must sit, still zipped, directly in
+     `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\mods\`. BeamMP switches local mods off when you join a server,
+     so switch it back on after playing online. Only one Earth Rally zip at a time.
+3. Still nothing: `beamng.log` in `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\` should have the line
+   `Earth Rally 1.2.0 loaded`; open an issue with the lines that mention `earth_rally` or `earthRally`.
 
 ## Adding a rally
 
