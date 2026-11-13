@@ -3,7 +3,7 @@
 Real-world rally stages for [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth): drive a real rally's stages
 on the real roads, timed, with BeamNG.drive's own co-driver calling pacenotes made from the road.
 
-Status: alpha (1.2.1: fixes and recovery keys). Needs BeamNG.drive 0.40.5 and BeamNG.Earth with modding API 1.6 or newer (1.7, with the
+Status: alpha (1.2.5, in testing: one panel on screen rather than three -- where you are and BeamNG.Earth's warnings are drawn by the rally HUD itself, its own strips off screen for the stage). Needs BeamNG.drive 0.40.5 and BeamNG.Earth with modding API 1.6 or newer (1.7, with the
 `onBeamNGEarthRebased` event, is used when present: BeamNG.Earth's dev builds from 1.9.1-beta.dev.398).
 
 **Open it in game with Ctrl + Alt + K**, or from the pause menu's **Earth Rally** tab ([all controls](#controls)).
@@ -39,6 +39,9 @@ Status: alpha (1.2.1: fixes and recovery keys). Needs BeamNG.drive 0.40.5 and Be
      and the next half minute).
    - On the stage: the game's own stage clock and progress bar, the km done, and an OFF ROUTE warning (how far, and
      which way back) when you leave the stage's line. Each car reset during the timed stage costs 10 s (a setting).
+   - Where you are, and whether the world is still arriving, are shown by the rally display itself: as a row of the
+     card before a stage, and as a thin line beside the stage clock on it. BeamNG.Earth's own place-name strip and
+     connection banner are off screen for the stage so there is one panel and not three; its data credits stay.
    - The clock stops at the flying finish (a sound): your time big, against your best; the notes stop and you drive on
      to the stop control. Stopped there, the stage's results card: the time, each penalty, your best, and **Next
      stage**, **Retry**, **Rally menu** (or just drive off). The boards and the co-driver are tidied away a few
@@ -97,7 +100,7 @@ controller button works there.
      `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\mods\`. BeamMP switches local mods off when you join a server,
      so switch it back on after playing online. Only one Earth Rally zip at a time.
 3. Still nothing: `beamng.log` in `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\` should have the line
-   `Earth Rally 1.2.1 loaded`; open an issue with the lines that mention `earth_rally` or `earthRally`.
+   `Earth Rally 1.2.5 loaded`; open an issue with the lines that mention `earth_rally` or `earthRally`.
 
 ## Adding a rally
 
@@ -202,12 +205,40 @@ The developer panel (Settings > Developer panel) lists what each run found out, 
   the pause-menu tab). The stage layout (`settings/ui_apps/.../earthRallyStage`) puts them with the game's rally apps.
 - Tests, no game needed: `pip install lupa`, then `python tests/run_tests.py` (the importer is also checked against
   `tools/import_kml.py` on the maps in `../Rally Docs/` when they are there).
-- `docs/plan-1.2.0.md`: this version's plan (the player UI), what was built and what is to check in game.
+- **In-game self-test** (before a release; `tools/selftest.py`, the mod's `earthRally/selftest.lua`):
+  - `python tools/selftest.py --check-install`: the installed mod against this repository (read-only, fine while the
+    game runs): every file, the version, the stage layout's apps (the 1.2.1 fault: an old layout with no HUD app),
+    a saved copy of the layout, two copies installed, the mod switched off, the version the game last loaded.
+  - `python tools/selftest.py` (the game closed; BeamNG.Earth's source next to this folder, or `--earth <folder>`):
+    installs the mod, checks the install, starts BeamNG.Earth's launcher (`--no-beammp --gfx dx11`), and the mod runs
+    OTR 2024's Maryhill Up by itself (`--event`, `--stage` for another): the car put at the ATC and the start line,
+    the wait skipped once the world is quiet, the car then walked along the stage line, a forced off route, Back on
+    the road, Flip upright, the stop control, the results card. It checks the stage layout on screen with all its
+    apps, both HUD streams in each state, and errors logged; it then closes the game, prints each check and exits 1
+    on a failure (~4 min). A window on screen shows the phase and each check as it is made. The report:
+    `earthRally/selftest/report-<time>.json` in the user folder. The stage's times are put back as they were.
+  - What it cannot check yet: **the co-driver**. The game decides whether to look at its pacenotes from the car's
+    rigid-body velocity, and a car set down frame by frame has none, so no note is called and that one check fails.
+    The game's own AI does make them play, but it cannot drive a BeamNG.Earth stage reliably: `ai.driveUsingPath`
+    keeps its route in a graph installed with `mapmgr.setCustomMap()`, and BeamNG.Earth tells every vehicle to
+    `mapmgr.requestMap()` whenever it streams new roads, which throws that route away. For 1.3.0.
+  - In game, from the console in the BeamNG.Earth level: `earthRally_main.selfTest('otr24', 'maryhill-up')`
+    (`earthRally_main.selfTestStop()` stops it). Without a request the self-test is never loaded.
+- **Driving it yourself**: `python tools/playtest.py` installs the mod, starts the game and goes straight to a stage
+  (`--event`, `--stage`; `--goto` to be taken to the start rather than put into a run). Through Steam, so Steam Input
+  reaches the game and a controller works -- BeamNG's launch-options dialog shows as a result, and `--gfx dx11` skips
+  it at the cost of Steam. The request is used once, so a normal start of the game never does any of it.
+- `docs/plan-1.2.0.md`: the 1.2.0 plan (the player UI). `docs/roadmap.md` and `docs/version-plans.md`: where this
+  is going. `docs/notes-<version>.md`: what was reported while testing the version before it, and what came of each
+  one. `docs/mockups-<version>/`: the screen as it was agreed before it was built.
 
 ## Plan
 
-Next: 1.2.2, the on-stage display fixed. 1.3.0 (`docs/plan-1.3.0.md`): road matching for every player (a BeamNG.Earth
-add-on, no Python), the pacenote generator overhauled, an ATC added to stages without one. Later: course tape, junction
+Next: 1.3.0 (`docs/plan-1.3.0.md`): road matching for every player (a BeamNG.Earth
+add-on, no Python), the pacenote generator overhauled, an ATC added to stages without one. With it, two things left
+over from 1.2: the self-test's co-driver check (above), and a small pull request to BeamNG.Earth for an add-on way to
+hide its own strips -- Earth Rally does it today through `core.hudApp`, its published mount call, which works but is
+a polite fiction. Later: course tape, junction
 direction signs,
 better pacenotes (crests, cautions), stages wider than ~26 km, itineraries (loops, road sections, service), an
 in-game editor.

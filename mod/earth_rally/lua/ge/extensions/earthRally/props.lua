@@ -49,7 +49,13 @@ M.FINISH_BOARD_OUT_M = 0.5  -- the flying finish's boards just outside the road 
 -- looked at its back: found at Maryhill Up, 2026-11-12.)
 M.TREE_FWD_M, M.TREE_OUT_M, M.TREE_YAW = 1.5, 1.0, 25
 M.DEFAULT_HALF_WIDTH_M = 3.0
-M.SNAP_M = 30               -- a site this close to a road is on it
+M.SNAP_M = 30               -- a site this close to a road is on it ...
+-- ... and this close when nothing was found at SNAP_M. A time control's own point is the organisers', dropped on a
+-- map by hand, and can sit well off the road; with no road found, a site's props are set out along a straight line
+-- from that point, so the whole row of boards stands off to one side of the road (Maryhill Up's ATC, the user,
+-- 2026-11-13; the run's log said `no road on the map there: straight from the control`). The start and the flying
+-- finish never have this trouble: they are set out along the stage line, which is on the road.
+M.SNAP_FAR_M = 60
 M.TURN_MAX_DEG = 60         -- walking the road map: at a junction, the road on that turns at most this much
 local TENT = function(fwd)
   local o = M.TENT_OUT_M
@@ -182,11 +188,12 @@ end
 -- The road-map edge beside (x, y) in plan (heights are not trusted: the car may be far above or below the spot), the
 -- one best aligned with dir (dx, dy) when given among those within SNAP_M: { a, b (node names, oriented along dir),
 -- t, x, y, z, half, dx, dy, d }, or nil.
-function M.roadAt(x, y, dir)
+function M.roadAt(x, y, dir, snap)
+  snap = snap or M.SNAP_M
   local nodes = mapNodes()
   if not nodes then return nil end
   local best, bestScore = nil, math.huge
-  local r2 = (M.SNAP_M + 40) ^ 2
+  local r2 = (snap + 40) ^ 2
   local dl = dir and math.sqrt(dir.x * dir.x + dir.y * dir.y) or 0
   for na, a in pairs(nodes) do
     local pa = a.pos
@@ -201,7 +208,7 @@ function M.roadAt(x, y, dir)
             local t = math.max(0, math.min(1, ((x - pa.x) * dx + (y - pa.y) * dy) / l2))
             local px, py = pa.x + dx * t, pa.y + dy * t
             local d = math.sqrt((px - x) ^ 2 + (py - y) ^ 2)
-            if d <= M.SNAP_M then
+            if d <= snap then
               local l = math.sqrt(l2)
               local cos = dl > 0 and (dx * dir.x + dy * dir.y) / (l * dl) or 1
               -- (a road across the driving direction counts as 25 m further away)
@@ -368,7 +375,8 @@ function M.update(carPos, toGame)
         -- the road under the control, aligned with the driving direction (sites not on the stage line)
         s.edge = nil
         if not s.path then
-          local e = M.roadAt(x, y, s.dir)
+          -- (a control's point can be well off the road: looked for further out when nothing is near)
+          local e = M.roadAt(x, y, s.dir) or M.roadAt(x, y, s.dir, M.SNAP_FAR_M)
           if e then
             local tw = s.toward and { x = select(1, toGame(s.toward.lat, s.toward.lon, 0)), y = select(2, toGame(s.toward.lat, s.toward.lon, 0)) }
             local aw = s.away and { x = select(1, toGame(s.away.lat, s.away.lon, 0)), y = select(2, toGame(s.away.lat, s.away.lon, 0)) }

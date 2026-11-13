@@ -1144,6 +1144,33 @@ do
   layout = 'beamngEarth'
   frames(12)
   T.check(layout == 'earthRallyStage', 'the stage layout put back after something else put its own on')
+  -- the radial menu (and the garage, photo mode...) put their own on: left to them (in game, 2026-11-13: the hold
+  -- fought the radial menu); quickAccess puts ours back when the menu closes
+  layout = 'radial'
+  frames(30)
+  T.check(layout == 'radial', 'the radial menu\'s layout left alone (' .. layout .. ')')
+  layout = 'earthRallyStage'
+  frames(12)
+  T.check(layout == 'earthRallyStage', 'the radial menu closed: the stage layout still on')
+  T.check(runner.holdOver('freeroam', 'beamngEarth') and runner.holdOver('beamngEarth', 'x')
+    and runner.holdOver('myLayout', 'myLayout') and not runner.holdOver('radial', 'beamngEarth')
+    and not runner.holdOver('garage', 'beamngEarth') and not runner.holdOver('earthRallyStage', 'beamngEarth')
+    and not runner.holdOver(nil, 'beamngEarth'), 'holdOver: only the plain driving layouts and the one before the run')
+  -- the layout on screen, checked a moment after it was put on (ui_appLayouts, the game's)
+  local onScreen = { type = 'earthRallyStage', filename = '/settings/ui_apps/layouts/default/earthRallyStage.uilayout.json',
+    version = 5, apps = {} }
+  for _, n in ipairs(runner.STAGE_APPS) do onScreen.apps[#onScreen.apps + 1] = { appName = n } end
+  ui_appLayouts = { getCurrentLayout = function() return onScreen end }
+  local text, missing = runner._logLayout()
+  T.check(#missing == 0 and text:match('all the stage apps there') and text:match('game state earthRallyStage'),
+    'layout check: ours on screen, complete (' .. text .. ')')
+  -- 1.2.1 in game: the 1.1.0 layout file installed (only the pacenote cards)
+  onScreen.version, onScreen.apps = 4, { { appName = 'beamngEarthStatus' }, { appName = 'rallyVisualPacenotes' } }
+  text, missing = runner._logLayout()
+  T.check(#missing == 5 and text:match('missing: earthRallyHud'), 'layout check: an old layout file told apart (' .. text .. ')')
+  text = runner.layoutReport('earthRallyStage', nil)
+  T.check(text:match('unknown'), 'layout check: no ui_appLayouts')
+  ui_appLayouts = nil
   runner.abort(true)
   T.check(layout == 'beamngEarth', 'after the run: the layout before it')
   veh.getDirectionVector, veh.getID = nil, nil
@@ -1158,8 +1185,13 @@ do
   driveTo(11, 900)
   local fx, fy = toGame(full[900][1], full[900][2])
   veh.getDirectionVector = function() return { x = 0, y = 1, z = 0 } end   -- (heading north, along the stage)
+  local logged, oldLog = {}, log
+  log = function(level, tag, msg) logged[#logged + 1] = tostring(msg) oldLog(level, tag, msg) end
   car.lat, car.lon = toGeo(fx + 80, fy)
   frames(1)
+  local offLines = 0
+  for _, m in ipairs(logged) do if m:match('^off route %(8%d m from the stage line') then offLines = offLines + 1 end end
+  T.check(offLines == 1, 'off route logged once when it begins (' .. table.concat(logged, ' / ') .. ')')
   local _, ours = runner.uiFrame()
   T.check(r9.offRoute and ours.show.offRoute and ours.offM > 60 and math.abs(ours.backBearing + 90) < 5,
     '80 m right of the line: off route, the way back to the left (' .. tostring(ours.backBearing) .. ')')
@@ -1173,6 +1205,10 @@ do
   frames(1)
   _, ours = runner.uiFrame()
   T.check(not r9.offRoute and not ours.show.offRoute and ours.show.km, 'back on the line: the card gone')
+  local backLines = 0
+  for _, m in ipairs(logged) do if m:match('^back on route') then backLines = backLines + 1 end end
+  T.check(backLines == 1, 'back on route logged once')
+  log = oldLog
   -- off the track, not on another road: 25 m off a line on the roads is off route (1.2.0 needed 60 m: never seen)
   car.lat, car.lon = toGeo(fx + 25, fy)
   frames(1)
@@ -1229,7 +1265,20 @@ do
   T.check(not main.uiAction('drive', 'test8', 'hill').ok, 'not a second run while one is under way')
   -- the streams: both, every frame or so
   streams = {}
+  local logged, oldLog = {}, log
+  log = function(level, tag, msg) logged[#logged + 1] = tostring(msg) oldLog(level, tag, msg) end
   for _ = 1, 10 do main._sendStreams(0.05) end
+  log = oldLog
+  local streamLines = {}
+  for _, m in ipairs(logged) do if m:match('^HUD streams') then streamLines[#streamLines + 1] = m end end
+  T.check(#streamLines == 1 and streamLines[1]:match('rallyLoop activeState inactive'),
+    'the streams logged once for the state, not every frame (' .. table.concat(streamLines, ' / ') .. ')')
+  local line = main.streamsLine(nil, { state = 'running', show = { km = true, offRoute = true, go = true } })
+  T.check(line:match('NOT sent %(noRallyLoop') and line:match('show %[km,offRoute%]'),
+    'the streams line: the stock stream left alone told, our pieces listed (' .. line .. ')')
+  T.check(main.streamsKey({ activeState = 'stageActive', showStageApps = true }, { state = 'running', show = {} })
+    ~= main.streamsKey({ activeState = 'stageActive', showStageApps = true }, { state = 'running', show = { offRoute = true } }),
+    'the streams logged again when off route shows')
   local kinds = {}
   for _, x in ipairs(streams) do kinds[x.k] = (kinds[x.k] or 0) + 1 end
   T.check((kinds.rallyLoop or 0) >= 5 and (kinds.earthRally or 0) >= 5, 'both streams queued (' ..

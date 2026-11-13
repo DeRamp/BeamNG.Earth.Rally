@@ -56,7 +56,14 @@ M.TELEPORT_SETTLE_S = 2        -- BeamNG.Earth sets the car down a moment after 
 M.ATC_MAX_FROM_START_M = 1500  -- an ATC farther from the start than this is not this stage's (left out)
 M.STOP_MAX_FROM_FINISH_M = 3000
 M.CAR_BEFORE_ATC_M = 40
-M.NO_SET_DOWN_M = 150          -- a car driven to within this of the ATC is not moved
+M.NO_SET_DOWN_M = 150          -- a car driven to within this of the ATC is not moved ...
+M.DRIVEN_THERE_MIN_M = 15      -- ... unless it is this near or nearer, when it is set down before the control.
+                               -- A car standing on the control is stopped inside its zone, so the check-in fires at
+                               -- once and the drive up to it never happens (in game, 2026-11-13: `run: toAtc` and
+                               -- `Checked in` 0.03 s apart, the car having respawned beside the ATC). Derived from
+                               -- CONTROL_RADIUS_M (12) and a few metres over, not picked: the band between this and
+                               -- NO_SET_DOWN_M is where a player who drove up and parked keeps the spot they chose,
+                               -- and every metre added to it is a player moved who did not ask to be.
 M.LANDMARK_OFF_M = 15          -- a junction or bridge this close to the stage line is on it
 M.CONTROL_RADIUS_M = 12        -- stopped this close to a control's board: checked in
 M.STOP_CONTROL_RADIUS_M = 25
@@ -90,10 +97,20 @@ M.OFF_ROUTE_CLEAR_M = 40       -- (where the line is the organisers': off route 
 M.OFF_ROUTE_ON_ROAD_M = 20
 M.OFF_ROUTE_ON_ROAD_CLEAR_M = 12
 M.TRAFFIC_HOLD_S = 1           -- traffic and parked cars kept away this often during the stage
-M.LAYOUT_HOLD_S = 1            -- the stage layout put back this often if something else put its own on
+M.LAYOUT_HOLD_S = 1            -- the stage layout put back this often if the game's plain layout came back
+-- The layouts the hold puts ours back over: the plain driving ones the game or BeamNG.Earth put back on their own (a
+-- car reloaded or replaced mid-stage), and the one before the run. Any other is the game's for the moment and left
+-- alone: the radial menu's 'radial' (quickAccess.lua puts the one before it back when the menu closes), the garage,
+-- photo mode, a mission (in game, 2026-11-13: the hold fought the radial menu).
+M.HOLD_OVER = { freeroam = true, beamngEarth = true, beamngEarthMP = true }
+M.LAYOUT_CHECK_S = 2           -- the layout on screen logged this long after ours was put on (the UI switches later)
+-- The apps the stage layout must carry for the HUD to show (the check logged at each run).
+M.STAGE_APPS = { 'earthRallyHud', 'earthRallyResults', 'rallyCountdown', 'rallyStageTiming', 'rallyStageProgress',
+  'rallyVisualPacenotes' }
 M.RECOVER_UP_M = 0.5           -- a car put back on the road / upright: this far above the ground
 M.RESULTS_CLOSE_M = 100        -- the results card closes once the car is driven this far from where it stopped ...
 M.RESULTS_TIMEOUT_S = 120      -- ... or after this long
+M.uiHidden = false             -- a game menu is up: the HUD draws nothing (main.lua's onUiChangedState sets it)
 M.SOUND_STOPPED = 'event:UI_Checkpoint'
 M.SOUND_FINISH = 'event:UI_CountdownGo'
 
@@ -243,22 +260,83 @@ local function aheadDir(line, cum, s)
   return { x = b.x - a.x, y = b.y - a.y, z = (b.z or 0) - (a.z or 0) }, a
 end
 
--- The run's screen layout (settings/ui_apps/.../earthRallyStage: BeamNG.Earth's own with the game's pacenote cards),
--- and back to the one before when the run ends.
+-- The run's screen layout (settings/ui_apps/.../earthRallyStage: BeamNG.Earth's own with the game's rally apps and
+-- our HUD apps), and back to the one before when the run ends.
 M.STAGE_LAYOUT = 'earthRallyStage'
+
+-- The game state's layout now (core_gamestate), or nil.
+local function stateLayout()
+  local gs = rawget(_G, 'core_gamestate')
+  local ok, cur = pcall(function() return gs and gs.getGameState and gs.getGameState() end)
+  return ok and cur and cur.appLayout or nil
+end
+
+-- Pure: a line on the layout the UI has on screen, from the game state's layout name and the game's current layout
+-- (ui_appLayouts.getCurrentLayout(): { type, filename, apps = { { appName }... } }), and the apps of STAGE_APPS it
+-- lacks (empty when it is ours and complete). 1.2.1 in game: the layout file installed had none of the HUD apps
+-- (tools/install.py wrote its 1.1.0 layout over ours), so nothing but the pacenote cards showed.
+function M.layoutReport(stateName, cur)
+  if type(cur) ~= 'table' then
+    return string.format('game state %s; on screen: unknown (no ui_appLayouts)', tostring(stateName)), nil
+  end
+  local have = {}
+  for _, a in ipairs(type(cur.apps) == 'table' and cur.apps or {}) do
+    if type(a) == 'table' and a.appName then have[a.appName] = true end
+  end
+  local missing = {}
+  for _, n in ipairs(M.STAGE_APPS) do if not have[n] then missing[#missing + 1] = n end end
+  local text = string.format('game state %s; on screen: %s (%s, version %s), %d apps; %s', tostring(stateName),
+    tostring(cur.type), tostring(cur.filename), tostring(cur.version), #(type(cur.apps) == 'table' and cur.apps or {}),
+    #missing == 0 and 'all the stage apps there' or ('missing: ' .. table.concat(missing, ', ')))
+  return text, missing
+end
+
+local function logLayout()
+  local ui = rawget(_G, 'ui_appLayouts')
+  local okC, cur = pcall(function() return ui and ui.getCurrentLayout and ui.getCurrentLayout() end)
+  local text, missing = M.layoutReport(stateLayout(), okC and cur or nil)
+  if cur and type(cur) == 'table' and cur.type ~= M.STAGE_LAYOUT then
+    log('W', logTag, 'stage layout NOT on screen: ' .. text)
+  elseif missing and #missing > 0 then
+    log('W', logTag, 'stage layout on screen WITHOUT the HUD apps (an old layout file installed?): ' .. text)
+  else
+    log('I', logTag, 'stage layout: ' .. text)
+  end
+  return text, missing
+end
+M._logLayout = logLayout
+
 local function layoutOn()
   local gs = rawget(_G, 'core_gamestate')
   if not (gs and gs.setGameState and gs.getGameState) or run.oldLayout then return end
-  local ok, cur = pcall(gs.getGameState)
-  run.oldLayout = ok and cur and cur.appLayout or 'beamngEarth'
+  run.oldLayout = stateLayout() or 'beamngEarth'
   if run.oldLayout ~= M.STAGE_LAYOUT then pcall(gs.setGameState, nil, M.STAGE_LAYOUT) end
+  run.layoutCheckIn = M.LAYOUT_CHECK_S
+  -- BeamNG.Earth's own strips off screen for the stage: the HUD shows what they carried, in its own panel
+  run.stripsHeld = earth.holdStrips(true)
+  log('I', logTag, string.format('stage layout put on (was %s; game state now %s)%s', tostring(run.oldLayout),
+    tostring(stateLayout()), run.stripsHeld and "; BeamNG.Earth's strips off screen" or ''))
 end
 local function layoutOff()
   local gs = rawget(_G, 'core_gamestate')
   if run and run.oldLayout and gs and gs.setGameState then
-    pcall(gs.setGameState, nil, run.oldLayout ~= M.STAGE_LAYOUT and run.oldLayout or 'beamngEarth')
+    local back = run.oldLayout ~= M.STAGE_LAYOUT and run.oldLayout or 'beamngEarth'
+    pcall(gs.setGameState, nil, back)
+    log('I', logTag, 'stage layout off: ' .. tostring(back) .. ' back')
+  end
+  -- (outside the check above: the strips go back even when the layout never went on)
+  if run and run.stripsHeld then
+    earth.holdStrips(false)
+    run.stripsHeld = nil
   end
   if run then run.oldLayout = nil end
+end
+
+-- Pure: whether the hold puts the stage layout back over `name` (the game state's layout now; oldLayout: the one before
+-- the run).
+function M.holdOver(name, oldLayout)
+  if name == nil or name == M.STAGE_LAYOUT then return false end
+  return M.HOLD_OVER[name] == true or name == oldLayout
 end
 
 local function carPos()
@@ -475,7 +553,10 @@ end
 -- it after that, in onDrawDebug (main.lua): the last hook before the frame is drawn. Its size stays the game's.
 M.CLOCK_VIEW_NAME = 'rallyStartClockView'
 M.CLOCK_VIEW_RIGHT = 0.015      -- (gap to the screen's right edge, share of its width)
-M.CLOCK_VIEW_TOP = 0.03         -- (gap to the screen's top edge, share of its height)
+M.CLOCK_VIEW_CENTRE_Y = 0.5     -- (the view's middle this far down the screen, share of its height). It sat 3 %
+                                -- from the top until 1.2.5, where the game's own messages and toasts appear and it
+                                -- was in their way (the user, 2026-11-13). Halfway down the right edge clears both
+                                -- those and the boost gauge that covered it when 1.1.0 put it above the speedometers.
 function M.placeClockView()
   if not (run and rawget(_G, M.CLOCK_EXT)) then return end     -- (only in our runs: the game's rally mode keeps its own)
   if settings.get('clockView') ~= 'right' then return end       -- ('top': where the game puts it; 'off': not shown)
@@ -490,7 +571,7 @@ function M.placeClockView()
   local w, h = res and res.x, res and res.y
   if not (W and H and w and h and w > 1 and h > 1) then return end
   local x = math.floor(W - w - W * M.CLOCK_VIEW_RIGHT + 0.5)
-  local y = math.floor(H * M.CLOCK_VIEW_TOP + 0.5)
+  local y = math.floor(H * M.CLOCK_VIEW_CENTRE_Y - h / 2 + 0.5)
   view.compositeRect = RectI(math.max(0, x), math.max(0, y), w, h)
 end
 
@@ -562,6 +643,7 @@ local function groundNear(x, y, z0)
   end
   return z0, ray and false or nil      -- (false: looked and found no ground near z0; nil: no ray to look with)
 end
+M.groundNear = groundNear     -- (the self-test puts the car down with it)
 
 
 -- The game's traffic and parked cars out of the way for the stage: their systems' active amounts set to 0 (the cars
@@ -642,7 +724,8 @@ local function stepPlace()
     -- start, walked back along its bends), facing along it; never the organisers' point itself, which can be metres
     -- off the road
     local _, sp = aheadDir(run.line, run.cum, run.startM)
-    local near = p and not run.teleported and (p.x - a.x) ^ 2 + (p.y - a.y) ^ 2 <= M.NO_SET_DOWN_M ^ 2
+    local d2a = p and ((p.x - a.x) ^ 2 + (p.y - a.y) ^ 2)
+    local near = p and not run.teleported and d2a <= M.NO_SET_DOWN_M ^ 2 and d2a > M.DRIVEN_THERE_MIN_M ^ 2
     if near then
       -- (driven here, e.g. by Route to start: left where it is)
       run.checks.atcSetDown = 'driven there'
@@ -1044,7 +1127,14 @@ local function stepRunning(dtSim)
   local onOff, clearOff = M.OFF_ROUTE_ON_ROAD_M, M.OFF_ROUTE_ON_ROAD_CLEAR_M
   local pt = run.line[geo.segAt(run.cum, along)]
   if pt and pt.gap then onOff, clearOff = M.OFF_ROUTE_M, M.OFF_ROUTE_CLEAR_M end
+  local wasOff = run.offRoute == true
   if off > onOff then run.offRoute = true elseif off <= clearOff then run.offRoute = false end
+  -- (logged on each change: in game, "not detected" told apart from "not shown")
+  if (run.offRoute == true) ~= wasOff then
+    log('I', logTag, string.format('%s (%.0f m from the stage line at %.0f m; threshold %d m%s)',
+      run.offRoute and 'off route' or 'back on route', off, along - (run.startM or 0), run.offRoute and onOff or clearOff,
+      pt and pt.gap and ', no road on the map here' or ''))
+  end
   if run.offRoute then
     local back = geo.pointAt(run.line, run.cum, along)
     local okD, d = pcall(function() return veh:getDirectionVector() end)
@@ -1152,15 +1242,29 @@ function M.update(dtReal, dtSim)
   end
   -- the stage layout held while the run has it on: a car reloaded (Ctrl+R) or replaced mid-stage put the game's own
   -- layout back, and the progress bar, the finish time and the results card were gone (in game, 2026-11-13)
+  -- Only over the plain driving layouts (holdOver): the radial menu, the garage, photo mode keep theirs.
   if run.oldLayout then
+    -- (held, not set once: the strips' apps say "gone" as the layout swap destroys them)
+    if run.stripsHeld then earth.holdStrips(true) end
+    if run.layoutCheckIn then
+      run.layoutCheckIn = run.layoutCheckIn - (dtReal or 0)
+      if run.layoutCheckIn <= 0 then run.layoutCheckIn = nil pcall(logLayout) end
+    end
     run.layoutHoldT = (run.layoutHoldT or 0) + (dtReal or 0)
     if run.layoutHoldT >= M.LAYOUT_HOLD_S then
       run.layoutHoldT = 0
       local gs = rawget(_G, 'core_gamestate')
-      local ok, cur = pcall(function() return gs and gs.getGameState and gs.getGameState() end)
-      if ok and cur and cur.appLayout and cur.appLayout ~= M.STAGE_LAYOUT and gs.setGameState then
+      local cur = stateLayout()
+      if M.holdOver(cur, run.oldLayout) and gs and gs.setGameState then
         pcall(gs.setGameState, nil, M.STAGE_LAYOUT)
-        log('I', logTag, 'stage layout back on (' .. tostring(cur.appLayout) .. ' had been put on)')
+        run.layoutCheckIn = M.LAYOUT_CHECK_S
+        run.layoutLeft = nil
+        log('I', logTag, 'stage layout back on (' .. tostring(cur) .. ' had been put on)')
+      elseif cur ~= M.STAGE_LAYOUT and cur ~= run.layoutLeft then
+        run.layoutLeft = cur
+        log('I', logTag, 'stage layout: the game put ' .. tostring(cur) .. ' on; left to it')
+      elseif cur == M.STAGE_LAYOUT then
+        run.layoutLeft = nil
       end
     end
   end
@@ -1370,6 +1474,7 @@ end
 function M.uiFrame()
   return hudFrame.build(run, {
     now = M.clock() or 0, speed = run and speed() or 0, canSkip = M.canSkip(), units = settings.get('units'),
+    uiHidden = M.uiHidden, place = earth.place(), earthBanner = earth.earthBanner(), loading = earth.loading(),
     noRallyLoop = extensions and extensions.isExtensionLoaded and extensions.isExtensionLoaded('gameplay_rallyLoop')
       or false,
     c = { stoppedMs = M.STOPPED_MS, startZoneBeforeM = M.START_ZONE_BEFORE_M, stopRadiusM = M.STOP_CONTROL_RADIUS_M,

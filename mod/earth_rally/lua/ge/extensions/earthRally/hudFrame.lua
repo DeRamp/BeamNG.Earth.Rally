@@ -13,6 +13,9 @@
 --               - countdownData.countdown whole seconds (5 squares from 5, GO at 0; null reads as GO)
 --               - scheduleData.timeDiff a string ("0:58"); eventType 'tc' is never sent (it prints a speed limit
 --                 we do not have: our own card covers the drive to the ATC)
+-- (1.2.3: there is no longer a dim over the pacenote cards while off route. It was a plain box the size of the
+--  stock app's whole slot, and the cards fill about a fifth of that, so most of it dimmed the scenery -- "just a big
+--  rectangle" (the user, 2026-11-13). The 1.2.0 mock-up never had one.)
 --   earthRally  ours (ui/modules/apps/EarthRallyHud, EarthRallyResults): the run's numbers in metres and seconds
 --               and a `show` table saying which piece is up, so the Vue side only draws (units and words are its)
 local M = {}
@@ -76,6 +79,35 @@ local function finishInfo(run, c)
   }
 end
 
+-- A word of our own for BeamNG.Earth's banner, by its id (its banner.lua sets them): its own sentence runs to a
+-- hundred characters and more, which belongs in the panel before a stage, not across a stage.
+M.WARN_WORDS = { noserver = 'no server', lost = 'reconnecting', edge = 'world edge',
+                 drophold = 'loading ground', starting = 'starting' }
+
+-- Where the car is and what BeamNG.Earth has to say about it, for the HUD's own row (its strips are off screen
+-- during a stage). nil when there is nothing to say.
+function M.whereOf(ctx)
+  local p = ctx.place
+  local rest = {}
+  if type(p) == 'table' then
+    for _, k in ipairs({ 'place', 'region', 'country' }) do
+      if type(p[k]) == 'string' and p[k] ~= '' then rest[#rest + 1] = p[k] end
+    end
+  end
+  local road = type(p) == 'table' and type(p.street) == 'string' and p.street ~= '' and p.street or nil
+  local b = ctx.earthBanner
+  local warn = nil
+  if type(b) == 'table' and b.visible and M.WARN_WORDS[b.id] then
+    warn = { label = M.WARN_WORDS[b.id], level = b.level or 'info', text = b.text }
+  end
+  local load = nil
+  if type(ctx.loading) == 'table' and tonumber(ctx.loading.done) and tonumber(ctx.loading.total) then
+    load = string.format('%d/%d', ctx.loading.done, ctx.loading.total)
+  end
+  if not (road or #rest > 0 or warn or load) then return nil end
+  return { road = road, rest = #rest > 0 and table.concat(rest, ', ') or nil, warn = warn, loading = load }
+end
+
 local INACTIVE = { activeState = 'inactive', showStageApps = false }
 
 -- The two streams for `run` (nil: no run). ctx:
@@ -85,6 +117,13 @@ local INACTIVE = { activeState = 'inactive', showStageApps = false }
 --   units         'km' / 'mi'
 --   noRallyLoop   true: leave the rallyLoop stream alone (the game's own rally mode is running): nil is returned
 --   c             the runner's numbers: stoppedMs, startZoneBeforeM, stopRadiusM, jumpStartS, resetS, missedAtcS
+--   road          the road the car is on (BeamNG.Earth), or nil
+--   loadPct       how much of the world round the car has arrived, 0..100, or nil once it is all there
+--   earthWarn     what BeamNG.Earth's banner would say, or nil
+--   place         where the car is (BeamNG.Earth): { street, place, region, country }, or nil
+--   earthBanner   BeamNG.Earth's banner: { id, level, text, visible }, or nil
+--   loading       the world still arriving: { done, total }, or nil
+--   uiHidden      a menu is up: the HUD draws nothing (it is over the pause menu otherwise)
 --   preview       true in the HUD preview (said in our stream)
 -- Returns rallyLoop, earthRally.
 function M.build(run, ctx)
@@ -144,6 +183,22 @@ function M.build(run, ctx)
     rl.countdownData = { countdown = n, state = n > 0 and 'counting' or 'go' }
     rl.scheduleData = { eventType = 'ss_start', label = 'SS' .. ssLabel, ssLabel = ssLabel, totalSSCount = run.ssCount,
       timeDiff = M.diffText(left) }
+    -- Staged and ready: the stage clock and the progress meter come up reading zero rather than at GO (the user,
+    -- 2026-11-13). uiColors must go with them or the stock apps hide themselves.
+    -- Not while our timecard is up: it sits at 0, 0 and so does the stock stage clock (288 wide), so bringing them
+    -- up a minute early would stack the two in that corner -- the fault reported as items 1 and 4. They come up as
+    -- the timecard goes, TIMECARD_UNTIL_S before the start, which is when the countdown gets serious anyway.
+    rl.showStageApps = not show.timecard or nil
+    rl.uiColors = { theme = M.THEME }
+    rl.stageData = {
+      stageHeader = string.format('SS%s · %s', ssLabel, string.upper(stage.name or '')),
+      label = ssLabel, currentSSTime = 0, isActive = false, isComplete = false, unit = units,
+      completion = { distM = 0, distPct = 0, totalDistM = totalM },
+      splits = { { pathnodeId = 1, pathnodeType = 'finish', splitLabel = M.lengthText(totalM, units), distPct = 1 } },
+    }
+    ours.doneM, ours.totalM = 0, totalM
+    -- (with the stage apps, not before them: on its own it floats with no progress bar to sit against)
+    show.km = not show.timecard or nil
   elseif s == 'running' or s == 'toStop' then
     local done = math.max(0, math.min(totalM, (run.along or run.startM or 0) - (run.startM or 0)))
     if s == 'toStop' then done = totalM end
@@ -163,7 +218,6 @@ function M.build(run, ctx)
       rl.activeState = 'stageActive'
       ours.offM, ours.backBearing = run.off, run.backBearing
       show.offRoute = run.offRoute or nil
-      show.dimNotes = run.offRoute or nil
       show.km = not run.offRoute or nil
       show.go = (run.clock or 0) < M.GO_SHOW_S or nil
     else
@@ -191,6 +245,16 @@ function M.build(run, ctx)
     show.jump = true
   end
 
+  -- where the car is: a row of whichever panel is up, or the thin sliver beside the stage time once the stock
+  -- stage apps are on (there is no panel of ours then)
+  ours.where = M.whereOf(ctx)
+  if ours.where then
+    show.where = (show.next and 'next') or (show.timecard and 'timecard')
+      or ((s == 'running' or s == 'toStop' or s == 'waitStart') and 'sliver') or nil
+  end
+
+  -- a menu is up: ours draws nothing (the stock apps are the game's own business)
+  if ctx.uiHidden then ours.show = {} end
   if ctx.noRallyLoop then return nil, ours end
   if rl.activeState == 'inactive' then
     return { activeState = 'inactive', showStageApps = false }, ours

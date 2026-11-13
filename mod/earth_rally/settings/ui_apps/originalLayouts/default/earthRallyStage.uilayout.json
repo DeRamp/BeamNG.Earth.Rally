@@ -112,32 +112,6 @@
       }
     },
     {
-      "appName": "beamngEarthStatus",
-      "appVersion": 1,
-      "placement": {
-        "top": "0px",
-        "left": 0,
-        "right": 0,
-        "margin": "auto",
-        "position": "absolute",
-        "width": "700px",
-        "height": "64px"
-      }
-    },
-    {
-      "appName": "beamngEarthBanner",
-      "appVersion": 1,
-      "placement": {
-        "top": "36px",
-        "left": 0,
-        "right": 0,
-        "margin": "auto",
-        "position": "absolute",
-        "width": "700px",
-        "height": "60px"
-      }
-    },
-    {
       "appName": "beamngEarthCredits",
       "appVersion": 2,
       "placement": {
@@ -166,12 +140,12 @@
       "appName": "rallyCountdown",
       "placement": {
         "bottom": "",
-        "height": "220px",
+        "height": "300px",
         "left": 0,
         "margin": "auto",
         "position": "absolute",
         "right": 0,
-        "top": "82px",
+        "top": "92px",
         "width": "450px"
       }
     },
@@ -183,7 +157,7 @@
         "left": "0px",
         "position": "absolute",
         "right": "",
-        "top": "64px",
+        "top": "0px",
         "width": "288px"
       }
     },
@@ -195,7 +169,7 @@
         "left": "288px",
         "position": "absolute",
         "right": "",
-        "top": "64px",
+        "top": "0px",
         "width": "780px"
       }
     },

@@ -33,6 +33,57 @@ that needs Python and BeamNG.Earth's source. Players who import their own maps g
   the player's BeamNG.Earth already downloaded.
 - Show the stage-page mock-up to the user before building it.
 
+### Research findings (2026-11-13)
+
+- **Imports.** The packaged app works: build_app.py:144,198-199 hidden-imports every `server/*.py`; dev.375's exe
+  contains numpy, mapdata, mapcells, dem, roads, apppaths and install. The **dev tree** does not: `launcher.run_addon`
+  (launcher.py:268-276) never adds `server/` to sys.path, so the companion needs a fallback (or a one-line upstream fix).
+- **Process.** The world server is the companion's parent (addonrun.py:157-173) and kills it when it ends: all writes
+  atomic. The shared download cache is safe across processes (cache.py:233-238 tmp + replace, xproc.py locks).
+- **Folders.** Cache: `apppaths.saved_cache_dir() or default_cache_dir()`, `~/.cache/beamng-earth` on Windows too
+  (earthd.py:10817, apppaths.py:33). No env var gives a companion the user or cache folder: fall back to
+  `apppaths.saved_user_dir()` then `install.candidate_user_dirs()`; better, an upstream PR adding `BNGEARTH_USER_DIR`,
+  `BNGEARTH_CACHE_DIR`, `BNGEARTH_DATA_DIR` (not `BNE_*`: those are build switches, revisit.py:140-166).
+- **Registry.** `addons.json` in TecnaGamer/BeamNG.Earth-data (addons.py:78), edited by hand by TecnaGamer with the
+  author's agreement after checking the files. One entry = one kind + one asset: Earth Rally needs two entries (the
+  mod zip, `beamng-mod`; the matcher, `companion`), same repo. `run.args` flags only (`["--watch"]`).
+  - **No registry autostart**: "Start with BeamNG.Earth" is the player's toggle (addons.py:847).
+  - **Blocker:** Install only offers non-pre-releases (addons.py:437-448); every Earth Rally release so far is a
+    pre-release. 1.3.0 has to be a full release.
+  - The asset must have GitHub's SHA-256 digest and be one `.py` (addonrun.py:30).
+- **Talking to the game:** files in the user folder (the game can't read run.log). `events.lua`'s `readOnce` caches
+  a missing file too (events.lua:20-31): drop that entry when the matcher reports a stage done.
+- **match_roads.py changes:** optional `--earth`/`--event`; a `--watch` loop (~5 s, skip files still being written);
+  atomic writes with retry; `matcher.json` with a heartbeat; a `matcher` version in matched files; idle priority and
+  smaller pools (`MapData(threads=2)`, `Dem(fetch_workers=4)`): it inherits the server's pinned cores (cpupin.py:244,
+  budget.py:669). One self-contained file, no multiprocessing. ~0-35 s per stage.
+- **matcher.json:** `{format:1, matcher, pid, heartbeat, state: idle|matching, queued, current:{event,stage,since}|null,
+  stages:{"ev__st":{state: done|failed, seconds?, error?, at}}}`; a heartbeat older than ~30 s = not running. Requests
+  from the mod: `earthRally/matcher-request.json`.
+- **local.json entry for testing:** `{"id":"earth-rally-matcher","name":"Earth Rally Matcher","author":"DeRamp",
+  "repo":"DeRamp/BeamNG.Earth.Rally","kind":"companion","asset":"^earth_rally_matcher\\.py$",
+  "local":{"file":"<path>","tag":"1.3.0-dev"},"run":{"args":["--watch"]},"minEarth":"1.9.0"}`; restart the server
+  after editing.
+- **Draft:** `earth_rally_matcher_draft.py` in the session scratchpad (`research-1.3.0/`); a dry run through
+  `launcher.py --run-addon` found 0 stages pending.
+- **Build order:** companion file, tested via the dev `--run-addon` → small upstream PR (path fix, env vars, maybe an
+  autostart default) → local.json entry → the mod's status display (mock-up first) → 1.3.0 as a full release → ask
+  TecnaGamer to list it.
+- **Open:** list the mod zip itself too? (`oldFiles` takes exact names: every hand-installed versioned zip would need
+  naming.) Does TecnaGamer want trust "reviewed" or "latest"?
+
+## Pacenote generator overhaul
+
+Moved to 1.4.0 (the co-driver) when the user split 1.3.0 in two (2026-11-13; docs/roadmap.md). Details to agree
+with the user.
+
+## A stage with no ATC gets one
+
+Some maps (SnoDrift) have stages without an ATC. The run then starts the countdown straight away, and the world takes
+long enough to load that it is already running when the player can drive. When a stage has no ATC, add one a short way
+before the start along the stage's road (the user: "just up the road from the stage start"), so the player checks in
+and gets a start time as usual. Put in 1.3.0 by the user (2026-11-13), with the pacenote overhaul.
+
 ## Also for later
 
 - Maps that group each stage with its controls in folders (SOFR, and one with points named "ATC 10, 14", "Start",

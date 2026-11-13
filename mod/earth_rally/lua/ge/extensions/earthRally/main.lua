@@ -19,7 +19,7 @@ local preview = require('earthRally/preview')
 
 local M = {}
 local logTag = 'earthRally'
-M.VERSION = '1.2.1'
+M.VERSION = '1.2.5'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_HZ = 30                  -- the HUD's streams this often while something moves on it
 M.STREAM_IDLE_HZ = 2              -- ... and this often once the run is over
@@ -33,6 +33,15 @@ local scanIn = nil       -- seconds until the import folder is looked at (a file
 local menuOpen = false   -- the menu page is the screen now (onUiChangedState)
 local openAt = nil       -- the page to show when the menu opens next: { view, eventId, stageId }
 local lastImport = nil   -- the last import: { at, lines = { { text, ok }... } }
+local selftest = nil     -- the self-test (earthRally/selftest.lua), loaded only when one is asked for
+M.SELFTEST_REQUEST = '/earthRally/selftest/request.json'
+-- A stage to be taken to as soon as the game is up (tools/playtest.py writes it, and it is used once): the testing
+-- loop is install, start the game, drive the stage, and doing the first two by hand each time wastes the evening.
+M.PLAYTEST_REQUEST = '/earthRally/playtest.json'
+M.PLAYTEST_WAIT_S = 420         -- the world given this long to come up before giving up on it
+M.PLAYTEST_SETTLE_S = 12        -- ... and this long settled before the stage is asked for, so BeamNG.Earth has
+                                -- streamed the roads round the control before the run puts its boards down
+local playtest = nil     -- { event, stage, what, t, levelAsked, ready }
 
 -- The developer panel (the ImGui window): console toggle; the setting shows / hides it.
 function M.toggle() show[0] = not show[0] end
@@ -68,8 +77,16 @@ function M.toggleMenu()
   end
   return M.openMenu()
 end
+-- The game's UI state. Our HUD is hidden while a menu is up: it is drawn over the pause menu otherwise, which is
+-- in the way now that the rally block sits in the top left corner where the menu draws (the user, 2026-11-13).
+-- BeamNG.Earth's own apps do the same (its credits.lua: `toState:sub(1, 4) == 'menu' or toState == 'loading'`).
 function M.onUiChangedState(toState)
-  if type(toState) == 'string' then menuOpen = toState == M.ROUTE end
+  if type(toState) ~= 'string' then return end
+  menuOpen = toState == M.ROUTE
+  -- Our own full-screen page counts too: it is not called 'menu...' but it is just as much in the way. So does
+  -- BeamNG.Earth's world map, a route of its own ('beamngEarthMap', its credits.lua MAP_ROUTE).
+  runner.uiHidden = toState:sub(1, 4) == 'menu' or toState == 'loading' or toState == M.ROUTE
+    or toState == 'beamngEarthMap'
 end
 
 ------------------------------------------------------------------------------------------ the developer panel
@@ -255,6 +272,51 @@ function M.onFileChanged(filename)
   if type(filename) == 'string' and filename:lower():find(importer.IMPORT_DIR:lower(), 1, true) then scanIn = 1.0 end
 end
 
+-- The playtest request, every frame until it is done: the BeamNG.Earth level loaded when the game is still at the
+-- menu, then the stage driven (or just gone to) once the world is up with a car in it.
+local function updatePlaytest(dt)
+  playtest.t = playtest.t + dt
+  if playtest.t > M.PLAYTEST_WAIT_S then
+    log('W', logTag, 'playtest: the world never came up; not going to the stage')
+    playtest = nil
+    return
+  end
+  if not earth.check() then
+    -- (at the main menu: ask for the level, once, after a moment for the menu to settle)
+    if not playtest.levelAsked and playtest.t > 6 then
+      playtest.levelAsked = true
+      local fr = rawget(_G, 'freeroam_freeroam')
+      if not fr and extensions and extensions.load then
+        pcall(extensions.load, 'freeroam_freeroam')
+        fr = rawget(_G, 'freeroam_freeroam')
+      end
+      if fr and fr.startFreeroamByName then
+        log('I', logTag, 'playtest: loading the BeamNG.Earth level')
+        pcall(fr.startFreeroamByName, 'beamng_earth')
+      else
+        log('W', logTag, 'playtest: cannot load the level (no freeroam_freeroam.startFreeroamByName)')
+        playtest = nil
+      end
+    end
+    return
+  end
+  if not (earth.ready() and getPlayerVehicle and getPlayerVehicle(0)) then
+    playtest.ready = 0
+    return
+  end
+  playtest.ready = (playtest.ready or 0) + dt
+  if playtest.ready < M.PLAYTEST_SETTLE_S then return end
+  local what = playtest.what == 'goStart' and 'goStart' or 'drive'
+  local ev, st = playtest.event, playtest.stage
+  playtest = nil
+  local r = doAction(what, ev, st, true)
+  log('I', logTag, string.format('playtest: %s %s / %s: %s', what, tostring(ev), tostring(st),
+    r and (r.ok and 'on its way' or tostring(r.message)) or '?'))
+  if not (r and r.ok) then
+    runner.say(tostring(r and r.message or 'could not go to the stage'), 8, 'warning', 'Playtest')
+  end
+end
+
 ------------------------------------------------------------------------------------------ the menu page's buttons
 
 -- One action of the menu page (or the developer panel): returns { ok, message, closeMenu }.
@@ -427,10 +489,36 @@ function M.previewStop()
   inactiveSent = false
 end
 
+-- What the HUD's streams carry, logged once each time it changes (the run's state, the stock apps' state, the pieces
+-- of ours that are up): in game, "not sent" told apart from "sent but not shown". rl nil: the rallyLoop stream is
+-- left alone (the extension gameplay_rallyLoop is loaded: the game's own rally mode sends it).
+local streamLogKey = nil
+local function showKeys(ours)
+  local keys = {}
+  for k, v in pairs(type(ours) == 'table' and type(ours.show) == 'table' and ours.show or {}) do
+    if v and k ~= 'bigCount' and k ~= 'go' then keys[#keys + 1] = k end
+  end
+  table.sort(keys)
+  return table.concat(keys, ',')
+end
+function M.streamsKey(rl, ours)
+  return table.concat({ tostring(ours and ours.state), tostring(rl and rl.activeState or 'none'),
+    tostring(rl and rl.showStageApps), showKeys(ours) }, '|')
+end
+function M.streamsLine(rl, ours)
+  local rlText = rl and string.format('activeState %s, showStageApps %s, theme %s', tostring(rl.activeState),
+    tostring(rl.showStageApps), tostring(rl.uiColors and rl.uiColors.theme)) or
+    'NOT sent (noRallyLoop: gameplay_rallyLoop is loaded)'
+  return string.format('HUD streams (run %s): rallyLoop %s; earthRally show [%s]', tostring(ours and ours.state),
+    rlText, showKeys(ours))
+end
+
 local function sendStreams(dt)
   local gh = rawget(_G, 'guihooks')
   if not (gh and gh.queueStream) then return end
   if previewT then
+    -- (the layout on screen checked once, as for a run)
+    if previewT < runner.LAYOUT_CHECK_S and previewT + dt >= runner.LAYOUT_CHECK_S then pcall(runner._logLayout) end
     previewT = previewT + dt
     local rl, ours = preview.frameAt(previewT, settings.get('units'))
     if not rl then M.previewStop() return end
@@ -449,6 +537,8 @@ local function sendStreams(dt)
       ours.state, ours.show = 'idle', {}
       gh.queueStream('earthRally', ours)
       inactiveSent = true
+      if streamLogKey then log('I', logTag, 'HUD streams: the run over, the HUD hidden') end
+      streamLogKey = nil
     end
     return
   end
@@ -460,6 +550,11 @@ local function sendStreams(dt)
   local rl, ours = runner.uiFrame()
   if rl then gh.queueStream('rallyLoop', rl) end
   gh.queueStream('earthRally', ours)
+  local key = M.streamsKey(rl, ours)
+  if key ~= streamLogKey then
+    streamLogKey = key
+    log('I', logTag, M.streamsLine(rl, ours))
+  end
 end
 M._sendStreams = sendStreams
 
@@ -490,10 +585,18 @@ function M.onUpdate(dtReal, dtSim)
       facing = nil
     end
   end
+  if playtest then
+    local okP, errP = pcall(updatePlaytest, dtReal or 0)
+    if not okP then log('E', logTag, 'playtest: ' .. tostring(errP)) playtest = nil end
+  end
   local ok, err = pcall(runner.update, dtReal, dtSim)
   if not ok then log('E', logTag, 'run: ' .. tostring(err)) runner.abort(true) message = 'Run stopped: ' .. tostring(err) end
   local okS, errS = pcall(sendStreams, dtReal or 0)
   if not okS then log('E', logTag, 'HUD: ' .. tostring(errS)) end
+  if selftest then
+    local okT, errT = pcall(selftest.update, dtReal, M.VERSION)
+    if not okT then log('E', logTag, 'self-test: ' .. tostring(errT)) pcall(selftest.stop, 'error: ' .. tostring(errT)) end
+  end
   if show[0] then
     local okW, errW = pcall(drawWindow)
     if not okW then log('E', logTag, 'window: ' .. tostring(errW)) pcall(im.End) end
@@ -520,7 +623,21 @@ function M.onDrawDebug()
   pcall(runner.placeClockView)
 end
 
+-- The in-game self-test (developer tool; tools/selftest.py starts it through a request file, see selftest.lua): a
+-- stage run end to end by the game's AI, with checks, and a report in earthRally/selftest/. From the console, in the
+-- BeamNG.Earth level: earthRally_main.selfTest('otr24', 'maryhill-up'); earthRally_main.selfTestStop() stops it.
+function M.selfTest(eventId, stageId, opts)
+  opts = opts or {}
+  selftest = selftest or require('earthRally/selftest')
+  local ok, why = selftest.start({ event = eventId, stage = stageId, token = opts.token, quit = opts.quit,
+    loadLevel = opts.loadLevel, budgetS = opts.budgetS, main = M })
+  if not ok then log('W', logTag, 'self-test not started: ' .. tostring(why)) end
+  return ok, why
+end
+function M.selfTestStop() if selftest then selftest.stop('stopped from the console') end end
+
 function M.onClientEndMission()
+  if selftest then pcall(selftest.onClientEndMission) end
   if recce.active() then recce.stop(false) end
   if previewT then M.previewStop() end
   runner.abort(true)
@@ -528,8 +645,10 @@ function M.onClientEndMission()
 end
 
 function M.onExtensionLoaded()
-  -- (boards and tents a run left before a Lua reload: taken away; the car's brake / clutch overrides handed back)
+  -- (boards and tents a run left before a Lua reload: taken away; the car's brake / clutch overrides handed back,
+  --  and BeamNG.Earth's strips given back in case a run was cut short holding them)
   pcall(require('earthRally/props').sweep)
+  pcall(earth.holdStrips, false)
   local veh = getPlayerVehicle and getPlayerVehicle(0)
   if veh then pcall(runner._vehCtl, veh, 'off') end
   settings.load()
@@ -537,6 +656,31 @@ function M.onExtensionLoaded()
   -- (new maps in the import folder)
   scanIn = 0.5
   log('I', logTag, 'Earth Rally ' .. M.VERSION .. ' loaded (Ctrl+Alt+K opens its menu)')
+  -- a stage to be taken to (tools/playtest.py): read once and the file deleted, so a normal start never does it
+  do
+    local fs = rawget(_G, 'FS')
+    if fs and fs.fileExists and fs:fileExists(M.PLAYTEST_REQUEST) then
+      local okR, req = pcall(jsonReadFile, M.PLAYTEST_REQUEST)
+      if fs.removeFile then pcall(fs.removeFile, fs, M.PLAYTEST_REQUEST) end
+      if okR and type(req) == 'table' and req.event and req.stage then
+        playtest = { event = req.event, stage = req.stage, what = req.what, t = 0 }
+        log('I', logTag, string.format('playtest: %s / %s when the world is up', tostring(req.event),
+          tostring(req.stage)))
+      else
+        log('W', logTag, 'playtest: the request file could not be read')
+      end
+    end
+  end
+  -- a self-test asked for (tools/selftest.py): only then is selftest.lua loaded; the request is used once
+  local fs = rawget(_G, 'FS')
+  if fs and fs.fileExists and fs:fileExists(M.SELFTEST_REQUEST) then
+    selftest = selftest or require('earthRally/selftest')
+    local req = selftest.readRequest()
+    if req then
+      M.selfTest(req.event, req.stage, { token = req.token, quit = req.quit == true, loadLevel = req.loadLevel ~= false,
+        budgetS = req.budgetS })
+    end
+  end
 end
 
 return M
