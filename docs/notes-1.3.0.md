@@ -55,3 +55,45 @@ makes every stage uniform and retires the special case; 3 only as part of pre-lo
 should it still be a flat 12 s (`NO_ATC_START_S`, which exists so the co-driver's 10-second call fits), or should it
 give you a real start minute the way checking in at an ATC does? A minute is what a rally does; 12 s is friendlier
 on a stage that has no controls at all. Not blocking -- the guard is the same either way.
+
+---
+
+## 2. Where the Auto recce button goes (the user, 2026-11-13)
+
+> "for adding an auto recce buton, that should go to the right of the status colum when a map has the recce needed
+> tag btw."
+
+**Specified, not built. A mock-up comes first** (the project's rule for any UI change), and the mock-up has to answer
+the three questions below rather than guess at them.
+
+### What it means against the UI as it stands
+
+The stage list is a six-column grid in `EarthRally.vue` (`.er-srow`,
+`grid-template-columns: 100px 1fr 130px 260px 150px 30px`): **Stage · Name · Length · Status · Best · ›**. The Status
+column is 260 px with `padding-left: 30px` and holds one `.er-pill`, whose three states come from `store.js`:
+
+| `status` | pill | meaning |
+|---|---|---|
+| `ready` | **Ready** (green) | notes from the stage's own roads, or from a recce |
+| `recce` | **Recce recommended** (amber) | a matched line exists but part of the stage has no road on the map |
+| `none` | **Recce needed** (red) | no line at all |
+
+So "the recce needed tag" is `status == 'none'`, and the button sits in or just after the Status cell on those rows.
+
+### Three things the mock-up has to settle
+
+1. **Inside the Status cell, or a column of its own?** The cell has room beside the pill, which needs no grid change
+   -- but rows with and without a button would be ragged down the list. A seventh column is tidier and costs a
+   header cell and a reflow of the widths. Both will be drawn.
+2. **Only `Recce needed`?** Yes, and the reason is worth writing down: a `Recce recommended` stage already has a
+   matched line, and its amber state means `gapM > 0` -- stretches with **no road on the map**. Running the auto
+   recce again cannot fill those, because there is nothing there to match to. So the button on an amber row would
+   promise something it cannot do. `Recce needed` only.
+3. **The running state.** This is the part with no precedent in the UI: an auto recce is asynchronous, takes several
+   road-graph windows (~18 at a 1000 m radius for a 12 km stage) and can fail part way. A button that just sits
+   there pressed is not enough -- the row needs to show progress, and the pill needs a fourth state while it runs.
+   That state is the mock-up's real work.
+
+Also worth drawing while we are there: the stage page's own action row (`Drive stage` · `Route to start` · `Recce`)
+is where someone who opened a stage would look for it, so it probably wants an **Auto recce** button too, disabled
+with the reason shown when BeamNG.Earth cannot hand out its road graph.
