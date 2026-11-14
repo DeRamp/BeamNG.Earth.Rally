@@ -80,16 +80,26 @@ This exposes that one parameter, cached-only, behind a capability flag.
   first and then reads at `kind="background"`, the same rule the window's own cells already follow. Both are this
   thread's lane and nothing else sets them, so `build_navgraph` and every other caller run the code they run on
   `dev`.
-* **Missing data makes a window incomplete, never approximate.** A node at a height taken from a coarser model
-  reads exactly like a measured one to an add-on, which has no way to tell the two apart, while `complete: false`
-  says plainly that the window is not all there yet. So a window whose ground is not all in the disk cache comes
-  back empty with `complete: false` rather than with roads at guessed heights — the answer the call already gives
-  for a window whose cells are not there — and the add-on can ask for it again once the world has been over it. A
-  neighbour cell that is not on disk is left out the way a read that failed already is: the cell's grade
-  separations and home copies go without it, nothing made short of it is kept (`revisit.fault`), and the window
-  says `complete: false`. The build runs inside a `revisit.scope()` so those faults stay in it: a fault in a thread
-  with no scope of its own is the process's, and without one an add-on's request over ground nobody has driven
-  would stop the player's own road tiles being kept in the revisit cache while it ran.
+* **What is not cached is read coarser, never invented, and `complete` stays the question an add-on asks.** The
+  graph samples at the anchor's own zoom, which is deeper than Mapterhorn's deepest, so the tile it asks for is one
+  the world itself only ever derives from a coarser one — most of the planet has no z16 tile at all. A lane that
+  refused every tile it did not have cached would therefore empty windows whose roads were all present, so inside
+  it a tile that is not cached is answered the way a source with no tile there is answered and `_make_tile0`'s own
+  chain reads the coarser cached tile: measured elevation, upsampled, exactly what the world is built on wherever
+  nothing deeper is published (with the z16 tiles of a real cached region removed and only their z15 parents left,
+  0.02 m from the real heights on average, 0.28 m at worst, nothing downloaded). AWS is the floor of that chain
+  and has no ancestor under it, so a tile it cannot answer for raises instead and the window comes back **empty
+  with `complete: false`** rather than at sea level: a node at an invented height reads exactly like a measured one
+  to an add-on, which has no way to tell them apart. A tile made with a stand-in is kept for that one build and
+  never put in the DEM's LRU, which is the world's: the player's next read of it must download the real one.
+* **`complete` is about the window's own cells, deliberately.** A build also reads the eight cells around each of
+  its own (`gradesep`) and the land cover a road's surface rule asks for; where one of those is not on disk it goes
+  without it exactly as it does when such a read fails for the player, and nothing made short of it is kept
+  (`revisit.fault`). That changes a bridge range at the edge of a window, not which roads are in it — and
+  `complete` is read as "are these all the roads there are", so answering false for it would have an add-on throw
+  away a window it can use. The build runs inside a `revisit.scope()` so those faults stay in it: a fault in a
+  thread with no scope of its own is the process's, and without one an add-on's request over ground nobody has
+  driven would stop the player's own road tiles being kept in the revisit cache while it ran.
 * **`api.lua`: `api.roadGraph(lat, lon, opts, callback)`**, with the request table, the id and the timeout sweep
   copied from `places` — one in-flight table, `_onRoadGraph` dispatching to the callback inside a `pcall` that logs,
   a timed-out request answering `{error = 'timed out'}` rather than hanging. Its wait is its own
@@ -108,9 +118,9 @@ This exposes that one parameter, cached-only, behind a capability flag.
 
 * **Nothing is downloaded: no map cell and no elevation tile.** Cached-only is the whole contract — every layer the
   graph reads, the cells around them its road rules reach for, and the ground under the nodes. A window over ground
-  the player has never been near comes back with few nodes and `complete: false`, and one whose ground is not there
-  with none at all. That is the honest answer rather than a slow one, and `docs/ADDONS.md` says both rather than
-  letting an author infer a stronger promise.
+  the player has never been near comes back with few nodes and `complete: false`, and one over ground the app has
+  no elevation for at all with none. That is the honest answer rather than a slow one, and `docs/ADDONS.md` says
+  what it covers rather than letting an author infer a stronger promise.
 * **It is not the AI graph.** A requested graph is written to its own file and never reaches `map.reset`, so it
   cannot move the cars or the traffic.
 * **There is no bridge flag.** Nodes on a bridge take the deck height, which is the right height, but nothing in
@@ -142,8 +152,8 @@ tool and a stage matcher all want the same window and would each want a differen
 
 ## Validation
 
-Windows 11, Python 3.13. The suites below ran at `8314a3da`, the head of this branch; the in-game run below was
-made at `dac0636f`, two commits earlier.
+Windows 11, Python 3.13. The suites below ran at `891a7ef9`, the head of this branch; the in-game run below was
+made at `dac0636f`, three commits earlier.
 
 ### In a game
 
@@ -172,10 +182,15 @@ Three windows, each centred where it was asked for, **2.5 s end to end, nothing 
 gap. The player's own `navgraph_<aid>_<serial>.json` sat untouched beside the request's files throughout, which is
 the claim this change most needed to make good on.
 
-That run was made before the DEM and neighbour reads were closed. It was over a cached region, so nothing was
-downloaded then either; what the last commit changes there is that the window's elevation tiles are read in the
-thread that answers the request rather than in the DEM's pool, and the cells around it at `background` rather than
-`demand`. Neither has been re-timed in a game, so take the 2.5 s above as the figure for the earlier commit.
+That run was made at `dac0636f`, before the two reads above were closed. It was over a cached region, so nothing
+was downloaded then either; what has changed under it since is that the window's elevation tiles are read in the
+thread that answers the request rather than in the DEM's pool, that a tile which is not cached is read from its
+coarser cached parent, and that the cells around the window go at `background`. The first two were checked against
+that same region outside the game, on the real cache rather than a fixture: all 42 z16 tiles and 16 z15 parents of
+a 1000 m window there are cached, the lane samples them with no network at all and gives the same heights as the
+unrestricted read; with the z16 tiles taken out and only their parents left it reads the parents, 0.02 m from the
+real heights on average and 0.28 m at worst; with nothing cached it raises rather than answering sea level. None
+of it has been re-timed in a game, so take the 2.5 s above as the figure for `dac0636f`.
 
 ### The suites
 
@@ -186,10 +201,18 @@ back, the app's reason surfaced, bad coordinates / no callback / not connected r
 with a failing callback contained.
 
 **Python — the modules this change touches, `python -I tools/run_tests.py test_road_graph_api test_navgraph
-test_places_api test_protocol_agreement --timeout 400`:** `4 OK, 0 not OK` — `test_road_graph_api` 22 tests,
+test_places_api test_protocol_agreement --timeout 400`:** `4 OK, 0 not OK` — `test_road_graph_api` 26 tests,
 `test_navgraph` 52, `test_places_api` 26, `test_protocol_agreement` 32. And `test_roads` 129, `test_mapdata` 67,
 `test_mapdata_singleflight` 8, `test_grading` 97, `test_revisit` 12, `test_netfetch` 61, `test_demand` 7,
-`test_determinism` 6 and `test_addons` 29, all OK.
+`test_determinism` 6 and `test_addons` 29, all OK. Four of `test_road_graph_api`'s own are the real `dem.Dem` over
+a cache with one tile written into it and a fetcher that fails the test if anything is downloaded, because its
+stand-in DEM cannot see the lane: the deeper tile read from the cached parent, the stand-in kept out of the LRU,
+no cached elevation at all raising rather than answering sea level, and the same read going to the network with
+the lane off.
+
+**And a mod-to-server test in the add-on's own repository,** which drives this call end to end — our add-on, this
+branch's `api.lua`, `protocol.py` both ways, and `Connection.road_graph` over a real `mapdata.MapData` — because
+every bug this call has had lived in the gap between the two sides' stand-ins. 56 checks, 0 failed.
 
 **Python — the wider gate, `python -I tools/run_tests.py <the 60 modules of tools/quality_gate.py>
 test_road_graph_api test_navgraph test_places_api test_protocol_agreement test_roads test_mapdata_singleflight
@@ -208,8 +231,8 @@ four reaches a road graph, the DEM lane or the neighbour read, and `NotOnDisk` a
 
 A road graph reads only what is on disk — the window's map cells, the cells around them, and the elevation under
 them — and downloads nothing at all, so an add-on over ground the player has never visited gets few roads, or none
-where the ground itself is not there, and `complete: false`. That is the right answer for *this* call — it must
-never outrun the world's own downloads or your rate limits with your sources — but it does leave the question of
+where the app has no elevation for it at all, and `complete: false`. That is the right answer for *this* call — it
+must never outrun the world's own downloads or your rate limits with your sources — but it does leave the question of
 how an add-on is meant to get those cells. The answer is a second, separate request: explicit points on
 `area_plan` / `area_add` (which already take `(lats, lons, half)` for a route, just not from an add-on) and a
 modding-API call over them. It is planned and not written, and deliberately not bundled here so that this one can
