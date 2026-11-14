@@ -8,8 +8,12 @@ local T = dofile(TESTS .. '/testlib.lua')
 local files = {}
 function jsonWriteFile(path, data) files[path] = data return true end
 function jsonReadFile(path) return files[path] end
+-- (the game's own art, which the stage dressing looks for once per shape: all there, as in the game)
 FS = {
-  fileExists = function(_, path) return files[path] ~= nil end,
+  fileExists = function(_, path)
+    if path:match('^/art/') or path:match('^/assets/') then return true end
+    return files[path] ~= nil
+  end,
   removeFile = function(_, path) files[path] = nil end,
   findFiles = function(_, dir, pattern)
     local out = {}
@@ -681,6 +685,24 @@ do
   local shapes2 = {}
   for _, o in pairs(objects) do if o.fields.shapeName then shapes2[o.fields.shapeName:match('([^/]+)%.dae$')] = true end end
   T.check(shapes2.s_rally_signboard_finish and shapes2.s_rally_signboard_finish_entry, 'the finish boards put down')
+  -- on the way to the stop control, well off the line: the car's distance along kept, never a whole-line search a
+  -- frame (1.4.0's review: progress() past the end looked through every segment of the stage each frame)
+  do
+    local geo = require('earthRally/geo')
+    local plainLocate, segs = geo.locate, 0
+    geo.locate = function(pts, cum, p, lo, hi)
+      segs = segs + (math.min(#pts - 1, hi or #pts - 1) - math.max(1, lo or 1) + 1)
+      return plainLocate(pts, cum, p, lo, hi)
+    end
+    local keep = { car.lat, car.lon }
+    car.lat, car.lon = full[#full][1] + 0.004, full[#full][2] + 0.006      -- (~450 m off the end)
+    frames(3)
+    geo.locate = plainLocate
+    car.lat, car.lon = keep[1], keep[2]
+    T.check(runner.state() == 'toStop' and segs > 0 and segs < 3 * 400,
+      'to the stop control off the line: a bounded search, not the whole line each frame (' .. segs .. ' segments in 3 frames, the line ' ..
+      #r2.line .. ' points)')
+  end
   car.lat, car.lon = ev2.stages[1].controls.stop.lat, ev2.stages[1].controls.stop.lon
   frames(2)
   local stopTent = false
@@ -1316,7 +1338,94 @@ do
   T.check((props.dressingSites().tape or 0) == 2, 'live: the same junctions seen again: nothing added twice')
   runner.abort(true)
   T.check(select(2, props.dressingSites()) == 0 and shapes('s_tape_road_closure') == 0, 'live: the run stopped: its dressing gone')
+
+  -- ------------------------------------------------------------ 1.4.0's review: the switches, the faults, the shifts
+  K, west = 40, false
+  local function evWith(id, fileFrom)
+    local ev = evFor(id)
+    files['/earthRally/matched/' .. id .. '__hill.json'] = files['/earthRally/matched/' .. fileFrom .. '__hill.json']
+    return ev
+  end
+  -- runner.DRESSING off: no dressing at all; runner.DRESS_LIVE_SCAN off: planned, the live road map not looked at
+  runner.DRESSING = false
+  local rO = toTheLine(evWith('dressOff', 'dressA'))
+  T.check(runner.state() == 'waitStart' and rO.dress == nil and select(2, props.dressingSites()) == 0 and
+    tostring(rO.checks.dressing):find('off') ~= nil, 'switch: DRESSING off, no dressing (' .. tostring(rO.checks.dressing) .. ')')
+  runner.abort(true)
+  runner.DRESSING = true
+  runner.DRESS_LIVE_SCAN = false
+  local liveCalls = 0
+  local plainLive = J.live
+  J.live = function(...) liveCalls = liveCalls + 1 return plainLive(...) end
+  local rS = toTheLine(evWith('dressNoScan', 'dressB'))
+  T.check(rS.dress and rS.dress.scan == false and liveCalls == 0 and (props.dressingSites().tape or 0) == 0,
+    'switch: DRESS_LIVE_SCAN off, a format 1 file: the live road map never looked at (' .. liveCalls .. ')')
+  runner.abort(true)
+  runner.DRESS_LIVE_SCAN = true
+
+  -- the stage dressing raising as it is set out: the stage still starts, the fault in its checks
+  local plainJunctions = events.junctions
+  events.junctions = function() error('a fault for the test') end
+  local rF = toTheLine(evWith('dressFault', 'dressA'))
+  events.junctions = plainJunctions
+  T.check(runner.state() == 'waitStart' and rF.dress == nil and
+    tostring(rF.checks.dressing):find('^failed: .*a fault for the test') ~= nil,
+    'a fault setting the dressing out: the stage still starts, its checks say so (' .. tostring(rF.checks.dressing) .. ')')
+  runner.abort(true)
+
+  -- the live look raising: it switches itself off, the run goes on
+  local warned = {}
+  local plainLogFn = log
+  log = function(level, tag, msg) if level == 'W' then warned[#warned + 1] = tostring(msg) end plainLogFn(level, tag, msg) end
+  J.live = function() error('a road map fault for the test') end
+  local rL = toTheLine(evWith('dressScanFault', 'dressB'))
+  J.live = plainLive
+  local said = false
+  for _, w in ipairs(warned) do if w:find('no longer looked at', 1, true) and w:find('road map fault', 1, true) then said = true end end
+  T.check(runner.state() == 'waitStart' and rL.dress and rL.dress.scan == false and said,
+    'a fault in the live look: switched off and said, the run waiting at the start as before')
+  log = plainLogFn
+  runner.abort(true)
+
+  -- no look while the world shifts, nor for RESET_AFTER_MOVE_S after
+  J.live = function(...) liveCalls = liveCalls + 1 return plainLive(...) end
+  local rM = toTheLine(evWith('dressShift', 'dressB'))
+  liveCalls = 0
+  frames(15, 0.1)
+  T.check(liveCalls >= 1, 'shift: looked at while waiting (' .. liveCalls .. ')')
+  local plainRebasing = beamngEarth_api.rebasing
+  beamngEarth_api.rebasing = function() return true end
+  liveCalls = 0
+  frames(30, 0.1)
+  beamngEarth_api.rebasing = plainRebasing
+  T.check(liveCalls == 0, 'shift: none while the world is shifting (' .. liveCalls .. ')')
+  runner._moved({ purpose = 'test', source = 'test' })
+  frames(15, 0.1)
+  T.check(liveCalls == 0, 'shift: none in the ' .. runner.RESET_AFTER_MOVE_S .. ' s after it (' .. liveCalls .. ')')
+  frames(15, 0.1)
+  T.check(liveCalls >= 1, 'shift: looked at again after (' .. liveCalls .. ')')
+  J.live = plainLive
+  T.check(rM.dress and rM.dress.scan, 'shift: still looking')
+  runner.abort(true)
   map = nil
+
+  -- the showcase from the console: one of each shape ahead of the car, the log naming them, cleared again
+  local D = require('earthRally/dressing')
+  veh.getDirectionVector = function() return vec3(0, 1, 0) end
+  local before = countObjects()
+  local nS = runner.dressShowcase()
+  T.check(nS == #D.SHOWCASE and countObjects() == before + nS, 'showcase: one of each shape put down (' .. nS .. ')')
+  local cp = veh.getPosition()
+  local ahead = true
+  for _, o in pairs(objects) do
+    if o.pos and (o.fields.shapeName or ''):find('s_corner_dir', 1, true) and math.abs(o.pos[2] - cp.y - 15) > 0.5 then
+      ahead = false
+    end
+  end
+  T.check(ahead, 'showcase: 15 m ahead of the car')
+  runner.dressShowcaseClear()
+  T.check(countObjects() == before, 'showcase: cleared')
+  veh.getDirectionVector = nil
 end
 
 -- the reset penalty: +10 s a reset during the timed stage, in the result

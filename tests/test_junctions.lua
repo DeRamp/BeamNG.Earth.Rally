@@ -233,7 +233,15 @@ do
   local rec = { kind = 'turn', side = '', inDeg = 359.97, outDeg = 90.04,
                 sides = { { deg = 0.0, halfW = 3.04 }, { deg = 270.0 } } }
   local e = J.encode(rec, 47.1, -123.2)
-  T.check(#e == 7 and e[3] == 'turn' and e[4] == '', 'format 2: [lat, lon, kind, side, inDeg, outDeg, sides]')
+  T.check(#e == 8 and e[3] == 'turn' and e[4] == '' and e[8] == 0,
+    'format 2: [lat, lon, kind, side, inDeg, outDeg, sides, half], the stage road\'s half width 0 when not known')
+  rec.half = 3.46
+  local e8 = J.encode(rec, 47.1, -123.2)
+  T.check(e8[8] == 3.5 and J.decode(e8).half == 3.5, 'the stage road\'s half width to 0.1 m, read back')
+  local e7 = { e8[1], e8[2], e8[3], e8[4], e8[5], e8[6], e8[7] }
+  T.check(J.decode(e7) and J.decode(e7).half == nil and #J.decode(e7).sides == 2,
+    'a seven-entry format 2 entry (before the eighth) still reads, with no half width')
+  rec.half = nil
   T.check(e[5] == 0 and e[6] == 90, 'bearings to 0.1 degree, 359.97 written as 0 (' .. e[5] .. ', ' .. e[6] .. ')')
   T.check(e[7][1][2] == 3 and e[7][2][2] == 0, 'a half width to 0.1 m, an unknown one as 0 (never null)')
   local d = J.decode(e)
@@ -337,6 +345,41 @@ do
       'the same side roads' .. tag .. ' (' .. table.concat(sa, ' ') .. ' / ' .. table.concat(sl, ' ') .. ')')
     T.check(a and hasSide(a, rot) and hasSide(a, rot).halfW == 3.0, 'and the same half widths' .. tag)
   end
+end
+
+------------------------------------------------------------------------------------------ 7: 1.4.0's review
+
+-- a live junction carries the stage road's own half width (its node's radius)
+do
+  local nodes, ln = scene(0, 0, 90, { { 0, 120, 3.0 } })
+  local j = J.live(nodes, ln)[1]
+  T.check(j and j.half == 4.0, 'live: the stage road\'s half width at the junction from its node (' .. tostring(j and j.half) .. ')')
+end
+
+-- A stage through the same crossroads twice (a figure of eight): the file has the junction twice, in order; each is
+-- placed on its own pass, not both on the nearer one
+do
+  -- north through (0, 0), a loop round to the east, then west through (0, 0) again, and away
+  local ln = line({ x = 0, y = -300 }, { { 0, 400 }, { 90, 100 }, { 180, 100 }, { 270, 300 } })
+  local cum = geo.cumulative(ln)
+  local first, second = 300, 400 + 100 + 100 + 100
+  local at = J.placeInOrder(ln, cum, { { x = 0, y = 0 }, { x = 0, y = 0 } }, 15)
+  T.near(at[1] and at[1].along or -1, first, 0.5, 'twice through a crossroads: the first on the first pass')
+  T.near(at[2] and at[2].along or -1, second, 0.5, 'and the second on the second (' .. tostring(at[2] and at[2].along) .. ')')
+  -- a whole-line nearest search puts both on one pass: what this replaced
+  local _, _, s1 = geo.locate(ln, cum, { x = 0, y = 0 })
+  local _, _, s2 = geo.locate(ln, cum, { x = 0, y = 0 })
+  T.check(s1 == s2, '(the whole-line search gives one along for both)')
+  -- a point off every pass, and a nil in the list: left out, the rest still placed in order
+  local at2 = J.placeInOrder(ln, cum, { { x = 0, y = -200 }, false, { x = 500, y = 500 }, { x = 0, y = 0 } }, 15)
+  T.near(at2[1] and at2[1].along or -1, 100, 0.5, 'in order: the first')
+  T.check(at2[2] == nil and at2[3] == nil, 'a point that could not be converted and one off the line: none')
+  T.near(at2[4] and at2[4].along or -1, first, 0.5, 'the next after them still on its own first pass')
+  -- the line passing a few metres off before it reaches the point: the pass that reaches it, not the first near one
+  local ln2 = line({ x = 10, y = -100 }, { { 0, 200 }, { 270, 10 }, { 180, 200 } })
+  local at3 = J.placeInOrder(ln2, geo.cumulative(ln2), { { x = 0, y = 0 } }, 15)
+  T.check(at3[1] and at3[1].off < 1, 'a pass 10 m off first, then one through the point: the one through it (' ..
+    tostring(at3[1] and at3[1].off) .. ')')
 end
 
 T.done('test_junctions')

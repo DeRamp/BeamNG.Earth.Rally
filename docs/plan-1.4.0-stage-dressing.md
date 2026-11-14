@@ -166,6 +166,30 @@ automatic) driven end to end with tape, boards and radio points standing where t
 4. **Passed to the rally-file session** (2026-11-14): reserve `marks` beside `controls` on a stage in its format,
    shape `[{ kind, name, lat, lon, distM, offLineM }]`, so 1.6.0's file can carry them.
 
+## Checking it in game
+
+**The models' turns.** Which way each dressing model faces was read from its mesh data, never seen standing. To see
+them: stand a car on an open road, open the game's Lua console (the GE Lua, `~`) and run
+
+    require('earthRally/runner').dressShowcase()
+
+One of each dressing shape goes down in a row 15 m ahead of the car, across the way it faces, each turned by the same
+code as on a stage driven towards them (boards' faces to the car, arrows pointing their own way, tape, fence and tarps
+laid across the road left to right). The log (`earthRally`, `dressing showcase: ...`) names them in order, left to
+right. Take it away with
+
+    require('earthRally/runner').dressShowcaseClear()
+
+(a Lua reload, Ctrl+L, sweeps it too). No change to main.lua is needed: `require` hands back the module main.lua
+already loaded.
+
+**The switches** (no UI yet, see Settled 2): `runner.DRESSING` (the dressing at all) and `runner.DRESS_LIVE_SCAN`
+(the live road map looked at as the car goes), both `true`, read at each stage's start and at each look. From the
+console: `require('earthRally/runner').DRESSING = false`, then start the stage again.
+
+**What the log says** at a stage's start: `stage dressing: N site(s), M junction(s) from the file ...`; a tape left
+out because its side road is the stage's own later pass says so once; a shape missing from the game is named once.
+
 ## Not changed by this branch
 
 The menus and HUD, `docs/roadmap.md`, `docs/version-plans.md`, and the rally-file work. When this merges, the

@@ -488,6 +488,7 @@ function M.junctions(gr, res, resAlong, flags)
       if j then
         last = c.s
         j.along = c.s
+        j.half = gr.half and gr.half[c.n]       -- (the stage road's own half width there: the file's eighth entry)
         out[#out + 1] = j
       end
     end
@@ -702,7 +703,7 @@ function M.match(stage, graph, info)
   local juncOut = {}
   for k, j in ipairs(juncs) do
     local la, lo = ll(j.along)
-    juncOut[k] = junctions.encode(j, la, lo)     -- [lat, lon, kind, side, inDeg, outDeg, [[sideDeg, halfW]...]]
+    juncOut[k] = junctions.encode(j, la, lo)     -- [lat, lon, kind, side, inDeg, outDeg, [[sideDeg, halfW]...], half]
   end
 
   -- (format 2: the junctions keep their roads -- junctions.lua. events.lua reads format 1 files as before.)

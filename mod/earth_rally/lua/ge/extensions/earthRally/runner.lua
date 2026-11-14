@@ -128,6 +128,10 @@ M.uiHidden = false             -- a game menu is up: the HUD draws nothing (main
 -- Junctions the matched file does not give with their side roads (no file, or one older than format 2) are looked for
 -- on the live road map as the car comes near them -- BeamNG.Earth only has the roads round the car loaded -- every
 -- DRESS_SCAN_S, over the line from the car to DRESS_SCAN_AHEAD_M on, and their tape, board and marshal added.
+-- The two switches, until Settings has one (UI: the menus' ground, mock-up first): the dressing at all, and the live
+-- road map looked at for it as the car goes. Read at each stage's start and at each look.
+M.DRESSING = true
+M.DRESS_LIVE_SCAN = true
 M.DRESS_SCAN_S = 1.0
 M.DRESS_SCAN_AHEAD_M = 450
 M.DRESS_SCAN_MAX_NEW = 6       -- (at most this many new junctions planned in one scan: the rest the next second)
@@ -513,14 +517,26 @@ local function stepBuild()
   run.checks.notesMutedKm = 0
   for _, r in ipairs(mute) do run.checks.notesMutedKm = run.checks.notesMutedKm + (r[2] - r[1]) / 1000 end
   -- junctions and bridges (from the matched line's map data) found on the line the stage runs on
+  -- (each in order along the line, the junctions and the bridges each a list of their own as the file keeps them, so
+  -- a junction the stage goes through twice is called on each pass: junctions.placeInOrder)
   local lms = {}
+  local lists = { {}, {} }
   for _, lm in ipairs(events.landmarks(run.event.id, run.stage.id, run.stage)) do
-    local x, y = earth.toGame(lm.lat, lm.lon, 0)
-    if x then
-      local _, _, s, off = geo.locate(run.line, run.cum, { x = x, y = y })
-      if s and off and off <= M.LANDMARK_OFF_M then lms[#lms + 1] = { s = s, type = lm.type } end
+    local l = lists[lm.type == 'overBridge' and 2 or 1]
+    l[#l + 1] = lm
+  end
+  for _, list in ipairs(lists) do
+    local pts = {}
+    for k, lm in ipairs(list) do
+      local x, y = earth.toGame(lm.lat, lm.lon, 0)
+      pts[k] = x and { x = x, y = y } or false
+    end
+    local at = junctions.placeInOrder(run.line, run.cum, pts, M.LANDMARK_OFF_M)
+    for k, lm in ipairs(list) do
+      if at[k] then lms[#lms + 1] = { s = at[k].along, type = lm.type } end
     end
   end
+  table.sort(lms, function(a, b) return a.s < b.s end)
   local okB, built = pcall(writer.build, run.line, { startM = run.startM, finishM = run.finishM, name = run.stage.name,
     mute = mute, landmarks = lms,
     quatFn = function(x, y, z) local q = quatFromDir(vec3(x, y, z), vec3(0, 0, 1)) return q.x, q.y, q.z, q.w end })
@@ -626,18 +642,26 @@ end
 -- radio points by the rule. Whether the live road map is to be looked at as the car goes: not when the file gave every
 -- junction with its side roads (format 2) and every one of them was found on this line.
 local function setupDressing()
+  if not M.DRESSING then
+    run.checks.dressing = 'off (runner.DRESSING)'
+    log('I', logTag, 'stage dressing: ' .. run.checks.dressing)
+    return
+  end
   local d = { known = {}, marshals = {}, scan = true, mapMarshals = false }
   run.dress = d
   local fromFile = events.junctions(run.event.id, run.stage.id, run.stage)
   local js, complete = {}, fromFile ~= nil
-  for _, j in ipairs(fromFile or {}) do
+  -- (each on its own pass of the line, in the file's order: junctions.placeInOrder)
+  local pts = {}
+  for k, j in ipairs(fromFile or {}) do
     local x, y = earth.toGame(j.lat, j.lon, 0)
-    local s, off = nil, nil
-    if x then
-      local _, _, s1, off1 = geo.locate(run.line, run.cum, { x = x, y = y })
-      s, off = s1, off1
-    end
-    if s and off and off <= M.LANDMARK_OFF_M then
+    pts[k] = x and { x = x, y = y } or false
+  end
+  local at = junctions.placeInOrder(run.line, run.cum, pts, M.LANDMARK_OFF_M)
+  for k, j in ipairs(fromFile or {}) do
+    local x, y = pts[k] and pts[k].x, pts[k] and pts[k].y
+    local s = at[k] and at[k].along
+    if s then
       local c = {}
       for k, v in pairs(j) do c[k] = v end
       c.along, c.x, c.y = s, x, y
@@ -651,7 +675,7 @@ local function setupDressing()
       complete = false          -- (a file junction not on this line: the stage runs on another line than the file's)
     end
   end
-  d.scan = not complete
+  d.scan = not complete and M.DRESS_LIVE_SCAN
   -- (the organisers' points: 1.4.0 step 3, none yet. Once they carry marshals, the map's are all there are, and none
   -- is added by the rule at a junction the live map shows later)
   local marks = {}
@@ -709,11 +733,9 @@ local function scanDressing(along)
     end
     if j and j.x and j.sides and #j.sides > 0 then
       planned = planned + 1
-      -- the stage road's half width there from the road map (dressing.HALF where it has none)
-      local nd = l.node and nodes[l.node]
-      local half = (nd and type(nd.radius) == 'number' and nd.radius > 0) and nd.radius or dressing.HALF
+      -- (the stage road's half width there: the junction node's radius, j.half from junctions.live)
       local list = dressing.plan({ line = run.line, cum = run.cum, startM = run.startM, finishM = run.finishM,
-        junctions = { j }, marks = {}, halfWidth = half, existingMarshals = d.marshals,
+        junctions = { j }, marks = {}, existingMarshals = d.marshals,
         only = { tape = true, board = true, marshal = not d.mapMarshals } })
       for _, st in ipairs(list) do
         -- (none wholly behind the car: a junction the map showed late gets no board the car has passed)
@@ -736,7 +758,9 @@ end
 -- stage line or waiting at its start. Guarded: a fault here stops the looking, never the run.
 local function dressScan(along)
   local d = run and run.dress
-  if not (d and d.scan and along and run.line) then return end
+  if not (M.DRESSING and M.DRESS_LIVE_SCAN and d and d.scan and along and run.line) then return end
+  -- (not while the world is shifting, nor for RESET_AFTER_MOVE_S after it: the road map round the car is reloading)
+  if earth.rebasing() or (run.movedAt and (run.realT or 0) - run.movedAt < M.RESET_AFTER_MOVE_S) then return end
   if d.lastScan and (run.realT or 0) - d.lastScan < M.DRESS_SCAN_S then return end
   d.lastScan = run.realT or 0
   local ok, why = pcall(scanDressing, along)
@@ -745,6 +769,29 @@ local function dressScan(along)
     log('W', logTag, 'stage dressing: the live road map no longer looked at (' .. tostring(why) .. ')')
   end
 end
+
+-- A developer's check of the dressing's models in the game (their turns were read from the mesh data, never seen):
+-- one of each shape in a row dressing.SHOWCASE_AHEAD_M in front of the player's car, across the way it faces, each
+-- turned as on a real stage driven towards them; the log says which is which, left to right. From the game's Lua
+-- console: require('earthRally/runner').dressShowcase(), and .dressShowcaseClear() to take it away (a Lua reload
+-- sweeps it too). docs/plan-1.4.0-stage-dressing.md, "Checking it in game". Returns the number of objects put down.
+function M.dressShowcase()
+  local veh = getPlayerVehicle and getPlayerVehicle(0)
+  if not veh then log('W', logTag, 'dressing showcase: no car') return 0 end
+  local p = veh:getPosition()
+  local hx, hy = 0, 1
+  if veh.getDirectionVector then
+    local d = veh:getDirectionVector()
+    if d and (d.x * d.x + d.y * d.y) > 1e-6 then hx, hy = d.x, d.y end
+  end
+  local rows = dressing.showcase(p.x, p.y, p.z, hx, hy)
+  local n = props.showcase(rows, p.z)
+  log('I', logTag, string.format('dressing showcase: %d object(s) %.0f m ahead, left to right:', n,
+    dressing.SHOWCASE_AHEAD_M))
+  for _, r in ipairs(rows) do log('I', logTag, 'dressing showcase: ' .. r.label) end
+  return n
+end
+function M.dressShowcaseClear() props.clearShowcase() end
 
 local function setupProps()
   props.clear()
@@ -1416,8 +1463,15 @@ local function stepToStop(dt)
   local p = carPos()
   local b = props.sitePoint('stop') or ctlGame(run.stopCtl)
   if not (p and b) then return end
-  -- (the car's distance along still given past the finish, so the stage's dressing behind it is taken away)
-  props.update(p, earth.toGame, (progress(p)))
+  -- (the car's distance along still given past the finish, so the stage's dressing behind it is taken away; looked for
+  -- only from just behind where it was to FOLLOW_AHEAD_M on, and kept as it was once the car is off the line: on the
+  -- way to the stop control it often is, and progress() would search the whole line every frame)
+  local last = run.prevAlong or run.finishM
+  local lo = geo.segAt(run.cum, math.max(0, last - M.FOLLOW_BACK_M))
+  local hi = math.min(#run.line - 1, geo.segAt(run.cum, last + M.FOLLOW_AHEAD_M))
+  local _, _, a, off = geo.locate(run.line, run.cum, p, lo, hi)
+  if off <= M.OFF_ROUTE_M then run.prevAlong = a end
+  props.update(p, earth.toGame, run.prevAlong or last)
   local d = math.sqrt((p.x - b.x) ^ 2 + (p.y - b.y) ^ 2)
   run.toControlM = d
   run.stopTarget = run.stopTarget or {}

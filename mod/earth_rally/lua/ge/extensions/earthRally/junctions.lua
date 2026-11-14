@@ -21,6 +21,7 @@
 --     sides   each side road the stage does not take (40 m+ long), its bearing out from the junction, and its half
 --             width in m where the road map gives one (nil where it does not: tools/auto_recce.py has no widths).
 --             On a 'turn' the road straight on is one of these: it is not taken either.
+--   half    the stage road's own half width at the junction (the junction node's radius), where it is known
 --   from a file, also lat, lon; from the live map, also x, y, z (the junction node, game coordinates) and node.
 --
 -- **Bearings** are degrees clockwise from north, 0 up to 360, as a compass reads. North is +y in both frames these
@@ -32,10 +33,12 @@
 -- place the convention lives; nothing else converts.
 --
 -- The matched file's junction entry, format 2 (format 1 had the first four only):
---   [lat, lon, kind, side, inDeg, outDeg, [[sideDeg, halfW], ...]]
+--   [lat, lon, kind, side, inDeg, outDeg, [[sideDeg, halfW], ...], half]
 -- bearings to 0.1 degree, halfW to 0.1 m and 0 where it is not known (never null: the game's JSON reader turns a
--- null into a hole in the array, and a hole stops ipairs). M.encode / M.decode write and read it; a format 1 entry
--- decodes with no inDeg, outDeg or sides.
+-- null into a hole in the array, and a hole stops ipairs). The eighth, the stage road's own half width at the
+-- junction, came after the first format 2 files and is optional: a seven-entry one reads with no half, and an older
+-- build reads the first four (events.landmarks) or seven (junctions.decode) and passes over it. M.encode / M.decode
+-- write and read it; a format 1 entry decodes with no inDeg, outDeg or sides.
 local geo = require('earthRally/geo')
 
 local M = {}
@@ -54,7 +57,10 @@ M.ON_LINE_M = 1.5           -- a junction node this close to the line is on it
 -- measures the same 12 m on whatever line it is given, so the two agree on a junction's turn.
 M.WAY_ALONG_M = 12.0
 M.MERGE_M = 15.0            -- a file's junction and a live one this close along the line: the same junction
-M.LIVE_PAD_M = 300.0        -- the live map read this far round the stretch asked about (the side roads' walks)
+-- The live map read this far round the stretch asked about: a side road is walked SIDE_ROAD_MIN_M from a junction
+-- at most the on-line tolerance off the line, so this holds every node a walk can reach (300 until 1.4.0's review:
+-- nine times the nodes, for nothing).
+M.LIVE_PAD_M = 60.0
 
 ------------------------------------------------------------------------------------------ bearings
 
@@ -198,11 +204,12 @@ function M.encode(j, lat, lon)
   for i, s in ipairs(j.sides or {}) do
     sides[i] = { deg(s.deg), (type(s.halfW) == 'number' and s.halfW > 0) and round(s.halfW, 1) or 0 }
   end
-  return { lat, lon, j.kind, j.side or '', deg(j.inDeg or 0), deg(j.outDeg or 0), sides }
+  local half = (type(j.half) == 'number' and j.half > 0) and round(j.half, 1) or 0
+  return { lat, lon, j.kind, j.side or '', deg(j.inDeg or 0), deg(j.outDeg or 0), sides, half }
 end
 
--- A matched file's junction entry (format 1 or 2) as a junction: { lat, lon, kind, side, inDeg, outDeg, sides },
--- the last three nil when the file did not keep them. nil for an entry that is not one.
+-- A matched file's junction entry (format 1 or 2) as a junction: { lat, lon, kind, side, inDeg, outDeg, sides, half },
+-- the last four nil when the file did not keep them (half: an entry of seven, or 0). nil for an entry that is not one.
 function M.decode(e)
   if type(e) ~= 'table' or type(e[1]) ~= 'number' or type(e[2]) ~= 'number' or type(e[3]) ~= 'string' then
     return nil
@@ -217,6 +224,7 @@ function M.decode(e)
       end
     end
     j.sides = sides
+    if type(e[8]) == 'number' and e[8] > 0 then j.half = e[8] end
   end
   return j
 end
@@ -228,12 +236,14 @@ end
 --   line   the line the stage runs on, game coordinates ({ x, y, z, gap }... as runner.lua's run.line)
 --   fromAlong, toAlong   the stretch, m along the line (default all of it)
 --   cum    the line's cumulative distances (geo.cumulative), when the caller has them already
--- Returns junctions in order along the line ({ along, x, y, z, node, kind, side, inDeg, outDeg, sides }), one per
--- JUNCTION_GAP_M, as autoRecce.junctions finds them on the road graph: a node of three roads or more within
+-- Returns junctions in order along the line ({ along, x, y, z, node, kind, side, inDeg, outDeg, sides, half }), one
+-- per JUNCTION_GAP_M, as autoRecce.junctions finds them on the road graph: a node of three roads or more within
 -- ON_LINE_M of the line, not on a stretch of it with no road (gap), with a side road 40 m+ long.
 --
 -- The links are read both ways (a node's neighbour is any node it links to or that links to it), so a one-way link
--- written on one end only still makes a junction. Only the nodes within LIVE_PAD_M of the stretch are looked at.
+-- written on one end only still makes a junction. Only the nodes within LIVE_PAD_M of the stretch are looked at: the
+-- box test is the first thing done with a node (the map holds every road loaded round the car, and this runs every
+-- second).
 function M.live(nodes, line, fromAlong, toAlong, cum)
   local out = {}
   if type(nodes) ~= 'table' or type(line) ~= 'table' or #line < 3 then return out end
@@ -257,6 +267,7 @@ function M.live(nodes, line, fromAlong, toAlong, cum)
     return p.x >= x0 - pad and p.x <= x1 + pad and p.y >= y0 - pad and p.y <= y1 + pad
   end
   -- the road map round the stretch, its links both ways
+  local bx0, by0, bx1, by1 = x0 - M.LIVE_PAD_M, y0 - M.LIVE_PAD_M, x1 + M.LIVE_PAD_M, y1 + M.LIVE_PAD_M
   local xy, nbr, half = {}, {}, {}
   local function put(a, pa, ra)
     if not xy[a] then
@@ -267,15 +278,18 @@ function M.live(nodes, line, fromAlong, toAlong, cum)
   end
   for na, a in pairs(nodes) do
     local pa = type(a) == 'table' and a.pos
-    if pa and inBox(pa, M.LIVE_PAD_M) then
-      put(na, pa, a.radius)
-      for nb in pairs(a.links or {}) do
-        local b = nodes[nb]
-        local pb = type(b) == 'table' and b.pos
-        if pb and nb ~= na then
-          put(nb, pb, b.radius)
-          nbr[na][nb] = true
-          nbr[nb][na] = true
+    if pa then
+      local px, py = pa.x, pa.y
+      if px >= bx0 and px <= bx1 and py >= by0 and py <= by1 then
+        put(na, pa, a.radius)
+        for nb in pairs(a.links or {}) do
+          local b = nodes[nb]
+          local pb = type(b) == 'table' and b.pos
+          if pb and nb ~= na then
+            put(nb, pb, b.radius)
+            nbr[na][nb] = true
+            nbr[nb][na] = true
+          end
         end
       end
     end
@@ -312,7 +326,54 @@ function M.live(nodes, line, fromAlong, toAlong, cum)
       if j then
         last = c.s
         j.along, j.x, j.y, j.z, j.node = c.s, p.x, p.y, p.z, c.n
+        j.half = (type(half[c.n]) == 'number' and half[c.n] > 0) and half[c.n] or nil
         out[#out + 1] = j
+      end
+    end
+  end
+  return out
+end
+
+------------------------------------------------------------------------------------------ placing a file's points
+
+-- Points kept in order along a stage (the matched file's junctions, its bridges: the auto recce wrote them in the
+-- order it met them) placed on the line the stage runs on, each on its own pass of it. A whole-line nearest search
+-- puts both passes of a junction the stage goes through twice (a super special, a stage that crosses itself) on
+-- whichever pass is nearer; here each point is looked for from the last one placed on (from NEXT_M past it), and
+-- of the passes of the line within maxOff of it the first that comes within PASS_SLACK_M of the nearest is taken
+-- (not merely the first: the line running past a few metres off before it reaches the point).
+--   pts  { { x, y }... } in order (game coordinates), nil entries allowed (a point that could not be converted)
+-- Returns { [k] = { along, off } } for the points placed, nil at the others.
+M.NEXT_M = 10.0
+M.PASS_SLACK_M = 5.0
+function M.placeInOrder(line, cum, pts, maxOff)
+  local out = {}
+  local n = #line
+  if n < 2 then return out end
+  local from = 0
+  for k = 1, #pts do
+    local p = pts[k]
+    if p and p.x then
+      local lo = geo.segAt(cum, math.min(cum[n], from))
+      -- every pass of the line within maxOff from `lo` on: { along, off } the nearest point of each
+      local passes, cur = {}, nil
+      for i = lo, n - 1 do
+        local _, _, s, off = geo.locate(line, cum, p, i, i)
+        if s >= from and off <= maxOff then
+          if not cur then cur = { along = s, off = off } passes[#passes + 1] = cur
+          elseif off < cur.off then cur.along, cur.off = s, off end
+        elseif off > maxOff then
+          cur = nil
+        end
+      end
+      local best = huge
+      for _, ps in ipairs(passes) do if ps.off < best then best = ps.off end end
+      for _, ps in ipairs(passes) do
+        if ps.off <= best + M.PASS_SLACK_M then
+          out[k] = { along = ps.along, off = ps.off }
+          from = ps.along + M.NEXT_M
+          break
+        end
       end
     end
   end
@@ -355,6 +416,7 @@ function M.merge(fromFile, fromLive, tolM)
           c.from = 'file+live'
         end
         if c.x == nil then c.x, c.y, c.z, c.node = best.j.x, best.j.y, best.j.z, best.j.node end
+        if c.half == nil then c.half = best.j.half end
       end
       out[#out + 1] = c
     end

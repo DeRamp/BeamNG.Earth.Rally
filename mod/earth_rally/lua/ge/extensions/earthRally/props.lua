@@ -143,16 +143,20 @@ local function yawQuat(dx, dy)
 end
 
 -- The ground under (x, y) near the height z0: looked for a few metres above first, so a tree over the spot is not
--- taken for the ground; z0 when nothing is found near it.
-local function ground(x, y, z0)
+-- taken for the ground; z0 when nothing is found near it. maxAbove (the stage dressing's): a hit more than this above
+-- z0 is not the ground either -- a roof, a bus shelter -- and the first look starts that high only (a control's
+-- boards, without it, as they always were: up to ~6 m above).
+local TIERS = { { 4, 12 }, { 8, 40 }, { 25, 80 } }
+local function ground(x, y, z0, maxAbove)
   local ray = rawget(_G, 'castRayStatic')
   if not ray then return z0 end
-  for _, t in ipairs({ { 4, 12 }, { 8, 40 }, { 25, 80 } }) do
-    local top = z0 + t[1]
+  for k, t in ipairs(TIERS) do
+    local up = (maxAbove and k == 1) and maxAbove or t[1]
+    local top = z0 + up
     local d = ray(vec3(x, y, top), vec3(0, 0, -1), t[2])
     if d and d < t[2] then
       local z = top - d
-      if math.abs(z - z0) <= t[1] + 2 then return z end
+      if math.abs(z - z0) <= up + 2 and not (maxAbove and z - z0 > maxAbove) then return z end
     end
   end
   return z0
@@ -439,58 +443,126 @@ end
 M.DRESS_AHEAD_M = M.SPAWN_M
 M.DRESS_BEHIND_M = 600
 M.DRESS_MAX_OBJS = 64        -- every dressing site's budget, whatever it asks for
-M.DRESS_SITES_PER_UPDATE = 4 -- (put down a few sites a frame: a whole window at once, after a shift, is a hitch)
+-- (objects put down a frame, a site carried on into the next: a whole window at once, after a shift, is a hitch, and
+-- one spectator area alone is 64 objects)
+M.DRESS_OBJS_PER_UPDATE = 24
+M.DRESS_GROUND_ABOVE_M = 2   -- a dressing object's ground: a hit at most this above its planned height (not a roof)
+-- An object set from the road's edge (dressing.lua's edged) moved out by the road's half width where it stands less
+-- the one it was planned against: the road map's road looked for at the object's planned road centre, within
+-- DRESS_EDGE_SNAP_M and aligned with the road, once per DRESS_EDGE_REUSE_M of a site; the move held to
+-- DRESS_EDGE_SHIFT_MIN_M .. DRESS_EDGE_SHIFT_MAX_M.
+M.DRESS_EDGE_SNAP_M = 8
+M.DRESS_EDGE_REUSE_M = 20
+M.DRESS_EDGE_SHIFT_MIN_M, M.DRESS_EDGE_SHIFT_MAX_M = -2, 6
 local HEAD_M = 10
 
-local dress = {}             -- { kind, along, from, to, name, objs (ids, when down), items = { { shape, lat, lon, h, hlat, hlon } } }
+-- { kind, along, from, to, name, key, objs (ids, when down or going down), at (the next item to put down),
+--   items = { { shape, lat, lon, h, hlat, hlon, [nlat, nlon, eo, eh] } or the same in x / y } }
+local dress = {}
 
 local function removeDress(s)
   for _, id in ipairs(s.objs or {}) do
     local o = scenetree.findObjectById(id)
     if o then o:delete() end
   end
-  s.objs = nil
+  s.objs, s.at, s.probe = nil, nil, nil
 end
+
+-- A shape the game has: looked for once per shape (FS:fileExists, the .dae or the .cdae the game makes of it), one
+-- warning naming a missing one, and its objects left out. Without FS (the tests) every shape is taken as there.
+local shapeHas = {}
+local function shapeOk(shape)
+  local h = shapeHas[shape]
+  if h ~= nil then return h end
+  h = true
+  local fs = rawget(_G, 'FS')
+  if type(shape) ~= 'string' then h = false
+  elseif fs and fs.fileExists then
+    local ok, a = pcall(fs.fileExists, fs, shape)
+    local okC, c = pcall(fs.fileExists, fs, (shape:gsub('%.dae$', '.cdae')))
+    h = (ok and a == true) or (okC and c == true) or not (ok or okC)
+  end
+  shapeHas[shape] = h
+  if not h then log('W', 'earthRally', 'stage dressing: the shape ' .. tostring(shape) .. ' is not in the game: left out') end
+  return h
+end
+M._shapeHas = shapeHas
 
 -- A dressing site's key: its kind and where it is along the line, to the metre. Two plans of the same junction (the
 -- file's at the stage's start, the live road map's later) give the same key, so the second is not put down twice.
 local function dressKey(kind, along) return tostring(kind) .. '@' .. tostring(math.floor((along or 0) + 0.5)) end
 M._dressKey = dressKey
 
--- (one of dressing.plan's sites as kept here: its objects as lat / lon, or nil when none could be kept)
-local function keepDress(site, toGeo)
+-- (one of dressing.plan's sites as kept here: its objects as lat / lon, or nil when none could be kept; lost counts
+-- the objects toGeo could not turn into lat / lon, which the caller says in the log)
+local function keepDress(site, toGeo, lost)
   local items = {}
   for _, o in ipairs(site.objects or {}) do
     if #items >= M.DRESS_MAX_OBJS then break end
     local hx, hy = o.x + (o.dx or 0) * HEAD_M, o.y + (o.dy or 1) * HEAD_M
-    local it = { shape = o.shape }
+    local edge = type(o.ex) == 'number' and type(o.eo) == 'number' and type(o.eh) == 'number'
+    -- (the way out from the road kept as a second spot, as the heading is: whatever a shift does, it survives)
+    local nx, ny = edge and o.x + o.ex * HEAD_M, edge and o.y + o.ey * HEAD_M
+    local it = { shape = o.shape, eo = edge and o.eo or nil, eh = edge and o.eh or nil }
     if toGeo then
       local la, lo, h = toGeo(o.x, o.y, o.z or 0)
       local hla, hlo = toGeo(hx, hy, o.z or 0)
+      local nla, nlo
+      if edge then nla, nlo = toGeo(nx, ny, o.z or 0) end
       if la and hla then
         it.lat, it.lon, it.h, it.hlat, it.hlon = la, lo, type(h) == 'number' and o.z and h or nil, hla, hlo
+        if not nla then it.eo, it.eh = nil, nil end
+        it.nlat, it.nlon = nla, nlo
       end
     else
-      it.x, it.y, it.z, it.hx, it.hy = o.x, o.y, o.z, hx, hy
+      it.x, it.y, it.z, it.hx, it.hy, it.nx, it.ny = o.x, o.y, o.z, hx, hy, nx, ny
     end
-    if it.lat or it.x then items[#items + 1] = it end
+    if it.lat or it.x then items[#items + 1] = it
+    elseif lost then lost.n = lost.n + 1 end
   end
   if #items == 0 then return nil end
   return { kind = site.kind, along = site.along, from = site.from or site.along, to = site.to or site.along,
            name = site.name, items = items, key = dressKey(site.kind, site.along) }
 end
 
+local function sayLost(lost, how)
+  if lost.n > 0 then
+    log('W', 'earthRally', string.format('stage dressing: %d object(s) %s left out: no lat / lon for their place',
+      lost.n, how))
+  end
+end
+
 -- The stage's dressing (dressing.plan's sites, in game coordinates of the moment), replacing any there was. toGeo
 -- (x, y, z) -> lat, lon, h: earthAdapter.toGeo. Without one (the tests), the game coordinates are kept as they are
--- and a world shift is not followed.
+-- and a world shift is not followed. A site whose key (kind and along) is already there is left out, as addDressing
+-- does: two sites at one key would both be taken away by one removeDressing.
 function M.setDressing(list, toGeo)
   M.clearDressing()
+  local have, lost = {}, { n = 0 }
   for _, site in ipairs(list or {}) do
-    local d = keepDress(site, toGeo)
-    if d then dress[#dress + 1] = d end
+    local k = dressKey(site.kind, site.along)
+    if not have[k] then
+      local d = keepDress(site, toGeo, lost)
+      if d then dress[#dress + 1] = d have[k] = true end
+    end
   end
+  sayLost(lost, 'of the stage')
   return #dress
 end
+
+-- The sites with these keys (dressKey: as M.siteKey gives them) taken away, objects and all: a junction judged again
+-- on more of the road map than it was first (runner.lua) has its sites replaced. Returns the number taken.
+function M.removeDressing(keys)
+  local drop = {}
+  for _, k in ipairs(keys or {}) do drop[k] = true end
+  local kept, n = {}, 0
+  for _, s in ipairs(dress) do
+    if drop[s.key] then removeDress(s) n = n + 1 else kept[#kept + 1] = s end
+  end
+  dress = kept
+  return n
+end
+M.siteKey = dressKey
 
 -- More dressing for the stage, beside what there is: the sites of junctions the live road map has shown since the
 -- stage was planned (runner.lua). Nothing already there is taken away or put down again (setDressing would take the
@@ -498,13 +570,13 @@ end
 -- is already there is left out. The new ones go down by the next update, by the same window as the rest. Returns the
 -- number added.
 function M.addDressing(list, toGeo)
-  local have = {}
+  local have, lost = {}, { n = 0 }
   for _, s in ipairs(dress) do have[s.key or dressKey(s.kind, s.along)] = true end
   local n = 0
   for _, site in ipairs(list or {}) do
     local k = dressKey(site.kind, site.along)
     if not have[k] then
-      local d = keepDress(site, toGeo)
+      local d = keepDress(site, toGeo, lost)
       if d then
         dress[#dress + 1] = d
         have[k] = true
@@ -512,6 +584,7 @@ function M.addDressing(list, toGeo)
       end
     end
   end
+  sayLost(lost, 'added from the live road map')
   return n
 end
 
@@ -541,42 +614,104 @@ local function itemNow(it, toGame)
   return x, y, it.h and z or nil, hx, hy
 end
 
-local function spawnDress(s, toGame, carZ)
-  s.objs = {}
-  for _, it in ipairs(s.items) do
-    local x, y, z, hx, hy = itemNow(it, toGame)
-    if x then
-      local dx, dy = hx - x, hy - y
-      if dx * dx + dy * dy < 1e-9 then dx, dy = 0, 1 end
-      local ok, id = pcall(makeObj, it.shape, x, y, ground(x, y, z or carZ), yawQuat(dx, dy))
-      if ok then s.objs[#s.objs + 1] = id
-      else
-        log('W', 'earthRally', 'a dressing prop could not be put down (' .. tostring(id) .. ')')
-        break
+-- (the move out for an object set from the road's edge, at (x, y) with the way out (nx, ny): the road map's half
+-- width at its planned road centre less the one it was planned against; 0 where the road map has no road there.
+-- One look serves a site's objects within DRESS_EDGE_REUSE_M of it: a spectator area is 64 objects)
+local function edgeShift(s, it, x, y, nx, ny)
+  local cx, cy = x - nx * it.eo, y - ny * it.eo
+  local p = s.probe
+  if p and (p.x - cx) ^ 2 + (p.y - cy) ^ 2 <= M.DRESS_EDGE_REUSE_M ^ 2 and p.eh == it.eh then return p.shift end
+  local shift = 0
+  local r = M.roadAt(cx, cy, { x = -ny, y = nx }, M.DRESS_EDGE_SNAP_M)
+  if r and type(r.half) == 'number' and r.half > 0 then
+    shift = math.max(M.DRESS_EDGE_SHIFT_MIN_M, math.min(M.DRESS_EDGE_SHIFT_MAX_M, r.half - it.eh))
+  end
+  s.probe = { x = cx, y = cy, eh = it.eh, shift = shift }
+  return shift
+end
+
+-- One object of a dressing site put down (or left out: a shape the game has not, a place with no game position).
+-- Returns false when the game would not make it.
+local function spawnItem(s, it, toGame, carZ)
+  if not shapeOk(it.shape) then return true end
+  local x, y, z, hx, hy = itemNow(it, toGame)
+  if not x then return true end
+  local dx, dy = hx - x, hy - y
+  if dx * dx + dy * dy < 1e-9 then dx, dy = 0, 1 end
+  if it.eo then
+    local nx, ny
+    if it.nx then nx, ny = it.nx - it.x, it.ny - it.y
+    else
+      local ex, ey = toGame(it.nlat, it.nlon, it.h or 0)
+      if ex then nx, ny = ex - x, ey - y end
+    end
+    local l = nx and math.sqrt(nx * nx + ny * ny) or 0
+    if l > 1e-6 then
+      nx, ny = nx / l, ny / l
+      local sh = edgeShift(s, it, x, y, nx, ny)
+      x, y = x + nx * sh, y + ny * sh
+    end
+  end
+  local ok, id = pcall(makeObj, it.shape, x, y, ground(x, y, z or carZ, M.DRESS_GROUND_ABOVE_M), yawQuat(dx, dy))
+  if ok then s.objs[#s.objs + 1] = id return true end
+  log('W', 'earthRally', 'a dressing prop could not be put down (' .. tostring(id) .. ')')
+  return false
+end
+
+-- A site's objects put down from where it got to, up to `budget` of them. Returns the budget left.
+local function spawnDress(s, toGame, carZ, budget)
+  s.objs = s.objs or {}
+  s.at = s.at or 1
+  while s.at <= #s.items and budget > 0 do
+    local it = s.items[s.at]
+    s.at = s.at + 1
+    if not spawnItem(s, it, toGame, carZ) then s.at = #s.items + 1 break end
+    budget = budget - 1
+  end
+  return budget
+end
+M._spawnDress = spawnDress
+
+-- Dressing sites in the window round the car put down, those left behind taken away (props.update calls it). At most
+-- DRESS_OBJS_PER_UPDATE objects a frame; a site part way down goes on next frame.
+function updateDressing(carPos, toGame, carAlong)
+  local budget = M.DRESS_OBJS_PER_UPDATE
+  for _, s in ipairs(dress) do
+    local going = s.objs ~= nil and (s.at or 1) <= #s.items
+    if carAlong then
+      local want = carAlong >= s.from - M.DRESS_AHEAD_M and carAlong <= s.to + M.DRESS_BEHIND_M
+      if s.objs and not want then removeDress(s)
+      elseif want and (going or not s.objs) and budget > 0 then
+        budget = spawnDress(s, toGame, carPos.z, budget)
+      end
+    elseif budget > 0 and (going or not s.objs) then
+      local x, y = itemNow(s.items[1], toGame)
+      if going or (x and (x - carPos.x) ^ 2 + (y - carPos.y) ^ 2 <= M.DRESS_AHEAD_M ^ 2) then
+        budget = spawnDress(s, toGame, carPos.z, budget)
       end
     end
   end
 end
 
--- Dressing sites in the window round the car put down, those left behind taken away (props.update calls it).
-function updateDressing(carPos, toGame, carAlong)
-  local budget = M.DRESS_SITES_PER_UPDATE
-  for _, s in ipairs(dress) do
-    if carAlong then
-      local want = carAlong >= s.from - M.DRESS_AHEAD_M and carAlong <= s.to + M.DRESS_BEHIND_M
-      if s.objs and not want then removeDress(s)
-      elseif want and not s.objs and budget > 0 then
-        spawnDress(s, toGame, carPos.z)
-        budget = budget - 1
-      end
-    elseif not s.objs and budget > 0 then
-      local x, y = itemNow(s.items[1], toGame)
-      if x and (x - carPos.x) ^ 2 + (y - carPos.y) ^ 2 <= M.DRESS_AHEAD_M ^ 2 then
-        spawnDress(s, toGame, carPos.z)
-        budget = budget - 1
-      end
-    end
-  end
+------------------------------------------------------------------------------------------ the showcase
+
+-- A developer's look at every dressing shape (runner.dressShowcase: dressing.showcase's row in front of the car),
+-- put down at once through the same code as a real site's objects (keepDress, spawnItem: the same heading, the same
+-- turn, the same ground), in the same scene group (a Lua reload sweeps it). One at a time: a new one takes the old
+-- away. Returns the number of objects put down.
+local showcase = nil
+function M.showcase(rows, carZ)
+  M.clearShowcase()
+  local objs = {}
+  for _, r in ipairs(rows or {}) do objs[#objs + 1] = r.object end
+  showcase = keepDress({ kind = 'showcase', along = 0, objects = objs })
+  if not showcase then return 0 end
+  spawnDress(showcase, nil, carZ or 0, math.huge)
+  return #showcase.objs
+end
+function M.clearShowcase()
+  if showcase then removeDress(showcase) end
+  showcase = nil
 end
 
 -- The dressing objects standing now, and the sites they belong to.

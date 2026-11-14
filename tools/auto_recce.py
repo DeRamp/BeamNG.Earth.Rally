@@ -126,11 +126,12 @@ def bearing(v):
 
 def junction_entry(lat, lon, kind, side, w_in, w_out, sides):
     """A junction as the matched file's entry, format 2 -- the mod's junctions.encode:
-    [lat, lon, kind, side, inDeg, outDeg, [[sideDeg, halfW], ...]], bearings to 0.1 degree. halfW is always 0 here,
-    "not known": this tool's roads carry no width (the in-game auto recce has the road graph's)."""
+    [lat, lon, kind, side, inDeg, outDeg, [[sideDeg, halfW], ...], half], bearings to 0.1 degree. halfW and half (the
+    stage road's own half width at the junction) are always 0 here, "not known": this tool's roads carry no width (the
+    in-game auto recce has the road graph's)."""
     def deg(v):
         return round(bearing(v), 1) % 360.0       # (359.96 rounds to 360: written as 0)
-    return [lat, lon, kind, side, deg(w_in), deg(w_out), [[deg(w), 0] for w in sides]]
+    return [lat, lon, kind, side, deg(w_in), deg(w_out), [[deg(w), 0] for w in sides], 0]
 
 
 def seg_dist(np, P, A, B):

@@ -358,4 +358,85 @@ do
     'existing marshals: one 1.5 km from the nearest standing')
 end
 
+------------------------------------------------------------------------------------------ 1.4.0's review
+
+-- A stage that comes back through the same crossroads: north through it (straight on, side roads east and west),
+-- round a loop, then west to east through it. On the first pass the road east is the stage's later pass, the road
+-- west its way in to it; on the second, north and south are. None of those gets tape; nothing else is a side road.
+do
+  local S = { V(0, -300), V(0, 0), V(0, 200), V(-200, 200), V(-200, 0), V(0, 0), V(300, 0) }
+  local cum = geo.cumulative(S)
+  local js = {
+    { along = 300, x = 0, y = 0, kind = 'straight', inDeg = 0, outDeg = 0, sides = { { deg = 90 }, { deg = 270 } } },
+    { along = cum[6], x = 0, y = 0, kind = 'straight', inDeg = 90, outDeg = 90,
+      sides = { { deg = 0 }, { deg = 180 } } },
+  }
+  local logs = {}
+  local plainLog = rawget(_G, 'log')
+  log = function(_, _, m) logs[#logs + 1] = m end
+  local sites = D.plan({ line = S, cum = cum, startM = 0, finishM = cum[#cum], junctions = js })
+  local tapes = 0
+  for _, s in ipairs(ofKind(sites, 'tape')) do tapes = tapes + #s.objects end
+  T.check(tapes == 0, 'a stage back through its own crossroads: no tape across its own later (or earlier) pass (' ..
+    tapes .. ')')
+  T.check(#logs == 4, 'and each one left out said once in the log (' .. #logs .. ')')
+  D.plan({ line = S, cum = cum, startM = 0, finishM = cum[#cum], junctions = js })
+  T.check(#logs == 4, 'planned again: not said again')
+  log = plainLog
+  -- the same crossroads passed once, its side roads real: taped (the clearance looks along the whole line, and finds
+  -- nothing in the way)
+  local S1 = { V(0, -300), V(0, 300) }
+  local s1 = D.plan({ line = S1, startM = 0, finishM = 600, junctions = { js[1] } })
+  local t1 = ofKind(s1, 'tape')[1]
+  T.check(t1 and #t1.objects == 2, 'passed once: both side roads taped')
+end
+
+-- A junction marshal never in the overrun: the stage turns right off a through road whose only closed road is straight
+-- on -- no marshal; with a road to the left as well, the marshal goes behind that one's tape.
+do
+  local S = { V(0, -300), V(0, 0), V(300, 0) }
+  local only = D.plan({ line = S, startM = 0, finishM = 600,
+    junctions = { { along = 300, x = 0, y = 0, kind = 'turn', inDeg = 0, outDeg = 90, sides = { { deg = 0 } } } } })
+  T.check(#ofKind(only, 'tape') == 1 and #ofKind(only, 'marshal') == 0,
+    'turning off a through road, straight on the only closed road: taped, no marshal there')
+  local two = D.plan({ line = S, startM = 0, finishM = 600,
+    junctions = { { along = 300, x = 0, y = 0, kind = 'turn', inDeg = 0, outDeg = 90,
+                    sides = { { deg = 0 }, { deg = 270 } } } } })
+  local m = ofKind(two, 'marshal')[1]
+  T.check(m and m.objects[1].x < -5 and math.abs(m.objects[1].y) < 3,
+    'with a road to the left too: the marshal behind the left road\'s tape (' .. tostring(m and m.objects[1].x) .. ')')
+  -- 50 degrees off the way in is not the overrun
+  local wide = D.plan({ line = S, startM = 0, finishM = 600,
+    junctions = { { along = 300, x = 0, y = 0, kind = 'turn', inDeg = 0, outDeg = 90, sides = { { deg = 310 } } } } })
+  T.check(#ofKind(wide, 'marshal') == 1, 'a closed road 50 degrees off the way in: a marshal')
+end
+
+-- The stage road's half width at a junction (the file's eighth entry, the live node's radius): the tape cleared and
+-- the board set against it, not against 3 m; the objects away from the junctions carry their way out for props.lua
+do
+  local S = { V(0, -300), V(0, 0), V(300, 0) }
+  local function plan6(half)
+    return D.plan({ line = S, startM = 0, finishM = 600,
+      junctions = { { along = 300, x = 0, y = 0, kind = 'turn', inDeg = 0, outDeg = 90, half = half,
+                      sides = { { deg = 270 } } } } })
+  end
+  local b3, b6 = ofKind(plan6(nil), 'board')[1].objects[1], ofKind(plan6(6), 'board')[1].objects[1]
+  T.near(b3.x, 3 + D.BOARD_OUT, 1e-6, 'a board before the turn: 2.7 m off the centre against the default 3 m')
+  T.near(b6.x, 6 + D.BOARD_OUT, 1e-6, 'against the junction\'s own 6 m: 5.7 m off')
+  T.check(b6.eh == 6 and b6.ex == 1 and math.abs(b6.ey) < 1e-9 and math.abs(b6.eo - 5.7) < 1e-9,
+    'and it carries its way out and the width it was set against')
+  local t3, t8 = ofKind(plan6(nil), 'tape')[1].objects[1], ofKind(plan6(8), 'tape')[1].objects[1]
+  T.check(math.abs(t3.x + 8) < 1e-6 and math.abs(t8.x + 9) < 1e-6,
+    'the tape across the left road moved in to clear an 8 m half width by its 1 m (' ..
+    string.format('%.1f / %.1f', t3.x, t8.x) .. ')')
+  local t6 = t8
+  T.check(t6.ex == nil, 'junction tape is set from the junction, not the edge')
+  -- a radio point's boards and post: every object set from the edge
+  local long = { V(0, 0), V(0, 7000) }
+  local r = ofKind(D.plan({ line = long, startM = 0, finishM = 7000 }), 'radio')[1]
+  local all = r and #r.objects > 0
+  for _, o in ipairs(r and r.objects or {}) do if not (o.ex and o.eo and o.eh == 3) then all = false end end
+  T.check(all, 'a radio point: every object carries its way out from the edge')
+end
+
 T.done('test_dressing')

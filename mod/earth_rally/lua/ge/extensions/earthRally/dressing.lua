@@ -11,7 +11,8 @@
 --   { kind = 'tape' | 'board' | 'marshal' | 'radio' | 'medical' | 'spectators', source = 'rule' | 'map', name,
 --     shared (a radio point whose post a medical point shares),
 --     along (m along the line: the junction, the point), from, to (m along the line the site's objects span),
---     objects = { { shape (full path), x, y, z (or nil), dx, dy }, ... } }
+--     objects = { { shape (full path), x, y, z (or nil), dx, dy, [ex, ey, eo, eh: set from the road's edge, edged
+--       below] }, ... } }
 -- every object in game coordinates of the moment: (x, y) is where the model's origin goes and (dx, dy) the way its +Y
 -- points, as props.lua's yawQuat takes it. The models' own quirks (which way a tape runs from its origin, which side
 -- of a board is its face) are dealt with here, in one place (shapeDir below), so props.lua only puts them down.
@@ -39,7 +40,9 @@ M.BOARD_OUT = -0.3        -- props.BOARD_OUT_M: a board stands a little inside t
 M.TENT_OUT = 1.5          -- props.TENT_OUT_M: the gazebo's centre beyond the edge
 M.TAPE_IN = 8             -- tape this far into a side road from the junction ...
 M.TAPE_CLEAR = 1.0        -- ... moved farther in until both its ends clear the stage's road by this much
-M.TAPE_IN_MAX = 30        -- (and no farther)
+M.TAPE_IN_MAX = 30        -- (and no farther: a tape that never clears is left out -- the side road is the stage's
+                          -- own later pass, or runs beside it -- and said so once in the log)
+M.CLEAR_CELL_M = 50       -- (the whole line's clearance looked up in cells of this size)
 M.BOARD_BEFORE = 75       -- direction board before a turn / fork
 M.WARN_BEFORE = 100       -- radio / medical warning board
 M.POST_AFTER = 6          -- the post just after a radio / medical board
@@ -49,6 +52,10 @@ M.SPEC_OFF = 5            -- spectator tape off the road's edge
 M.FENCE_BEHIND = 2.5      -- the mesh fence behind the tape
 M.MARSHAL_BEHIND = 5      -- a junction marshal stands on the closed road this far behind its tape ...
 M.MARSHAL_SIDE = 1.5      -- ... this far off that road's centre
+-- ... and none at all where that road is within this of the way in: the stage turns off a through road and the only
+-- closed road is straight on, where a car that overshoots goes (the user: marshals never where an overshooting car
+-- goes)
+M.MARSHAL_OVERRUN_DEG = 45
 M.LOOK_M = 15             -- the way in / out of a junction: the line this far either side of it
 
 -- the automatic fill (the mock-up's section 7)
@@ -127,6 +134,20 @@ local function arrowBoard(key, x, y, z, tx, ty)
 end
 M._linear, M._arrowBoard = linear, arrowBoard
 
+-- An object set out from the stage road's edge (a board, a post, the spectators' tape): which way is out from the
+-- road (ex, ey: the unit normal, pointing away from the centre), how far out from the centre it is (eo) and the half
+-- width it was planned against (eh). props.lua moves it out by (the road's half width where it stands, from the road
+-- map) - eh when it puts it down. Junction tape and junction marshals carry none: they are set from the junction.
+local function edged(o, nx, ny, out, h)
+  o.ex, o.ey, o.eo, o.eh = nx, ny, out, h
+  return o
+end
+-- (the outward normal on side 1 (right) / -1 (left) of a direction of travel)
+local function outward(tx, ty, side)
+  local rx, ry = rightOf(tx, ty)
+  return rx * side, ry * side
+end
+
 -- The stage's line, with the questions the rules ask of it.
 local function Line(line, cum, half)
   local L = { pts = line, cum = cum, half = half, total = cum[#cum] }
@@ -141,23 +162,46 @@ local function Line(line, cum, half)
     local rx, ry = rightOf(tx, ty)
     return x + rx * out * side, y + ry * out * side, z, tx, ty
   end
-  -- how far (x, y) is clear of the stage's road (its centre line, less its half width), looking at the line from lo
-  -- to hi along it only (a stage line runs to thousands of points)
-  function L.clear(x, y, lo, hi)
-    local n = #line
-    local i0 = geo.segAt(cum, max(0, lo))
-    local i1 = min(n - 1, geo.segAt(cum, hi) + 1)
-    local best = huge
-    for i = i0, i1 do
+  -- how far (x, y) is clear of the stage's road (its centre line, less its half width: `h`, else the stage's), over
+  -- the WHOLE line -- a later pass of the stage through the same place is road too (until 1.4.0's review only the
+  -- line +-70 m along was looked at, and a crossroads the stage came back through had its later pass taped). The
+  -- segments are kept in a grid of CLEAR_CELL_M cells, so a look reads the 3 x 3 cells round the point, not the
+  -- thousands of points of a stage line; nothing farther than CLEAR_CELL_M is looked for (clear by that much is clear).
+  local C = M.CLEAR_CELL_M
+  local grid = nil
+  local function cellKey(cx, cy) return cx * 1000003 + cy end
+  local function build()
+    grid = {}
+    for i = 1, #line - 1 do
       local a, b = line[i], line[i + 1]
-      local abx, aby = b.x - a.x, b.y - a.y
-      local l2 = abx * abx + aby * aby
-      local k = l2 > 1e-12 and max(0, min(1, ((x - a.x) * abx + (y - a.y) * aby) / l2)) or 0
-      local ex, ey = x - (a.x + abx * k), y - (a.y + aby * k)
-      local d = sqrt(ex * ex + ey * ey)
-      if d < best then best = d end
+      for cx = math.floor(min(a.x, b.x) / C), math.floor(max(a.x, b.x) / C) do
+        for cy = math.floor(min(a.y, b.y) / C), math.floor(max(a.y, b.y) / C) do
+          local k = cellKey(cx, cy)
+          local g = grid[k]
+          if not g then g = {} grid[k] = g end
+          g[#g + 1] = i
+        end
+      end
     end
-    return best - half
+  end
+  function L.clear(x, y, h)
+    if not grid then build() end
+    local best = C
+    local cx0, cy0 = math.floor(x / C), math.floor(y / C)
+    for cx = cx0 - 1, cx0 + 1 do
+      for cy = cy0 - 1, cy0 + 1 do
+        for _, i in ipairs(grid[cellKey(cx, cy)] or {}) do
+          local a, b = line[i], line[i + 1]
+          local abx, aby = b.x - a.x, b.y - a.y
+          local l2 = abx * abx + aby * aby
+          local k = l2 > 1e-12 and max(0, min(1, ((x - a.x) * abx + (y - a.y) * aby) / l2)) or 0
+          local ex, ey = x - (a.x + abx * k), y - (a.y + aby * k)
+          local d = sqrt(ex * ex + ey * ey)
+          if d < best then best = d end
+        end
+      end
+    end
+    return best - (h or half)
   end
   return L
 end
@@ -201,13 +245,31 @@ end
 
 -- One junction: { turnDeg, tapes = { { key, L, s (m in), dx, dy (the side road's way), ax, ay, bx, by } }, jx, jy, jz,
 -- tin = { x, y } }.
+-- (each tape left out said once in the log, not at every plan of the same junction)
+local dropSaid = {}
+local function sayDropped(along, deg)
+  local k = string.format('%.0f/%.0f', along, deg or -1)
+  if dropSaid[k] then return end
+  dropSaid[k] = true
+  local lg = rawget(_G, 'log')
+  if lg then
+    pcall(lg, 'I', 'earthRally', string.format('stage dressing: no tape across the side road at %.0f m (bearing %s):'
+      .. ' it never clears the stage\'s road within %d m (the stage\'s own later pass, or a road beside it)', along,
+      deg and string.format('%.0f', deg) or '?', M.TAPE_IN_MAX))
+  end
+end
+M._dropSaid = dropSaid
+
 local function solveJunction(L, j)
   local along = j.along
   local px, py, pz = L.at(along)
   local jx, jy = j.x or px, j.y or py
+  -- (the stage road's half width here: the junction's own -- the file's eighth entry, the live node's radius -- else
+  -- the stage's)
+  local jh = (type(j.half) == 'number' and j.half > 0) and j.half or L.half
   local inx, iny = wayAt(L, j.inDeg, along - M.LOOK_M, along)
   local outx, outy = wayAt(L, j.outDeg, along, along + M.LOOK_M)
-  local res = { along = along, kind = j.kind, side = j.side, jx = jx, jy = jy, jz = pz, tapes = {},
+  local res = { along = along, kind = j.kind, side = j.side, jx = jx, jy = jy, jz = pz, tapes = {}, half = jh,
                 tinx = inx, tiny = iny, turnDeg = angle(inx, iny, outx, outy) }
   for _, sr in ipairs(j.sides or {}) do
     local dx, dy
@@ -217,18 +279,21 @@ local function solveJunction(L, j)
       local rx, ry = rightOf(dx, dy)
       local key, len = M.tapeFor(sr.halfW)
       local s, ax, ay, bx, by = M.TAPE_IN
-      -- farther in until both ends clear the stage's road (a narrow fork's branches overlap at 8 m)
-      while true do
+      local clear = false
+      -- farther in until both ends clear the stage's road (a narrow fork's branches overlap at 8 m), the whole line
+      while s <= M.TAPE_IN_MAX do
         local cx, cy = jx + dx * s, jy + dy * s
         ax, ay = cx + rx * len / 2, cy + ry * len / 2
         bx, by = cx - rx * len / 2, cy - ry * len / 2
-        local lo, hi = along - M.TAPE_IN_MAX - 40, along + M.TAPE_IN_MAX + 40
-        if (L.clear(ax, ay, lo, hi) >= M.TAPE_CLEAR and L.clear(bx, by, lo, hi) >= M.TAPE_CLEAR)
-          or s >= M.TAPE_IN_MAX - 0.5 then break end
+        if L.clear(ax, ay, jh) >= M.TAPE_CLEAR and L.clear(bx, by, jh) >= M.TAPE_CLEAR then clear = true break end
         s = s + 0.5
       end
-      res.tapes[#res.tapes + 1] = { key = key, L = len, s = s, dx = dx, dy = dy, ax = ax, ay = ay, bx = bx, by = by,
-                                    halfW = sr.halfW or M.HALF }
+      if clear then
+        res.tapes[#res.tapes + 1] = { key = key, L = len, s = s, dx = dx, dy = dy, ax = ax, ay = ay, bx = bx, by = by,
+                                      halfW = sr.halfW or M.HALF }
+      else
+        sayDropped(along, sr.deg or J and J.dirToBearing and J.dirToBearing(dx, dy))
+      end
     end
   end
   return res
@@ -243,6 +308,8 @@ local function junctionMarshal(r)
   for _, x in ipairs(r.tapes) do
     if x.dx * r.tinx + x.dy * r.tiny < tp.dx * r.tinx + tp.dy * r.tiny then tp = x end
   end
+  -- (even the least in line is in the overrun: no marshal at this junction)
+  if tp.dx * r.tinx + tp.dy * r.tiny > math.cos(math.rad(M.MARSHAL_OVERRUN_DEG)) then return nil end
   local rx, ry = rightOf(tp.dx, tp.dy)
   local d = tp.s + M.MARSHAL_BEHIND
   local cx, cy = r.jx + tp.dx * d + rx * M.MARSHAL_SIDE, r.jy + tp.dy * d + ry * M.MARSHAL_SIDE
@@ -264,7 +331,8 @@ local function post(L, along, radio, medical)
   local objs = {}
   local function board(key, s)
     local x, y, z, tx, ty = L.off(s, L.half + M.BOARD_OUT, 1)
-    objs[#objs + 1] = upright(key, x, y, z, tx, ty)
+    local nx, ny = outward(tx, ty, 1)
+    objs[#objs + 1] = edged(upright(key, x, y, z, tx, ty), nx, ny, L.half + M.BOARD_OUT, L.half)
   end
   local w = along - M.WARN_BEFORE
   local medAt = 0
@@ -283,7 +351,8 @@ local function post(L, along, radio, medical)
     local x, y, z, tx, ty = L.off(pa + fwd, L.half + out, 1)
     local dx, dy = tx, ty
     if yaw == 90 then dx, dy = rightOf(tx, ty) end
-    objs[#objs + 1] = upright(key, x, y, z, dx, dy)
+    local nx, ny = outward(tx, ty, 1)
+    objs[#objs + 1] = edged(upright(key, x, y, z, dx, dy), nx, ny, L.half + out, L.half)
   end
   at(0, M.TENT_OUT, 0, 'gazeboFrame')
   at(0, M.TENT_OUT, 0, 'gazeboCover')
@@ -298,10 +367,12 @@ end
 local function roadsideMarshal(L, along, side)
   local x, y, z, tx, ty = L.off(along, L.half + M.TENT_OUT, side)
   local rx, ry = rightOf(tx, ty)
+  local nx, ny = outward(tx, ty, side)
+  local o = L.half + M.TENT_OUT
   return {
-    upright('table', x, y, z, tx, ty),
-    upright('chair', x - rx * side * 0.9, y - ry * side * 0.9, z, tx, ty),
-    upright('flag', x + tx * 1.6, y + ty * 1.6, z, tx, ty),
+    edged(upright('table', x, y, z, tx, ty), nx, ny, o, L.half),
+    edged(upright('chair', x - rx * side * 0.9, y - ry * side * 0.9, z, tx, ty), nx, ny, o - 0.9, L.half),
+    edged(upright('flag', x + tx * 1.6, y + ty * 1.6, z, tx, ty), nx, ny, o, L.half),
   }
 end
 
@@ -321,16 +392,17 @@ local function spectators(L, s0, s1, sApex, side, clearOf)
     while s < s1 - 0.1 and n < cap do
       local ax, ay, az = L.off(s, half + off, side)
       local e = s + 0.5
-      local bx, by = L.off(e, half + off, side)
+      local bx, by, _, btx, bty = L.off(e, half + off, side)
       while e < s1 and (bx - ax) ^ 2 + (by - ay) ^ 2 < chord * chord do
         e = e + 0.25
-        bx, by = L.off(e, half + off, side)
+        bx, by, _, btx, bty = L.off(e, half + off, side)
       end
       local l = sqrt((bx - ax) ^ 2 + (by - ay) ^ 2)
       if l < chord * 0.8 then break end           -- (a short end left bare: the model is its own length)
       -- (not over another part of the road: the far leg of a tight hairpin)
       if clearOf(ax, ay) >= off - 1 and clearOf(bx, by) >= off - 1 then
-        objs[#objs + 1] = linear(key, ax, ay, bx, by, az)
+        local nx, ny = outward(btx, bty, side)
+        objs[#objs + 1] = edged(linear(key, ax, ay, bx, by, az), nx, ny, half + off, half)
         n = n + 1
       end
       s = e
@@ -344,7 +416,8 @@ local function spectators(L, s0, s1, sApex, side, clearOf)
     local s = sApex + ds
     if s >= s0 and s <= s1 then
       local x, y, z, tx, ty = L.off(s, half + 1.2, side)
-      objs[#objs + 1] = upright('bale', x, y, z, tx, ty)
+      local nx, ny = outward(tx, ty, side)
+      objs[#objs + 1] = edged(upright('bale', x, y, z, tx, ty), nx, ny, half + 1.2, half)
     end
   end
   -- the camp: in from the apex until clear of the road by the fence and a little more
@@ -358,20 +431,65 @@ local function spectators(L, s0, s1, sApex, side, clearOf)
       -- facing the road (its +Y away from the apex: chairs and tarps as the gazebo's)
       local fx, fy = -nx, -ny
       local ex, ey = tx, ty
-      objs[#objs + 1] = upright('gazeboFrame', gx, gy, pz, fx, fy)
-      objs[#objs + 1] = upright('gazeboCover', gx, gy, pz, fx, fy)
+      objs[#objs + 1] = edged(upright('gazeboFrame', gx, gy, pz, fx, fy), nx, ny, d, half)
+      objs[#objs + 1] = edged(upright('gazeboCover', gx, gy, pz, fx, fy), nx, ny, d, half)
       for k = 0, 3 do
         local o = -2 + k * 1.3
-        objs[#objs + 1] = upright('chair', gx - nx * 3.5 + ex * o, gy - ny * 3.5 + ey * o, pz, fx, fy)
+        objs[#objs + 1] = edged(upright('chair', gx - nx * 3.5 + ex * o, gy - ny * 3.5 + ey * o, pz, fx, fy),
+          nx, ny, d - 3.5, half)
       end
       for _, sgn in ipairs({ -1, 1 }) do
         local ax, ay = gx + nx * 4 + ex * 6 * sgn, gy + ny * 4 + ey * 6 * sgn
-        objs[#objs + 1] = linear('tarp', ax, ay, ax + nx * 4, ay + ny * 4, pz)
+        objs[#objs + 1] = edged(linear('tarp', ax, ay, ax + nx * 4, ay + ny * 4, pz), nx, ny, d + 8, half)
       end
       break
     end
   end
   return objs
+end
+
+------------------------------------------------------------------------------------------ the showcase
+
+-- A developer's look at every dressing shape in the game, the models' turns being read from their mesh data and never
+-- seen standing (runner.dressShowcase puts it down). One of each in a row across the way the car faces, AHEAD_M in
+-- front of it, left to right as the driver sees them, each turned by the same code a real site's is, as if the car
+-- were driving up a road towards them: the boards' faces towards the car, the arrows pointing their own way, each
+-- tape, fence and tarp laid across the road from left to right. Returns { { label, key, object }... } in that order.
+M.SHOWCASE_AHEAD_M = 15
+M.SHOWCASE_GAP_M = 1.5
+M.SHOWCASE = {
+  'tape6', 'tape8', 'tape10', 'dirLeft', 'dirRight', 'dirStraight', 'dir45Left', 'dir45Right', 'dir135Right',
+  'dir225Left', 'radioWarn', 'radio', 'medicalWarn', 'medical', 'specTape', 'fence', 'tarp', 'gazeboFrame',
+  'gazeboCover', 'table', 'chair', 'bale', 'flag',
+}
+local WIDE = { gazeboFrame = 3, gazeboCover = 3, table = 1.2, chair = 0.6, bale = 1.5, flag = 0.5 }
+function M.showcase(x, y, z, hx, hy)
+  hx, hy = norm(hx, hy)
+  local rx, ry = rightOf(hx, hy)
+  local cx, cy = x + hx * M.SHOWCASE_AHEAD_M, y + hy * M.SHOWCASE_AHEAD_M
+  local widths, total = {}, 0
+  for i, key in ipairs(M.SHOWCASE) do
+    widths[i] = M.LINEAR_M[key] or WIDE[key] or 1
+    if key ~= 'gazeboCover' then total = total + widths[i] + M.SHOWCASE_GAP_M end
+  end
+  local out = {}
+  local at = -total / 2
+  for i, key in ipairs(M.SHOWCASE) do
+    -- (the gazebo's cover goes on its frame: the same spot)
+    if key == 'gazeboCover' then at = at - widths[i - 1] - M.SHOWCASE_GAP_M end
+    local w = widths[i]
+    local ax, ay = cx + rx * at, cy + ry * at
+    local bx, by = cx + rx * (at + w), cy + ry * (at + w)
+    local mx, my = (ax + bx) / 2, (ay + by) / 2
+    local o
+    if M.LINEAR_M[key] then o = linear(key, ax, ay, bx, by, z)
+    elseif key:find('^dir') then o = arrowBoard(key, mx, my, z, hx, hy)
+    else o = upright(key, mx, my, z, hx, hy) end
+    out[#out + 1] = { label = string.format('%d %s (%s)', #out + 1, key, M.SHAPES[key]:match('([^/]+)$')), key = key,
+                      object = o }
+    at = at + w + M.SHOWCASE_GAP_M
+  end
+  return out
 end
 
 ------------------------------------------------------------------------------------------ the plan
@@ -444,13 +562,16 @@ function M.plan(input)
     -- (none before the start line: a junction just after it is not called from the start area)
     if key and j.along - M.BOARD_BEFORE >= startM then
       local s = j.along - M.BOARD_BEFORE
-      local x, y, z, tx, ty = L.off(s, half + M.BOARD_OUT, side == 'right' and 1 or -1)
-      add('board', 'rule', j.along, s, s, { arrowBoard(key, x, y, z, tx, ty) }, key)
+      local sg = side == 'right' and 1 or -1
+      local x, y, z, tx, ty = L.off(s, r.half + M.BOARD_OUT, sg)
+      local nx, ny = outward(tx, ty, sg)
+      add('board', 'rule', j.along, s, s, { edged(arrowBoard(key, x, y, z, tx, ty), nx, ny, r.half + M.BOARD_OUT,
+        r.half) }, key)
     end
   end
   -- (every side road there, for keeping spectators off them)
   local function clearOf(x, y, s)
-    local c = L.clear(x, y, s - 200, s + 200)
+    local c = L.clear(x, y)
     for _, r in ipairs(solved) do
       if abs(r.along - s) < 250 then
         for _, tp in ipairs(r.tapes) do
@@ -479,9 +600,11 @@ function M.plan(input)
     for _, m in ipairs(marks.marshal) do
       local r = turnNear(m.along, M.MARSHAL_AT_JUNCTION_M)
       if r and used[r] then r = nil end
-      if r then
+      -- (a turn whose only closed road is in the overrun: the map's post stands where the map put it, by the road)
+      local jm = r and junctionMarshal(r)
+      if jm then
         used[r] = true
-        add('marshal', 'map', r.along, r.along, r.along, (junctionMarshal(r)), m.name)
+        add('marshal', 'map', r.along, r.along, r.along, jm, m.name)
       else
         add('marshal', 'map', m.along, m.along, m.along, roadsideMarshal(L, m.along, (m.offLineM or 0) < 0 and -1 or 1),
           m.name)
@@ -498,8 +621,9 @@ function M.plan(input)
       if r.kind == 'turn' and #r.tapes > 0 then
         local ok = true
         for _, a in ipairs(standing) do if abs(r.along - a) < M.MARSHAL_EVERY_M then ok = false break end end
-        if ok then
-          add('marshal', 'rule', r.along, r.along, r.along, (junctionMarshal(r)))
+        local jm = ok and junctionMarshal(r)
+        if jm then
+          add('marshal', 'rule', r.along, r.along, r.along, jm)
           standing[#standing + 1] = r.along
         end
       end

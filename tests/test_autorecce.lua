@@ -485,6 +485,7 @@ do
   local sr = e[7] and e[7][1] or {}
   T.near(sr[1], 0, 1, 'the side road leaves north (' .. tostring(sr[1]) .. ')')
   T.near(sr[2], 4.0, 0.01, "its half width from the graph node's radius (" .. tostring(sr[2]) .. ')')
+  T.near(e[8], 4.0, 0.01, "the stage road's own half width there, the eighth entry (" .. tostring(e[8]) .. ')')
   local ej = events.junctions('test-event', 'test-stage', stage)
   T.check(ej and #ej == 1 and ej[1].kind == 'straight' and ej[1].sides and #ej[1].sides == 1 and
     ej[1].sides[1].halfW == 4.0, 'events.junctions reads it back with its side road')

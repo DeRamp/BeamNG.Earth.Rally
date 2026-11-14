@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """tools/auto_recce.py (junction_entry, bearing) and the mod (junctions.encode / dirToBearing, Lua) write a junction
-the same way in the matched file, format 2: [lat, lon, kind, side, inDeg, outDeg, [[sideDeg, halfW], ...]], bearings
-clockwise from north to 0.1 degree, halfW 0 where it is not known (always, from the tool). Roads every way."""
+the same way in the matched file, format 2: [lat, lon, kind, side, inDeg, outDeg, [[sideDeg, halfW], ...], half],
+bearings clockwise from north to 0.1 degree, halfW and half 0 where it is not known (always, from the tool). Roads every way."""
 import math
 import sys
 from pathlib import Path
@@ -47,10 +47,11 @@ def main():
         'sides': lua.table_from([lua.table_from({'deg': J.dirToBearing(*w)}) for w in sides]),
     })
     e = J.encode(rec, 47.1, -123.2)
-    lu = [e[1], e[2], e[3], e[4], e[5], e[6], [[s[1], s[2]] for s in e[7].values()]]
+    lu = [e[1], e[2], e[3], e[4], e[5], e[6], [[s[1], s[2]] for s in e[7].values()], e[8]]
     check(py == lu, f'the same entry from the tool and the mod ({py} / {lu})')
     check(py[6][2][0] == 0, 'just west of north rounds to 0, not 360')
     check(all(s[1] == 0 for s in py[6]), 'the tool writes 0 for a width it does not know')
+    check(len(py) == 8 and py[7] == 0, "the eighth entry, the stage road's half width: 0 from the tool (not known)")
     print(f'test_junction_format: {n - bad} passed, {bad} failed')
     return 1 if bad else 0
 
