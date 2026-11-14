@@ -185,18 +185,22 @@ result field defended against a wrong type, the decoded graph and its other fiel
 back, the app's reason surfaced, bad coordinates / no callback / not connected refused, and the timeout heard once
 with a failing callback contained.
 
-**Python — `python -I tools/run_tests.py <the 60 modules of tools/quality_gate.py> test_road_graph_api test_navgraph
-test_places_api test_protocol_agreement test_roads test_mapdata_singleflight test_addons --par 4 --timeout 900`:**
-`63 OK, 3 not OK` of 66 modules, with `test_road_graph_api` 22 tests, `test_protocol_agreement` 32,
-`test_places_api` 26, `test_navgraph` 52, `test_roads` 129, `test_mapdata_singleflight` 8 and `test_addons` 29 —
-all OK.
+**Python — the modules this change touches, `python -I tools/run_tests.py test_road_graph_api test_navgraph
+test_places_api test_protocol_agreement --timeout 400`:** `4 OK, 0 not OK` — `test_road_graph_api` 22 tests,
+`test_navgraph` 52, `test_places_api` 26, `test_protocol_agreement` 32. And `test_roads` 129, `test_mapdata` 67,
+`test_mapdata_singleflight` 8, `test_grading` 97, `test_revisit` 12, `test_netfetch` 61, `test_demand` 7,
+`test_determinism` 6 and `test_addons` 29, all OK.
 
-**The three failures are this machine's, measured rather than assumed.** `test_cache` wants the Windows privilege
-to make a symbolic link (`WinError 1314` from `os.symlink`); `test_germany` cannot import
-`tools/build_regional_data.py`, which takes `compression.zstd` (Python 3.14+) and finds no `zstandard` here; and
-`test_roadgeo`'s `RealDataTest` reads Overture tiles this machine has neither cached nor the network to fetch
-(`Offline: https://tiles.overturemaps.org/...`). None of the three reaches a road graph, the DEM lane or the
-neighbour read, and `NotOnDisk` appears in none of the 66 logs.
+**Python — the wider gate, `python -I tools/run_tests.py <the 60 modules of tools/quality_gate.py>
+test_road_graph_api test_navgraph test_places_api test_protocol_agreement test_roads test_mapdata_singleflight
+test_addons --par 4 --timeout 900`:** 62 of its 66 modules OK. **The four that were not are this machine's,
+measured rather than assumed.** `test_cache` wants the Windows privilege to make a symbolic link (`WinError 1314`
+from `os.symlink`); `test_germany` cannot import `tools/build_regional_data.py`, which takes `compression.zstd`
+(Python 3.14+) and finds no `zstandard` here; `test_roadgeo`'s `RealDataTest` reads Overture tiles this machine has
+neither cached nor the network to fetch (`Offline: https://tiles.overturemaps.org/...`); and
+`test_protocol_agreement` reported all 32 of its own tests ok and then did not exit, four at a time beside a
+running game, so the runner killed it at its timeout — on its own at this commit it is OK in 71 s. None of the
+four reaches a road graph, the DEM lane or the neighbour read, and `NotOnDisk` appears in none of the 66 logs.
 
 `git diff --check`: clean.
 
