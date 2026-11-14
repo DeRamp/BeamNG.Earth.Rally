@@ -36,6 +36,40 @@ function M.gpsSet(lat, lon, name) local a = api() if not (a and a.gpsSet) then r
   if not r then return false, why or 'BeamNG.Earth\'s GPS did not take the place' end
   return true end
 
+------------------------------------------------------------------------------------------
+-- the road graph (the auto recce's one dependency on BeamNG.Earth beyond the pose)
+
+-- Can this BeamNG.Earth hand out a window of its AI road graph at a point we name (api.roadGraph)?
+--
+-- Nothing else in Earth Rally may ask: this is the capability gate the auto recce is built behind. With a
+-- BeamNG.Earth that has no such call the auto recce is simply unavailable and everything else behaves exactly as it
+-- did -- there is no fallback path that drives the corridor itself, because that is the recce 1.3.0 exists to
+-- remove (docs/plan-1.3.0.md, the spike's verdict).
+function M.hasRoadGraph()
+  local a = api()
+  return (a ~= nil and type(a.has) == 'function' and a.has('roadGraph') == true and type(a.roadGraph) == 'function')
+end
+
+-- One window of BeamNG.Earth's AI road graph round (lat, lon): true once asked, or false and why. The callback is
+-- given BeamNG.Earth's own answer table, which the auto recce reads:
+--   { nodes = { [name] = { x, y, z, radius } },    the current anchor frame; z the drivable surface, radius the half
+--                                                  width. Names are stable across windows and across anchors.
+--     edges = { { inNode, outNode, oneWay, lanesOut, lanesIn, speedMs, drivability, radius, ... } },
+--     complete,                                    false where map cells were not on disk (nothing is downloaded)
+--     error }                                      a reason instead of a graph (a timed-out request answers this)
+--
+-- opts: { radius = m (the window is a square of this half size), cachedOnly = true }. The positions are game
+-- coordinates in the frame current when the window was built, so a caller converts them with M.toGeo as they
+-- arrive and keeps nothing in game coordinates: a rebase stales every one of them.
+function M.roadGraph(lat, lon, opts, callback)
+  local a = api()
+  if not M.hasRoadGraph() then return false, 'this BeamNG.Earth cannot hand out its road graph' end
+  local ok, res, why = pcall(a.roadGraph, lat, lon, opts, callback)
+  if not ok then return false, tostring(res) end
+  if res == false then return false, why or 'BeamNG.Earth refused the road graph request' end
+  return true
+end
+
 -- The world's origin now (lat, lon), or nil.
 function M.anchor()
   local p = M.pose()
