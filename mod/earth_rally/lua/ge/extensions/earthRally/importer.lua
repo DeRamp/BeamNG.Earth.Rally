@@ -3,7 +3,8 @@
 -- and it becomes a rally in earthRally/events/ (the same file tools/import_kml.py writes): each line a stage (pieces
 -- joined in driving order), the named points beside it (start, flying finish, stop, ATC / TC) its controls. Files are
 -- looked at when the mod loads and when one changes in the folder (the game's onFileChanged); only new or changed ones
--- are imported (importIndex.json); Re-scan imports every file again. A file taken out of the folder leaves its rally
+-- are imported (importIndex.json); Re-scan imports every file again. A pack (a folder or .zip with a season, rally or
+-- stage manifest: docs/rally-file.md) is imported by pack.lua from the same scan. A file taken out of the folder leaves its rally
 -- (and its recces and times) where it is: nothing is deleted.
 --
 -- parse() and build() are plain Lua (tests/test_import.lua runs them offline); scan() uses the game.
@@ -544,6 +545,7 @@ local function stem(path)
   return (s:gsub('%.[^.]+$', ''))
 end
 local function idFrom(name) return ((name:lower():gsub('[^a-z0-9]+', '-'):gsub('^-+', ''):gsub('-+$', ''))) end
+M.idFrom = idFrom
 
 -- (a .kmz's KML: the zip's doc.kml, else its first .kml)
 local function readKmz(path)
@@ -559,6 +561,7 @@ local function readKmz(path)
   if not s then return nil, 'no KML inside the .kmz' end
   return s
 end
+M.readKmz = readKmz
 
 -- The naming rules above, as a number. A map already imported is skipped while its bytes have not changed, so a
 -- change to what a rally is CALLED would otherwise only reach the rallies a player happens to re-import -- and the
@@ -585,6 +588,18 @@ end
 
 M.lastReports = {}          -- event id -> { file, lines = {...}, date }
 
+-- Is an event id already another import's? A loose map's (other than exceptFile) or a pack's (other than
+-- exceptPack): two files writing one event would overwrite each other's rally.
+function M.idTaken(index, cand, exceptFile, exceptPack)
+  for other, e in pairs(index.files or {}) do if other ~= exceptFile and e.eventId == cand then return true end end
+  for other, e in pairs(index.packs or {}) do
+    if other ~= exceptPack then
+      for _, id in ipairs(e.eventIds or {}) do if id == cand then return true end end
+    end
+  end
+  return false
+end
+
 -- The folder made, its files imported when new or changed (every file with force), files taken out forgotten (their
 -- rallies kept). Returns a list of { file, eventId, name, stages, ok, why, removed }.
 function M.scan(force)
@@ -599,7 +614,11 @@ function M.scan(force)
   local seen = {}
   local found = {}
   for _, pat in ipairs({ '*.kml', '*.kmz', '*.gpx', '*.KML', '*.KMZ', '*.GPX', '*.kml.xml', '*.KML.xml', '*.kml.XML' }) do
-    for _, f in ipairs(FS:findFiles(M.IMPORT_DIR, pat, 0, false, false) or {}) do found[f] = true end
+    for _, f in ipairs(FS:findFiles(M.IMPORT_DIR, pat, 0, false, false) or {}) do
+      -- (only the folder's own files: a map inside a pack is the pack's, not a rally of its own as well)
+      local rel = f:sub(1, #M.IMPORT_DIR):lower() == M.IMPORT_DIR:lower() and f:sub(#M.IMPORT_DIR + 1) or ''
+      if not rel:find('[/\\]') then found[f] = true end
+    end
   end
   for path in pairs(found) do
     local fileName = path:match('([^/]+)$')
@@ -622,10 +641,7 @@ function M.scan(force)
           local id = (entry and entry.eventId) or existingId(fileName) or idFrom(stem(fileName))
           if id == '' then id = 'rally' end
           -- (another file of the folder has that id already, e.g. X.kml beside X.kmz: this one gets its own)
-          local function taken(cand)
-            for other, e in pairs(index.files) do if other ~= fileName and e.eventId == cand then return true end end
-            return false
-          end
+          local function taken(cand) return M.idTaken(index, cand, fileName) end
           if taken(id) then
             local base, k = id, 2
             while taken(base .. '-' .. k) do k = k + 1 end
@@ -661,6 +677,8 @@ function M.scan(force)
         ' is kept (delete earthRally/events/' .. tostring(entry.eventId) .. '.json to remove it)')
     end
   end
+  -- packs (pack.lua): folders and .zips with a manifest, fingerprinted and kept in the same index
+  for _, d in ipairs(require('earthRally/pack').scan(index, force)) do done[#done + 1] = d end
   -- (also when only the naming rules moved on, so the re-import is not asked for again on every start)
   if #done > 0 or renaming then jsonWriteFile(M.INDEX, index, true) end
   return done

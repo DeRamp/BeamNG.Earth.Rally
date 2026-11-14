@@ -5,6 +5,8 @@
 --                                             (the auto recce: autoRecce.lua in the game, or tools/auto_recce.py):
 --                                             a stage runs on it with no recce
 --   earthRally/results/<event>__<stage>.json  the stage times
+--   earthRally/seasons/<season>.json          a season: its rounds (event ids) and standings rules (pack.lua)
+--   earthRally/boards/<event>.json            a rally's real results, trimmed to leaderboards (pack.lua)
 -- Files are read once and kept (the window asks for them every frame); what this module writes updates its copy.
 local lineStats = require('earthRally/lineStats')
 
@@ -14,8 +16,11 @@ M.EVENTS_DIR = '/earthRally/events/'
 M.RECCE_DIR = '/earthRally/recce/'
 M.MATCHED_DIR = '/earthRally/matched/'
 M.RESULTS_DIR = '/earthRally/results/'
+M.SEASONS_DIR = '/earthRally/seasons/'
+M.BOARDS_DIR = '/earthRally/boards/'
 
 local cache = nil
+local seasonsCache = nil
 local files = {}            -- path -> { data } (data nil: no such file, or not a valid one)
 
 local function key(eventId, stageId) return tostring(eventId) .. '__' .. tostring(stageId) .. '.json' end
@@ -34,7 +39,7 @@ local function readOnce(path, valid)
 end
 
 -- Every file read again from disk next time it is asked for (Reload, an import).
-function M.forget() files = {} end
+function M.forget() files, seasonsCache = {}, nil end
 
 -- Every event: { { id, name, stages = {...}, points = {...}, file }... }, sorted by name. Re-read when asked.
 function M.list(reload)
@@ -54,6 +59,32 @@ function M.list(reload)
   end
   table.sort(cache, function(a, b) return tostring(a.name) < tostring(b.name) end)
   return cache
+end
+
+local function seasonValid(r) return r.format == 1 and type(r.rounds) == 'table' end
+
+-- A season: { id, name, championship, rounds = { eventId... }, standings = { championship, points, best } }, or nil.
+function M.season(id) return readOnce(M.SEASONS_DIR .. tostring(id) .. '.json', seasonValid) end
+
+-- Every season, sorted by name. Re-read after an import (M.list(true) or M.forget()).
+function M.seasons()
+  if seasonsCache then return seasonsCache end
+  seasonsCache = {}
+  for _, f in ipairs(FS:findFiles(M.SEASONS_DIR, '*.json', 0, false, false) or {}) do
+    local s = readOnce(f, seasonValid)
+    if s then
+      s.id = s.id or f:match('([^/]+)%.json$')
+      seasonsCache[#seasonsCache + 1] = s
+    end
+  end
+  table.sort(seasonsCache, function(a, b) return tostring(a.name) < tostring(b.name) end)
+  return seasonsCache
+end
+
+-- A rally's leaderboards from its real results: { passes = { { ss, stage, run, km, cancelled, field }... },
+-- overall }, or nil when it has none.
+function M.boards(rallyId)
+  return readOnce(M.BOARDS_DIR .. tostring(rallyId) .. '.json', function(r) return type(r.passes) == 'table' end)
 end
 
 local function lineValid(r) return type(r.points) == 'table' and #r.points >= 2 end
