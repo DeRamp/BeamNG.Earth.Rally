@@ -3,21 +3,25 @@
 Real-world rally stages for [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth): drive a real rally's stages
 on the real roads, timed, with BeamNG.drive's own co-driver calling pacenotes made from the road.
 
-Status: alpha (1.3.0, in testing: **the auto recce** -- a stage's driving line worked out from BeamNG.Earth's own
-roads, in the game, with no recce to drive and no Python). Needs BeamNG.drive 0.40.5 and BeamNG.Earth with modding
-API 1.6 or newer (1.7, with the `onBeamNGEarthRebased` event, is used when present: BeamNG.Earth's dev builds from
-1.9.1-beta.dev.398).
+Status: alpha (1.3.1, in testing: **one Auto recce button** -- it fetches the map data along the stage if
+BeamNG.Earth has none, takes you to the start, and works the line out from the roads there, with no recce to drive
+and no Python). Needs BeamNG.drive 0.40.5 and BeamNG.Earth with modding API 1.6 or newer (1.7, with the
+`onBeamNGEarthRebased` event, is used when present: BeamNG.Earth's dev builds from 1.9.1-beta.dev.398).
 
 > ### The auto recce needs a BeamNG.Earth that does not exist yet
 >
-> It is built on **`api.roadGraph`**, a new call that asks BeamNG.Earth for one window of its road graph around a
-> point. That is [a pull request waiting on TecnaGamer](https://github.com/DeRamp/BeamNG.Earth/tree/addon-api-road-graph);
-> until he merges it, the only BeamNG.Earth that can answer is the fork it is on:
+> It is built on **modding API 1.9**: `api.roadGraph`, which asks BeamNG.Earth for one window of its road graph
+> around a point, and `api.areaPlan` / `areaAdd` / `areaStatus`, which price and fetch the ground along a route
+> through BeamNG.Earth's own saved-area downloader. Both are in
+> [one pull request waiting on TecnaGamer](https://github.com/TecnaGamer/BeamNG.Earth/pull/1249); until he merges
+> it, the only BeamNG.Earth that can answer is the fork it is on:
 > **`github.com/DeRamp/BeamNG.Earth`, branch `addon-api-road-graph`**.
 >
-> **With a stock BeamNG.Earth, Earth Rally works exactly as 1.2.5 did** -- the mod asks `api.has('roadGraph')`, gets
-> no for an answer, and shows no auto recce anywhere. Nothing is broken and nothing else changes; you drive a recce,
-> as before. The only thing you lose is the feature this version is named for.
+> **With a stock BeamNG.Earth, Earth Rally works exactly as 1.2.5 did** -- the mod asks `api.has('roadGraph')` and
+> `api.has('areaRoute')`, gets no for an answer to both, and shows no auto recce anywhere. Nothing is broken and
+> nothing else changes; you drive a recce, as before. The only thing you lose is the feature this version is named
+> for. With the road graph but not the area call, the auto recce works wherever you have already been and says so
+> where you have not, which is exactly what 1.3.0 did.
 
 **Open it in game with Ctrl + Alt + K**, or from the pause menu's **Earth Rally** tab ([all controls](#controls)).
 
@@ -29,12 +33,17 @@ API 1.6 or newer (1.7, with the `onBeamNGEarthRebased` event, is used when prese
    - **a recce** you drive once in game: the stage's map line is drawn on the road ahead of you (orange; a green ball
      at the flying finish) and the mod records the line you drive, with real heights;
    - **an auto recce**: its map line matched to BeamNG.Earth's roads, no recce to drive. Press **Auto recce** on
-     a stage that needs a line and the mod asks BeamNG.Earth for the roads along the stage, a window at a time, and
-     works the line out from them -- a 4 km stage in about two seconds. Where the map has no road the organisers'
-     line is used, no notes are called there, and the stage still says a recce is better. It reads only map data
-     already on your computer and **downloads nothing**, so a stage over ground you have never been near will say
-     so rather than fetch it; drive near it, or drive its recce. It needs the BeamNG.Earth above. (The same thing
-     offline, over BeamNG.Earth's source with Python: `tools/auto_recce.py`, below.)
+     a stage that needs a line and one button does the lot: it works out whether BeamNG.Earth has the map data
+     along the stage and **tells you how much there is to download and asks first** (the roads layer alone, about
+     18 MB for a short stage); then it takes you to the start, because a road graph can only be asked for near
+     where you are; then it asks for the roads a window at a time and works the line out from them -- a 4 km stage
+     in about a second and a half. Say **Not now** and it stops without moving you or downloading anything.
+     Where the map has no road the organisers' line is used, no notes are called there, and the stage still says a
+     recce is better. It needs the BeamNG.Earth above. (The same thing offline, over BeamNG.Earth's source with
+     Python: `tools/auto_recce.py`, below.)
+   - **Reset**: once a stage has a line, the Auto recce button becomes **Reset**, which removes it so you can make
+     it again -- with the auto recce or by driving a recce. A line you drove is confirmed first, because that one
+     cannot be made again.
 
    A recce, when there is one, is used first (unless it was saved short and the matched line covers the stage).
 3. **Run** the stage, through its controls as in a real rally:
