@@ -166,9 +166,10 @@ exists the button is gone, so a line the player is unhappy with -- a bad match, 
 a fix -- can only be removed by deleting a file by hand. This was foreseen when the button was specified ("an amber
 stage needs a way to retry") and shipped anyway; it is now a real obstruction, hit while testing.
 
-It is not only a convenience. 1.3.1 changes what an auto recce produces (the gain/loss figures are stored with the
-line, and the auto recce's heights are to be fixed), so every line made before those changes is stale, and there is
-currently no way for a player to refresh one.
+It is not only a convenience. 1.3.1 changes what an auto recce produces -- the gain/loss figures are stored with
+the line -- so every line made before that change is stale, and there is currently no way for a player to refresh
+one. Two of this machine's lines are in exactly that state (`dalles-mtn-up`, `low-gap-stage`): their tiles are
+worked out on the fly every time the page is polled.
 
 **What it needs to cover**, which is more than one button:
 
@@ -223,8 +224,11 @@ the doing:
 - **Noise.** Summing every point of a 4 m-spaced line adds up GPS jitter and surface wobble into hundreds of false
   metres. It needs a threshold, and the threshold needs choosing against real lines rather than picked -- the 116
   stages in the backup are the sample.
-- **The two line kinds will not agree**, since one is where a car drove and the other is where the road surface is.
-  Worth measuring on a stage that has both before deciding whether that matters.
+- **The two line kinds will not agree**, since one is where a car drove and the other is where the road surface
+  is. **Closed without measuring it, by the user, 2026-11-14: "Accuracy isn't too important as it's just an
+  indicator to the user. It reads correct enough to me so let's drop that issue."** The tile is there to give a
+  driver the shape of a stage before they drive it, and a metre or two either way does not change that. So the two
+  kinds are allowed to disagree, no reconciliation is planned, and neither kind is labelled as the more accurate.
 
 **Settled 2026-11-14: the split is right, and the threshold is not eating anything.** `dalles-mtn-up` and
 `dalles-mtn-down` are the same 16 km of road in opposite directions, and the auto recce put them at:
@@ -241,15 +245,12 @@ a monotonic climb within the 2 m threshold, confirmed independently, not a swall
 the figures for a driven recce too (Founders: 37 corners, 2 m gain, 7.7 m loss, checked against the same
 recomputation).
 
-**What that does not settle is the absolute heights.** A systematic overstatement would mirror just as neatly, so
-the height-accuracy item stays open and must not be closed on the strength of the table above.
-
-**And the two line kinds still have not been compared, because no stage has both.** The only driven recce on this
-machine is Founders/Olmstead, which has no auto line (uncached) -- and it is flat, heights spanning 4.1 to 10.8 m
-over 5.7 km, so it would not answer the question even after a download. **The cheap way to answer it needs no
-download at all: drive a recce on a stage that already has an auto line and real relief** -- `starveout` (374.0 /
-80.2 over 12.9 km) or `dalles-mtn-up` (545.0 / 219.4 over 16.1 km) -- and compare the two lines over the same
-ground.
+The table proves the arithmetic -- the signs, the hysteresis, the direction handling -- and not the absolute
+heights: a systematic overstatement would mirror just as neatly. **That remaining question is closed rather than
+carried, by the user, 2026-11-14: the figure is an indicator, it reads right, and it is not worth chasing.** No
+height-accuracy work is planned in this version or kept on a list for a later one. If it ever does need reopening,
+the way in is a recce driven on `starveout` or `dalles-mtn-up` -- both already have auto lines over real relief --
+rather than a download, and that is written here only so nobody re-derives it.
 
 **Mock-up first**, as any UI change: four tiles with two of them changed is a small drawing, but the wording and
 the units (m or ft, following the existing distance setting) are exactly what a mock-up settles cheaply.
