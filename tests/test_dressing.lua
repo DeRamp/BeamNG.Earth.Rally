@@ -306,4 +306,56 @@ do
   T.check(#md == 1 and #md[1].objects == 6 and #find(md[1].objects, 'radio') == 0, 'map medical alone: its own boards and gazebo')
 end
 
+------------------------------------------------------------------------------------------ planning part of a stage again
+-- runner.lua plans the whole stage once, then only the junction kinds for junctions the live road map shows later:
+-- `only` gives those kinds and no others, the same as the whole plan gives them, and `existingMarshals` keeps the
+-- one-per-km spacing across the two plans.
+do
+  local line = {}
+  for k = 0, 120 do line[#line + 1] = V(0, k * 100) end
+  local js = {}
+  for _, s in ipairs({ 1000, 1500, 3000 }) do
+    js[#js + 1] = { along = s, x = 0, y = s, kind = 'turn', inDeg = 0, outDeg = 90, sides = { { deg = 0 }, { deg = 270 } } }
+  end
+  local function plan(o)
+    o.line, o.startM, o.finishM = line, 0, 12000
+    o.junctions = o.junctions or js
+    return D.plan(o)
+  end
+  local all = plan({})
+  T.check(#ofKind(all, 'radio') == 2 and #ofKind(all, 'spectators') == 1,
+    'whole stage: radio points and a spectator area (' .. #ofKind(all, 'radio') .. ', ' .. #ofKind(all, 'spectators') .. ')')
+  T.check(#ofKind(all, 'marshal') == 2 and ofKind(all, 'marshal')[1].along == 1000 and ofKind(all, 'marshal')[2].along == 3000,
+    'whole stage: marshals at 1 km and 3 km, none at 1.5 km')
+  local part = plan({ only = { tape = true, board = true, marshal = true } })
+  T.check(#ofKind(part, 'radio') == 0 and #ofKind(part, 'medical') == 0 and #ofKind(part, 'spectators') == 0,
+    'only: no radio points, medical points or spectators')
+  T.check(#ofKind(part, 'tape') == 3 and #ofKind(part, 'board') == 3 and #ofKind(part, 'marshal') == 2,
+    'only: every junction\'s tape, board and marshal (' .. #part .. ' sites)')
+  local same = true
+  for _, kind in ipairs({ 'tape', 'board', 'marshal' }) do
+    local a, b = ofKind(all, kind), ofKind(part, kind)
+    for i = 1, math.max(#a, #b) do
+      local x, y = a[i], b[i]
+      if not (x and y) or x.along ~= y.along or #x.objects ~= #y.objects then same = false
+      else
+        for k, o in ipairs(x.objects) do
+          local p = y.objects[k]
+          if o.key ~= p.key or math.abs(o.x - p.x) > 1e-9 or math.abs(o.y - p.y) > 1e-9 then same = false end
+        end
+      end
+    end
+  end
+  T.check(same, 'only: the same sites, object for object, as the whole plan gives')
+  local tapes = plan({ only = { tape = true } })
+  T.check(#tapes == 3 and #ofKind(tapes, 'tape') == 3, 'only tape: tape and nothing else')
+  -- the junction at 1.5 km planned on its own: no marshal there with one standing at 1 km, one without
+  T.check(#ofKind(plan({ junctions = { js[2] }, only = { marshal = true }, existingMarshals = { 1000 } }), 'marshal') == 0,
+    'existing marshals: none within 1 km of one standing')
+  T.check(#ofKind(plan({ junctions = { js[2] }, only = { marshal = true }, existingMarshals = {} }), 'marshal') == 1,
+    'existing marshals: one where none stands')
+  T.check(#ofKind(plan({ junctions = { js[3] }, only = { marshal = true }, existingMarshals = { 1000, 1500 } }), 'marshal') == 1,
+    'existing marshals: one 1.5 km from the nearest standing')
+end
+
 T.done('test_dressing')

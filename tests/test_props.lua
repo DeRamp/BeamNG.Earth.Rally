@@ -155,4 +155,39 @@ props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
 T.check(select(1, props.dressingCount()) == props.DRESS_MAX_OBJS, 'dressing: a site held to its budget')
 props.clear()
 T.check(liveCount() == 0 and select(2, props.dressingCount()) == 0, 'dressing: cleared with the stage')
+
+-- The add-only path (the live road map's junctions, found as the car goes): new sites beside the ones there, nothing
+-- standing taken away or put down again, a site already there (same kind, same metre along) left out.
+do
+  local function site(kind, along, x)
+    return { kind = kind, along = along, from = along, to = along,
+             objects = { { shape = kind .. '.dae', x = x or 0, y = along, dx = 1, dy = 0 } } }
+  end
+  props.setDressing({ site('tape', 100), site('board', 25) })
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+  local before = {}
+  for id, o in pairs(live) do if o.fields.shapeName then before[#before + 1] = id end end
+  T.check(#before == 2, 'add-only: the stage\'s two sites down (' .. #before .. ')')
+  local n2 = props.addDressing({ site('tape', 100), site('tape', 100.3, 5), site('board', 100), site('tape', 200),
+                                 { kind = 'tape', along = 300, from = 300, to = 300, objects = {} } })
+  T.check(n2 == 2, 'add-only: two new sites taken, the same kind at the same metre left out, an empty one too (' ..
+    tostring(n2) .. ')')
+  local by, n = props.dressingSites()
+  T.check(n == 4 and by.tape == 2 and by.board == 2, 'add-only: beside the ones there (' .. n .. ')')
+  for _ = 1, 3 do props.update({ x = 0, y = 0, z = 0 }, toGame, 0) end
+  local kept = true
+  for _, id in ipairs(before) do if not live[id] then kept = false end end
+  T.check(kept, 'add-only: what stood is still standing, the same objects')
+  T.check(liveCount() == 4 and select(2, props.dressingCount()) == 4, 'add-only: the new ones down by the next update ('
+    .. liveCount() .. ')')
+  local made0 = #made
+  props.addDressing({ site('tape', 200), site('board', 100) })
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+  T.check(#made == made0, 'add-only: the same sites again: nothing made')
+  -- far behind the car: taken away by the window as any other
+  props.update({ x = 0, y = 2000, z = 0 }, toGame, 2000)
+  T.check(liveCount() == 0, 'add-only: an added site taken away behind the car as the rest')
+  props.clear()
+  T.check(select(2, props.dressingSites()) == 0, 'add-only: cleared with the stage')
+end
 T.done('test_props')

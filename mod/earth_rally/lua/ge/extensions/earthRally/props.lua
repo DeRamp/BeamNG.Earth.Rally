@@ -452,34 +452,74 @@ local function removeDress(s)
   s.objs = nil
 end
 
+-- A dressing site's key: its kind and where it is along the line, to the metre. Two plans of the same junction (the
+-- file's at the stage's start, the live road map's later) give the same key, so the second is not put down twice.
+local function dressKey(kind, along) return tostring(kind) .. '@' .. tostring(math.floor((along or 0) + 0.5)) end
+M._dressKey = dressKey
+
+-- (one of dressing.plan's sites as kept here: its objects as lat / lon, or nil when none could be kept)
+local function keepDress(site, toGeo)
+  local items = {}
+  for _, o in ipairs(site.objects or {}) do
+    if #items >= M.DRESS_MAX_OBJS then break end
+    local hx, hy = o.x + (o.dx or 0) * HEAD_M, o.y + (o.dy or 1) * HEAD_M
+    local it = { shape = o.shape }
+    if toGeo then
+      local la, lo, h = toGeo(o.x, o.y, o.z or 0)
+      local hla, hlo = toGeo(hx, hy, o.z or 0)
+      if la and hla then
+        it.lat, it.lon, it.h, it.hlat, it.hlon = la, lo, type(h) == 'number' and o.z and h or nil, hla, hlo
+      end
+    else
+      it.x, it.y, it.z, it.hx, it.hy = o.x, o.y, o.z, hx, hy
+    end
+    if it.lat or it.x then items[#items + 1] = it end
+  end
+  if #items == 0 then return nil end
+  return { kind = site.kind, along = site.along, from = site.from or site.along, to = site.to or site.along,
+           name = site.name, items = items, key = dressKey(site.kind, site.along) }
+end
+
 -- The stage's dressing (dressing.plan's sites, in game coordinates of the moment), replacing any there was. toGeo
 -- (x, y, z) -> lat, lon, h: earthAdapter.toGeo. Without one (the tests), the game coordinates are kept as they are
 -- and a world shift is not followed.
 function M.setDressing(list, toGeo)
   M.clearDressing()
   for _, site in ipairs(list or {}) do
-    local items = {}
-    for _, o in ipairs(site.objects or {}) do
-      if #items >= M.DRESS_MAX_OBJS then break end
-      local hx, hy = o.x + (o.dx or 0) * HEAD_M, o.y + (o.dy or 1) * HEAD_M
-      local it = { shape = o.shape }
-      if toGeo then
-        local la, lo, h = toGeo(o.x, o.y, o.z or 0)
-        local hla, hlo = toGeo(hx, hy, o.z or 0)
-        if la and hla then
-          it.lat, it.lon, it.h, it.hlat, it.hlon = la, lo, type(h) == 'number' and o.z and h or nil, hla, hlo
-        end
-      else
-        it.x, it.y, it.z, it.hx, it.hy = o.x, o.y, o.z, hx, hy
-      end
-      if it.lat or it.x then items[#items + 1] = it end
-    end
-    if #items > 0 then
-      dress[#dress + 1] = { kind = site.kind, along = site.along, from = site.from or site.along,
-                            to = site.to or site.along, name = site.name, items = items }
-    end
+    local d = keepDress(site, toGeo)
+    if d then dress[#dress + 1] = d end
   end
   return #dress
+end
+
+-- More dressing for the stage, beside what there is: the sites of junctions the live road map has shown since the
+-- stage was planned (runner.lua). Nothing already there is taken away or put down again (setDressing would take the
+-- whole stage away and put it back, a flicker of every object near the car), and a site whose key (kind and along)
+-- is already there is left out. The new ones go down by the next update, by the same window as the rest. Returns the
+-- number added.
+function M.addDressing(list, toGeo)
+  local have = {}
+  for _, s in ipairs(dress) do have[s.key or dressKey(s.kind, s.along)] = true end
+  local n = 0
+  for _, site in ipairs(list or {}) do
+    local k = dressKey(site.kind, site.along)
+    if not have[k] then
+      local d = keepDress(site, toGeo)
+      if d then
+        dress[#dress + 1] = d
+        have[k] = true
+        n = n + 1
+      end
+    end
+  end
+  return n
+end
+
+-- The dressing sites kept (down or not), by kind: { [kind] = n }, and their number.
+function M.dressingSites()
+  local by, n = {}, 0
+  for _, s in ipairs(dress) do by[s.kind] = (by[s.kind] or 0) + 1 n = n + 1 end
+  return by, n
 end
 
 -- (after a world shift: taken away, put down again by the next update from their lat / lon)

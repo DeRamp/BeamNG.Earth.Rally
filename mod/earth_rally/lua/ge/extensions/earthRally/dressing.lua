@@ -392,7 +392,13 @@ end
 --   corners = (stageWriter.stageCorners' list: { i0, i1, dir, angleDeg, minRadius }, its indices samples every
 --     cornerStepM (default 5, stageWriter.NOTE_STEP_M) from cornerStartM (default startM); or corners carrying their
 --     own `from` / `to` along the line),
---   halfWidth (default 3) }
+--   halfWidth (default 3),
+--   only (nil: every kind) = { tape = true, board = true, ... }: only these kinds planned. runner.lua plans the stage
+--     once at its start, then, as the live road map shows it junctions the file did not have, plans just the tape,
+--     board and junction marshal for each of those (the radio points and spectator areas depend only on the line and
+--     its corners, so they are not planned again),
+--   existingMarshals = { along... }: junction marshals already standing (from an earlier plan of the same stage),
+--     which the one-per-MARSHAL_EVERY_M spacing counts as its own }
 function M.plan(input)
   local line = input.line
   if not line or #line < 2 then return {} end
@@ -402,7 +408,10 @@ function M.plan(input)
   local startM = input.startM or 0
   local finishM = input.finishM or L.total
   local sites = {}
+  local only = input.only
+  local function want(kind) return only == nil or only[kind] == true end
   local function add(kind, source, along, from, to, objs, name)
+    if not want(kind) then return end
     objs = capped(objs, kind)
     if #objs == 0 then return end
     sites[#sites + 1] = { kind = kind, source = source, along = along, from = min(from, to), to = max(from, to),
@@ -463,7 +472,9 @@ function M.plan(input)
     end
     return best
   end
-  if #marks.marshal > 0 then
+  if not want('marshal') then
+    -- (none asked for)
+  elseif #marks.marshal > 0 then
     local used = {}
     for _, m in ipairs(marks.marshal) do
       local r = turnNear(m.along, M.MARSHAL_AT_JUNCTION_M)
@@ -477,14 +488,19 @@ function M.plan(input)
       end
     end
   else
-    local last = -huge
+    -- (every marshal standing, this plan's and the earlier ones': none within MARSHAL_EVERY_M of another. Taken in
+    -- order along the stage with nothing standing before, it is the same as "MARSHAL_EVERY_M on from the last one")
+    local standing = {}
+    for _, a in ipairs(input.existingMarshals or {}) do
+      if type(a) == 'number' then standing[#standing + 1] = a end
+    end
     for _, r in ipairs(solved) do
-      if r.kind == 'turn' and #r.tapes > 0 and r.along - last >= M.MARSHAL_EVERY_M then
-        local near = false
-        for _, m in ipairs(marks.marshal) do if abs(m.along - r.along) <= M.MARSHAL_NEAR_M then near = true end end
-        if not near then
+      if r.kind == 'turn' and #r.tapes > 0 then
+        local ok = true
+        for _, a in ipairs(standing) do if abs(r.along - a) < M.MARSHAL_EVERY_M then ok = false break end end
+        if ok then
           add('marshal', 'rule', r.along, r.along, r.along, (junctionMarshal(r)))
-          last = r.along
+          standing[#standing + 1] = r.along
         end
       end
     end
@@ -493,7 +509,9 @@ function M.plan(input)
   -- radio points: the map's, else every RADIO_EVERY_M (none in the last RADIO_NOT_LAST_M), each moved along until
   -- its post is clear of the junctions
   local radios = {}
-  if #marks.radio > 0 then
+  if not (want('radio') or want('medical')) then
+    -- (none asked for)
+  elseif #marks.radio > 0 then
     for _, m in ipairs(marks.radio) do radios[#radios + 1] = { along = m.along, source = 'map', name = m.name } end
   else
     local function clearOfJunctions(s)
@@ -516,7 +534,7 @@ function M.plan(input)
     end
   end
   -- medical points: only the map's; one within SHARE_M of a radio point shares its post
-  for _, m in ipairs(marks.medical) do
+  for _, m in ipairs((want('radio') or want('medical')) and marks.medical or {}) do
     local best, bd = nil, M.SHARE_M
     for _, r in ipairs(radios) do
       if not r.medical and abs(r.along - m.along) <= bd then best, bd = r, abs(r.along - m.along) end
@@ -551,7 +569,9 @@ function M.plan(input)
     local objs = spectators(L, s0, s1, apex, side, function(x, y) return clearOf(x, y, apex) end)
     add('spectators', source, apex, s0, s1, objs, name)
   end
-  if #marks.spectator > 0 then
+  if not want('spectators') then
+    -- (none asked for)
+  elseif #marks.spectator > 0 then
     for _, m in ipairs(marks.spectator) do
       -- the inside of the corner it is at, else the side the map put it
       local side = (m.offLineM or 0) < 0 and -1 or 1

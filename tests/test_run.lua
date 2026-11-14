@@ -1208,6 +1208,117 @@ local function driveTo(i0, i1, step)
   end
 end
 
+------------------------------------------------------------------------------------------ 1.4.0: the stage dressing in a run
+-- Planned as the stage is set out (the matched file's junctions placed on the line), put down and taken away by the
+-- car's distance along it, cleared at the end of the stage; and on a stage whose file kept no side roads (format 1),
+-- the junctions the live road map shows as the car goes ADDED, nothing standing taken away.
+do
+  local props = require('earthRally/props')
+  local J = require('earthRally/junctions')
+  local function shapes(pat)
+    local n, ids = 0, {}
+    for id, o in pairs(objects) do
+      if o.pos and (o.fields.shapeName or ''):find(pat, 1, true) then n = n + 1 ids[#ids + 1] = id end
+    end
+    return n, ids
+  end
+  local function evFor(id)
+    local ev = { format = 1, id = id, name = 'Dressing ' .. id, stages = { {
+      id = 'hill', name = 'Hill', lengthM = 3000, radiusM = 1200, centre = event.stages[1].centre,
+      controls = { start = event.stages[1].controls.start, ff = event.stages[1].controls.ff },
+      line = event.stages[1].line } } }
+    files['/earthRally/events/' .. id .. '.json'] = ev
+    return ev
+  end
+
+  -- ------------------------------------------------------------ a format 2 file: every junction with its roads
+  -- a side road east 300 m up the first straight; a fork keeping left ~1 km along the second
+  local evA = evFor('dressA')
+  files['/earthRally/matched/dressA__hill.json'] = { format = 2, points = recFrom, junctions = {
+    J.encode({ kind = 'straight', side = '', inDeg = 0, outDeg = 0, sides = { { deg = 90, halfW = 3 } } },
+      full[311][1], full[311][2]),
+    J.encode({ kind = 'fork', side = 'left', inDeg = 90, outDeg = 90, sides = { { deg = 60, halfW = 3 } } },
+      full[2011][1], full[2011][2]) } }
+  local rA = toTheLine(evA)
+  T.check(runner.state() == 'waitStart', 'dressing: waiting on the line (' .. runner.state() .. ')')
+  local by, nA = props.dressingSites()
+  T.check((by.tape or 0) == 2 and (by.board or 0) == 1,
+    'dressing: the stage start puts its sites in, tape at both junctions and a board before the fork (' ..
+    tostring(rA.checks.dressing) .. ')')
+  T.check(rA.dress and rA.dress.scan == false and not tostring(rA.checks.dressing):find('live road map'),
+    'dressing: the file gave every junction\'s roads: the live road map not looked at')
+  T.check(shapes('s_tape_road_closure') == 1 and shapes('s_corner_dir') == 0,
+    'dressing: at the start, the tape 300 m on is down and nothing further (' .. shapes('s_tape_road_closure') .. ')')
+  go(rA)
+  T.check(runner.state() == 'running', 'dressing: GO')
+  driveTo(11, 1036)
+  T.check(shapes('s_tape_road_closure') == 0, 'dressing: 1 km on, the first junction\'s tape taken away behind the car')
+  driveTo(1061, 1736)
+  T.check(shapes('s_tape_road_closure') == 1 and shapes('s_corner_dir45_left') == 1,
+    'dressing: nearing the fork, its tape and its board down (' .. shapes('s_tape_road_closure') .. ', ' ..
+    shapes('s_corner_dir45_left') .. ')')
+  driveTo(1761, #full)
+  T.check(runner.state() == 'finished', 'dressing: finished (' .. runner.state() .. ')')
+  frames(100, 0.1)
+  T.check(select(2, props.dressingSites()) == 0 and shapes('s_tape_road_closure') == 0 and shapes('s_corner_dir') == 0,
+    'dressing: the stage done and tidied, its dressing gone')
+  runner.abort(true)
+  T.check(nA > 0 and select(2, props.dressingSites()) == 0, 'dressing: nothing left after the run')
+
+  -- ------------------------------------------------------------ a format 1 file and the live road map
+  -- The file has the junction 300 m up but not its roads; the live road map has the stage's road with that side road,
+  -- and, once the car is under way, more of the road and a second junction (west, 600 m up) the file does not have.
+  local evB = evFor('dressB')
+  files['/earthRally/matched/dressB__hill.json'] = { format = 1, points = recFrom,
+    junctions = { { full[311][1], full[311][2], 'straight', '' } } }
+  local K, west = 40, false
+  map = { getMap = function()
+    local nodes = {}
+    for k = 0, K do
+      local x, y = toGame(full[1 + 10 * k][1], full[1 + 10 * k][2], 0)
+      nodes['r' .. k] = { pos = vec3(x, y, 100), radius = 3.5, links = {} }
+      if k > 0 then nodes['r' .. k].links['r' .. (k - 1)] = {} end
+    end
+    local function side(at, sx, name)
+      local x0, y0 = toGame(full[1 + 10 * at][1], full[1 + 10 * at][2], 0)
+      local prev = 'r' .. at
+      for m = 1, 6 do
+        nodes[name .. m] = { pos = vec3(x0 + sx * 10 * m, y0, 100), radius = 3, links = { [prev] = {} } }
+        prev = name .. m
+      end
+    end
+    side(31, 1, 'e')
+    if west then side(61, -1, 'w') end
+    return { nodes = nodes }
+  end }
+  local rB = toTheLine(evB)
+  T.check(runner.state() == 'waitStart', 'live: waiting on the line (' .. runner.state() .. ')')
+  T.check(rB.dress and rB.dress.scan == true, 'live: a format 1 file: the live road map looked at')
+  by = props.dressingSites()
+  T.check((by.tape or 0) == 1 and rB.dress.known[1] and rB.dress.known[1].needSides == false,
+    'live: the file\'s junction given its side road by the live road map while waiting at the start (' ..
+    tostring(by.tape) .. ')')
+  local nT, firstIds = shapes('s_tape_road_closure')
+  T.check(nT == 1, 'live: and its tape down (' .. nT .. ')')
+  go(rB)
+  driveTo(11, 361)
+  -- the road map loads further up the stage, with a junction the file never had
+  K, west = 100, true
+  driveTo(386, 436)
+  by = props.dressingSites()
+  T.check((by.tape or 0) == 2 and (rB.dress.added or 0) == 2,
+    'live: the new junction\'s tape ADDED beside the first (' .. tostring(by.tape) .. ')')
+  local stillThere = true
+  for _, id in ipairs(firstIds) do if not objects[id] then stillThere = false end end
+  T.check(stillThere, 'live: the first junction\'s tape still standing, the same object (nothing replaced)')
+  T.check(shapes('s_tape_road_closure') == 2, 'live: both tapes down (' .. shapes('s_tape_road_closure') .. ')')
+  driveTo(461, 486)
+  T.check((props.dressingSites().tape or 0) == 2, 'live: the same junctions seen again: nothing added twice')
+  runner.abort(true)
+  T.check(select(2, props.dressingSites()) == 0 and shapes('s_tape_road_closure') == 0, 'live: the run stopped: its dressing gone')
+  map = nil
+end
+
 -- the reset penalty: +10 s a reset during the timed stage, in the result
 do
   settings.reset()
