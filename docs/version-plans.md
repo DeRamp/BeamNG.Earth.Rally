@@ -42,7 +42,10 @@ Not in 1.3.0: the self-test's co-driver check, which moves to 1.4.0 with the res
 until it is done `tools/selftest.py` exits 1 on every run, so it is a report to read rather than a gate to trust
 (docs/plan-1.3.0.md says what it would take to make it one meanwhile).
 
-Done: on a clean PC, a dropped-in map's stages drive without a recce, with no Python installed.
+Done: on a clean PC, a dropped-in map's stages drive without a recce, with no Python installed. **Released
+2026-11-13.** Step 1 (version checks), step 2 (pre-loading before the start) and step 4 (folders, the automatic ATC,
+the late-start penalty) were not reached and are now 1.3.2, which is what step 4 said would happen if the auto recce
+needed the time. It did.
 
 ## 1.3.1: the auto recce fetches what it needs
 
@@ -58,7 +61,45 @@ The full plan is docs/plan-1.3.1.md.
 4. The screen (**mock-up first**): downloading as a phase in front of matching; a fifth ending for a refused
    download.
 
-Done: a map dropped in for ground never driven matches its stages, having asked first.
+Done: a map dropped in for ground never driven matches its stages, having asked first. **Released
+2026-11-14.**
+
+Two things went differently from the plan above and are worth keeping. Step 2's `api.preloadRoute` was not written:
+`area_plan` / `area_add` with explicit points is the whole of what was needed, so the upstream change is two calls
+and not three -- less to ask of TecnaGamer and less for him to maintain. And step 3's `has('preloadRoute')` became
+`has('areaRoute')` for the same reason. Step 4's four phases became one button, at the user's direction: price, ask,
+download, go, match, with every press doing the same thing.
+
+## 1.3.2: the first stage goes right
+
+Six contained items, in the order that makes each one smaller. No new unknowns, and nothing here needs BeamNG.Earth
+to change, so unlike 1.3.0 and 1.3.1 this version can be finished without waiting on anyone.
+
+1. **Version checks at startup (23).** First, as it was first in 1.3.0's plan, and for the same reason: it protects
+   everything after it, and a mod that says plainly "BeamNG.Earth changed under me" is worth more than a mod that
+   half-works. Small, offline-testable.
+2. **The no-ATC start guard (`docs/notes-1.3.0.md` #1).** Set the car down beyond the start zone rather than inside
+   it, and do not accept "stopped on the line" until the car has moved since it was placed -- the same two moves
+   `M.DRIVEN_THERE_MIN_M` already makes on the ATC path. Before the automatic ATC, not after: it is the actual
+   reported bug, it is a handful of lines, and it is the honest fix for anyone who keeps a stage without controls.
+   **One question for the user first** (asked in the notes, still unanswered): after you drive up and stop on a
+   no-ATC stage's line, is it still a flat 12 s (`NO_ATC_START_S`, which exists so the co-driver's 10-second call
+   fits), or a real start minute as checking in gives you? The guard is the same either way.
+3. **The automatic ATC (3).** ~50 m before the start, walked back along the road -- so every stage starts the same
+   way and the special case above is retired rather than maintained. Uses the matched line's own geometry, which
+   every stage now has.
+4. **No penalty for a late start.** A new minute instead, as a real rally does. Small, and it stops the world's
+   loading from costing time, which is the same complaint pre-loading answers from the other side.
+5. **Folder-based import (4).** Three of the twelve rallies here came in as one "Main Route Book"; the fixture for
+   that is a real file on this machine, so it is testable offline before it is seen in game.
+6. **Stage pre-loading before the start (21), mock-up first.** The corridor loaded while you wait at the control,
+   with a loaded % on screen and the start available whenever you want it. Last because it is the only M in the
+   list and because 1.3.1's downloader is the machinery it stands on -- `areaPlan` / `areaAdd` / `areaStatus` over
+   the stage corridor is already written, tested and in a release; this is a second caller of it with a different
+   trigger and a screen of its own.
+
+Done: a map with folders and no ATCs imports, every stage has an arrival control, a slow world costs no time, and
+the user drives one from the import folder to the finish without touching anything else.
 
 ## 1.4.0: the co-driver
 
