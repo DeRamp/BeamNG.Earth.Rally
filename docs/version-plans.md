@@ -29,8 +29,8 @@ The full order and the reasoning are in docs/plan-1.3.0.md. In short, and not in
 3. The matcher add-on (1): the backbone, and the large one. Stage page mock-up first.
 4. Stage pre-loading with how much is loaded on screen (21); mock-up first. Revisit the self-test's settle gate when
    it lands -- that gate is a workaround for the problem this step fixes properly.
-5. Folder-based import (4) and the automatic ATC (3): contained, offline tests, and the easiest to drop if the
-   matcher needs the time.
+5. Folder-based import (4), the automatic ATC (3), and dropping the late-start penalty: contained, offline tests,
+   and the easiest to drop if the matcher needs the time.
 6. Release 1.3.0 as a **full** release, tested on a clean PC rather than this one; ask TecnaGamer to list Earth
    Rally (mod + matcher) in the add-on registry.
 

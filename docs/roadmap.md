@@ -23,7 +23,8 @@ Any imported map drives with no recce and no Python, and starts when you're read
 |---|---|
 | Road matching for every player: the matcher as a BeamNG.Earth companion add-on (1). Needs full releases and the registry listing | L |
 | Stage pre-loading: the stage corridor loaded before the start, a loaded % on screen, start any time (21) | M |
-| An ATC added to stages without one (3) | S |
+| An ATC added to stages without one (3): ~50 m before the start, walked back along the road | S |
+| No penalty for a late start, just a new minute, as a real rally does (and so waiting for the world to load cannot cost time) | S |
 | Maps that group stages in folders import properly (4) | S |
 | Version checks at startup, a clear message when BeamNG or BeamNG.Earth changed (23) | S |
 

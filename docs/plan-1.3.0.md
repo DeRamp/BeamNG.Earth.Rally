@@ -7,6 +7,29 @@ Everything here is backbone. The route editor and rally setup mode are 1.5.0 and
 top of what this version lays down (the matched line, the stage file, the corridor), and starting them before the
 backbone is solid would mean building an editor for a thing that still changes underneath it.
 
+## Decided with the user (2026-11-14)
+
+- **Version checks warn, they do not refuse.** A BeamNG.drive or BeamNG.Earth this mod does not know says so and
+  lets the player carry on. "If people have issues, they'll just have to let me know and we'll fix them."
+- **Pre-loading is a feature, not a wall.** The stage never refuses to start. You can drive up through the controls
+  while the world is still arriving; the mod tells you how it is going, and the natural place for that is the
+  control zone between the ATC and the start, where you are stopped anyway.
+- **Being late to the start costs nothing.** This is a change to what the mod does today (`LATE_PENALTY_S`, 10 s a
+  minute). Real rallies do not fine you for a late start -- they give you a new minute -- and waiting for the world
+  to load must not cost a player time either. So: a new start minute, no penalty, and the late path keeps only the
+  reschedule. `M.LATE_PENALTY_S`, `run.latePenalty`, `checks.lateMinutes` and the penalty's row on the results card
+  all go with it; the jump start, the missed time control and the reset penalty stay.
+- **The automatic ATC sits close to the start.** Measured on OTR 2024, where the organisers put theirs 36 m
+  (Maryhill Up, the one the user picked as right), 43, 46, 50, 56, 66, 72 and 510 m before the start -- so ~50 m,
+  inside the real cluster and near Maryhill's. Walked back along the road rather than straight: if the walk reaches
+  a junction first, take any arm of it and place the ATC there, which is what a real organiser does with the road
+  they are given.
+- **The clean test happens on this desktop**, not another machine: the mod uninstalled completely, then installed
+  from the release zip as a player would, with maps re-imported. The user's recorded times are expendable
+  ("we're doing testing anyway") -- but say so before deleting anything, every time.
+- **Upstream pull requests: yes, and show them first.** They go out as DeRamp from the existing fork
+  (github.com/DeRamp/BeamNG.Earth), and the user reads the text before anything is sent.
+
 ## The order, and why it is not the obvious one
 
 `docs/version-plans.md` had the small safe items first and the matcher last. That is the wrong way round. The
@@ -69,12 +92,16 @@ This one has already shown its teeth: in 1.2 the self-test started a stage mid-s
 settle gate in `selftest.lua` is a workaround for a real problem that this step fixes properly, for players too --
 so when it lands, that gate should be revisited rather than left in.
 
-### 5. The import smalls (4, 3) (small, and genuinely small)
+### 5. The import smalls (4, 3), and the late-start rule (small, and genuinely small)
 
 - Maps that group each stage with its controls in folders (SOFR and others): read the folders, not only the names.
   Two of the user's own rallies import with no controls today because their points are called just "Start" and
   "Finish".
-- An ATC added to stages without one, so every stage starts the same way.
+- An ATC added to stages without one, so every stage starts the same way: ~50 m before the start, walked back
+  along the road, taking any arm of the first junction it meets (see the decisions above for where that number
+  comes from).
+- **No penalty for a late start**, just a new minute, as a real rally does -- and so that waiting for the world to
+  load can never cost a player time. Touches `runner.stepToStart`, the results card and the HUD's penalty rows.
 
 Left to last deliberately: they are contained, they have offline tests, and they are the easiest things to drop if
 the matcher turns out to need the time.
