@@ -839,6 +839,41 @@ function M.coverage(line, windows, inner)
   return false, uncovered, total
 end
 
+------------------------------------------------------------- the stage as a corridor someone could download
+
+M.CORRIDOR_STEP_M = 30.0    -- the line decimated to a point every this far before it goes out as a route
+
+-- The stage's line as the points of a route corridor: { { lat, lon } ... }, one point every `stepM` along it.
+-- Nothing here downloads anything or knows how to; this is the shape a downloader would be handed.
+--
+-- **Decimated rather than sent as it is**, and the reason is the saved-area tool's own storage rather than the wire:
+-- BeamNG.Earth persists a route area's points VERBATIM into `<cache>/areas/areas.json`, re-validates every one of
+-- them on each load, and rewrites that file whenever any area changes. The longest line in this user's set
+-- resamples to about 9,800 points -- some 250 KB of JSON carried for the life of the area, re-read at every server
+-- start. At 30 m the same stage is a few hundred points and the ground asked for is the same: `CELL_RING = 2`
+-- dilates any corridor into a band about 7 km wide before a tile is fetched, which swallows the difference. (In
+-- bytes a bounding box and a 300 m corridor are near enough the same too -- measured over 116 real stages, a box
+-- costs 1.03x at the median and never worse than 2.0x. The corridor is still the right request: it describes the
+-- ground the stage crosses rather than claiming a county because a stage runs diagonally across one.)
+--
+-- The line's own two ends are always kept (M.resample), because a corridor that stopped short of the flying finish
+-- would leave the one stretch a player notices uncached.
+function M.corridor(line, stepM)
+  if type(line) ~= 'table' or #line < 2 then return nil, 'a corridor needs a line of at least two points' end
+  local step = stepM or M.CORRIDOR_STEP_M
+  if type(step) ~= 'number' or step <= 0 then return nil, 'a corridor needs a step in metres' end
+  local fr = M.frame(line[1][1], line[1][2])
+  local pts = {}
+  for i, q in ipairs(line) do pts[i] = fr.xy(q[1], q[2]) end
+  local walk = M.resample(pts, step)
+  local out = {}
+  for i, q in ipairs(walk) do
+    local la, lo = fr.latlon(q.x, q.y)
+    out[i] = { lat = la, lon = lo }
+  end
+  return out
+end
+
 ------------------------------------------------------------------------------------------ running one
 
 local job = nil        -- { event, stage, plan, windows, graph, i, done, radius, inner, tries, gen }

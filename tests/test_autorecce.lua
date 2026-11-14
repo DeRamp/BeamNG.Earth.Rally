@@ -308,6 +308,63 @@ do  -- every window complete but one point of the corridor outside them all: sti
     string.format('%.0f', short2) .. ' m)')
 end
 
+------------------------------------------------------------------------- 3b: the stage as a downloadable corridor
+
+-- M.corridor is the shape a downloader would be handed (1.3.1). It downloads nothing and must not: these check the
+-- geometry only, which is all it is.
+do
+  local line = lineEast(1000, 10)                 -- 101 points, a point every 10 m
+  local cor = auto.corridor(line, 30)
+  T.check(cor ~= nil and #cor > 0, 'a line becomes a corridor of points')
+  -- decimated: a 1000 m line at 30 m is 34 points plus its own end, not the 101 it came in as. The point of the
+  -- whole function is that areas.json does not carry the dense line, so the count is the assertion.
+  T.check(#cor < #line / 2, 'and far fewer points than the line (' .. #cor .. ' from ' .. #line .. ')')
+  T.near(#cor, 35, 2, 'about one point every 30 m along 1000 m')
+
+  -- the ends are the line's own, to the centimetre: a corridor that stopped short would leave the flying finish
+  -- uncached, which is the one stretch a player would notice.
+  --
+  -- On a DIAGONAL line, deliberately. lineEast runs due east, so its latitude never changes and a `.lat` check
+  -- against it cannot fail however the function is broken -- an assertion that looks like coverage and is not. A
+  -- mutation that dropped the line's last point was caught by one check out of four here for exactly that reason.
+  local diag = {}
+  for i = 0, 100 do diag[#diag + 1] = { 45.0 + i * 0.00009, -120.0 + i * 0.00013 } end   -- ~1.4 km northeast
+  local dcor = auto.corridor(diag, 30)
+  T.near(dcor[1].lat, diag[1][1], 1e-7, "the corridor starts at the line's own first point")
+  T.near(dcor[1].lon, diag[1][2], 1e-7, '... and its longitude')
+  T.near(dcor[#dcor].lat, diag[#diag][1], 1e-7, "and ends at the line's own last point")
+  T.near(dcor[#dcor].lon, diag[#diag][2], 1e-7, '... and its longitude')
+  T.check(#dcor < #diag, 'the diagonal line is decimated too (' .. #dcor .. ' from ' .. #diag .. ')')
+
+  -- spacing: every gap is one step, bar the last, which is whatever was left over
+  local fr = auto.frame(line[1][1], line[1][2])
+  local worst, lastGap = 0, 0
+  for i = 1, #cor - 1 do
+    local a, b = fr.xy(cor[i].lat, cor[i].lon), fr.xy(cor[i + 1].lat, cor[i + 1].lon)
+    local d = math.sqrt((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2)
+    if i < #cor - 1 then worst = math.max(worst, math.abs(d - 30)) else lastGap = d end
+  end
+  T.check(worst < 0.5, 'the points are one step apart (worst ' .. string.format('%.2f', worst) .. ' m off 30 m)')
+  T.check(lastGap <= 30 + 0.5, 'and the last gap is no longer than a step (' ..
+    string.format('%.1f', lastGap) .. ' m)')
+
+  -- the default step is used when none is given, and is coarser than the matched line's own 4 m spacing
+  local deflt = auto.corridor(line)
+  T.check(#deflt > 0 and auto.CORRIDOR_STEP_M > auto.OUT_STEP_M,
+    'a corridor with no step given uses CORRIDOR_STEP_M, coarser than the matched line (' ..
+    auto.CORRIDOR_STEP_M .. ' m vs ' .. auto.OUT_STEP_M .. ' m)')
+end
+
+do  -- what it refuses, rather than returning something a downloader would act on
+  local one = { { 45.0, -120.0 } }
+  local cor, why = auto.corridor(one, 30)
+  T.check(cor == nil and why ~= nil, 'a line of one point: refused (' .. tostring(why) .. ')')
+  local cor2, why2 = auto.corridor(lineEast(1000, 10), 0)
+  T.check(cor2 == nil and why2 ~= nil, 'a step of zero: refused rather than looping (' .. tostring(why2) .. ')')
+  local cor3 = auto.corridor(nil, 30)
+  T.check(cor3 == nil, 'no line at all: refused')
+end
+
 ------------------------------------------------------------------------------------------ 4: shared node names
 
 do
