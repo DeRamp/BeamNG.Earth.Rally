@@ -9,7 +9,7 @@ Reports from the user driving the build, and what came of each. The same shape a
 > "when you start a stage that dosent have an atc, the stage imediatly starts a count down. instead it should spawn
 > you behind the start line so you can wait for the game to load before you go"
 
-**Diagnosed, not yet fixed.** Plan below; no code changed.
+**Fixed in 1.3.2** (2026-11-14), as option 2 below. The diagnosis that follows is kept as it was written; what was actually built, and the one thing that turned out differently, is at the end.
 
 ### Why it happens
 
@@ -55,6 +55,39 @@ makes every stage uniform and retires the special case; 3 only as part of pre-lo
 should it still be a flat 12 s (`NO_ATC_START_S`, which exists so the co-driver's 10-second call fits), or should it
 give you a real start minute the way checking in at an ATC does? A minute is what a rally does; 12 s is friendlier
 on a stage that has no controls at all. Not blocking -- the guard is the same either way.
+
+### What was built (1.3.2)
+
+Option 2, the two moves the ATC path already made, in `runner.lua`:
+
+* **The car is set down outside the zone.** `M.CAR_BEFORE_START_M = 25`, against a 12 m zone. Three ways back, in
+  order: along the stage's own line where there is line before the start to back along; else back along the road
+  map's road, which follows the bends (`M.roadSpot`, the same call the ATC path uses); else straight back along
+  the stage's direction. `run.checks.startSetDown` says which ran.
+* **"Stopped on the line" is not a start until the car has moved since it was put there.** `run.startPlaced` holds
+  the spot in **lat / lon**, not game coordinates, so the world moving its origin while the player waits does not
+  stale it; it lifts once the car is more than `M.MOVED_OFF_M` (3 m) away.
+* **The quick-start setting is untouched.** "Quick start on the line" promises the car on the line and the clock a
+  few seconds after it stops, which is exactly what this bug report describes -- but for a player who asked for
+  it. The fix is only for a stage whose MAP has no arrival control while the full time controls are on. The two
+  cases were sharing one code path, which is most of why this was wrong.
+* **A car the player drove there is left where they put it**, in the same `NO_SET_DOWN_M` .. `DRIVEN_THERE_MIN_M`
+  band the ATC path uses, so Route to start still works the way it reads.
+
+### The thing that turned out differently
+
+The guard was expected to be belt-and-braces over the placement. It is not: it is the only thing standing between
+the player and this bug **at a start inside a hairpin**. `geo.locate` clamps to a line's ends, so where the line
+begins within 12 m of the start and the road back bends round, a car set down 25 m back along that road sits a
+metre or two from the line's first point -- `along` reads 0, `off` reads 2, and both geometric terms say "on the
+line" about a car that has not moved. That case cannot be reached from the test fixture (there is no road map in
+it to bend round), which is why the start trigger is now a pure function, `runner.onStartLine(along, off, startM,
+placed)`, with the whole table of cases tested and the wiring tested separately. A mutation run found both gaps:
+nine deliberate breakages, all nine caught.
+
+A term that was added and then removed, for the record: a straight-line distance from the start, on top of `along`
+and `off`. It read plausibly and it was redundant -- `off` already measures the distance to the line's first point
+once `locate` has clamped -- and a mutation run proved it by surviving its own deletion. It went.
 
 ---
 

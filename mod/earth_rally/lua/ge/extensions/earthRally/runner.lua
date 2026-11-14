@@ -6,7 +6,8 @@
 --              stage up to ~26 km across (BeamNG.Earth shifts the world 15-16 km from its origin)
 --   build      the stage line (the recce, else the line matched to BeamNG.Earth's roads) put into game coordinates
 --              now, the rally engine's files written and loaded: its co-driver calls the pacenotes
---   place      the car 40 m before the ATC (else on the start line), the controls' boards and tents put down
+--   place      the car 40 m before the ATC (25 m before the start line where the map has no ATC, on the line
+--              itself with the quick-start setting), the controls' boards and tents put down
 --   toAtc      drive to the ATC (the game's route arrows show the way); the car is braked in its zone and checked
 --              in once stopped: its start time is the next half minute (hh:mm:00 / :30) at least 30 s on (the rally
 --              clock). Driving past it to the start is a missed time control (+60 s)
@@ -56,6 +57,11 @@ M.TELEPORT_SETTLE_S = 2        -- BeamNG.Earth sets the car down a moment after 
 M.ATC_MAX_FROM_START_M = 1500  -- an ATC farther from the start than this is not this stage's (left out)
 M.STOP_MAX_FROM_FINISH_M = 3000
 M.CAR_BEFORE_ATC_M = 40
+M.CAR_BEFORE_START_M = 25      -- no ATC, full time controls: the car set down this far before the start line, which
+                               -- is OUTSIDE its zone (START_ZONE_BEFORE_M, 12), so the player drives up when they
+                               -- are ready rather than being counted down where they were put. Kept under
+                               -- LINE_BEFORE_START_M (30), which is all the line there is before the start.
+M.MOVED_OFF_M = 3              -- the car counts as having been driven once it is this far from where it was placed
 M.NO_SET_DOWN_M = 150          -- a car driven to within this of the ATC is not moved ...
 M.DRIVEN_THERE_MIN_M = 15      -- ... unless it is this near or nearer, when it is set down before the control.
                                -- A car standing on the control is stopped inside its zone, so the check-in fires at
@@ -81,7 +87,10 @@ M.MUTE_PAD_M = writer.MUTE_PAD_M   -- no notes this far either side of a stretch
                                -- the same stretches this run does
 M.TIDY_AFTER_S = 8             -- the stage's boards and co-driver taken away this long after it is done
 M.START_LINE_SHOW_M = 250      -- the start line drawn on the road while the car is this close to it
-M.NO_ATC_START_S = 12          -- without an ATC: the start this long after stopping on the line (the 10 s call fits)
+M.NO_ATC_START_S = 12          -- without an ATC: the start this long after stopping on the line (the 10 s call fits).
+                               -- Open for the user: a real start minute instead, as checking in at an ATC gives,
+                               -- would be what a rally does; 12 s is friendlier on a stage with no controls at
+                               -- all. The guard above is the same either way (docs/notes-1.3.0.md #1).
 M.LATE_PENALTY_S = 10          -- a minute (or part) late at the start
 M.MISSED_TC_PENALTY_S = 60     -- the ATC driven past without stopping at it
 M.BRAKE_LEVEL = 0.30           -- the brake in a control zone and on the start line (0..1; the player can add more)
@@ -718,13 +727,53 @@ local function trafficOn()
 end
 M._trafficOff = function() trafficOff() end
 
--- The car on the start line, facing the stage (on the ground there: a ray down from the line's height).
-local function toStartLine(veh)
+-- Pure: is the car stopped where the stage starts from? `placed` is true while it stands where the mod set it
+-- down and has not been driven since.
+--
+-- The three terms are not interchangeable; each catches a car the others let through.
+--   `along` holds back a car that is behind the line BY THE LINE -- the ordinary approach, and a hairpin's other
+--           leg, which can be a few metres away in a straight line and fifty along the road.
+--   `off`   holds back a car beside the line. Because geo.locate clamps to the line's ends, it is ALSO what holds
+--           back a car standing before a line that begins at the start: `along` reads 0 there however far back
+--           the car is, and `off` reads the real distance to the line's first point.
+--   `placed` is the only one that catches a car the mod set down within `off` of that first point, which is what
+--           happens where the line begins within START_ZONE_BEFORE_M of the start and the road back bends round
+--           -- a start inside a hairpin. There `along` clamps to 0, `off` reads a metre or two, and before 1.3.2
+--           the countdown began on the frame the car was set down (docs/notes-1.3.0.md #1).
+function M.onStartLine(along, off, startM, placed)
+  if placed then return false end
+  return along >= startM - M.START_ZONE_BEFORE_M and along <= startM + 3 and off <= M.START_ZONE_OFF_M
+end
+
+-- The car `backM` before the start line, facing the stage (on the ground there: a ray down from the line's height).
+--
+-- Three ways back, in order, because a stage line does not always reach behind its own start: along the stage's
+-- own line where there is line to back along; else back along the road map's road, which is what the ATC path
+-- does and which follows the bends; else straight back along the stage's direction. A line that begins AT the
+-- start is the common case, not the exception -- the recce driven on Maryhill began on the start line, and a
+-- matched line is cut to the stage -- so the road walk is the one that usually runs.
+--
+-- Returns how far back it went, where (lat / lon, which survives the world moving its origin while the player
+-- waits, as a game position would not), and which of the three ways it was.
+local function toStartLine(veh, backM)
+  backM = backM or M.CAR_BEHIND_LINE_M
   local dir, s = aheadDir(run.line, run.cum, run.startM)
-  local l = math.sqrt(dir.x * dir.x + dir.y * dir.y)
-  local pos = { x = s.x - dir.x / l * M.CAR_BEHIND_LINE_M, y = s.y - dir.y / l * M.CAR_BEHIND_LINE_M }
-  pos.z = groundNear(pos.x, pos.y, s.z or 0) + 1.0
-  M.placeCar(veh, pos, dir)
+  local pos, face, how
+  if run.startM >= backM then
+    local d2, s2 = aheadDir(run.line, run.cum, run.startM - backM)
+    pos, face, how = { x = s2.x, y = s2.y, z = s2.z }, d2, 'along the line'
+  else
+    local spot = M.roadSpot(s.x, s.y, dir, -backM, { x = s.x + dir.x, y = s.y + dir.y })
+    pos, face = { x = spot.x, y = spot.y, z = spot.z or s.z }, { x = spot.dx, y = spot.dy, z = 0 }
+    how = spot.road and 'along the road map' or 'straight back'
+  end
+  local z, hit = groundNear(pos.x, pos.y, pos.z or s.z or 0)
+  -- (a road-map height from before the world was built here is not the ground's: the line's own height instead)
+  if hit == false and how == 'along the road map' then z = groundNear(s.x, s.y, s.z or 0) end
+  pos.z = z + 1.0
+  M.placeCar(veh, pos, face)
+  local la, lo = earth.toGeo(pos.x, pos.y, pos.z)
+  return backM, la and { lat = la, lon = lo } or nil, how
 end
 
 local function stepPlace()
@@ -758,9 +807,35 @@ local function stepPlace()
     end
     setState('toAtc')
     say('Drive to the time control and stop at its red board.', 6, 'info', run.stage.name)
-  else
-    toStartLine(veh)
+  elseif run.quick then
+    -- The quick-start setting: "start on the line", so the car goes on the line and the clock follows a few
+    -- seconds after it stops. That is what the setting promises and it stays exactly as it was.
+    toStartLine(veh, M.CAR_BEHIND_LINE_M)
+    run.checks.startSetDown = 'on the line (quick start)'
     setState('toStart')
+  else
+    -- Full time controls on a stage whose map has no arrival control. Before 1.3.2 the car went 4 m behind the
+    -- line -- inside the 12 m start zone -- so it was standing stopped in the zone on the first frame it was
+    -- asked, the start was set 12 s later whatever the world was doing, and the drive up to the line never
+    -- happened (the user, 2026-11-13: "it should spawn you behind the start line so you can wait for the game to
+    -- load before you go"). It is the same defect DRIVEN_THERE_MIN_M was added for on the ATC path, in the
+    -- sibling path that was never checked for it, so it gets the same two moves: set the car down OUTSIDE the
+    -- zone, and do not take "stopped on the line" for a start until it has moved since being put there.
+    local _, sp = aheadDir(run.line, run.cum, run.startM)
+    local d2s = p and ((p.x - sp.x) ^ 2 + (p.y - sp.y) ^ 2)
+    -- (driven here, e.g. by Route to start, and not parked on the line itself: left where the player chose)
+    if p and not run.teleported and d2s <= M.NO_SET_DOWN_M ^ 2 and d2s > M.DRIVEN_THERE_MIN_M ^ 2 then
+      run.checks.startSetDown = 'driven there'
+    else
+      local back, at, how = toStartLine(veh, M.CAR_BEFORE_START_M)
+      run.checks.startSetDown = string.format('%.0f m before the line, %s', back, how)
+      -- Where it was put, in lat / lon: the car must be seen away from here before "stopped on the line" is taken
+      -- for a start. Only set when WE put the car there -- a car the player drove up and left is where they chose
+      -- to be, and asking them to shuffle it before their own stage would start reads as a bug of its own.
+      run.startPlaced = at
+    end
+    setState('toStart')
+    say('Drive up to the start line when you are ready.', 7, 'info', run.stage.name)
   end
   rallyA.resync()
   layoutOn()
@@ -991,7 +1066,16 @@ local function stepToStart(dt)
     return
   end
   run.overLine = false
-  local zs = zone(along >= run.startM - M.START_ZONE_BEFORE_M and along <= run.startM + 3 and off <= M.START_ZONE_OFF_M, dt,
+  -- Put there and not yet driven: the zone is not offered at all, so a car standing where the mod set it down
+  -- cannot be mistaken for one that drove up and stopped. It lifts as soon as the car has moved MOVED_OFF_M along
+  -- the line, which is the player setting off -- and until then they can sit as long as the world needs.
+  if run.startPlaced then
+    local ps = earth.pose()
+    if ps and geo.metres(ps.lat, ps.lon, run.startPlaced.lat, run.startPlaced.lon) > M.MOVED_OFF_M then
+      run.startPlaced = nil
+    end
+  end
+  local zs = zone(M.onStartLine(along, off, run.startM, run.startPlaced ~= nil), dt,
     true, 1 - (run.startM - along) / M.START_ZONE_BEFORE_M)
   if zs == 'stopped' then
     routeOff()

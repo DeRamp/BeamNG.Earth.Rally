@@ -4,7 +4,7 @@ Drive real rallies on the real roads. Drop in a rally's map — the one its orga
 turns it into timed stages on [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth), with time controls, a
 start tree, penalties, and BeamNG.drive's own co-driver calling pacenotes worked out from the road itself.
 
-**Status: alpha (1.3.1).** It works and it is being played, but things move.
+**Status: alpha (1.3.2).** It works and it is being played, but things move.
 
 ## What you need
 
@@ -93,7 +93,7 @@ penalty, the control-zone brake, where the start clock's close-up shows.
    * **`attempt to index global 'earthRally_main'`** — the mod is not loaded. Main menu > **Mods** and switch Earth
      Rally on. Not listed? The zip must be directly in `…\current\mods\`, still zipped, one copy only. BeamMP
      switches local mods off when you join a server.
-3. Still nothing: `beamng.log` in `…\current\` should say `Earth Rally 1.3.1 loaded`. Open an issue with the lines
+3. Still nothing: `beamng.log` in `…\current\` should say `Earth Rally 1.3.2 loaded`. Open an issue with the lines
    mentioning `earthRally`.
 
 ## Making your own stage map
@@ -123,7 +123,8 @@ them or pass them on.
 ## More
 
 * What is coming: [`docs/roadmap.md`](docs/roadmap.md)
-* This version: [`docs/release-1.3.1.md`](docs/release-1.3.1.md)
+* This version: [`docs/release-1.3.2.md`](docs/release-1.3.2.md), and 1.3.1 before it:
+  [`docs/release-1.3.1.md`](docs/release-1.3.1.md)
 * Building, testing and the design notes: [`docs/`](docs/) — `python tests/run_tests.py` runs the suite,
   `python tools/install.py` installs from this folder.
 

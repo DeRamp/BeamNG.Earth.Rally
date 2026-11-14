@@ -75,10 +75,13 @@ download, go, match, with every press doing the same thing.
 Six contained items, in the order that makes each one smaller. No new unknowns, and nothing here needs BeamNG.Earth
 to change, so unlike 1.3.0 and 1.3.1 this version can be finished without waiting on anyone.
 
-1. **Version checks at startup (23).** First, as it was first in 1.3.0's plan, and for the same reason: it protects
-   everything after it, and a mod that says plainly "BeamNG.Earth changed under me" is worth more than a mod that
-   half-works. Small, offline-testable.
-2. **The no-ATC start guard (`docs/notes-1.3.0.md` #1).** Set the car down beyond the start zone rather than inside
+1. **Version checks at startup (23).** ✔ **Built.** First, as it was first in 1.3.0's plan, and for the same
+   reason: it protects everything after it, and a mod that says plainly "BeamNG.Earth changed under me" is worth
+   more than a mod that half-works. Small, offline-testable. `versions.lua`: the game's version said and its rally
+   engine gated, BeamNG.Earth's API major told apart from its minor (a 2.x was called "too old" before), and the
+   seven internals it has no API for checked by name, because nothing in its version number mentions them.
+2. **The no-ATC start guard (`docs/notes-1.3.0.md` #1).** ✔ **Built**, and that note records what was built and
+   the one thing that turned out differently. Set the car down beyond the start zone rather than inside
    it, and do not accept "stopped on the line" until the car has moved since it was placed -- the same two moves
    `M.DRIVEN_THERE_MIN_M` already makes on the ATC path. Before the automatic ATC, not after: it is the actual
    reported bug, it is a handful of lines, and it is the honest fix for anyone who keeps a stage without controls.
@@ -90,8 +93,15 @@ to change, so unlike 1.3.0 and 1.3.1 this version can be finished without waitin
    every stage now has.
 4. **No penalty for a late start.** A new minute instead, as a real rally does. Small, and it stops the world's
    loading from costing time, which is the same complaint pre-loading answers from the other side.
-5. **Folder-based import (4).** Three of the twelve rallies here came in as one "Main Route Book"; the fixture for
-   that is a real file on this machine, so it is testable offline before it is seen in game.
+5. **Naming a rally from its map file (4).** ✔ **Built**, and not what this step said it was. The folders were
+   never the problem -- every Placemark is read wherever it sits in a KML -- the NAME was: three of the twelve
+   rallies here came in as "Main Route Book", "Main Route Book" and "(Main Route Book)", because that is what the
+   organisers called the document inside all three files, and two more carried ".kmz" in the middle of their name.
+   A document name that says nothing about which rally it is now gives way to the file's name, which is the one
+   thing that does tell those three apart. The rule is deliberately not "prefer the file name when another rally
+   has this one already", which would depend on the order the folder is read in and so could name the same three
+   files differently on another machine. `importer.NAME_RULES` re-imports what is already on disk once, keeping
+   every rally's id, so the three on this machine are renamed without the player doing anything.
 6. **Stage pre-loading before the start (21), mock-up first.** The corridor loaded while you wait at the control,
    with a loaded % on screen and the start available whenever you want it. Last because it is the only M in the
    list and because 1.3.1's downloader is the machinery it stands on -- `areaPlan` / `areaAdd` / `areaStatus` over

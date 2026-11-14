@@ -18,7 +18,10 @@ FS = {
     return out
   end,
 }
-function log(level, tag, msg) if level == 'E' then print('LOG E ' .. tostring(msg)) end end
+local logErrors = {}
+function log(level, tag, msg)
+  if level == 'E' then logErrors[#logErrors + 1] = tostring(msg) print('LOG E ' .. tostring(msg)) end
+end
 function dumps(t) return tostring(t) end
 local messages = {}
 function ui_message(text) messages[#messages + 1] = text end
@@ -274,13 +277,62 @@ T.check(nodeDist(race.pathnodes[#race.pathnodes].pos, dlNodes[#dlNodes]) >= 100,
 local firstCs = files[r.dir .. '/rally/notebooks/structured.notebook.json'].pacenotes[1].pacenoteWaypoints[1].pos
 T.check(nodeDist(firstCs, race.startPositions[1].pos) >= 20, 'no note on the start line')
 T.check(runner.state() == 'toStart', 'on the start line (' .. runner.state() .. ')')
-frames(8)
-T.check(frozen == true and lastCtl() == 'launch' and has(sounds, 'event:UI_Checkpoint'),
-  'stopped on the line: held (the game freeze, launch control on), a sound')
 T.check(camResets >= 2, 'the camera reset after the origin moved and the car was placed (' .. camResets .. ')')
 T.check(layout == 'earthRallyStage', 'the pacenote cards layout on for the run (' .. layout .. ')')
--- the car stands on the start line, in game coordinates of the new origin
+
+-- 1.3.2, the reported bug: this stage's map has no arrival control and the full time controls are on. The car must
+-- be set down OUTSIDE the start zone and left alone until it is driven, so the player can wait for the world to
+-- load rather than being counted down from where they were put (docs/notes-1.3.0.md #1). This fixture's line
+-- begins only 10 m before the start, so the way back along the road runs rather than the way back along the line
+-- -- which is the common case in game, where a recce begins on the start line.
 local sx, sy = toGame(full[11][1], full[11][2])
+local placed = veh.getPosition()
+local backM = math.sqrt((placed.x - sx) ^ 2 + (placed.y - sy) ^ 2)
+T.check(backM > runner.START_ZONE_BEFORE_M, 'no ATC: the car set down outside the start zone (' ..
+  string.format('%.0f m back, the zone is %d m', backM, runner.START_ZONE_BEFORE_M) .. ')')
+T.near(backM, runner.CAR_BEFORE_START_M, 3, 'no ATC: set down CAR_BEFORE_START_M before the line')
+T.check((r.checks.startSetDown or ''):find('before the line') ~= nil,
+  'the run says where it put the car (' .. tostring(r.checks.startSetDown) .. ')')
+frames(60)
+T.check(runner.state() == 'toStart' and r.startAt == nil,
+  'left standing where it was put: no start time, however long (' .. tostring(r.startAt) .. ')')
+T.check(frozen ~= true, 'and not held on the line')
+
+-- Rolling forward five metres and stopping is not the line either, and this is the half of it a movement guard
+-- alone would miss: the car HAS been driven now, so the guard has lifted, and `along` cannot read less than 0 on a
+-- line that begins 10 m before the start -- it is the distance to the start itself that keeps it out of the zone.
+do
+  local la, lo = toGeo(placed.x, placed.y + 5)
+  car.lat, car.lon, car.speed = la, lo, 4
+  frames(2)
+  car.speed = 0
+  frames(8)
+  T.check(r.startAt == nil, 'five metres on and stopped: still 20 m short of the line, so not on it (' ..
+    tostring(r.startAt) .. ')')
+  T.check(frozen ~= true, 'and not held there')
+end
+
+-- The flag reaches the start trigger, which neither the run above nor the predicate's own tests prove on their
+-- own: a car ON the line, standing still, with the flag still set, must not start anything. (Set by hand because
+-- this fixture cannot place a car there -- it takes a start inside a hairpin, and there is no road map here to
+-- bend round. runner.onStartLine's tests cover the geometry; this covers the wiring.)
+do
+  r.startPlaced = { lat = full[11][1], lon = full[11][2] }
+  car.lat, car.lon, car.speed = full[11][1], full[11][2], 0
+  frames(10)
+  T.check(r.startAt == nil, 'the flag reaches the trigger: on the line, standing, and nothing starts')
+  T.check(r.startPlaced ~= nil, 'and standing still never lifts it')
+  T.check(frozen ~= true, 'and the car is not held there')
+end
+
+-- drive up to the line and stop there: now it counts (and the flag set above lifts as the car moves)
+car.lat, car.lon, car.speed = full[4][1], full[4][2], 8
+frames(2)
+car.lat, car.lon, car.speed = full[11][1], full[11][2], 0
+frames(8)
+T.check(frozen == true and lastCtl() == 'launch' and has(sounds, 'event:UI_Checkpoint'),
+  'drove up and stopped on the line: held (the game freeze, launch control on), a sound')
+T.check(r.startAt ~= nil, 'and a start time from the moment it stopped')
 local cp = veh.getPosition()
 T.check(math.sqrt((cp.x - sx) ^ 2 + (cp.y - sy) ^ 2) < 6, 'the car on the start line')
 
@@ -318,6 +370,107 @@ T.check(events.addResult('test', 'hill', { finished = true, timeS = 99 }) == 99 
 runner.abort(true)
 T.check(manager == nil, 'the co-driver unloaded when the run is closed')
 T.check(layout == 'beamngEarth', 'BeamNG.Earth layout back')
+
+------------------------------------------- back along the line, where there is line to back along
+-- The fixture above has only 10 m of line before its start, so the car went back along the ROAD. A stage whose
+-- line reaches further back than CAR_BEFORE_START_M -- a recce begun well before the line, which is what
+-- LINE_BEFORE_START_M keeps -- backs up along the line itself instead, following its bends.
+do
+  local evL = { format = 1, id = 'backline', name = 'Back along the line', stages = { {
+    id = 'hill', name = 'Hill', lengthM = 3000, radiusM = 1200,
+    centre = { lat = 47.009, lon = -122.990 },
+    controls = { start = { lat = full[60][1], lon = full[60][2] }, ff = { lat = full[2900][1], lon = full[2900][2] } },
+    line = mapLine } } }
+  files['/earthRally/events/backline.json'] = evL
+  events.saveRecce('backline', 'hill', { format = 1, points = recPts, lengthM = 3000 })
+  car.lat, car.lon, car.speed = full[1][1] - 0.01, full[1][2], 0        -- 1 km away: travelled to
+  local okL, whyL = runner.start(evL, evL.stages[1])
+  T.check(okL, 'the run starts on a stage whose line reaches well before the start (' .. tostring(whyL) .. ')')
+  frames(80)     -- (the teleport: 2 s, the world 2 s settled, the origin moved, the stage built)
+  local rL = runner.current()
+  T.check((rL.checks.startSetDown or ''):find('along the line') ~= nil,
+    'back along the line, not along the road (' .. tostring(rL.checks.startSetDown) .. ')')
+  local bx, by = toGame(full[60][1], full[60][2])
+  local cpL = veh.getPosition()
+  T.near(math.sqrt((cpL.x - bx) ^ 2 + (cpL.y - by) ^ 2), runner.CAR_BEFORE_START_M, 3,
+    'and CAR_BEFORE_START_M back from the start')
+  T.check(rL.startAt == nil, 'with no start time until it is driven up')
+  runner.abort(true)
+end
+
+------------------------------------------- is the car on the start line? (runner.onStartLine)
+-- The predicate the start trigger is made of, case by case, because the case that mattered in game cannot be
+-- reached from this fixture: a start inside a hairpin, where the line begins a few metres before the start and the
+-- road back bends round, so a car set down 25 m back along the road sits a metre or two from the line's first
+-- point. geo.locate clamps to the line's ends, so `along` reads 0 there and `off` reads a metre or two -- both
+-- terms say "on the line" about a car that was put there and has not moved. Only the placed flag says otherwise.
+do
+  local Z, OFF = runner.START_ZONE_BEFORE_M, runner.START_ZONE_OFF_M
+  -- the ordinary approach: 100 m of line before the start
+  T.check(runner.onStartLine(100, 0, 100, false) == true, 'stopped on the line itself: on it')
+  T.check(runner.onStartLine(100 - Z + 1, 0, 100, false) == true, 'just inside the zone: on it')
+  T.check(runner.onStartLine(100 - Z - 1, 0, 100, false) == false, 'a metre further back than the zone: not on it')
+  T.check(runner.onStartLine(100, OFF + 1, 100, false) == false, 'beside the line, not on it')
+  T.check(runner.onStartLine(104, 0, 100, false) == false, 'driven past the line: not on it')
+  -- a line that begins at the start (a driven recce, or a line matched to the stage): along clamps to 0 and the
+  -- distance off the line is what keeps a car standing back there out of the zone
+  T.check(runner.onStartLine(0, 20, 0, false) == false, 'a line beginning at the start: 20 m back is not on it')
+  T.check(runner.onStartLine(0, 0, 0, false) == true, '... and on the line is')
+  -- the hairpin: along 0, off 2, the start 10 m along the line. Both geometric terms say yes.
+  T.check(runner.onStartLine(0, 2, 10, false) == true,
+    'a hairpin start: by the line alone, a car set down 25 m back along the road reads as ON the line')
+  T.check(runner.onStartLine(0, 2, 10, true) == false,
+    '... so the placed flag is what holds the countdown until the car has been driven')
+  T.check(runner.onStartLine(100, 0, 100, true) == false, 'placed and not yet driven is never on the line')
+end
+
+------------------------------------------- the quick-start setting, and a car driven to the start
+-- The guard above must not touch either of these.
+--
+-- "Quick start on the line" promises exactly what 1.3.2 took away from the stage with no arrival control: the car
+-- set down on the line, and the stage starting a few seconds after it stops, with nothing to drive up to. It is a
+-- setting the player chose, so it keeps its behaviour -- the fix is for the stage whose MAP has no control while
+-- the full time controls are on, which is a different thing wearing the same code path.
+do
+  local settings = require('earthRally/settings')
+  settings.set('timeControls', 'quick')
+  car.lat, car.lon, car.speed = full[1][1], full[1][2], 0
+  local okQ = runner.start(event, event.stages[1])
+  T.check(okQ, 'the quick-start run starts')
+  frames(12)
+  local rq = runner.current()
+  local qx, qy = toGame(full[11][1], full[11][2])
+  local cpq = veh.getPosition()
+  T.check(math.sqrt((cpq.x - qx) ^ 2 + (cpq.y - qy) ^ 2) < 6,
+    'quick start: the car set down ON the line, as the setting says (' ..
+    string.format('%.0f m', math.sqrt((cpq.x - qx) ^ 2 + (cpq.y - qy) ^ 2)) .. ')')
+  T.check((rq.checks.startSetDown or ''):find('quick start') ~= nil,
+    'and the run says that is why (' .. tostring(rq.checks.startSetDown) .. ')')
+  T.check(rq.startAt ~= nil, 'quick start: a start time without driving anywhere')
+  T.near(rq.startAt - runner.clock(), runner.NO_ATC_START_S, 3, 'quick start: NO_ATC_START_S from stopping')
+  runner.abort(true)
+  settings.set('timeControls', 'full')
+end
+
+-- A car the player drove up themselves is left where they chose, which is what the ATC path does with its own
+-- NO_SET_DOWN_M band. Route to start puts them 80 m short of the line; the run must not shuffle them back to 25.
+do
+  local onLine = 80
+  local lx, ly = toGame(full[11][1], full[11][2])
+  local la, lo = toGeo(lx, ly - onLine)
+  car.lat, car.lon, car.speed = la, lo, 0
+  local okD = runner.start(event, event.stages[1])
+  T.check(okD, 'the run starts with the car driven to near the line')
+  frames(12)
+  local rd = runner.current()
+  local cpd = veh.getPosition()
+  local movedM = math.sqrt((cpd.x - (lx)) ^ 2 + (cpd.y - (ly - onLine)) ^ 2)
+  T.check(rd.checks.startSetDown == 'driven there',
+    'driven to the start: not moved (' .. tostring(rd.checks.startSetDown) .. ')')
+  T.near(movedM, 0, 2, 'driven to the start: the car is where the player left it')
+  T.check(rd.startAt == nil, 'and no start time until they drive up and stop')
+  runner.abort(true)
+end
 
 
 -- the recce: the map line drawn ahead of the car on the ground, the driven line saved at the end
@@ -1309,7 +1462,18 @@ end
 
 -- main.lua: the menu page's data and buttons, the HUD's streams, the preview, Ctrl+Alt+K
 do
-  ui_imgui = { BoolPtr = function(v) return { [0] = v } end, ImVec4 = function() return {} end }
+  -- Enough of ImGui for the developer panel to draw all the way through: any call it makes answers false
+  -- (nothing clicked, nothing selected) except Begin, which must say the window is open or the body is skipped.
+  -- Names are recorded, so the test can tell "it drew" from "it threw on the first line".
+  local imCalls = {}
+  ui_imgui = setmetatable({
+    BoolPtr = function(v) return { [0] = v } end,
+    ImVec4 = function() return {} end,
+    ImVec2 = function(x, y) return { x = x, y = y } end,
+    Begin = function() imCalls.Begin = (imCalls.Begin or 0) + 1 return true end,
+  }, { __index = function(t, k)
+    return function() imCalls[k] = (imCalls[k] or 0) + 1 return false end
+  end })
   local navs = {}
   ui_router = { navigate = function(r) navs[#navs + 1] = r end }
   local streams = {}
@@ -1390,9 +1554,22 @@ do
   main.uiState()
   local at = main.uiOpenAt()
   T.check(at and at.view == 'rally' and main.uiOpenAt() == nil, 'the page told where to open, once (not taken by a poll)')
-  -- the developer panel follows its setting
-  settings.set('devPanel', true)
+  -- The developer panel follows its setting, and draws without throwing. It is developer-only and not held to
+  -- the bar the menu page is, but it is the one surface that shows a run's checks while a stage is on, so "it
+  -- throws on its first line" should not be something only a log line knows.
   T.check(main.onUpdate ~= nil, 'main loaded')
+  imCalls, logErrors = {}, {}
+  settings.set('devPanel', true)
+  main.onUpdate(0.05, 0.05)
+  T.check((imCalls.Begin or 0) == 1, 'the developer panel drew when its setting went on (' ..
+    tostring(imCalls.Begin) .. ')')
+  T.check(#logErrors == 0, 'and drew all the way through without throwing (' ..
+    tostring(logErrors[1]) .. ')')
+  T.check((imCalls.Text or 0) + (imCalls.TextWrapped or 0) > 0, 'with something written in it')
+  imCalls = {}
+  settings.set('devPanel', false)
+  main.onUpdate(0.05, 0.05)
+  T.check((imCalls.Begin or 0) == 0, 'and nothing is drawn once the setting goes off')
   settings.reset()
 end
 

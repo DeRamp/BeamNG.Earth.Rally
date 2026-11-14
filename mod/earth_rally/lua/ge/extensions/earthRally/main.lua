@@ -17,10 +17,11 @@ local importer = require('earthRally/importer')
 local settings = require('earthRally/settings')
 local menu = require('earthRally/menu')
 local preview = require('earthRally/preview')
+local versions = require('earthRally/versions')
 
 local M = {}
 local logTag = 'earthRally'
-M.VERSION = '1.3.1-alpha'
+M.VERSION = '1.3.2-alpha'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_HZ = 30                  -- the HUD's streams this often while something moves on it
 M.STREAM_IDLE_HZ = 2              -- ... and this often once the run is over
@@ -33,6 +34,8 @@ local facing = nil       -- after Go to start: turn the car along the stage once
 local scanIn = nil       -- seconds until the import folder is looked at (a file changed in it)
 local menuOpen = false   -- the menu page is the screen now (onUiChangedState)
 local openAt = nil       -- the page to show when the menu opens next: { view, eventId, stageId }
+local earthSeen = false  -- BeamNG.Earth's API has been there at least once (the version check runs again then:
+                         -- it loads after us as often as not, and its version is the half we cannot read early)
 local lastImport = nil   -- the last import: { at, lines = { { text, ok }... } }
 local autoRun = nil      -- the auto recce running, as the page names it: { eventId, stageId, stageName, ss }
 local autoLines = {}     -- how the last auto recce of a stage ended, by eventId .. '|' .. stageId:
@@ -173,6 +176,10 @@ local function drawWindow()
 
   local ok, why = earth.check()
   if not ok then im.TextColored(AMBER, why) end
+  for _, f in ipairs(versions.current()) do
+    im.TextWrapped(f.text)
+    if f.level == 'error' then im.TextColored(AMBER, '(a stage cannot be loaded)') end
+  end
   if im.Button('Open the menu') then M.openMenu() end
   im.SameLine()
   if im.Button('HUD preview') then M.previewHud() end
@@ -824,6 +831,8 @@ function M.uiState()
   local ok, why = earth.check()
   s.version = M.VERSION
   s.earthOk, s.earthWhy = ok, (not ok) and why or nil
+  -- what changed under the mod since it was built (versions.lua): nothing to show in the normal case
+  s.versionNotes = versions.notes()
   s.settings = settings.uiState()
   s.rallies = menu.rallies(importer.lastReports)
   s.importFolder = importer.folderPath()
@@ -977,6 +986,12 @@ function M.onUpdate(dtReal, dtSim)
     if scanIn <= 0 then scanIn = nil M.scanImports(false) end
   end
   earth.update()
+  -- BeamNG.Earth turned up: the version check again, now that there is a version to read. Once, and quiet unless
+  -- something changed, so this is not a per-frame cost (versions.check compares what it last said).
+  if not earthSeen and earth.apiVersion() then
+    earthSeen = true
+    pcall(versions.check, M.VERSION)
+  end
   if recce.active() and recce.update() == 'done' then
     local saved, err = recce.stop(true)
     message = saved and 'Recce saved: you can drive the stage.' or err
@@ -1134,6 +1149,11 @@ function M.onExtensionLoaded()
   -- (new maps in the import folder)
   scanIn = 0.5
   log('I', logTag, 'Earth Rally ' .. M.VERSION .. ' loaded (Ctrl+Alt+K opens its menu)')
+  -- what this machine is, and anything that has changed under the mod since it was built (roadmap 23). The game's
+  -- half can be read now; BeamNG.Earth's is read again in onUpdate when it turns up, which is usually later.
+  earthSeen = false
+  versions.reset()
+  pcall(versions.check, M.VERSION)
   -- a stage to be taken to (tools/playtest.py): read once and the file deleted, so a normal start never does it
   do
     local fs = rawget(_G, 'FS')

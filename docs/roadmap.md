@@ -48,14 +48,17 @@ asked for, not to the button.
 Everything a new player meets before their first stage is over. Five of the six are 1.3.0 rows that the auto recce
 took the time for, carried here rather than left unticked; the first is the bug they add up to.
 
-| Item | Size |
-|---|---|
-| A stage with no ATC starts its countdown the moment it spawns you (`docs/notes-1.3.0.md` #1): the car is set down 4 m back inside a 12 m start zone, so "stopped on the line" fires at once. The same defect the ATC path was guarded against, in the sibling path that was missed | S |
-| An ATC added to stages without one (3): ~50 m before the start, walked back along the road -- which retires the no-ATC path above rather than guarding it | S |
-| No penalty for a late start, just a new minute, as a real rally does (and so waiting for the world to load cannot cost time) | S |
-| Maps that group stages in folders import properly (4): three of the twelve rallies here came in as one route book | S |
-| Version checks at startup, a clear message when BeamNG or BeamNG.Earth changed (23) | S |
-| Stage pre-loading *before the start*: the corridor loaded while you wait, a loaded % on screen, start any time (21). The on-demand half shipped in 1.3.1; this is the half that runs as you sit at the control | M |
+**In testing (2026-11-14):** the three ticked below, waiting on a game test. What to look at is in
+`docs/notes-1.3.0.md` #1 and `docs/release-1.3.2.md`.
+
+| | Item | Size |
+|---|---|---|
+| ✔ | A stage with no ATC starts its countdown the moment it spawns you (`docs/notes-1.3.0.md` #1): the car is set down 4 m back inside a 12 m start zone, so "stopped on the line" fires at once. The same defect the ATC path was guarded against, in the sibling path that was missed | built |
+| ✔ | Version checks at startup, a clear message when BeamNG or BeamNG.Earth changed (23) | built |
+| ✔ | Naming a rally from its map file (4): three of the twelve rallies here came in as "Main Route Book". Written on this roadmap as "maps that group stages in folders import properly" -- the folders were never the problem, the name was | built |
+| | An ATC added to stages without one (3): ~50 m before the start, walked back along the road -- which retires the no-ATC path above rather than guarding it | S |
+| | No penalty for a late start, just a new minute, as a real rally does (and so waiting for the world to load cannot cost time) | S |
+| | Stage pre-loading *before the start*: the corridor loaded while you wait, a loaded % on screen, start any time (21). The on-demand half shipped in 1.3.1; this is the half that runs as you sit at the control | M |
 
 ## 1.4.0: the co-driver
 

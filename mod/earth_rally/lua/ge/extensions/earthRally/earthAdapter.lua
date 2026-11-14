@@ -5,21 +5,72 @@
 local M = {}
 
 M.MIN_API_MINOR = 6        -- toGame / toGeo (BeamNG.Earth API 1.6)
+M.KNOWN_API_MINOR = 9      -- the newest minor Earth Rally has anything to ask of (roadGraph, areaRoute)
 
 local function api() return rawget(_G, 'beamngEarth_api') end
 local function core() return rawget(_G, 'beamngEarth_core') end
 
+-- The modding API's version as BeamNG.Earth gives it: major, minor, or nil when it is not there to ask.
+function M.apiVersion()
+  local a = api()
+  if not (a and type(a.version) == 'function') then return nil end
+  local ok, major, minor = pcall(a.version)
+  if not ok then return nil end
+  return tonumber(major), tonumber(minor)
+end
+
 -- BeamNG.Earth there and new enough? true, or false and why (shown in the window).
+--
+-- The two version failures are told apart on purpose. Before 1.3.2 a BeamNG.Earth whose major was not 1 was
+-- called "too old", which for a 2.x would be exactly backwards and would send the player looking for an update
+-- they already have. versions.lua says the same things at startup, before a stage, with what each one costs.
 function M.check()
   local a = api()
   if not a then return false, 'BeamNG.Earth is not installed (or not loaded)' end
-  local major, minor = a.version()
-  if major ~= 1 or (minor or 0) < M.MIN_API_MINOR or not a.has('transform') then
+  local major, minor = M.apiVersion()
+  if major ~= 1 then
+    return false, string.format('this BeamNG.Earth\'s modding API is %s.%s; Earth Rally is built for 1.x',
+      tostring(major), tostring(minor))
+  end
+  if (minor or 0) < M.MIN_API_MINOR or not a.has('transform') then
     return false, string.format('BeamNG.Earth is too old (its modding API is %s.%s; Earth Rally needs 1.%d)',
       tostring(major), tostring(minor), M.MIN_API_MINOR)
   end
   if not a.inWorld() then return false, 'Load the BeamNG.Earth level (Freeroam > BeamNG.Earth)' end
   return true
+end
+
+-- The things below that BeamNG.Earth has no API for, each either there or not: { { id, what, ok, why } ... },
+-- `why` being what stops working without it. nil while BeamNG.Earth is not loaded, so nothing is said too early.
+--
+-- Why these are listed by hand rather than inferred: none of them is in the versioned surface api.version()
+-- reports, so BeamNG.Earth can rename or drop any of them without touching its minor -- which means a version
+-- check that only reads the minor would pass while the mod quietly lost a stage's camera or the loading figure.
+-- Checking the names themselves is the only honest way to notice. What it cannot notice is one of these keeping
+-- its name and changing its behaviour; earthAdapter's holdStrips comment says what that would look like.
+function M.internals()
+  local c, out = core(), {}
+  if not api() then return nil end
+  local function probe(id, what, ok, why) out[#out + 1] = { id = id, what = what, ok = ok and true or false, why = why } end
+  local function mod(name, field)
+    local okR, t = pcall(require, 'beamngEarth/' .. name)
+    return okR and type(t) == 'table' and t[field] ~= nil
+  end
+  probe('rebaseTo', 'core.rebaseTo', c and type(c.rebaseTo) == 'function',
+    'a stage cannot be centred on the world origin, so a long one would run out of accurate ground')
+  probe('hudApp', 'core.hudApp', c and type(c.hudApp) == 'function',
+    "BeamNG.Earth's own place strip and connection banner stay on screen through a stage, over our HUD")
+  probe('setRebaseDistance', 'core.setRebaseDistance', c and type(c.setRebaseDistance) == 'function',
+    'the world may move its origin mid-stage at its usual distance instead of being held off until the finish')
+  probe('state', 'core._state', c and type(c._state) == 'function',
+    "how much of the world is still arriving cannot be read, so the stage page cannot show it")
+  probe('camshift', 'beamngEarth/camshift.RADIUS_MIN', mod('camshift', 'RADIUS_MIN'),
+    'the chase camera can be left behind at the old origin when a stage is centred')
+  probe('banner', 'beamngEarth/banner.current', mod('banner', 'current'),
+    "BeamNG.Earth's connection warnings are not repeated on the stage HUD")
+  probe('rebaseRead', 'beamngEarth/rebase.distance', mod('rebase', 'distance'),
+    'the rebase distance cannot be read back after it is set')
+  return out
 end
 
 function M.ready() local a = api() return a ~= nil and a.ready() end

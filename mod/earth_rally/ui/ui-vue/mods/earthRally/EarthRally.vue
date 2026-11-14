@@ -27,6 +27,9 @@
         </template>
       </div>
       <div v-if="st.earthWhy" class="er-warnline">{{ st.earthWhy }}</div>
+      <!-- Something changed under the mod since it was built (versions.lua): the game's version, BeamNG.Earth's
+           modding API, or one of the internals it has no API for. Empty in the normal case, so nothing shows. -->
+      <div v-for="(n, i) in arr(st.versionNotes)" :key="'vn' + i" class="er-warnline">{{ n }}</div>
 
       <!-- ===== Rallies ===== -->
       <section v-if="view === 'rallies'" class="er-rallies">

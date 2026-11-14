@@ -134,4 +134,105 @@ T.check(#r7 == 1 and r7[1].ok and r7[1].eventId == '2026-sofr-friday-kml', 'a .k
   .. tostring(r7[1] and (r7[1].eventId or r7[1].why)) .. ')')
 T.check(imp._text('Craig&#8217;s') == 'Craig\226\128\153s', 'a numeric entity as UTF-8')
 
+-- The naming rules moving on re-imports every map, because a map already imported is otherwise skipped while its
+-- bytes have not changed -- and the three identical "Main Route Book" rallies are already on the author's machine.
+-- The ids must survive it, or their recces, matched lines and times stop belonging to them.
+do
+  local before = {}
+  for f, e in pairs(files['/earthRally/importIndex.json'].files or {}) do
+    if e.eventId then before[f] = e.eventId end
+  end
+  T.check(next(before) ~= nil, 'there are maps already imported to re-import')
+  T.check(files['/earthRally/importIndex.json'].names == imp.NAME_RULES,
+    'the index records which naming rules wrote it')
+  T.check(#imp.scan() == 0, 'nothing to do while the rules have not moved')
+
+  files['/earthRally/importIndex.json'].names = imp.NAME_RULES - 1
+  local rr = imp.scan()
+  T.check(#rr >= 2, 'the rules moved on: every map read again (' .. #rr .. ')')
+  local kept = true
+  for f, id in pairs(before) do
+    if (files['/earthRally/importIndex.json'].files[f] or {}).eventId ~= id then kept = false end
+  end
+  T.check(kept, 'and every rally kept its id, so its recces and times still belong to it')
+  T.check(files['/earthRally/importIndex.json'].names == imp.NAME_RULES, 'the index now says so')
+  T.check(#imp.scan() == 0, 'and it is not asked for again on the next start')
+
+  -- ... including when there was nothing in the folder to re-import, which is the only case where the index would
+  -- otherwise never be written and the re-import would be asked for on every single start
+  for f in pairs(files) do if f:find('/earthRally/import/', 1, true) == 1 then files[f] = nil end end
+  imp.scan()                                     -- (the maps gone: forgotten, their rallies kept)
+  T.check(#imp.scan() == 0, 'an empty import folder: nothing to do')
+  files['/earthRally/importIndex.json'].names = imp.NAME_RULES - 1
+  -- (watching the write itself, not the table: this stand-in hands back the stored table, so the scan setting the
+  --  field on it would look like a save whether or not one happened)
+  local wroteIndex = false
+  local realWrite = jsonWriteFile
+  jsonWriteFile = function(f, d)
+    if f == '/earthRally/importIndex.json' then wroteIndex = true end
+    return realWrite(f, d)
+  end
+  T.check(#imp.scan() == 0, 'the rules moved on with an empty folder: still nothing to do')
+  jsonWriteFile = realWrite
+  T.check(wroteIndex, 'but the index is written anyway, so the re-import is not asked for on every start')
+end
+
+------------------------------------------------------------------------------------------ naming a rally
+-- Roadmap item 4. The twelve maps imported on the author's machine, 2026-11-14, are the fixture: three of them
+-- came in as "Main Route Book" and two carried ".kmz" in the middle of their name.
+do
+  local function nm(doc, file) return imp.eventName(doc, file) end
+
+  -- the three that collided: the document says nothing, so the file names tell them apart
+  T.check(nm('Main Route Book', '2026 SOFR Thursday KML.kml.xml') == '2026 SOFR Thursday',
+    'a generic document name gives way to the file (' .. nm('Main Route Book', '2026 SOFR Thursday KML.kml.xml') .. ')')
+  T.check(nm('Main Route Book', '2026 SOFR Friday KML.kml.xml') == '2026 SOFR Friday', '... Friday')
+  T.check(nm('(Main Route Book)', '2026 SOFR Saturday KML.kml.xml') == '2026 SOFR Saturday',
+    '... and Saturday, whose document name was in brackets')
+  T.check(nm('Main Route Book', '2026 SOFR Friday KML.kml.xml') ~= nm('Main Route Book', '2026 SOFR Saturday KML.kml.xml'),
+    'so no two of them read the same in the menu')
+
+  -- the two that carried an extension in the organiser's own document name
+  T.check(nm('2026 Overmountain - Publish v2.kmz', '2026 Overmountain - Publish v2.kmz') ==
+    '2026 Overmountain - Publish v2', 'a document name ending .kmz loses it')
+  T.check(nm('V1_Rally_Colorado_2026_Controls_and_Route.kmz', 'V1_Rally_Colorado_2026_Controls_and_Route.kmz') ==
+    'V1 Rally Colorado 2026 Controls and Route', 'and underscores read as spaces')
+
+  -- the seven that were already right are left exactly as they were
+  for _, c in ipairs({
+    { '2026 LSPR Friday', '2026 LSPR Friday.kmz' },
+    { '2026 LSPR Saturday', '2026 LSPR Saturday.kmz' },
+    { '2026 OFR', '2026 OFR.kmz' },
+    { '2026 SnoDrift Rally Maps - Competitors', '2026 SnoDrift Rally Maps - Competitors.kmz' },
+    { '2026-100 Acre Wood', '2026-100 Acre Wood.kml' },
+    { 'OTR 2024 Final', 'OTR 2024 Final.kml' },
+    { 'V4 Olympus Rally 26', 'V4 Olympus Rally 26.kml' },
+  }) do
+    T.check(nm(c[1], c[2]) == c[1], 'left alone: ' .. c[1] .. ' (' .. nm(c[1], c[2]) .. ')')
+  end
+
+  -- no document name at all: the file, tidied
+  T.check(nm(nil, 'Olympus_Rally_2026.kml') == 'Olympus Rally 2026', 'no document name: the file name, tidied')
+  T.check(nm('', 'doc.kml') == 'doc', 'an empty document name does the same')
+  T.check(nm('   ', 'Snow Rally.gpx') == 'Snow Rally', 'and so does a document name of spaces')
+  T.check(nm('Untitled map', 'Deep Forest.kmz') == 'Deep Forest', "Google My Maps' own default is generic too")
+  T.check(nm('Maps', 'Deep Forest.kmz') == 'Deep Forest', 'so is "Maps"')
+  T.check(nm('Main Route Book', nil) == 'Main Route Book',
+    'nothing to fall back to: the generic name is still better than no name')
+  T.check(nm(nil, nil) == 'Rally', 'and neither leaves something to show')
+
+  -- a rally really called "Route 66" is not generic: only the whole name counts
+  T.check(nm('Route 66 Rally', 'x.kml') == 'Route 66 Rally', 'a name that merely contains a generic word is kept')
+  T.check(nm('Main Street Stages', 'x.kml') == 'Main Street Stages', '... and so is this one')
+
+  -- cleanName and genericName on their own
+  T.check(imp.cleanName('a.kml.xml') == 'a', 'cleanName: both halves of .kml.xml')
+  T.check(imp.cleanName('Rally  2026 ') == 'Rally 2026', 'cleanName: doubled spaces and a trailing one')
+  T.check(imp.cleanName('Olympus KML') == 'Olympus', 'cleanName: a trailing format word')
+  T.check(imp.cleanName('KML') == 'KML', '... unless that is the whole of it')
+  T.check(imp.genericName('ROUTE BOOK') and imp.genericName('route-book') and imp.genericName('  Routes '),
+    'genericName: case, punctuation and spaces do not matter')
+  T.check(not imp.genericName('Dalles Mountain'), 'genericName: a real name is not generic')
+end
+
 T.done('test_import')

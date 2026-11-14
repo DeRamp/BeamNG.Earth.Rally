@@ -190,6 +190,59 @@ function M.slug(name)
   return #k > 0 and table.concat(k, '-') or 'stage'
 end
 
+------------------------------------------------------------------------------------------ naming a rally
+
+-- A rally's name comes from the map file: the document's own `<name>` where that says which rally it is, and the
+-- file's name where it does not. Roadmap item 4, which was written as "maps that group stages in folders import
+-- properly" -- the folders were never the problem (every Placemark is read wherever it sits), the NAME was.
+--
+-- Measured on the twelve rallies imported here, 2026-11-14: three of them -- SOFR Thursday, Friday and Saturday --
+-- came in as "Main Route Book", "Main Route Book" and "(Main Route Book)", because that is what the organisers
+-- called the document inside all three files. Three identical rows in the menu, and the only thing that told them
+-- apart was the file each came from. Two more carried a file extension in the middle of their name, because the
+-- organiser's document name was "2026 Overmountain - Publish v2.kmz".
+--
+-- The rule is deliberately NOT "prefer the file name when another rally already has this one": that would depend
+-- on the order the folder is read in, so the same three files could come out named differently on another machine
+-- or after a re-import. A name a player reads should not move about.
+M.GENERIC_NAMES = {}
+for _, n in ipairs({
+  'main route book', 'route book', 'routebook', 'route books', 'road book', 'roadbook', 'main', 'map', 'maps',
+  'my map', 'my maps', 'google my maps', 'untitled map', 'untitled', 'untitled layer', 'document', 'doc', 'layer',
+  'layers', 'route', 'routes', 'stages', 'stage', 'rally', 'rallye', 'kml', 'kmz', 'gpx', 'export', 'new map',
+  'competitors', 'competitor map', 'spectator map', 'spectators', 'final', 'draft', 'copy of main route book',
+}) do M.GENERIC_NAMES[n] = true end
+
+-- A name tidied for a player to read: no file extension, underscores as spaces, no doubled spaces, and no
+-- trailing "KML" / "KMZ" / "GPX" left over from a file named for its format.
+function M.cleanName(s)
+  if type(s) ~= 'string' then return '' end
+  s = s:gsub('^%s+', ''):gsub('%s+$', '')
+  for _ = 1, 2 do     -- (twice: "X.kml.xml" is two)
+    s = s:gsub('%.[kK][mM][lL]$', ''):gsub('%.[kK][mM][zZ]$', ''):gsub('%.[gG][pP][xX]$', '')
+         :gsub('%.[xX][mM][lL]$', '')
+  end
+  s = s:gsub('_', ' '):gsub('%s+', ' '):gsub('^%s+', ''):gsub('%s+$', '')
+  local without = s:gsub('%s+[kK][mM][lL]$', ''):gsub('%s+[kK][mM][zZ]$', ''):gsub('%s+[gG][pP][xX]$', '')
+  if without ~= '' then s = without end
+  return (s:gsub('^%s+', ''):gsub('%s+$', ''))
+end
+
+-- Is this name one that says nothing about which rally it is?
+function M.genericName(s)
+  local k = M.cleanName(s):lower():gsub('[^%a%d]+', ' '):gsub('^%s+', ''):gsub('%s+$', '')
+  return k == '' or M.GENERIC_NAMES[k] == true
+end
+
+-- What to call the rally in this file: the document's name, or the file's where that name says nothing.
+function M.eventName(docName, fileName)
+  local doc = M.cleanName(docName)
+  if doc ~= '' and not M.genericName(doc) then return doc end
+  local fromFile = M.cleanName((fileName or ''):match('([^/]+)$') or '')
+  if fromFile ~= '' then return fromFile end
+  return doc ~= '' and doc or 'Rally'
+end
+
 local function pointRole(name)
   local ws = words(name)
   for _, w in ipairs(ws) do if OTHER_WORDS[w] then return nil end end
@@ -507,6 +560,13 @@ local function readKmz(path)
   return s
 end
 
+-- The naming rules above, as a number. A map already imported is skipped while its bytes have not changed, so a
+-- change to what a rally is CALLED would otherwise only reach the rallies a player happens to re-import -- and the
+-- three identical "Main Route Book" rows are already on this machine. When this number does not match the one the
+-- index was written with, the next scan re-imports everything, which keeps each event's id (so its recces, matched
+-- lines and times still belong to it) and only rewrites the event files.
+M.NAME_RULES = 2
+
 local function readIndex()
   local ok, r = pcall(jsonReadFile, M.INDEX)
   return ok and type(r) == 'table' and type(r.files) == 'table' and r or { format = 1, files = {} }
@@ -531,6 +591,11 @@ function M.scan(force)
   local done = {}
   if not FS:directoryExists(M.IMPORT_DIR) then pcall(function() FS:directoryCreate(M.IMPORT_DIR, true) end) end
   local index = readIndex()
+  -- the naming rules changed since this index was written: every map read again, so the names on screen are the
+  -- ones these rules give rather than a mixture of two versions' (M.NAME_RULES)
+  local renaming = (index.names or 1) ~= M.NAME_RULES
+  index.names = M.NAME_RULES
+  force = force or renaming
   local seen = {}
   local found = {}
   for _, pat in ipairs({ '*.kml', '*.kmz', '*.gpx', '*.KML', '*.KMZ', '*.GPX', '*.kml.xml', '*.KML.xml', '*.kml.XML' }) do
@@ -566,7 +631,7 @@ function M.scan(force)
             while taken(base .. '-' .. k) do k = k + 1 end
             id = base .. '-' .. k
           end
-          local name = parsed.name or stem(fileName)
+          local name = M.eventName(parsed.name, fileName)
           local okB, event, report = pcall(M.build, parsed, id, name, fileName)
           if okB and event then
             jsonWriteFile(M.EVENTS_DIR .. id .. '.json', event, true)
@@ -596,7 +661,8 @@ function M.scan(force)
         ' is kept (delete earthRally/events/' .. tostring(entry.eventId) .. '.json to remove it)')
     end
   end
-  if #done > 0 then jsonWriteFile(M.INDEX, index, true) end
+  -- (also when only the naming rules moved on, so the re-import is not asked for again on every start)
+  if #done > 0 or renaming then jsonWriteFile(M.INDEX, index, true) end
   return done
 end
 
