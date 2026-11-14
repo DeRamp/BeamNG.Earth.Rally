@@ -29,6 +29,19 @@ Any imported map drives with no recce and no Python, and starts when you're read
 | Maps that group stages in folders import properly (4) | S |
 | Version checks at startup, a clear message when BeamNG or BeamNG.Earth changed (23) | S |
 
+## 1.3.1: the auto recce fetches what it needs
+
+Pressing Auto recce on a stage over ground you have never been near downloads that stage's corridor and then matches
+it, instead of refusing. docs/plan-1.3.1.md has the shape; the short of it is that BeamNG.Earth can already
+pre-cache a route corridor but only for the player's own GPS route, so an add-on cannot ask for a line of its own.
+
+| Item | Size |
+|---|---|
+| Measure a stage's bounding box against its corridor over the 116 stages here: decides whether the box form is a usable fallback | S |
+| Upstream: explicit points on area_plan / area_add, and api.preloadRoute to reach them -- into the open api.roadGraph pull request, not a second one | M |
+| The auto recce asks for the stretch its coverage record says is missing, with the player saying yes to the download first (area_plan gives the figure without fetching) | M |
+| The screen for it (**mock-up first**): downloading as a phase in front of matching, and a fifth ending for "asked, and told no" | S |
+
 ## 1.4.0: the co-driver
 
 Pacenotes worth trusting.

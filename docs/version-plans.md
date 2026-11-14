@@ -44,6 +44,22 @@ until it is done `tools/selftest.py` exits 1 on every run, so it is a report to 
 
 Done: on a clean PC, a dropped-in map's stages drive without a recce, with no Python installed.
 
+## 1.3.1: the auto recce fetches what it needs
+
+The full plan is docs/plan-1.3.1.md.
+
+1. Measure the box against the corridor over the 116 stages here: it decides whether the box form of area_add is a
+   fallback worth having, and it builds nothing.
+2. Upstream, into the pull request that is already open rather than a second one: explicit points on area_plan and
+   area_add, and api.preloadRoute over them -- with a mod-to-server-and-back test, which 1.3.0 did without and paid
+   for four times over.
+3. The mod asks for the stretch its coverage record says is missing, behind has('preloadRoute'), and the player says
+   yes to the download first.
+4. The screen (**mock-up first**): downloading as a phase in front of matching; a fifth ending for a refused
+   download.
+
+Done: a map dropped in for ground never driven matches its stages, having asked first.
+
 ## 1.4.0: the co-driver
 
 0. The self-test's co-driver check (carried from 1.2, deferred from 1.3.0): `drivelineRoute:setVehicleTracker()` is
