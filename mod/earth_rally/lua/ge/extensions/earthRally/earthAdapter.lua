@@ -70,6 +70,75 @@ function M.roadGraph(lat, lon, opts, callback)
   return true
 end
 
+-- Can BeamNG.Earth pre-cache the ground along a route? (1.3.1, has('areaRoute').) The same gate as the road
+-- graph: without it the auto recce works exactly as 1.3.0 did -- only where the player has already been -- and
+-- offers no download. Nothing else in Earth Rally may ask.
+function M.hasAreaRoute()
+  local a = api()
+  return (a ~= nil and type(a.has) == 'function' and a.has('areaRoute') == true
+          and type(a.areaPlan) == 'function' and type(a.areaAdd) == 'function')
+end
+
+-- The LAYERS an auto recce needs, and only those. Measured in a game 2026-11-14 on a 1.26 km stage: the whole
+-- ground is 308 MB over a 10 km line, `{'roads'}` is 18 MB over 1.26 km -- about a tenth of the bytes and a
+-- fifteenth of the items. The pinned disk does NOT fall in step (36.8 MB against 18 MB downloaded) because a
+-- cell's raw source blocks are shared between its layers and arrive whichever layer asked for them.
+M.AREA_LAYERS = { 'roads' }
+
+-- The corridor's half width. 300 m each side of the line: wide enough that a stage which leaves the organisers'
+-- line is still covered, and the figure every cost in docs/plan-1.3.1.md was measured at.
+M.AREA_HALF_M = 300
+
+-- What a corridor along `points` ({ { lat, lon } ... }) would cost, without downloading or saving anything.
+-- callback is given BeamNG.Earth's own answer: { ok, km, km2, items, missing, downloadBytes, diskBytes, seconds,
+-- days, hosts, excluded, layers, error }.
+--
+-- Show the player `downloadBytes` and nothing else, which is what BeamNG.Earth's own documentation asks for:
+-- `seconds` is a serial-request model with no bandwidth in it (it said 132 s for a download that took 43),
+-- `days` is 0 nearly everywhere, and `km2` is the corridor's geometry, far smaller than the ground actually
+-- fetched -- the plan dilates it by two map cells all round.
+function M.areaPlan(points, callback)
+  local a = api()
+  if not M.hasAreaRoute() then return false, 'this BeamNG.Earth cannot pre-cache the ground along a route' end
+  local ok, res, why = pcall(a.areaPlan, points, { half = M.AREA_HALF_M, layers = M.AREA_LAYERS }, callback)
+  if not ok then return false, tostring(res) end
+  if not res then return false, why or 'BeamNG.Earth refused the estimate' end
+  return true
+end
+
+-- Add a saved area along `points`: callback gets { ok, id, error }. **This is not a function call with a side
+-- effect.** It puts a persistent, pinned object in the player's world -- visible in their area list, surviving a
+-- restart, one of ten slots, and never evicted by "Clear cache" -- so it is only ever called after the player has
+-- been shown the figure and said yes.
+--
+-- `fast` is never passed and BeamNG.Earth's call takes no argument for it. In fast mode BeamNG.Earth's own
+-- core.lua pauses the player's game for any client on any fast area, which mid-stage would stop the physics under
+-- a run with Earth Rally getting no say.
+function M.areaAdd(points, name, callback)
+  local a = api()
+  if not M.hasAreaRoute() then return false, 'this BeamNG.Earth cannot pre-cache the ground along a route' end
+  local ok, res, why = pcall(a.areaAdd, points,
+    { half = M.AREA_HALF_M, layers = M.AREA_LAYERS, name = name }, callback)
+  if not ok then return false, tostring(res) end
+  if not res then return false, why or 'BeamNG.Earth refused the area' end
+  return true
+end
+
+-- How a saved area is getting on: { id, name, state, done, total, unavailable, msg, mode, half, layers }, or nil.
+-- Read from the area list BeamNG.Earth already broadcasts, so it is cheap to poll every frame.
+--
+-- `state == 'done'` does NOT mean every tile arrived. After enough failed passes the items still failing are
+-- counted in `unavailable`, the area is marked done and `msg` carries words only the player can act on ("Resume
+-- tries again"). Measured on this machine: an area finished done with 122 of 1079 items unavailable. So a caller
+-- re-checks the ground rather than trusting `done`, and surfaces `msg` rather than swallowing it.
+function M.areaStatus(id)
+  local a = api()
+  if not (M.hasAreaRoute() and type(a.areaStatus) == 'function') then return nil end
+  local ok, res = pcall(a.areaStatus, id)
+  if not ok then return nil end
+  return res
+end
+
 -- The world's origin now (lat, lon), or nil.
 function M.anchor()
   local p = M.pose()

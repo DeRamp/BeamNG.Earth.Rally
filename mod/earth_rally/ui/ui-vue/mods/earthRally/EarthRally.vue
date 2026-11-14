@@ -17,6 +17,14 @@
       <div v-if="banner" class="er-banner">
         <span>{{ banner }}</span>
         <BngButton v-if="st.run && st.run.busy" :accent="ACCENTS.outlined" @click="action('abort')">Stop the run</BngButton>
+        <!-- The question goes in the banner, not on the stage page, because the auto recce can be started from a
+             stage ROW and the player may well be looking at the rally list when it comes back. The banner is on
+             every page, so the one place the answer can always be given is here. Stop is still beside it: saying
+             no to the download is not the same as abandoning the auto recce. -->
+        <template v-if="autoAsk">
+          <BngButton :accent="ACCENTS.main" @click="action('autoRecceDownload')">Download {{ MB(autoAsk.bytes) }}</BngButton>
+          <BngButton :accent="ACCENTS.outlined" @click="action('autoRecceSkip')">Not now</BngButton>
+        </template>
         <BngButton v-if="auto" :accent="ACCENTS.outlined" @click="action('autoRecceStop')">Stop</BngButton>
         <template v-if="st.recce">
           <BngButton :accent="ACCENTS.main" @click="action('recceSave')">Save recce</BngButton>
@@ -79,7 +87,7 @@
           <div v-for="s in arr(rly.list)" :key="s.id" class="er-srow er-click" :class="{ 'er-running': autoRow(s) }" tabindex="0" @click="openStage(rly.id, s.id)" @keydown.enter="rowEnter($event, s)">
             <span class="er-ss">SS{{ s.ss }}</span><span>{{ s.name }}</span><span class="er-r er-mono">{{ len(s.lengthM) }}</span>
             <span class="er-st">
-              <span v-if="autoRow(s)" class="er-pill working" :style="{ '--er-done': autoPct }">{{ STATUS.working.label }} <span class="er-wn">{{ autoWindow }} / {{ auto.windows }}</span></span>
+              <span v-if="autoRow(s)" class="er-pill working" :style="{ '--er-done': autoPct }">{{ STATUS.working.label }} <span class="er-wn">{{ autoLeg }}</span></span>
               <span v-else class="er-pill" :class="pill(s.status).cls">{{ pill(s.status).label }}</span>
             </span>
             <!-- @click.stop: the whole row opens the stage, so without it the button would do both. The row's
@@ -132,8 +140,11 @@
             <div class="er-card er-tile"><div class="er-v">{{ riseNum(stg.lossM) }}<small>{{ riseUnit() }}</small></div><div class="er-l">Loss</div></div>
           </div>
           <div v-if="autoHere" class="er-card er-line-note">
-            <span class="er-pill working" :style="{ '--er-done': autoPct }">{{ STATUS.working.label }} <span class="er-wn">{{ autoWindow }} / {{ auto.windows }}</span></span>
-            <span>Matching the line to the map's roads, {{ auto.stepM }} m at a time. No map data is downloaded. You can leave this page.</span>
+            <span class="er-pill working" :style="{ '--er-done': autoPct }">{{ STATUS.working.label }} <span class="er-wn">{{ autoLeg }}</span></span>
+            <span v-if="auto.phase === 'going'">Going to the start of the stage and waiting for the world to load. A road graph can only be asked for near where you are.</span>
+            <span v-else-if="auto.phase === 'planning'">Working out what map data is missing along the stage.</span>
+            <span v-else-if="auto.phase === 'downloading'">Downloading the map data along the stage. It is gated so it cannot slow the world down, and it carries on if you leave this page.<template v-if="auto.area && auto.area.msg"> {{ auto.area.msg }}</template></span>
+            <span v-else>Matching the line to the map's roads, {{ auto.stepM }} m at a time. No map data is downloaded. You can leave this page.</span>
           </div>
           <div v-else class="er-card er-line-note"><span class="er-pill" :class="pill(stg.status).cls">{{ pill(stg.status).label }}</span><span>{{ stg.note }}</span></div>
           <!-- Auto recce is the fourth button, before Recce, so the two recce buttons sit together and the cheap
@@ -173,7 +184,11 @@
           <div class="er-act-help">
             <b>Drive stage</b>: takes you to the {{ stg.atc ? "time control before the start" : "start" }}, then through the stage as in a real rally.<br>
             <b>Route to start</b>: the way there on the GPS, arrows on the road. No teleport.<br>
-            <template v-if="stg.autoCan"><b>Auto recce</b>: {{ st.autoOk ? "works the line out from the map's roads. Reads only the map data already on your disk; downloads nothing." : "works the line out from the map's roads. Not available with this BeamNG.Earth." }}<br></template>
+            <template v-if="stg.autoCan"><b>Auto recce</b>: {{ !st.autoOk
+              ? "works the line out from the map's roads. Not available with this BeamNG.Earth."
+              : st.autoCanFetch
+                ? "takes you to the start, then works the line out from the map's roads. Where the map data is missing it tells you how much there is to download and asks first."
+                : "works the line out from the map's roads. Reads only the map data already on your disk; downloads nothing." }}<br></template>
             <template v-if="stg.line"><b>Reset</b>: removes this stage's line, so you can make it again -- with the auto recce or by driving a recce. Your times are kept.<br></template>
             <b>Recce</b>: drive the stage once at your own pace; the line you drive gives the notes.
           </div>
@@ -239,8 +254,30 @@ const autoWindow = computed(() => {
 })
 const autoPct = computed(() => {
   const a = auto.value
+  if (a && a.phase === "downloading" && a.area && a.area.total) {
+    return `${Math.round((100 * (a.area.done || 0)) / a.area.total)}%`
+  }
+  // the legs with nothing to count: a filled pill would claim progress it does not have, an empty one would read
+  // as stuck, so they sit at a tenth -- enough to look alive, not enough to be read as a measurement
+  if (a && a.phase && a.phase !== "matching") return "10%"
   return a && a.windows ? `${Math.round((100 * autoWindow.value) / a.windows)}%` : "0%"
 })
+const MB = b => `${((b || 0) / 1e6).toFixed(b && b < 1e7 ? 1 : 0)} MB`
+// One press is one thing, so every leg answers in the same place: the pill's own tail. Matching keeps its window
+// count, which is the only leg with a real measurement in it.
+const autoLeg = computed(() => {
+  const a = auto.value
+  if (!a) return ""
+  if (a.phase === "going") return "going there"
+  if (a.phase === "planning") return "checking"
+  if (a.phase === "asking") return "your call"
+  if (a.phase === "downloading") return a.area && a.area.total ? `${a.area.done || 0} / ${a.area.total}` : "starting"
+  return `${autoWindow.value} / ${a.windows || 1}`
+})
+// What is waiting on the player, or null. `bytes` is the only figure shown: BeamNG.Earth's own documentation says
+// not to show `seconds` (a serial model with no bandwidth in it -- it said 132 s for a download that took 43) and
+// `km2` is the corridor's geometry, far smaller than the ground actually fetched.
+const autoAsk = computed(() => (auto.value && auto.value.phase === "asking" && auto.value.ask) || null)
 const autoRow = s => !!(auto.value && rly.value && auto.value.eventId === rly.value.id && auto.value.stageId === s.id)
 const autoHere = computed(() => !!(auto.value && stg.value &&
   auto.value.eventId === stg.value.eventId && auto.value.stageId === stg.value.id))
@@ -262,9 +299,18 @@ const crumbs = computed(() => {
 const banner = computed(() => {
   const s = st.value
   if (s.auto) {
+    const n = `Auto recce of SS${s.auto.ss} ${s.auto.stageName}`
+    if (s.auto.phase === "going") return `${n}: going to the start, waiting for the world to load`
+    if (s.auto.phase === "planning") return `${n}: checking what map data is missing`
+    if (s.auto.phase === "asking") return `${n}: ${MB(s.auto.ask && s.auto.ask.bytes)} of map data to download -- your call`
+    if (s.auto.phase === "downloading") {
+      const a = s.auto.area
+      return `${n}: downloading the map data${a && a.total ? `, ${a.done || 0} of ${a.total} items` : ""}`
+    }
     // "no map data is downloaded" is not padding: someone watching a progress bar assumes it is downloading, and
-    // the auto recce reads only what is already on this computer.
-    return `Auto recce of SS${s.auto.ss} ${s.auto.stageName}: window ${autoWindow.value} of ${s.auto.windows}, no map data is downloaded`
+    // the matching leg reads only what is already on this computer -- which is still true, and is why this
+    // sentence belongs to the matching leg alone now rather than to the whole button.
+    return `${n}: window ${autoWindow.value} of ${s.auto.windows}, no map data is downloaded`
   }
   if (s.recce) {
     const pct = Math.round((s.recce.share || 0) * 100)

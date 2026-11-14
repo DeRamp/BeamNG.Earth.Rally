@@ -846,6 +846,11 @@ M.CORRIDOR_STEP_M = 30.0    -- the line decimated to a point every this far befo
 -- The stage's line as the points of a route corridor: { { lat, lon } ... }, one point every `stepM` along it.
 -- Nothing here downloads anything or knows how to; this is the shape a downloader would be handed.
 --
+-- Pairs rather than named fields, and checked against the call rather than chosen: BeamNG.Earth's
+-- `api.areaPlan(points, ...)` documents `points: { { lat, lon }, ... }` ("api.gpsRoute().points is exactly this
+-- shape"), and a stage's own `line` is pairs too. Returning { lat = , lon = } would mean a conversion at every
+-- boundary and one more place to get the order wrong.
+--
 -- **Decimated rather than sent as it is**, and the reason is the saved-area tool's own storage rather than the wire:
 -- BeamNG.Earth persists a route area's points VERBATIM into `<cache>/areas/areas.json`, re-validates every one of
 -- them on each load, and rewrites that file whenever any area changes. The longest line in this user's set
@@ -869,7 +874,7 @@ function M.corridor(line, stepM)
   local out = {}
   for i, q in ipairs(walk) do
     local la, lo = fr.latlon(q.x, q.y)
-    out[i] = { lat = la, lon = lo }
+    out[i] = { la, lo }
   end
   return out
 end

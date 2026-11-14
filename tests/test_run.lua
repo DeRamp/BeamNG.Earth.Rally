@@ -1789,4 +1789,162 @@ do
   events.resetLine('rst', 'dr')
 end
 
+--------------------------------------------------- Auto recce end to end: go, download, match (1.3.1)
+
+-- "add the download, teleport to start, and auto recce features to all work under the one autorecce button"
+-- (the user, 2026-11-14). One press: take the player there, offer the missing map data, match.
+do
+  local main = require('earthRally/main')
+  local earth = require('earthRally/earthAdapter')
+  local line = event.stages[1].line
+  local far = {}                       -- the same shape of line, moved to Ohio: 3400 km from the anchor
+  for i, q in ipairs(line) do far[i] = { q[1] - 6.37, q[2] + 37.81 } end
+  local evs = { format = 1, id = 'seq', name = 'Sequence Rally', stages = {
+    { id = 'near', name = 'Near', lengthM = 3000, line = line },
+    { id = 'away', name = 'Away', lengthM = 3000, line = far },
+  } }
+  files['/earthRally/events/seq.json'] = evs
+  events.list(true)
+
+  -- the stand-ins: a road graph that finds nothing (so every match refuses with NODATA), and an area tool that
+  -- prices, accepts and finishes a download on command
+  local hadHas, hadGraph = beamngEarth_api.has, beamngEarth_api.roadGraph
+  local area = { plans = 0, adds = 0, bytes = 18000000, addOk = true, state = 'running', unavailable = 0 }
+  beamngEarth_api.has = function(n)
+    return n == 'transform' or n == 'rebase' or n == 'gpsRoute' or n == 'roadGraph' or n == 'areaRoute'
+  end
+  beamngEarth_api.roadGraph = function(_, _, _, cb) cb({ nodes = {}, edges = {}, complete = false }) return true end
+  beamngEarth_api.areaPlan = function(pts, opts, cb)
+    area.plans = area.plans + 1
+    area.planPts, area.planOpts = pts, opts
+    cb({ ok = true, downloadBytes = area.bytes, diskBytes = area.bytes * 2, km = 3.0, items = 30, missing = 30,
+         layers = opts.layers })
+    return true
+  end
+  beamngEarth_api.areaAdd = function(pts, opts, cb)
+    area.adds = area.adds + 1
+    area.lastName, area.addOpts = opts.name, opts
+    cb(area.addOk and { ok = true, id = 'a9' } or { ok = false, error = 'the saved areas are full' })
+    return true
+  end
+  beamngEarth_api.areaStatus = function(id)
+    if id ~= 'a9' then return nil end
+    return { id = 'a9', name = area.lastName, state = area.state, done = 12, total = 30,
+             unavailable = area.unavailable, msg = area.msg }
+  end
+  local function tick(n, dt)
+    for _ = 1, (n or 1) do main.onUpdate(dt or 0.5, dt or 0.5) end
+  end
+
+  T.check(earth.hasAreaRoute() == true, 'the adapter sees the area-route capability')
+
+  -- ------------------------------------------------------------ a NEAR stage: no teleport, straight to matching
+  car.lat, car.lon = line[1][1], line[1][2]
+  local a = main.uiAction('autoRecce', 'seq', 'near')
+  T.check(a.ok, 'a near stage: the auto recce starts (' .. tostring(a.message) .. ')')
+  T.check(a.message and a.message:find('asks before downloading'),
+    'and the message no longer promises it downloads nothing, because now it can')
+  -- the graph finds nothing, so it refuses -- and the refusal is held back while the download is offered
+  tick(4)
+  local stt = main.uiState()
+  T.check(stt.auto and stt.auto.phase == 'asking', 'nothing on disk: the player is asked, not just refused (' ..
+    tostring(stt.auto and stt.auto.phase) .. ')')
+  T.check(stt.auto.ask and stt.auto.ask.bytes == 18000000, 'and told the figure (' ..
+    tostring(stt.auto.ask and stt.auto.ask.bytes) .. ')')
+  T.check(area.plans == 1 and area.adds == 0, 'the estimate was asked for and NOTHING downloaded yet (' ..
+    area.plans .. ' plan(s), ' .. area.adds .. ' add(s))')
+  T.check(area.planOpts and area.planOpts.layers and area.planOpts.layers[1] == 'roads'
+    and #area.planOpts.layers == 1,
+    'the estimate asks for the roads layer alone, which is the difference between 18 MB and 300')
+  T.check(area.planOpts.half == 300, 'and a 300 m corridor each side (' .. tostring(area.planOpts.half) .. ')')
+  T.check(area.planOpts.fast == nil and area.planOpts.mode == nil, 'and never fast, which would pause the game')
+
+  -- the player says no: the stage's own refusal is what they are told, not silence
+  local no = main.uiAction('autoRecceSkip')
+  T.check(no.ok, 'Not now is taken')
+  T.check(main.uiState().auto == nil, 'and the sequence is over')
+  T.check(area.adds == 0, 'with nothing downloaded')
+  T.check(main.uiAction('reset', 'seq', 'near').ok, 'and the page is not left busy afterwards')
+
+  -- ------------------------------------------------------------ the player says yes
+  area.state = 'running'
+  main.uiAction('autoRecce', 'seq', 'near')
+  tick(4)
+  T.check(main.uiState().auto.phase == 'asking', 'asked again on a fresh press')
+  local yes = main.uiAction('autoRecceDownload')
+  T.check(yes.ok and area.adds == 1, 'Download starts one download (' .. area.adds .. ')')
+  T.check(area.lastName and area.lastName:find('Earth Rally'),
+    'the area is named so the player knows whose it is (' .. tostring(area.lastName) .. ')')
+  T.check(area.addOpts.fast == nil, 'and is never added fast')
+  tick(2)
+  local dl = main.uiState().auto
+  T.check(dl and dl.phase == 'downloading', 'the sequence is downloading (' .. tostring(dl and dl.phase) .. ')')
+  T.check(dl.area and dl.area.total == 30, 'and carries the area progress (' ..
+    tostring(dl.area and dl.area.done) .. ' / ' .. tostring(dl.area and dl.area.total) .. ')')
+
+  -- it finishes, the match is tried again -- and the road graph still finds nothing, so it must NOT loop
+  area.state = 'done'
+  tick(6)
+  T.check(area.adds == 1, 'ONE download a press, however the second match goes (' .. area.adds .. ')')
+  T.check(area.plans == 2, 'and the estimate is not asked for again either (' .. area.plans .. ')')
+  T.check(main.uiState().auto == nil, 'the sequence has ended rather than going round again')
+  T.check(main.uiAction('reset', 'seq', 'near').ok, 'and the page is free')
+
+  -- ------------------------------------------------------------ a FAR stage goes there first
+  -- A road-graph window is placed in the anchor's frame, so one asked for 3400 km away lands hundreds of km from
+  -- the stage. Measured in a game 2026-11-14; this is the check that the button goes there before asking.
+  car.lat, car.lon = line[1][1], line[1][2]
+  local b = main.uiAction('autoRecce', 'seq', 'away')
+  T.check(b.ok and b.message and b.message:find('going to the start'),
+    'a far stage: the player is taken there first (' .. tostring(b.message) .. ')')
+  T.check(main.uiState().auto.phase == 'going', 'and the page says so')
+  T.near(car.lat, far[1][1], 0.01, 'the car really was moved to the stage')
+  T.check(area.plans == 2, 'and no window and no estimate asked for from the wrong place (' .. area.plans .. ')')
+  main.uiAction('autoRecceStop')
+  T.check(main.uiState().auto == nil, 'Stop ends the sequence mid-journey')
+
+  -- ------------------------------------------------------------ a second press while one runs is refused
+  car.lat, car.lon = line[1][1], line[1][2]
+  main.uiAction('autoRecce', 'seq', 'near')
+  tick(4)
+  local second = main.uiAction('autoRecce', 'seq', 'near')
+  T.check(not second.ok and second.message:find('under way'),
+    'a second auto recce while one waits on the player: refused (' .. tostring(second.message) .. ')')
+  T.check(not main.uiAction('drive', 'seq', 'near').ok, 'and no run either')
+  main.uiAction('autoRecceSkip')
+
+  -- ------------------------------------------------------------ an area the app will not take
+  area.addOk = false
+  main.uiAction('autoRecce', 'seq', 'near')
+  tick(4)
+  local bad = main.uiAction('autoRecceDownload')
+  T.check(bad.ok, 'Download is taken even when the app refuses the area')
+  tick(2)
+  T.check(main.uiState().auto == nil, 'and the sequence ends rather than hanging')
+  -- Through autoLines, which is how an async ending reaches the page: `message` is the developer panel's own
+  -- string and the Vue never sees it. The two refusals that matter -- the cache share full, all ten slots taken --
+  -- would otherwise be written where nobody looks.
+  local line9 = main.uiStage('seq', 'near')
+  T.check(line9 and line9.autoLine and tostring(line9.autoLine.text):find('saved areas are full'),
+    'the app own reason reaches the stage page, because only the player can act on it (' ..
+    tostring(line9 and line9.autoLine and line9.autoLine.text) .. ')')
+  area.addOk = true
+
+  -- ------------------------------------------------------------ without the capability: exactly 1.3.0
+  beamngEarth_api.has = function(n)
+    return n == 'transform' or n == 'rebase' or n == 'gpsRoute' or n == 'roadGraph'
+  end
+  local before = area.plans
+  local c = main.uiAction('autoRecce', 'seq', 'near')
+  T.check(c.ok and c.message:find('downloads nothing'),
+    'without the area capability the old promise is kept (' .. tostring(c.message) .. ')')
+  tick(4)
+  T.check(area.plans == before, 'and no estimate is ever asked for (' .. area.plans .. ')')
+  T.check(main.uiState().auto == nil, 'the refusal is reported straight away, as 1.3.0 did')
+
+  beamngEarth_api.has, beamngEarth_api.roadGraph = hadHas, hadGraph
+  beamngEarth_api.areaPlan, beamngEarth_api.areaAdd, beamngEarth_api.areaStatus = nil, nil, nil
+  events.resetLine('seq', 'near')
+end
+
 T.done('test_run')

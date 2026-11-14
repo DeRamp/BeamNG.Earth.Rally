@@ -350,12 +350,61 @@ end
 
 local function autoKey(eventId, stageId) return tostring(eventId) .. '|' .. tostring(stageId) end
 
+------------------------------------------------------------------- Auto recce, end to end (1.3.1)
+
+-- One button, three things: take the player to the stage, download the map data along it if BeamNG.Earth has none,
+-- then match the line (the user, 2026-11-14: "add the download, teleport to start, and auto recce features to all
+-- work under the one autorecce button").
+--
+-- **Why the teleport is not a convenience.** A road-graph window is placed in the active anchor's ENU frame, and
+-- that frame drops the up component. Measured in a game 2026-11-14: a stage in Ohio asked for from an anchor at
+-- Maryhill, Washington came out at e=3,028,418 m n=36,397 m u=-763,610 m, and the window converted back to
+-- 40.55,-86.49 -- Indiana, 380 km from the stage. It reported "no map data" truthfully, about ground nobody asked
+-- about. It failed safely only because nothing was cached in Indiana; with cells there it would have matched the
+-- stage against the wrong roads. So the player is taken to the stage BEFORE any window is asked for, and the
+-- frame is local to it.
+--
+-- **The download is offered only after a match has been tried and refused**, which is what makes the loop
+-- impossible: the stage's own refusal (nodata, or a partial with no map data) is the trigger, there is exactly one
+-- download an attempt (`seq.downloaded`), and the second match's answer is final whatever the coverage says.
+M.GO_IF_FURTHER_M = 5000     -- the car this far from the start: go there first (nearer, the frame is already local)
+M.WORLD_WAIT_S = 120         -- waiting for the world after a teleport, then give up on it
+M.AREA_WAIT_S = 1800         -- waiting for a download; it is gated to 40% duty while the car moves
+
+M.GOING, M.ASKING, M.DOWNLOADING = 'going', 'asking', 'downloading'
+
+local autoSeq = nil   -- { ev, stage, ss, phase, t, ready, plan, areaId, downloaded, why, how }
+
+local autoSeqStep     -- (declared here: autoDone drives the sequence on, and is defined above it)
+
+-- Is this ending one a download could do something about? NODATA always; PARTIAL only where the stage was refused
+-- for map data rather than for a line that is gap end to end -- a stretch the MAP has no road on is not something
+-- downloading can fix, and offering it there would promise what it cannot do.
+local function autoFixable(kind)
+  return kind == autoRecce.NODATA or kind == autoRecce.PARTIAL
+end
+
 -- autoRecce's done callback: the only place the menu learns how one ended.
 local function autoDone(ok, matched, why, how)
   local a = autoRun
   autoRun = nil
   if not a then return end
   local kind = (how and how.kind) or (ok and autoRecce.DONE or autoRecce.FAILED)
+  -- A sequence still running gets first refusal on this ending: it may have a download to offer, in which case
+  -- nothing is reported to the player yet. It answers true when it has taken the ending over.
+  --
+  -- The matched line is ALWAYS cleared here, whichever way it went. A sequence left behind by a match that
+  -- succeeded would make the page busy for ever: the guard in doAction refuses every action while one is running,
+  -- so Reset, Drive, Recce and the next Auto recce would all answer "an auto recce is under way" until a reload.
+  -- (test_run found exactly that: 11 checks red, all of them the guard refusing something unrelated.)
+  if autoSeq and autoSeq.ev.id == a.eventId and autoSeq.stage.id == a.stageId then
+    if ok then
+      autoSeq = nil
+    else
+      autoSeq.why, autoSeq.how = why, how
+      if autoSeqStep('matched', kind) then return end
+    end
+  end
   if ok then
     -- (the stage speaks for itself now: ready, or amber where the map has no road there)
     autoLines[autoKey(a.eventId, a.stageId)] = nil
@@ -368,6 +417,139 @@ local function autoDone(ok, matched, why, how)
   log('I', logTag, string.format('auto recce of %s: %s (%s)', tostring(a.stageId), kind, tostring(why or 'written')))
 end
 M._autoDone = autoDone
+
+-- Start the matching leg: the same call the 1.3.0 button made, with the banner and the row mark it sets.
+local function autoStartMatch(ev, stage, ss)
+  local key = autoKey(ev.id, stage.id)
+  autoRun = { eventId = ev.id, stageId = stage.id, stageName = stage.name, ss = ss }
+  autoLines[key] = nil
+  local ok, why = autoRecce.start(ev, stage, autoDone)
+  if not ok then
+    if autoRun then autoRun = nil end
+    return false, why or (autoLines[key] and autoLines[key].text) or 'the auto recce could not be started'
+  end
+  return true
+end
+
+-- End the sequence. `msg`, when there is one, is what the player is told -- and it goes into autoLines, NOT into
+-- `message`.
+--
+-- `message` is the ImGui developer panel's own string and reaches the Vue UI not at all: the menu gets a message
+-- only as the RETURN VALUE of an action it called (store.js sets busyMsg from it). Every leg of this sequence
+-- after the first ends asynchronously, with no action waiting on a return, so anything written to `message` here
+-- would be seen by nobody -- including the two refusals that matter most, the saved areas being full and all ten
+-- slots taken, which only the player can do anything about. autoLines is how 1.3.0's own async endings reach the
+-- page (under the rally card, and as stg.autoLine on the stage page), so these go the same way.
+--
+-- `kind` picks the colour: FAILED for something that went wrong, NODATA for the player declining a download --
+-- declining is not an error, and should not be painted as one.
+local function autoSeqEnd(msg, kind)
+  local sq = autoSeq
+  autoSeq = nil
+  if not sq then return end
+  if msg then
+    autoLines[autoKey(sq.ev.id, sq.stage.id)] = { eventId = sq.ev.id, stageId = sq.stage.id, ss = sq.ss,
+      kind = kind or autoRecce.FAILED, text = msg }
+    message = msg                                   -- (the developer panel as well, which reads this one)
+  end
+  log('I', logTag, 'auto recce sequence of ' .. tostring(sq.stage.id) .. ': ended (' .. tostring(msg or 'reported')
+    .. ')')
+end
+
+-- The sequence, one event at a time. `what` is 'tick', 'matched', 'planned', 'added' or 'answer'.
+-- Returns true when it has taken an ending over and the player must not be told yet.
+autoSeqStep = function(what, arg)
+  local sq = autoSeq
+  if not sq then return false end
+
+  if what == 'matched' then
+    -- A refusal a download could fix, on a BeamNG.Earth that can fetch it, and not already tried this press.
+    if not (autoFixable(arg) and earth.hasAreaRoute() and not sq.downloaded) then
+      autoSeqEnd(nil)
+      return false
+    end
+    local pts = autoRecce.corridor(sq.stage.line)
+    if not pts then autoSeqEnd(nil) return false end
+    sq.phase, sq.t = 'planning', 0
+    local ok, why = earth.areaPlan(pts, function(r) autoSeqStep('planned', r) end)
+    if not ok then
+      log('I', logTag, 'auto recce: no estimate (' .. tostring(why) .. ')')
+      autoSeqEnd(nil)
+      return false
+    end
+    return true     -- the refusal is held back: the player is about to be offered the download instead
+
+  elseif what == 'planned' then
+    local r = arg
+    if type(r) ~= 'table' or r.ok ~= true or type(r.downloadBytes) ~= 'number' then
+      log('I', logTag, 'auto recce: the estimate failed (' .. tostring(type(r) == 'table' and r.error or r) .. ')')
+      autoSeqEnd(nil)
+      return false
+    end
+    sq.plan, sq.phase, sq.t = r, M.ASKING, 0
+    log('I', logTag, string.format('auto recce: %s needs %.1f MB of map data (%d of %d item(s) missing)',
+      sq.stage.name, (r.downloadBytes or 0) / 1e6, r.missing or 0, r.items or 0))
+    return true
+
+  elseif what == 'answer' then
+    if arg ~= true then
+      autoSeqEnd('Nothing downloaded. ' .. (sq.how and
+        autoText({ ss = sq.ss, stageName = sq.stage.name }, sq.how.kind, sq.why, sq.how) or
+        'The auto recce needs map data this computer does not have.'), autoRecce.NODATA)
+      return true
+    end
+    local pts = autoRecce.corridor(sq.stage.line)
+    sq.phase, sq.t, sq.downloaded = M.DOWNLOADING, 0, true
+    local ok, why = earth.areaAdd(pts, 'Earth Rally: ' .. sq.stage.name, function(r) autoSeqStep('added', r) end)
+    if not ok then autoSeqEnd('Could not start the download: ' .. tostring(why)) end
+    return true
+
+  elseif what == 'added' then
+    local r = arg
+    if type(r) ~= 'table' or r.ok ~= true or type(r.id) ~= 'string' then
+      -- (the refusal worth surfacing rather than swallowing: the saved areas' share of the cache is full, or all
+      --  ten slots are taken -- both are the player's to act on and neither is ours to work around)
+      autoSeqEnd('BeamNG.Earth would not take the download: ' ..
+        tostring(type(r) == 'table' and r.error or 'no reason given'))
+      return true
+    end
+    sq.areaId, sq.t = r.id, 0
+    return true
+
+  elseif what == 'tick' then
+    sq.t = sq.t + (arg or 0)
+    if sq.phase == M.GOING then
+      sq.ready = earth.ready() and sq.t > 2 and (sq.ready + (arg or 0)) or 0
+      if sq.ready >= runner.TELEPORT_SETTLE_S then
+        pcall(runner.faceStage, sq.stage, sq.ev.id)
+        sq.phase, sq.t = 'matching', 0
+        local ok, why = autoStartMatch(sq.ev, sq.stage, sq.ss)
+        if not ok then autoSeqEnd('The auto recce could not start: ' .. tostring(why)) end
+      elseif sq.t > M.WORLD_WAIT_S then
+        autoSeqEnd('The world is taking long to load here: try the auto recce again.')
+      end
+    elseif sq.phase == M.DOWNLOADING and sq.areaId then
+      local st = earth.areaStatus(sq.areaId)
+      if st and (st.state == 'done' or st.state == 'failed') then
+        -- `done` does not mean every tile arrived: after enough failed passes the rest are counted unavailable and
+        -- the area is marked done anyway. So the ground is re-checked by matching again rather than trusted, and
+        -- the area's own message -- which only the player can act on -- is carried into the result.
+        if (st.unavailable or 0) > 0 then
+          log('I', logTag, string.format('auto recce: the download finished with %d item(s) unavailable (%s)',
+            st.unavailable, tostring(st.msg)))
+        end
+        sq.unavailable, sq.areaMsg = st.unavailable, st.msg
+        sq.phase, sq.t = 'matching', 0
+        local ok, why = autoStartMatch(sq.ev, sq.stage, sq.ss)
+        if not ok then autoSeqEnd('The auto recce could not start: ' .. tostring(why)) end
+      elseif sq.t > M.AREA_WAIT_S then
+        autoSeqEnd('The download is taking very long: it carries on in the background, so try again later.')
+      end
+    end
+    return true
+  end
+  return false
+end
 
 ------------------------------------------------------------------------------------------ the menu page's buttons
 
@@ -399,11 +581,22 @@ doAction = function(what, eventId, stageId, fromPanel)
   elseif what == 'recceCancel' then
     recce.stop(false)
     return res(true, 'Recce cancelled.')
+  elseif what == 'autoRecceDownload' or what == 'autoRecceSkip' then
+    -- (up here with Stop, before the busy guard: the sequence makes the page busy, so a question it asked would
+    --  otherwise be refused by the guard the asking itself put up -- the player could neither say yes nor no)
+    if not (autoSeq and autoSeq.phase == M.ASKING) then return res(false, 'Nothing is waiting to be downloaded.') end
+    local nm = autoSeq.stage.name
+    autoSeqStep('answer', what == 'autoRecceDownload')
+    return res(true, what == 'autoRecceDownload' and ('Downloading the map data along ' .. nm .. '.') or nil)
   elseif what == 'autoRecceStop' then
-    local was = autoRun
+    local was = autoRun or (autoSeq and { stageName = autoSeq.stage.name })
     autoRun = nil
+    -- the sequence goes with it: a teleport already happened and a download already added carries on in the
+    -- background (it is the player's area now), but nothing further is asked for and nothing is written
+    local hadSeq = autoSeq ~= nil
+    autoSeq = nil
     -- (autoRecce.cancel does not call the done callback -- a stop is not an ending, and leaves no line behind)
-    local stopped = autoRecce.cancel()
+    local stopped = autoRecce.cancel() or hadSeq
     return res(stopped, stopped and string.format('Auto recce of %s stopped.',
       was and was.stageName or 'the stage') or 'No auto recce is running.')
   end
@@ -415,7 +608,10 @@ doAction = function(what, eventId, stageId, fromPanel)
   -- one of its own accord), and a run would move the world's origin out from under the window in flight. This
   -- answers for a second Auto recce too, rather than letting it reach start: start's refusal would arrive after
   -- autoRun had been overwritten, and the page would lose the banner and the row mark of the run still going.
-  if autoRecce.active() then
+  if autoRecce.active() or autoSeq then
+    -- autoSeq as well as autoRecce.active(): between the legs -- going to the stage, pricing the ground, waiting
+    -- on the player, downloading -- no window is in flight, so this guard is the only thing standing between a
+    -- second press and two sequences on one stage.
     return res(false, 'An auto recce is under way: stop it first.')
   end
   if what == 'reset' then
@@ -436,20 +632,33 @@ doAction = function(what, eventId, stageId, fromPanel)
   end
   if what == 'autoRecce' then
     local _, _, ss = menu.findStage(ev.id, stage.id)
-    local key = autoKey(ev.id, stage.id)
-    autoRun = { eventId = ev.id, stageId = stage.id, stageName = stage.name, ss = ss }
-    autoLines[key] = nil
-    local ok, why = autoRecce.start(ev, stage, autoDone)
+    local st = stage.controls and stage.controls.start or { lat = stage.line[1][1], lon = stage.line[1][2] }
+    local p = earth.pose()
+    local away = (not p) and math.huge or require('earthRally/geo').metres(p.lat, p.lon, st.lat, st.lon)
+    autoSeq = { ev = ev, stage = stage, ss = ss, phase = 'matching', t = 0, ready = 0 }
+    -- Far from the stage: go there first. A road-graph window is placed in the anchor's frame, and asking for one
+    -- thousands of kilometres away lands it hundreds of kilometres from the stage (see the note on the sequence).
+    if away > M.GO_IF_FURTHER_M then
+      local tok, terr = earth.teleport(st.lat, st.lon, stage.name .. ' start')
+      if not tok then
+        autoSeq = nil
+        return res(false, 'Could not go to the stage: ' .. tostring(terr))
+      end
+      autoSeq.phase = M.GOING
+      return res(true, string.format('Auto recce of %s: going to the start first (%.0f km away).',
+        stage.name, away / 1000))
+    end
+    local ok, why = autoStartMatch(ev, stage, ss)
     if not ok then
-      -- It can fail inside its first window, in which case autoDone has already run and left the ending's line
-      -- behind (and nil'd autoRun) -- which is how that is told apart from a refusal before anything happened.
-      if autoRun then autoRun = nil end
-      return res(false, why or (autoLines[key] and autoLines[key].text) or 'the auto recce could not be started')
+      autoSeq = nil
+      return res(false, why)
     end
     local pr = autoRecce.progress() or {}
-    return res(true, string.format(
-      'Auto recce of %s: %d windows. It reads only the map data already on your disk and downloads nothing.',
-      stage.name, pr.windows or 0))
+    -- 1.3.0 promised "downloads nothing" here and that was worth saying. It is still true without the fetching
+    -- capability, and no longer true with it -- so the sentence follows the capability rather than outliving it.
+    return res(true, string.format('Auto recce of %s: %d windows. %s', stage.name, pr.windows or 0,
+      earth.hasAreaRoute() and 'It reads the map data on your disk, and asks before downloading any it needs.'
+        or 'It reads only the map data already on your disk and downloads nothing.'))
   end
   if what == 'drive' then
     local ok, why = runner.start(ev, stage)
@@ -518,12 +727,29 @@ local function runSummary()
   -- the auto recce: whether one can be run at all (the page shows no button where it cannot, rather than a
   -- disabled one on every row), and the one running, with the window it is on
   out.autoOk = earth.hasRoadGraph()
+  -- whether the one button can also fetch the ground: the page says "downloads nothing" without it, and offers the
+  -- download with it, so this has to reach the UI rather than being decided in the Lua alone
+  out.autoCanFetch = earth.hasRoadGraph() and earth.hasAreaRoute()
   if autoRecce.active() and autoRun then
     local p = autoRecce.progress() or {}
     out.auto = { eventId = autoRun.eventId, stageId = autoRun.stageId, stageName = autoRun.stageName,
-      ss = autoRun.ss, windows = p.windows, done = p.done,
+      ss = autoRun.ss, windows = p.windows, done = p.done, phase = 'matching',
       -- (the step along the line, for the page's sentence: a window is only trustworthy CORRIDOR_M inside its edge)
       stepM = math.floor(autoRecce.RADIUS_M - autoRecce.CORRIDOR_M) }
+  elseif autoSeq then
+    -- the legs with no window count of their own: going to the stage, pricing the ground, waiting on the player,
+    -- downloading. The row and the banner follow `phase`, so one press reads as one thing throughout.
+    local st = autoSeq.areaId and earth.areaStatus(autoSeq.areaId) or nil
+    out.auto = { eventId = autoSeq.ev.id, stageId = autoSeq.stage.id, stageName = autoSeq.stage.name,
+      ss = autoSeq.ss, phase = autoSeq.phase, waitedS = math.floor(autoSeq.t or 0) }
+    if autoSeq.phase == M.ASKING and autoSeq.plan then
+      out.auto.ask = { bytes = autoSeq.plan.downloadBytes, diskBytes = autoSeq.plan.diskBytes,
+        km = autoSeq.plan.km, items = autoSeq.plan.items, missing = autoSeq.plan.missing }
+    end
+    if st then
+      out.auto.area = { state = st.state, done = st.done, total = st.total, unavailable = st.unavailable,
+        msg = st.msg, name = st.name }
+    end
   end
   return out
 end
@@ -703,6 +929,10 @@ function M.onUpdate(dtReal, dtSim)
     runner.say(message, 6, saved and 'success' or 'warning', 'Recce')
   end
   if recce.active() then pcall(recce.draw, dtReal) end
+  if autoSeq then
+    local okSeq, errSeq = pcall(autoSeqStep, 'tick', dtReal or 0)
+    if not okSeq then log('E', logTag, 'auto recce sequence: ' .. tostring(errSeq)) autoSeq = nil end
+  end
   if facing then
     facing.t = facing.t + dtReal
     facing.ready = earth.ready() and facing.t > 2 and (facing.ready + dtReal) or 0
@@ -777,6 +1007,9 @@ function M.onClientEndMission()
   -- An auto recce converts each window through the world's origin, so one still in flight when the level goes
   -- would answer into a world that is not there -- and the page would show a banner for something nothing is
   -- running. It stops the way a recce does, and writes nothing.
+  -- autoSeq as well: a sequence between its legs has no window in flight, so cancelling the auto recce alone
+  -- would leave it behind and the page busy for ever (the guard in doAction refuses everything while one runs)
+  autoSeq = nil
   if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(runner.abort, true)
@@ -803,6 +1036,9 @@ function M.onModDeactivated()
   -- An auto recce converts each window through the world's origin, so one still in flight when the level goes
   -- would answer into a world that is not there -- and the page would show a banner for something nothing is
   -- running. It stops the way a recce does, and writes nothing.
+  -- autoSeq as well: a sequence between its legs has no window in flight, so cancelling the auto recce alone
+  -- would leave it behind and the page busy for ever (the guard in doAction refuses everything while one runs)
+  autoSeq = nil
   if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(runner.abort, true)
@@ -822,6 +1058,9 @@ function M.onExtensionUnloaded()
   -- An auto recce converts each window through the world's origin, so one still in flight when the level goes
   -- would answer into a world that is not there -- and the page would show a banner for something nothing is
   -- running. It stops the way a recce does, and writes nothing.
+  -- autoSeq as well: a sequence between its legs has no window in flight, so cancelling the auto recce alone
+  -- would leave it behind and the page busy for ever (the guard in doAction refuses everything while one runs)
+  autoSeq = nil
   if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(runner.abort, true)
