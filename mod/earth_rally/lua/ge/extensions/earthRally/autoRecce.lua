@@ -867,8 +867,21 @@ local function matchAndWrite(j)
     return finish(false, nil, string.format(
       '%.0f m of the stage has no map data on this computer yet: nothing written', shortM))
   end
+  -- Covered by windows, but no roads came in them: nothing to match against. A line matched off an empty graph is
+  -- the organisers' own line end to end with every point flagged, which is worse than writing nothing -- the stage
+  -- would show amber ("recce recommended") instead of red, as though an auto recce had achieved something, and it
+  -- would be driven with no notes anywhere. (In game, 2026-11-13: three complete windows, 0 nodes in each, 4106 m
+  -- of a 4.1 km stage written as one gap.)
+  if next(j.graph.nodes) == nil then
+    return finish(false, nil, 'BeamNG.Earth gave no roads for this stage: nothing written')
+  end
   local m, why = M.match(j.stage, j.graph)
   if not m then return finish(false, nil, why or 'the stage could not be matched') end
+  -- the same thing one step later: roads arrived, but none of them near enough the organisers' line to be used
+  if (m.gapM or 0) >= (m.lengthM or 0) - M.OUT_STEP_M then
+    return finish(false, nil, string.format(
+      'no part of the stage ran on a road (%.0f m of %.0f m is gap): nothing written', m.gapM or 0, m.lengthM or 0))
+  end
   return write(j, m)
 end
 

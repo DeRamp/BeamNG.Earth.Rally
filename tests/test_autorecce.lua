@@ -418,26 +418,40 @@ end
 
 ------------------------------------------------------------------------------------------ 7: no roads at all
 
--- A stage whose corridor was all read but holds no road at all is not a failure and not a partial line: it is the
--- organisers' line the whole way, flagged end to end, exactly as tools/auto_recce.py writes it. The menu then says
--- a recce is wanted. (What must never be written is a line that stops early -- test 3.)
+-- A stage whose corridor was all read but holds no road at all writes NOTHING.
+--
+-- This test asserted the opposite until 2026-11-13 -- that such a stage is written as the organisers' line the whole
+-- way, flagged end to end, as tools/auto_recce.py writes it. In game that turned out to be the wrong behaviour to
+-- copy: three complete windows came back with no nodes in them (a server bug, since fixed) and 4106 m of a 4.1 km
+-- stage was written as one gap. The file is then the organisers' own line with no notes anywhere, and the stage
+-- shows amber "recce recommended" rather than red -- it looks as though the auto recce achieved something, and the
+-- player drives a hand-drawn line believing the roads were matched. Writing nothing is the honest answer, and the
+-- red tag is the one that tells the truth.
+--
+-- The Python tool keeps its own behaviour: it is run by hand, over data known to be there, by someone reading its
+-- report. Nothing here changes it.
 do
   reset()
   world.roads = {}                                  -- complete windows, but no road anywhere near the line
   local stage = stageOf(lineEast(1000, 100))
   local res = run(EVENT, stage)
-  local m = matchedFile()
-  T.check(res.ok == true and m ~= nil, 'a covered stage with no road is the organisers\' line (' ..
+  T.check(res.ok == false and matchedFile() == nil,
+    'a covered stage with no road at all writes nothing (' .. tostring(res.why) .. ')')
+  T.check(res.why and res.why:find('no roads'), 'and says why in words a player can act on (' ..
     tostring(res.why) .. ')')
-  T.near(m and m.lengthM or 0, 1000, 20, 'it still covers the whole stage (' .. tostring(m and m.lengthM) .. ')')
-  T.near(m and m.gapM or 0, 1000, 20, 'and all of it is a gap (' .. tostring(m and m.gapM) .. ')')
-  local flagged = 0
-  for _, p in ipairs(m and m.points or {}) do if p[4] == 1 then flagged = flagged + 1 end end
-  T.check(flagged == #m.points, 'every point flagged: no notes anywhere on it (' .. flagged .. '/' .. #m.points .. ')')
-  T.check(#m.junctions == 0, 'and no junctions found on a line with no roads (' .. #m.junctions .. ')')
   local menu = require('earthRally/menu')
   local st = menu.stageStatus('test-event', stage)
-  T.check(st.status == 'recce', 'the menu asks for a recce on it (' .. tostring(st.status) .. ')')
+  T.check(st.status == 'none', 'the stage stays "recce needed", not amber (' .. tostring(st.status) .. ')')
+end
+
+-- the same refusal one step later: roads arrived, but every one of them too far from the line to be used
+do
+  reset()
+  world.roads = { { { x = 0, y = 4000 }, { x = 1000, y = 4000 } } }    -- a road 4 km off the line
+  local stage = stageOf(lineEast(1000, 100))
+  local res = run(EVENT, stage)
+  T.check(res.ok == false and matchedFile() == nil,
+    'roads present but none near the line: still nothing written (' .. tostring(res.why) .. ')')
 end
 
 ------------------------------------------------------------------------------------------ 8: the capability gate
