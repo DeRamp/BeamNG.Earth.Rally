@@ -31,12 +31,24 @@ end
 local files = {}             -- path -> text (what is read) or table (what jsonWriteFile wrote)
 local zips = {}              -- path -> { entry name -> text }
 local copied = {}            -- dest -> source
+local mtimes = {}            -- path -> modification time (FS:stat); 1 when not set
+local hashed = 0             -- how many times a zip's bytes were read (the cost FS:stat spares)
 local J = T.jsonEncode
 
 FS = {
-  directoryExists = function() return true end, directoryCreate = function() end,
+  -- (a folder is what some file is inside of)
+  directoryExists = function(_, d)
+    local pre = d:gsub('/+$', '') .. '/'
+    for f in pairs(files) do if f:sub(1, #pre) == pre then return true end end
+    return false
+  end,
+  directoryCreate = function() end,
   fileExists = function(_, f) return files[f] ~= nil end,
   removeFile = function(_, f) files[f] = nil end,
+  stat = function(_, f)
+    if type(files[f]) ~= 'string' then return nil end
+    return { filetype = 'file', filesize = #files[f], modtime = mtimes[f] or 1, createtime = 1 }
+  end,
   copyFile = function(_, a, b)
     if files[a] == nil then return false end
     files[b], copied[b] = files[a], a
@@ -44,25 +56,29 @@ FS = {
   end,
   -- (every depth, whatever is asked: the importer must not take a map inside a pack for a loose one)
   findFiles = function(_, dir, pat)
-    local ext = pat:match('^%*%.(.+)$'):gsub('%.', '%%.')
+    local ext = pat == '*' and '' or pat:match('^%*%.(.+)$'):gsub('%.', '%%.')
     local out = {}
     for f in pairs(files) do
-      if f:sub(1, #dir) == dir and f:lower():match('%.' .. ext:lower() .. '$') then out[#out + 1] = f end
+      if f:sub(1, #dir) == dir and (ext == '' or f:lower():match('%.' .. ext:lower() .. '$')) then out[#out + 1] = f end
     end
     table.sort(out)
     return out
   end,
+  -- (folders AND files, as the game's may: pack.find must keep only the folders)
   directoryList = function(_, dir)
     local seen, out = {}, {}
     for f in pairs(files) do
-      local sub = f:sub(1, #dir) == dir and f:sub(#dir + 1):match('^([^/]+)/')
+      local sub = f:sub(1, #dir) == dir and f:sub(#dir + 1):match('^([^/]+)')
       if sub and not seen[sub] then seen[sub] = true out[#out + 1] = dir .. sub end
     end
     table.sort(out)
     return out
   end,
 }
-function readFile(f) return type(files[f]) == 'string' and files[f] or nil end
+function readFile(f)
+  if f:lower():match('%.zip$') then hashed = hashed + 1 end
+  return type(files[f]) == 'string' and files[f] or nil
+end
 function jsonWriteFile(f, d) files[f] = d return true end
 function jsonReadFile(f)
   if type(files[f]) == 'table' then return files[f] end
@@ -108,7 +124,7 @@ files[S .. 'season.json'] = J({
   rounds = {
     { round = 1, name = 'Fernvale Rally', dates = { from = '2030-03-01', to = '2030-03-02' },
       map = 'maps\\Fernvale.kml', event = 'events/fernvale.json', results = './results/fernvale.json',
-      cover = 'covers/fern cover.PNG', photo = 'covers/missing.jpg' },
+      cover = 'covers/fern cover.PNG', photo = 'covers/missing.jpg', rules = { startIntervalMin = 3 } },
     { round = 2, map = 'Quarry.kml' },
   },
 })
@@ -166,13 +182,13 @@ T.check(not files['/earthRally/events/fernvale.json'] and not files['/earthRally
 local season = files['/earthRally/seasons/test-series-2030.json']
 T.check(season and season.id == 'test-series-2030' and season.name == 'Test Series 2030' and
   season.championship == 'The Test Championship', 'the season file, its id a slug of the name')
-T.check(season and #season.rounds == 2 and season.rounds[1] == 'test-series-2030-r1' and
-  season.rounds[2] == 'test-series-2030-r2', 'rounds in order, ids <season>-r<round>')
+T.check(season and #season.rounds == 2 and season.rounds[1] == 'test-series-2030-fernvale-rally' and
+  season.rounds[2] == 'test-series-2030-quarry-hill-rally', 'rounds in order, ids <season>-<slug of the round name> (round 2 named from its map)')
 T.check(season and season.standings.championship == 'national' and season.standings.points[1] == 10 and
   #season.standings.points == 3 and season.standings.best == nil, 'standings: its points, the default championship')
 
-local e1 = files['/earthRally/events/test-series-2030-r1.json']
-T.check(e1 and e1.format == 1 and e1.name == 'Fernvale Rally' and e1.id == 'test-series-2030-r1', 'round 1 written')
+local e1 = files['/earthRally/events/test-series-2030-fernvale-rally.json']
+T.check(e1 and e1.format == 1 and e1.name == 'Fernvale Rally' and e1.id == 'test-series-2030-fernvale-rally', 'round 1 written')
 -- the stages exactly as a bare import of the same map gives them
 local bare = imp.build(imp.parse(fernKml, 'kml'), 'x', 'x', 'x.kml')
 local same = e1 and #e1.stages == #bare.stages
@@ -190,15 +206,15 @@ T.check(#it == 3 and it[1].ss == 'SS1' and it[1].stage == 'fernvale-south' and i
 T.check(it[3] and it[3].cancelled == true and it[1].cancelled == false and it[1].km == 3.0,
   'a pass cancelled in the results is cancelled in the itinerary')
 T.check(it[3] and it[3].powerStage == true and it[3].day == 2, 'power stage and day kept')
-T.check(e1 and e1.rules.falseStartS[2] == 60 and e1.rules.startIntervalMin == 2 and e1.rules.lateSPerMin == 10 and
-  e1.rules.note == nil, "rules: the season's and the event file's numbers, nothing else")
-T.check(e1 and e1.media.cover == '/earthRally/media/test-series-2030-r1/cover.png' and
-  files['/earthRally/media/test-series-2030-r1/cover.png'] == 'PNGBYTES' and e1.media.photo == nil,
+T.check(e1 and e1.rules.falseStartS[2] == 60 and e1.rules.startIntervalMin == 3 and e1.rules.lateSPerMin == nil and
+  e1.rules.note == nil, "rules: the season's, the round's over them; the event file's not read; numbers only")
+T.check(e1 and e1.media.cover == '/earthRally/media/test-series-2030-fernvale-rally/cover.png' and
+  files['/earthRally/media/test-series-2030-fernvale-rally/cover.png'] == 'PNGBYTES' and e1.media.photo == nil,
   'the cover copied to the media folder, lower-case extension; a missing photo not recorded')
-T.check(e1 and e1.boards == 'test-series-2030-r1.json' and e1.pack.file == 'Test Series' and
+T.check(e1 and e1.boards == 'test-series-2030-fernvale-rally.json' and e1.pack.file == 'Test Series' and
   e1.pack.fingerprint ~= nil, 'boards and pack named')
 
-local b = files['/earthRally/boards/test-series-2030-r1.json']
+local b = files['/earthRally/boards/test-series-2030-fernvale-rally.json']
 T.check(b and b.format == 1 and #b.passes == 3, 'boards: three passes (the one with no line left out)')
 local p1 = b and b.passes[1]
 T.check(p1 and p1.ss == 'SS1' and p1.stage == 'fernvale-south' and p1.run == 1 and p1.km == 3.0 and not p1.cancelled,
@@ -206,9 +222,7 @@ T.check(p1 and p1.ss == 'SS1' and p1.stage == 'fernvale-south' and p1.run == 1 a
 T.check(p1 and #p1.field == 3 and p1.field[1][1] == 175.2 and p1.field[1][2] == 'Cy Dale' and p1.field[1][3] == '3'
   and p1.field[3][6] == true and p1.field[1][6] == false, 'its field fastest first, notional flagged, no-time row out')
 T.check(b and b.passes[3].cancelled == true and #b.passes[3].field == 0, 'a cancelled pass')
-T.check(b and #b.overall == 3 and b.overall[1][2] == 'Cy Dale' and b.overall[2][2] == 'Ada Brook' and
-  b.overall[3][2] == 'Ed Finch' and b.overall[3][6] == false and b.overall[1][6] == true,
-  'overall: classified fastest first, then the rest; "result" missing reads as classified')
+T.check(b and b.overall == nil, 'no overall table in the boards: nothing reads it')
 local oldMill = false
 for _, s in ipairs(e1 and e1.stages or {}) do if s.id == 'old-mill' then oldMill = true end end
 local runOld = false
@@ -218,16 +232,16 @@ T.check(oldMill and not runOld, 'a line never run is a stage with no passes')
 local warned = false
 for _, w in ipairs(d and d.warnings or {}) do if w:find('Ghost Road', 1, true) then warned = true end end
 T.check(warned, 'a results stage with no line: a warning')
-local rep = table.concat((imp.lastReports['test-series-2030-r1'] or {}).lines or {}, '\n')
+local rep = table.concat((imp.lastReports['test-series-2030-fernvale-rally'] or {}).lines or {}, '\n')
 T.check(rep:find('results SS4 "Ghost Road": no line of that name in the map', 1, true) ~= nil,
   'and in the import report, in its usual shape')
 T.check(rep:find("can't find the photo image", 1, true) ~= nil, 'the missing image reported too')
 
-local e2 = files['/earthRally/events/test-series-2030-r2.json']
+local e2 = files['/earthRally/events/test-series-2030-quarry-hill-rally.json']
 T.check(e2 and e2.name == 'Quarry Hill Rally' and e2.season.round == 2, 'round 2: named from its map')
 T.check(e2 and #e2.itinerary == 2 and e2.itinerary[1].ss == 'SS1' and e2.itinerary[1].stage == 'quarry-hill' and
   e2.itinerary[2].stage == 'quarry-loop', 'no event file: the map in order')
-T.check(e2 and e2.boards == nil and e2.media == nil and files['/earthRally/boards/test-series-2030-r2.json'] == nil,
+T.check(e2 and e2.boards == nil and e2.media == nil and files['/earthRally/boards/test-series-2030-quarry-hill-rally.json'] == nil,
   'no results: no boards')
 T.check(e2 and e2.rules.falseStartS[1] == 10 and e2.rules.lateSPerMin == nil, "the season's rules on every round")
 
@@ -235,14 +249,14 @@ T.check(#imp.scan() == 0, 'unchanged: not imported again')
 fernResults.stages[1].times[1].seconds = 170.0
 files[S .. 'results/fernvale.json'] = J(fernResults)
 local r2 = imp.scan()
-T.check(#r2 == 1 and r2[1].ok and files['/earthRally/boards/test-series-2030-r1.json'].passes[1].field[1][1] == 170.0,
+T.check(#r2 == 1 and r2[1].ok and files['/earthRally/boards/test-series-2030-fernvale-rally.json'].passes[1].field[1][1] == 170.0,
   'a file the manifest names changed: imported again')
 local sj = T.jsonDecode(files[S .. 'season.json'])
 sj.name = 'Test Series 2030 (final)'
 files[S .. 'season.json'] = J(sj)
 imp.scan()
 T.check(files['/earthRally/seasons/test-series-2030.json'].name == 'Test Series 2030 (final)' and
-  files['/earthRally/events/test-series-2030-r1.json'].season.name == 'Test Series 2030 (final)',
+  files['/earthRally/events/test-series-2030-fernvale-rally.json'].season.name == 'Test Series 2030 (final)',
   'renamed: the season keeps its id, so its rounds keep theirs')
 T.check(files['/earthRally/importIndex.json'].packs['Test Series'].seasonId == 'test-series-2030', 'kept in the index')
 
@@ -283,7 +297,14 @@ T.check(table.concat(st and st.warnings or {}, ' '):find('2 lines', 1, true) ~= 
 local sb = files['/earthRally/boards/lone-ridge.json']
 T.check(sb and #sb.passes == 2 and sb.passes[2].run == 2, "its results' two passes")
 T.check(#imp.scan() == 0, 'a zip unchanged: not imported again')
-files[IMP .. 'Brindle.zip'] = 'zip bytes v2'
+hashed = 0
+T.check(#imp.scan() == 0 and hashed == 0, 'a zip whose size and time are unchanged: not even read (' .. hashed .. ')')
+mtimes[IMP .. 'Brindle.zip'] = 5
+T.check(#imp.scan() == 0 and hashed == 1, 'touched (new time, same bytes): read once, not imported')
+hashed = 0
+T.check(#imp.scan() == 0 and hashed == 0, 'and its new time remembered')
+files[IMP .. 'Brindle.zip'] = 'zip bytes v2'          -- (the same size: the time says it changed)
+mtimes[IMP .. 'Brindle.zip'] = 6
 local r4 = imp.scan()
 T.check(#r4 == 1 and r4[1].eventId == 'brindle-rally', 'its bytes changed: imported again, the same id')
 
@@ -320,18 +341,171 @@ local r6 = imp.scan()
 T.check(#r6 == 1 and r6[1].ok and r6[1].eventId == 'loose' and r6[1].rallies == nil, 'a loose map: as it always was')
 for f in pairs(files) do if f:find(IMP .. 'Test Series/', 1, true) == 1 then files[f] = nil end end
 local r7 = imp.scan()
-T.check(#r7 == 1 and r7[1].removed and r7[1].rallies == 2 and files['/earthRally/events/test-series-2030-r1.json'],
+T.check(#r7 == 1 and r7[1].removed and r7[1].rallies == 2 and files['/earthRally/events/test-series-2030-fernvale-rally.json'],
   'a pack taken out: forgotten, its rallies kept')
 
 -- the readers
 local evs = require('earthRally/events')
 evs.forget()
-T.check(evs.season('test-series-2030') and evs.season('test-series-2030').rounds[2] == 'test-series-2030-r2',
+T.check(evs.season('test-series-2030') and evs.season('test-series-2030').rounds[2] == 'test-series-2030-quarry-hill-rally',
   'events.season')
 T.check(#evs.seasons() == 2 and evs.seasons()[1].name == 'Half Season', 'events.seasons, by name')
 T.check(evs.boards('brindle-rally') and evs.boards('brindle-rally').passes[1].field[1][2] == 'Ida Jones' and
-  evs.boards('test-series-2030-r2') == nil, 'events.boards')
+  evs.boards('test-series-2030-quarry-hill-rally') == nil, 'events.boards')
 T.check(pack._norm('a\\b/./c/../d.kml') == 'a/b/d.kml' and pack._norm('../x') == nil, 'paths: \\, . and ..')
+
+------------------------------------------------------------------------------------------ the folder listing
+
+do
+  local kinds = {}
+  for _, p in ipairs(pack.find()) do kinds[p.name] = p.kind end
+  T.check(kinds['Brindle.zip'] == 'zip' and kinds['Loose.kml'] == nil and kinds['One Stage'] == 'folder',
+    'find: the listing gives files too; only folders are folders, a .zip stays a zip')
+end
+
+------------------------------------------------------------------------------------------ ids that survive edits
+
+local function warnings(list, file)
+  local x = find(list, file)
+  return table.concat(x and x.warnings or {}, ' | ')
+end
+
+do
+  local P = IMP .. 'Edits/'
+  local function season(rounds, id)
+    files[P .. 'season.json'] = J({ format = 1, name = 'Edit Cup', id = id, rounds = rounds })
+  end
+  for _, m in ipairs({ 'a', 'b', 'c', 'j1', 'j2', 'j3' }) do
+    files[P .. m .. '.kml'] = kml(m:upper() .. ' Rally', { { m:upper() .. ' One', 57.0, -7.0, 20 } })
+  end
+  season({ { round = 1, name = 'Alpha', map = 'a.kml' }, { round = 2, name = 'Bravo', map = 'b.kml' } })
+  imp.scan()
+  local sea = files['/earthRally/seasons/edit-cup.json']
+  T.check(sea and sea.rounds[1] == 'edit-cup-alpha' and sea.rounds[2] == 'edit-cup-bravo',
+    'round ids: <season>-<slug of the round name>')
+  -- reordered, Bravo renamed (its map the same), Charlie put in front
+  season({ { round = 1, name = 'Charlie', map = 'c.kml' }, { round = 2, name = 'Bravo Renamed', map = 'b.kml' },
+           { round = 3, name = 'Alpha', map = 'a.kml' } })
+  imp.scan()
+  sea = files['/earthRally/seasons/edit-cup.json']
+  T.check(sea.rounds[1] == 'edit-cup-charlie' and sea.rounds[2] == 'edit-cup-bravo' and sea.rounds[3] == 'edit-cup-alpha',
+    'rounds reordered, one renamed, one added: every id stays with its rally (' .. table.concat(sea.rounds, ', ') .. ')')
+  -- a map renamed, the round's name the same
+  files[P .. 'a2.kml'] = files[P .. 'a.kml']
+  season({ { round = 1, name = 'Charlie', map = 'c.kml' }, { round = 2, name = 'Bravo Renamed', map = 'b.kml' },
+           { round = 3, name = 'Alpha', map = 'a2.kml' } })
+  imp.scan()
+  sea = files['/earthRally/seasons/edit-cup.json']
+  T.check(sea.rounds[3] == 'edit-cup-alpha', 'a round whose map file was renamed: found by its name')
+
+  -- two rounds of one name; the first taken out: the second keeps its id; a third of that name is a new rally
+  season({ { round = 1, name = 'Juliet', map = 'j1.kml' }, { round = 2, name = 'Juliet', map = 'j2.kml' } })
+  imp.scan()
+  sea = files['/earthRally/seasons/edit-cup.json']
+  T.check(sea.rounds[1] == 'edit-cup-juliet' and sea.rounds[2] == 'edit-cup-juliet-2', 'two rounds of one name')
+  season({ { round = 1, name = 'Juliet', map = 'j2.kml' } })
+  imp.scan()
+  sea = files['/earthRally/seasons/edit-cup.json']
+  T.check(sea.rounds[1] == 'edit-cup-juliet-2', 'the first taken out: the second keeps its id, not the first one\'s')
+  season({ { round = 1, name = 'Juliet', map = 'j2.kml' }, { round = 2, name = 'Juliet', map = 'j3.kml' } })
+  imp.scan()
+  sea = files['/earthRally/seasons/edit-cup.json']
+  T.check(sea.rounds[2] ~= 'edit-cup-juliet' and sea.rounds[2] ~= 'edit-cup-juliet-2',
+    'an id is never given to a different rally of the season, even after its own round went (' ..
+    tostring(sea.rounds[2]) .. ')')
+
+  -- a broken edit keeps the ids for when it is put right
+  files[P .. 'season.json'] = J({ format = 1, name = 'Edit Cup', rounds = {} })
+  local rb = imp.scan()
+  T.check(find(rb, 'Edits') and not find(rb, 'Edits').ok, 'a season with no rounds: refused')
+  local ie = files['/earthRally/importIndex.json'].packs['Edits']
+  T.check(ie.failed and ie.seasonId == 'edit-cup' and ie.eventIds and ie.eventIds[1] == 'edit-cup-juliet-2' and
+    ie.rounds and #ie.rounds > 0, 'a failed import keeps the season id, rally ids and rounds it had')
+  season({ { round = 1, name = 'Alpha', map = 'a2.kml' } })
+  imp.scan()
+  sea = files['/earthRally/seasons/edit-cup.json']
+  T.check(sea and sea.id == 'edit-cup' and sea.rounds[1] == 'edit-cup-alpha', 'put right: the same ids again')
+
+  -- the folder renamed (no id in its manifest): the season and its rounds keep their ids, nothing "taken out"
+  local moved = {}
+  for f, v in pairs(files) do if f:sub(1, #P) == P then moved[f] = v end end
+  for f, v in pairs(moved) do files[f] = nil files[IMP .. 'Edit Cup 2' .. f:sub(#P)] = v end
+  local rr = imp.scan()
+  local rn = find(rr, 'Edit Cup 2')
+  T.check(rn and rn.ok and rn.seasonId == 'edit-cup' and files['/earthRally/seasons/edit-cup.json'].rounds[1] ==
+    'edit-cup-alpha' and files['/earthRally/seasons/edit-cup-2.json'] == nil,
+    'a renamed folder adopts its old season id, not edit-cup-2 (' .. tostring(rn and (rn.seasonId or rn.why)) .. ')')
+  T.check(find(rr, 'Edits') == nil, 'and the old name is not reported as taken out')
+
+  -- ids fixed in the manifest go through the same check
+  files[IMP .. 'Clash/rally.json'] = J({ format = 1, id = 'brindle-rally', name = 'Clash Rally', map = 'c.kml' })
+  files[IMP .. 'Clash/c.kml'] = kml('Clash', { { 'Clash Lane', 58.5, -8.0, 20 } })
+  files[IMP .. 'Bangs/rally.json'] = J({ format = 1, id = '!!!', name = 'Bang Rally', map = 'b.kml' })
+  files[IMP .. 'Bangs/b.kml'] = kml('Bang', { { 'Bang Lane', 58.6, -8.0, 20 } })
+  local rc = imp.scan()
+  local c = find(rc, 'Clash')
+  T.check(c and c.ok and c.eventId == 'brindle-rally-2' and warnings(rc, 'Clash'):find('brindle-rally', 1, true),
+    'a manifest id another import has: a warning and a free one (' .. tostring(c and c.eventId) .. ')')
+  T.check(files['/earthRally/events/brindle-rally.json'].name == 'Brindle Rally', 'the other rally not overwritten')
+  T.check(find(rc, 'Bangs') and find(rc, 'Bangs').eventId == 'bang-rally', 'an id of "!!!": the name\'s slug')
+end
+
+------------------------------------------------------------------------------------------ nested folders, Mac zips
+
+do
+  files[IMP .. 'Nested/Nested/season.json'] = J({ format = 1, name = 'Nested Cup', rounds = {
+    { round = 1, name = 'Deep', map = 'deep.kml' } } })
+  files[IMP .. 'Nested/Nested/deep.kml'] = kml('Deep', { { 'Deep Lane', 59.0, -9.0, 20 } })
+  files[IMP .. 'Nested/.DS_Store'] = 'x'
+  files[IMP .. 'Nested/__MACOSX/Nested/._season.json'] = 'x'
+  zips[IMP .. 'Mac.zip'] = {
+    ['Mac Rally/rally.json'] = J({ format = 1, name = 'Mac Rally', map = 'mac.kml' }),
+    ['Mac Rally/mac.kml'] = kml('Mac', { { 'Mac Lane', 59.5, -9.0, 20 } }),
+    ['__MACOSX/Mac Rally/._rally.json'] = 'x', ['.DS_Store'] = 'x',
+  }
+  files[IMP .. 'Mac.zip'] = 'mac zip'
+  local rn = imp.scan()
+  local n = find(rn, 'Nested')
+  T.check(n and n.ok and n.seasonId == 'nested-cup', 'a folder holding one folder (Extract All): its pack read (' ..
+    tostring(n and (n.why or n.seasonId)) .. ')')
+  local mz = find(rn, 'Mac.zip')
+  T.check(mz and mz.ok and mz.eventId == 'mac-rally', 'a zip with __MACOSX/ and .DS_Store: its one folder found (' ..
+    tostring(mz and (mz.why or mz.eventId)) .. ')')
+end
+
+------------------------------------------------------------------------------------------ a stage as points
+
+do
+  local line = {}
+  for i = 0, 20 do line[#line + 1] = { 60.0 + i * 50 / 111195, -10.0, 100 + i } end
+  files[IMP .. 'Kilo/stage.json'] = J({ format = 1, kind = 'stage', name = 'Kilo Hill', line = line,
+    controls = { start = { lat = 60.0 + 50 / 111195, lon = -10.0 }, ff = { lat = 60.0 + 950 / 111195, lon = -10.0 } } })
+  local rk = imp.scan()
+  local k = find(rk, 'Kilo')
+  local ke = files['/earthRally/events/kilo-hill.json']
+  local ks = ke and ke.stages[1]
+  T.check(k and k.ok and ks and ks.name == 'Kilo Hill' and #ks.line == 21, 'a stage given as a line, no map (' ..
+    tostring(k and (k.why or k.eventId)) .. ')')
+  T.check(ks and ks.controls.start and ks.controls.ff and math.abs(ks.controls.ff.distM - ks.controls.start.distM - 900) < 2
+    and math.abs(require('earthRally/boards').stageLengthM(ks) - 900) < 2,
+    'its controls on the line: start to flying finish 900 m')
+end
+
+------------------------------------------------------------------------------------------ images replaced
+
+do
+  local zb = zips[IMP .. 'Brindle.zip']
+  zb['Brindle Rally/rally.json'] = J({ format = 1, name = 'Brindle Rally', map = 'brindle.kml', logo = 'art/logo.png',
+    results = 'times.json' })
+  zb['Brindle Rally/art/logo.png'] = 'PNG LOGO'
+  files[IMP .. 'Brindle.zip'] = 'zip bytes v3'
+  mtimes[IMP .. 'Brindle.zip'] = 7
+  imp.scan()
+  local be = files['/earthRally/events/brindle-rally.json']
+  T.check(be.media.logo == '/earthRally/media/brindle-rally/logo.png' and
+    files['/earthRally/media/brindle-rally/logo.png'] == 'PNG LOGO' and files['/earthRally/media/brindle-rally/logo.jpg'] == nil,
+    'a .jpg logo replaced by a .png: the old one removed')
+end
 
 ------------------------------------------------------------------------------------------ the real ARA pack
 
@@ -357,6 +531,8 @@ else
   FS.fileExists = function(_, f) return mem[f] ~= nil or disk(f) ~= nil end
   FS.copyFile = function(_, a, b) mem[b] = '(copy of ' .. a .. ')' return disk(a) ~= nil end
   FS.directoryList = function(_, dir) return dir == IMP and { IMP .. 'ARA Nationals 2026' } or {} end
+  FS.directoryExists = function(_, d) return d == IMP .. 'ARA Nationals 2026' end
+  FS.stat = function() return nil end
   FS.findFiles = function(_, dir, pat)
     if dir == root and pat == '*.json' then return { root .. 'season.json' } end
     local out = {}
@@ -371,18 +547,42 @@ else
   local unjoined = {}
   for _, w in ipairs(a and a.warnings or {}) do if w:find('results', 1, true) then unjoined[#unjoined + 1] = w end end
   T.check(#unjoined == 0, 'ARA: every results stage joined to a line (' .. table.concat(unjoined, '; ') .. ')')
-  local sorted, passes = true, 0
+  local araSeason = mem['/earthRally/seasons/ara-nationals-2026.json']
+  local rounds = araSeason and araSeason.rounds or {}
+  local B = require('earthRally/boards')
+  local sorted, passes, overLine, overFF, allLine, unranked = true, 0, 0, 0, 0, {}
   for r = 1, 8 do
-    local bd = mem['/earthRally/boards/ara-nationals-2026-r' .. r .. '.json']
+    local ev = mem['/earthRally/events/' .. tostring(rounds[r]) .. '.json']
+    local bd = mem['/earthRally/boards/' .. tostring(rounds[r]) .. '.json']
     for _, ps in ipairs(bd and bd.passes or {}) do
       passes = passes + 1
       for i = 2, #ps.field do if ps.field[i][1] < ps.field[i - 1][1] then sorted = false end end
+      local st = ev and B.stageOf(ev, ps)
+      if st and B.isMismatch(st.lengthM, ps.km) then allLine = allLine + 1 end
+      if not ps.cancelled and st then
+        if B.isMismatch(st.lengthM, ps.km) then overLine = overLine + 1 end
+        if B.isMismatch(B.stageLengthM(st), ps.km) then overFF = overFF + 1 end
+      end
     end
     if not bd then sorted = false end
+    -- (a rally you would not be ranked in, whatever you drove: some counted stage's map length is off)
+    if ev and bd then
+      local bests = {}
+      for _, s in ipairs(ev.stages) do bests[s.id] = 100 end
+      local res = B.rallyResult(ev, bd, bests)
+      if res.notRanked then
+        unranked[#unranked + 1] = string.format('%s (%d)', ev.name, #res.lineMismatch)
+        if res.you or #res.lineMismatch == 0 then sorted = false end
+      end
+    end
   end
   T.check(sorted and passes == 125, 'ARA: every pass\'s field fastest first (' .. passes .. ' passes)')
-  local oj = mem['/earthRally/events/ara-nationals-2026-r6.json']
-  local ob = mem['/earthRally/boards/ara-nationals-2026-r6.json']
+  -- (what the 5% rule makes of the real season: printed, not checked, as it is the organisers' maps that decide)
+  print(string.format('test_pack: ARA passes over 5%% off: %d of 125 on the whole line (%d of the counted ones); '
+    .. '%d counted ones start to flying finish. Rallies not ranked: %s', allLine, overLine, overFF,
+    table.concat(unranked, ', ')))
+  local oj = mem['/earthRally/events/ara-nationals-2026-ojibwe-forests-rally-2026.json']
+  local ob = mem['/earthRally/boards/ara-nationals-2026-ojibwe-forests-rally-2026.json']
   local run = {}
   for _, ps in ipairs(ob and ob.passes or {}) do run[ps.stage] = true end
   local unrun = {}
@@ -391,8 +591,9 @@ else
   T.check(#unrun == 2 and unrun[1] == 'Perkins' and unrun[2] == 'Tulaby Lake',
     "ARA: Ojibwe's two lines never run, Perkins and Tulaby Lake (" .. table.concat(unrun, ', ') .. ')')
   T.check(oj and oj.place == 'Bemidji, MN' and #oj.itinerary == 16 and oj.itinerary[3].cancelled == true and
-    oj.media.cover == '/earthRally/media/ara-nationals-2026-r6/cover.png', 'ARA: Ojibwe\'s place, itinerary, cover')
-  T.check(mem['/earthRally/seasons/ara-nationals-2026.json'].rounds[8] == 'ara-nationals-2026-r8', 'ARA: the season')
+    oj.media.cover == '/earthRally/media/ara-nationals-2026-ojibwe-forests-rally-2026/cover.png',
+    'ARA: Ojibwe\'s place, itinerary, cover')
+  T.check(#rounds == 8 and rounds[8] == 'ara-nationals-2026-lake-superior-performance-rally-2026', 'ARA: the season')
 end
 
 T.done('test_pack')

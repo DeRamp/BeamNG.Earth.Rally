@@ -179,16 +179,27 @@ M.GAME_FALSE_START_S = 10
 -- guess that the UI (served from that same file system) resolves it against the user folder. If the in-game check
 -- finds another form is needed (a scheme, a prefix), it changes here and nowhere else. The page draws a rally plate
 -- under every picture and drops a picture that fails to load, so a wrong guess shows plates, not holes.
-function M.mediaUrl(path)
+-- v: a short fingerprint of what the picture was copied from, put on as ?v=, so a re-import with a new cover is
+-- loaded again rather than taken from the page's cache (the file keeps its name: cover.png).
+function M.mediaUrl(path, v)
   if type(path) ~= 'string' or path == '' then return nil end
+  if type(v) == 'string' and v ~= '' then return path .. '?v=' .. v end
   return path
+end
+
+-- (the pack's fingerprint, short: '1234:0a1b2c3d' gives '0a1b2c3d')
+local function shortPrint(e)
+  local fp = type(e.pack) == 'table' and e.pack.fingerprint
+  if type(fp) ~= 'string' then return nil end
+  local h = fp:match(':(%x+)$') or fp:gsub('[^%w]', '')
+  return h:sub(-8)
 end
 
 local function mediaOf(e)
   local m = type(e.media) == 'table' and e.media or {}
-  local out, any = {}, false
+  local out, any, v = {}, false, shortPrint(e)
   for _, k in ipairs({ 'cover', 'logo', 'photo' }) do
-    out[k] = M.mediaUrl(m[k])
+    out[k] = M.mediaUrl(m[k], v)
     any = any or out[k] ~= nil
   end
   return any and out or nil
@@ -236,9 +247,10 @@ local function bestsOf(e)
   return by, deps
 end
 
--- Each stage's passes in running order: { [stageId] = { { ss, run, km, cancelled }... } }, and the stage ids in the
--- order they are first run. With no itinerary (a map on its own, an older file): each stage once, SS1, SS2... in
--- map order, as the page always numbered them. A stage the itinerary never runs has no passes, and comes last.
+-- Each stage's passes in running order: { [stageId] = { { ss, run, km, cancelled }... } }, the stage ids in the
+-- order they are first run, and { [stageId] = true } for the stages the itinerary never runs. With no itinerary (a
+-- map on its own, an older file): each stage once, SS1, SS2... in map order, as the page always numbered them. A
+-- stage the itinerary never runs has no passes (the page says "Not run", never a made-up SS number), and comes last.
 local function passesOf(e)
   local by, order = {}, {}
   for _, it in ipairs(type(e.itinerary) == 'table' and e.itinerary or {}) do
@@ -249,28 +261,30 @@ local function passesOf(e)
       list[#list + 1] = { ss = tostring(it.ss), run = it.run, km = it.km, cancelled = it.cancelled == true }
     end
   end
-  local itin = #order > 0
+  local itin, notRun = #order > 0, {}
   for i, s in ipairs(e.stages or {}) do
     if not by[s.id] then
       by[s.id] = itin and {} or { { ss = 'SS' .. i, run = 1, cancelled = false } }
+      if itin then notRun[s.id] = true end
       order[#order + 1] = s.id
     end
   end
-  return by, order
+  return by, order, notRun
 end
 
 -- Your place on a stage: the better of your placings over its passes (the user, 2026-11-14), each from that pass's
--- leaderboard with your best time and the map line's length (boards.lua's 5% rule). Returns { pos, of, pass } or
+-- leaderboard with your best time and the map's length of the stage (boards.lua's 5% rule, start to flying finish
+-- where the map has both: boards.stageLengthM). Returns { pos, of, pass } or
 -- nil; when nil, also the reason a counted pass gave ('noTime' | 'lineMismatch'), or nothing when the board has no
 -- counted pass of this stage.
 function M.stagePlace(board, stage, bestS)
   if type(board) ~= 'table' then return nil end
-  local first = boards.stageBoard(board, stage, { bestS = bestS, lineM = stage.lengthM })
+  local first = boards.stageBoard(board, stage, { bestS = bestS })
   if first.reason == 'noPasses' or first.reason == 'noBoard' then return nil end
   local best, why = nil, nil
   for _, p in ipairs(first.passes) do
     if not p.cancelled then
-      local b = boards.stageBoard(board, stage, { pass = p.ss, bestS = bestS, lineM = stage.lengthM })
+      local b = boards.stageBoard(board, stage, { pass = p.ss, bestS = bestS })
       if b.you then
         if not best or b.you.pos < best.pos then best = { pos = b.you.pos, of = b.you.of, pass = p.ss } end
       else
@@ -281,35 +295,16 @@ function M.stagePlace(board, stage, bestS)
   return best, (not best) and why or nil
 end
 
--- (the first `top` crews of a ranked list and you at your place: up to top + 1 rows; skipped when crews were left
--- out between the top and you)
-local function topWithYou(ranked, top)
-  local rows, crews = {}, 0
-  for i, r in ipairs(ranked or {}) do
-    local row = { pos = r.pos, name = r.name, class = r.class, timeS = r.totalS or r.timeS, gapS = r.gapS,
-      you = r.you == true }
-    if r.you then
-      row.skipped = (crews >= top and i > #rows + 1) or nil
-      rows[#rows + 1] = row
-      if crews >= top then break end
-    elseif crews < top then
-      crews = crews + 1
-      rows[#rows + 1] = row
-    end
-  end
-  return rows
-end
-
 -- What the rally page needs that takes working out, kept until a time, the board or the event changes.
 local function rallyData(e, board)
   local by, bd = bestsOf(e)
   local deps = { e, board or false }
   for _, x in ipairs(bd) do deps[#deps + 1] = x end
   return memoised('rally:' .. tostring(e.id), deps, function()
-    local passes, order = passesOf(e)
+    local passes, order, notRun = passesOf(e)
     local byStage = {}
     for _, s in ipairs(e.stages or {}) do
-      local d = { passes = passes[s.id] }
+      local d = { passes = passes[s.id], notRun = notRun[s.id] }
       if board then d.place, d.why = M.stagePlace(board, s, by[s.id]) end
       byStage[s.id] = d
     end
@@ -411,11 +406,12 @@ end
 --   season = { id, name, round } | nil      single = true | nil (one stage, no season: the page opens the stage)
 --   dates = { from, to }, place, media = { cover, logo, photo } (urls, M.mediaUrl)
 --   hasBoard (the Place column and the Results tab), anyCancelled (the legend)
---   list[i].passes = { { ss, run, km, cancelled }... }, list[i].place = { pos, of, pass } | nil,
---   list[i].placeWhy = 'noTime' | 'lineMismatch' | nil
+--   list[i].passes = { { ss, run, km, cancelled }... }, list[i].notRun = true (in an itinerary that never runs
+--   it), list[i].place = { pos, of, pass } | nil, list[i].placeWhy = 'noTime' | 'lineMismatch' | nil
 --   results (with a board) = { complete, totalS, you = { pos, of, gapS }, winnerS, stages, driven,
---     chips = { { name, done } }, rows = top 10 and you { pos, name, class, timeS, gapS, you, skipped },
---     points = yours for this round in its season }
+--     chips = { { name, done } }, rows = top 10 and you { pos, name, car, class, timeS, gapS, you, skipped },
+--     crews = how many crews have a time on every stage, mismatch = { stage names } (not ranked: these stages on
+--     the map are not the stages as run) | nil, points = yours for this round in its season }
 --   rules = { { label, value, inGame }... } | nil
 function M.addRallyFiles(out, e)
   if not e then return out end
@@ -432,6 +428,7 @@ function M.addRallyFiles(out, e)
   for _, row in ipairs(list) do
     local d = data.byStage[row.id] or {}
     row.passes = d.passes or {}
+    row.notRun = d.notRun
     row.place, row.placeWhy = d.place, d.why
     for _, p in ipairs(row.passes) do if p.cancelled then out.anyCancelled = true end end
   end
@@ -449,12 +446,23 @@ function M.addRallyFiles(out, e)
         chips[#chips + 1] = { name = byId[p.stageId] and byId[p.stageId].name or p.stageId, done = done }
       end
     end
-    local winner = nil
-    for _, r in ipairs(res.ranked) do if not r.you then winner = r.totalS break end end
+    local winner, crews = nil, 0
+    for _, r in ipairs(res.ranked) do
+      if not r.you then
+        winner = winner or r.totalS
+        crews = crews + 1
+      end
+    end
+    local mismatch = nil
+    for _, id in ipairs(res.lineMismatch or {}) do
+      mismatch = mismatch or {}
+      mismatch[#mismatch + 1] = byId[id] and byId[id].name or id
+    end
     out.results = { complete = res.complete, totalS = res.totalS,
       you = res.you and { pos = res.you.pos, of = res.you.of, gapS = res.you.gapS } or nil,
-      winnerS = winner, stages = #chips, driven = driven, chips = chips,
-      rows = topWithYou(res.ranked, M.RESULTS_TOP),
+      winnerS = winner, stages = #chips, driven = driven, chips = chips, crews = crews,
+      mismatch = res.notRanked and mismatch or nil,
+      rows = boards.topRows(res.ranked, M.RESULTS_TOP),
       points = (season and res.complete) and roundPoints(season, e.id) or nil }
   end
   out.rules = M.rulesLines(e.rules)
@@ -462,7 +470,7 @@ function M.addRallyFiles(out, e)
 end
 
 -- The stage page's additions:
---   season, single, media (as the rally's), passes = { { ss, run, km, cancelled }... }
+--   season, single, media (as the rally's), passes = { { ss, run, km, cancelled }... }, notRun = true | nil
 --   board = nil (no results for this stage: no Leaderboard card) | { passes = { { ss, run, km, cancelled }... },
 --     pass = the shown pass's ss, km, lineKm (the map line's), field (crews on it), fastestS,
 --     rows = top 10 and you { pos, name, car, class, timeS, gapS, you, skipped }, you = { pos, of, gapS... } | nil,
@@ -473,15 +481,17 @@ function M.addStageRallyFiles(out, e, s, i, pass)
   out.season = seasonRef(season, e)
   out.single = isSingle(e) or nil
   out.media = mediaOf(e)
-  out.passes = passesOf(e)[s.id] or {}
+  local passes, _, notRun = passesOf(e)
+  out.passes = passes[s.id] or {}
+  out.notRun = notRun[s.id]
   local board = boardOf(e)
   if board then
     local place = M.stagePlace(board, s, out.best)
-    local sb = boards.stageBoard(board, s, { pass = pass or (place and place.pass), bestS = out.best,
-      lineM = s.lengthM })
+    local sb = boards.stageBoard(board, s, { pass = pass or (place and place.pass), bestS = out.best })
     if sb.reason ~= 'noBoard' and sb.reason ~= 'noPasses' then
+      local lineM = boards.stageLengthM(s)
       out.board = { passes = sb.passes, pass = sb.pass, km = sb.km, field = sb.field, fastestS = sb.fastestS,
-        rows = sb.rows, you = sb.you, reason = sb.reason, lineKm = s.lengthM and s.lengthM / 1000 or nil }
+        rows = sb.rows, you = sb.you, reason = sb.reason, lineKm = lineM and lineM / 1000 or nil }
     end
   end
   return out

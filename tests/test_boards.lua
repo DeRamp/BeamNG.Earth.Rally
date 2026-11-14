@@ -134,6 +134,19 @@ do
   local mis = { stages = { { id = 'alpha', name = 'Alpha', lengthM = 12000 }, event.stages[2] } }
   r = B.rallyResult(mis, board, { alpha = 300, bravo = 150 })
   T.check(#r.lineMismatch == 1 and r.lineMismatch[1] == 'alpha' and r.complete, 'a stage whose line is off is named')
+  T.check(r.notRanked and r.totalS == 750 and r.you == nil and #r.ranked == 4,
+    'and the result is not ranked: your total stands, no place among the crews (who are still ranked)')
+  for _, x in ipairs(r.ranked) do T.check(not x.you, 'you not in the ranked list') end
+  -- the same line, its start and flying finish 10 km apart: start to FF is what the stage's km measures
+  local ff = { stages = { { id = 'alpha', name = 'Alpha', lengthM = 12000,
+    controls = { start = { distM = 1000 }, ff = { distM = 11000 } } }, event.stages[2] } }
+  T.check(B.stageLengthM(ff.stages[1]) == 10000 and B.stageLengthM(event.stages[1]) == 10000 and
+    B.stageLengthM({ lengthM = 5, controls = { start = { distM = 3 } } }) == 5 and B.stageLengthM(nil) == nil,
+    'stageLengthM: start to flying finish when both are on the line, else the whole line')
+  r = B.rallyResult(ff, board, { alpha = 299, bravo = 151 })
+  T.check(#r.lineMismatch == 0 and not r.notRanked and r.you and r.you.pos == 2, 'measured start to FF: ranked')
+  local sb = B.stageBoard(board, ff.stages[1], { bestS = 300 })
+  T.check(sb.you and sb.reason == nil, 'stageBoard measures start to FF too when no lineM is given')
 
   local allCx = { passes = { { ss = 'SS1', stage = 'alpha', km = 10, cancelled = true, field = {} } } }
   r = B.rallyResult(event, allCx, { alpha = 300 })
@@ -151,8 +164,12 @@ do
   local rules = B.standingsRules({})
   T.check(rules.championship == 'national' and rules.points[1] == 25 and #rules.points == 15 and rules.best == nil,
     'defaults: national, 25..1 over 15 places, every round')
-  T.check(B.standingsRules({ standings = { championship = false } }).championship == nil and
-    B.standingsRules({ standings = { championship = 'all' } }).championship == nil, 'all crews: false or "all"')
+  T.check(B.standingsRules({ standings = { championship = false } }).championship == false and
+    B.standingsRules({ standings = { championship = 'all' } }).championship == false, 'all crews: false or "all"')
+  local again = B.standingsRules({ standings = B.standingsRules({ standings = { championship = 'all', best = '3',
+    points = { 9, 'x', 1 } } }) })
+  T.check(again.championship == false and again.best == 3 and #again.points == 1,
+    'its own output reads back the same (pack.lua writes the season file with it); points stop at a non-number')
 
   local ev = { id = 'r', stages = { { id = 's', name = 'S' } } }
   local function one(times)
@@ -222,6 +239,21 @@ do
   local px, py
   for _, r in ipairs(w.rows) do if r.name == 'X' then px = r elseif r.name == 'Y' then py = r end end
   T.check(px.points == 26 and py.points == 26 and px.pos < py.pos, 'equal points: more wins first')
+
+  -- a round whose map is not the stages as run: you score nothing in it, the crews still do
+  local off = { { event = { id = 'r1', stages = { { id = 's', name = 'S', lengthM = 2000 } } },
+    board = one({ { 100, 'Ann' }, { 102, 'Bob' } }), bestByStage = { s = 50 } } }
+  local so = B.standings({}, off)
+  T.check(so.you == nil and so.rows[1].name == 'Ann' and so.rows[1].points == 25,
+    'line mismatch: no points for you in that round')
+
+  -- topRows: the top N and you, the one home of that list
+  local list = {}
+  for i = 1, 12 do list[i] = { pos = i, name = 'C' .. i, totalS = 100 + i, gapS = i - 1 } end
+  table.insert(list, 12, { pos = 12, name = 'You', totalS = 111.5, gapS = 10.5, you = true })
+  local rows = B.topRows(list, 10)
+  T.check(#rows == 11 and rows[11].you and rows[11].skipped and rows[11].timeS == 111.5 and rows[1].timeS == 101,
+    'topRows: ten crews, then you with the gap marked; totals as timeS')
 
   local none = B.standings({}, {})
   T.check(#none.rows == 0 and none.you == nil and none.entries == 0, 'a season with no rounds: an empty table')

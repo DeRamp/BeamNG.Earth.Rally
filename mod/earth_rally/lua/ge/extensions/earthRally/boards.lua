@@ -18,14 +18,17 @@
 --     it, so "the same passes" for the crews leaves it out too. rallyResult lists it in `unmatched`.
 --   * "of N" counts you: 14th of 41 when the field has 40 crews. Equal times share a place (1, 2, 2, 4) and you go
 --     after the crews you tie with.
---   * A line mismatch stops your placing on that stage's board only. Your rally total still ranks; rallyResult
---     names the stages whose map line is off (from the event stage's lengthM) in `lineMismatch`.
+--   * A stage's length on the map (M.stageLengthM) is start to flying finish when the map has both controls (what
+--     an official stage km measures), else the whole line. More than 5% off a pass's km is a line mismatch: you are
+--     not placed on that pass's board, and when any counted pass's stage is off, your rally total is not ranked
+--     (no place, no points): rallyResult names those stages in `lineMismatch` and sets `notRanked`.
 --   * A rally with no board still gets your total, over its itinerary's counted passes (or each stage once); only
 --     the ranking needs the board. Such a round scores no points in the standings, and is still listed.
 --   * The overall table's `classified` is not read: a crew is ranked exactly when it has a time on every counted
 --     pass, as the spec says.
 --   * standings.championship: JSON null cannot be told from missing once decoded, so "all crews" is written as
---     false, "" or "all"; missing is the default "national". Compared case folded.
+--     false, "" or "all" (standingsRules gives false); missing is the default "national". Compared case folded.
+--     standingsRules is the one place the standings block is read: pack.lua writes the season file with it too.
 --   * Tie-breaks on points (wins, then seconds, ...) count every round's finishes, not only the `best` N counted.
 local M = {}
 
@@ -75,6 +78,25 @@ function M.stageOf(event, pass)
     if stageMatches(pass, s) then return s end
   end
   return nil
+end
+
+-- The map's length of a stage, in metres, to set against a results pass's km: start to flying finish when the
+-- stage has both controls on its line (their distM along it), else the whole line (lengthM). nil when neither.
+function M.stageLengthM(stage)
+  if type(stage) ~= 'table' then return nil end
+  local c = type(stage.controls) == 'table' and stage.controls or {}
+  local s, f = c.start, c.ff
+  if type(s) == 'table' and type(f) == 'table' and type(s.distM) == 'number' and type(f.distM) == 'number' and
+    f.distM > s.distM then
+    return f.distM - s.distM
+  end
+  return type(stage.lengthM) == 'number' and stage.lengthM or nil
+end
+
+-- Is a map length (m) more than 5% off a pass's km?
+function M.isMismatch(lineM, km)
+  return type(lineM) == 'number' and type(km) == 'number' and km > 0 and
+    math.abs(lineM / 1000 - km) / km > M.LINE_MISMATCH
 end
 
 local function passInfo(p)
@@ -154,14 +176,15 @@ local function indexOf(list, x)
   return nil
 end
 
--- The menu rows: the first `top` crews, and you at your place among them (so up to top + 1 rows), or after them
--- with skipped = true when crews were left out between.
+-- The menu rows of a ranked list (a stage's, or rallyResult's `ranked`): the first `top` crews, and you at your
+-- place among them (so up to top + 1 rows), or after them with skipped = true when crews were left out between.
+-- Rows: { pos, name, car, class, timeS, gapS, you, skipped }. The one home of "the top 10 and you".
 local function menuRows(out, top)
   local rows, crews = {}, 0
-  for _, r in ipairs(out) do
+  for _, r in ipairs(out or {}) do
     if r.you then
       local row = { pos = r.pos, name = r.name, car = r.car, class = r.class, you = true }
-      row.timeS, row.gapS = r.timeS, r.gapS
+      row.timeS, row.gapS = r.timeS or r.totalS, r.gapS
       if crews >= top and #rows > 0 and not rows[#rows].you then
         row.skipped = indexOf(out, r) > #rows + 1
       end
@@ -169,19 +192,21 @@ local function menuRows(out, top)
       if crews >= top then break end
     elseif crews < top then
       crews = crews + 1
-      local row = { pos = r.pos, name = r.name, car = r.car, class = r.class, timeS = r.timeS, gapS = r.gapS,
-        you = false }
+      local row = { pos = r.pos, name = r.name, car = r.car, class = r.class, timeS = r.timeS or r.totalS,
+        gapS = r.gapS, you = false }
       rows[#rows + 1] = row
     end
   end
   return rows
 end
+function M.topRows(list, top) return menuRows(list, top or M.TOP) end
 
 ------------------------------------------------------------------------------------------ a stage's leaderboard
 
 -- board: the rally's board (nil: none). stage: the stage id, or the event's stage table { id, name } (the name lets
 -- a pass that names its stage by the line's name be found). opts: { pass = a pass's ss (default the first counted
--- one), bestS = your best time, lineM = the map line's length in metres, name = your row's name, top = 10 }.
+-- one), bestS = your best time, lineM = the map's length of the stage in metres (default M.stageLengthM(stage)),
+-- name = your row's name, top = 10 }.
 --
 -- Returns { passes = [{ ss, run, km, cancelled }], pass = the chosen ss, km, field = crews on it, fastestS,
 --   rows = [{ pos, name, car, class, timeS, gapS, you }], you = placing or nil,
@@ -215,8 +240,9 @@ function M.stageBoard(board, stage, opts)
   out.field = #crews
   out.fastestS = crews[1] and crews[1].timeS or nil
   local yourS = type(opts.bestS) == 'number' and opts.bestS or nil
-  if yourS and type(opts.lineM) == 'number' and type(chosen.km) == 'number' and chosen.km > 0 and
-    math.abs(opts.lineM / 1000 - chosen.km) / chosen.km > M.LINE_MISMATCH then
+  local lineM = opts.lineM
+  if lineM == nil then lineM = M.stageLengthM(st) end
+  if yourS and M.isMismatch(lineM, chosen.km) then
     out.reason = 'lineMismatch'
     yourS = nil
   elseif not yourS then
@@ -265,7 +291,9 @@ end
 -- Returns { passes = counted [{ ss, run, km, stageId }], cancelled = [{ ss, stageId }], unmatched = [{ ss, stage }],
 --   complete, totalS (when complete), missing = [stageId...] (stages still to drive, in running order),
 --   ranked = [{ pos, name, car, class, championship, totalS, gapS, you }] (crews with every counted pass, and you
---   when complete), you = placing or nil, noBoard, lineMismatch = [stageId...] }
+--   when complete and ranked), you = placing or nil, noBoard, lineMismatch = [stageId...] (counted stages whose
+--   map length is more than 5% off the pass's km), notRanked = true when there are any: your total stands, but it
+--   is not placed among the crews and scores no points }
 function M.rallyResult(event, board, bestByStage, opts)
   opts = opts or {}
   bestByStage = bestByStage or {}
@@ -284,14 +312,14 @@ function M.rallyResult(event, board, bestByStage, opts)
       out.missing[#out.missing + 1] = c.stageId
     end
     local s = byId[c.stageId]
-    if not seenStage[c.stageId] and s and type(s.lengthM) == 'number' and type(c.km) == 'number' and c.km > 0 and
-      math.abs(s.lengthM / 1000 - c.km) / c.km > M.LINE_MISMATCH then
+    if not seenStage[c.stageId] and M.isMismatch(M.stageLengthM(s), c.km) then
+      seenStage[c.stageId] = true
       out.lineMismatch[#out.lineMismatch + 1] = c.stageId
     end
-    seenStage[c.stageId] = true
   end
   out.complete = #counted > 0 and #out.missing == 0
   if out.complete then out.totalS = ms(total) end
+  out.notRanked = #out.lineMismatch > 0 or nil
 
   -- the crews' totals over the same passes (notional included: the official times)
   local crews = {}
@@ -324,8 +352,9 @@ function M.rallyResult(event, board, bestByStage, opts)
       return a.first < b.first
     end)
   end
-  local you = out.complete and { you = true, key = nil, name = opts.name or M.YOU, timeS = out.totalS } or nil
-  local list, me = rank(crews, out.complete and out.totalS or nil, you)
+  local ranks = out.complete and not out.notRanked
+  local you = ranks and { you = true, key = nil, name = opts.name or M.YOU, timeS = out.totalS } or nil
+  local list, me = rank(crews, ranks and out.totalS or nil, you)
   for i, r in ipairs(list) do
     out.ranked[i] = { pos = r.pos, key = r.key, name = r.name, car = r.car, class = r.class,
       championship = r.championship, totalS = r.timeS, gapS = r.gapS, you = r.you == true }
@@ -336,13 +365,21 @@ end
 
 ------------------------------------------------------------------------------------------ season standings
 
+-- A standings block as written in a manifest or a season file, made whole: { championship = a name or false (every
+-- crew), points, best = N or nil }.
 local function standingsRules(season)
-  local s = (season and season.standings) or {}
+  local s = (season and type(season.standings) == 'table' and season.standings) or {}
   local champ = s.championship
   if champ == nil then champ = M.DEFAULT_STANDINGS.championship end
-  if champ == false or champ == '' or norm(champ) == 'all' then champ = nil end
-  local points = type(s.points) == 'table' and #s.points > 0 and s.points or M.DEFAULT_STANDINGS.points
-  local best = type(s.best) == 'number' and s.best >= 1 and math.floor(s.best) or nil
+  if champ == false or type(champ) ~= 'string' or champ == '' or norm(champ) == 'all' then champ = false end
+  local points = {}
+  for i, p in ipairs(type(s.points) == 'table' and s.points or {}) do
+    if type(p) ~= 'number' then break end
+    points[i] = p
+  end
+  if #points == 0 then points = M.DEFAULT_STANDINGS.points end
+  local best = tonumber(s.best)
+  best = best and best >= 1 and math.floor(best) or nil
   return { championship = champ, points = points, best = best }
 end
 M.standingsRules = standingsRules
@@ -376,7 +413,7 @@ function M.standings(season, rounds, opts)
       local res = M.rallyResult(ev, rd.board, rd.bestByStage, { name = opts.name })
       local pos, prev = 0, nil
       for _, r in ipairs(res.ranked) do
-        local ok = r.you or rules.championship == nil or norm(r.championship) == norm(rules.championship)
+        local ok = r.you or not rules.championship or norm(r.championship) == norm(rules.championship)
         if ok then
           pos = pos + 1
           local p = (prev and math.abs(prev.totalS - r.totalS) <= M.EPS) and prev.place or pos

@@ -678,9 +678,11 @@ function M.scan(force)
     end
   end
   -- packs (pack.lua): folders and .zips with a manifest, fingerprinted and kept in the same index
-  for _, d in ipairs(require('earthRally/pack').scan(index, force)) do done[#done + 1] = d end
-  -- (also when only the naming rules moved on, so the re-import is not asked for again on every start)
-  if #done > 0 or renaming then jsonWriteFile(M.INDEX, index, true) end
+  local packDone, packChanged = require('earthRally/pack').scan(index, force)
+  for _, d in ipairs(packDone) do done[#done + 1] = d end
+  -- (also when only the naming rules moved on, so the re-import is not asked for again on every start; and when a
+  -- pack was only touched, so its new size and time spare the next start hashing it again)
+  if #done > 0 or renaming or packChanged then jsonWriteFile(M.INDEX, index, true) end
   return done
 end
 
