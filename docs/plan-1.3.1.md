@@ -36,17 +36,22 @@ points form, and the modding API exposes none of it at all.
 
 So the stage corridor cannot be asked for today. Three ways round that, and they are not equal.
 
-### 1. Ask upstream for the points form (recommended)
+### 1. Ask upstream for the points form -- CHOSEN (the user, 2026-11-13)
 
 Extend `area_plan` / `area_add` to take explicit points beside `route: "current"`, and expose it through the modding
 API: something of the shape `api.preloadRoute(points, halfM, opts, callback)` with progress, plus a way to cancel.
 `Areas.plan_route` / `add_route` already take `(lats, lons, half, ...)`, so the server change is small -- the same
 shape as `api.roadGraph`: a parameter that already exists, exposed at a point of the caller's choosing.
 
-**Why this is the recommendation even though it is another wait:** it goes in the **same pull request** as
-`api.roadGraph`, which is pushed but not yet opened. One reviewer, one review, one release. And `api.roadGraph`
-without a way to get the data under it is half a feature -- a reviewer is likely to notice that himself and ask the
-question, so better to arrive with the answer.
+**It goes in a pull request of its own, not in the `api.roadGraph` one** (the user, 2026-11-13). The draft of this
+plan argued for folding them together -- one reviewer, one review -- and the user overruled it, rightly: the road
+graph is written, tested and working in a game, and holding it back to grow a second feature would cost it its place
+in the queue for no benefit to the thing already finished. `api.roadGraph` goes out as it stands and starts being
+reviewed; the corridor pre-load follows as a second request once it is written.
+
+The cost of that split, stated so nobody is surprised: the road graph arrives upstream without a way to fetch the
+data it reads, so a reviewer may well ask how an add-on is supposed to get cells it does not have. The answer is
+this plan, and the pull request should say so in a line rather than leave him to wonder.
 
 ### 2. Use the box form through the internal message (works today, and costs)
 
@@ -74,11 +79,14 @@ For each of the user's 116 stages, the bounding box area against the corridor ar
 would want. That single number decides whether option 2 is a sane fallback or only a theoretical one, and it is
 pure arithmetic over files already here.
 
-### 2. Add the upstream ask to the open pull request
+### 2. The upstream ask, as a second pull request
 
 The points form plus the modding API call, written and tested the way `api.roadGraph` was -- and this time with the
-mod-to-server-and-back test that 1.3.0 did without (see "What 1.3.0 taught" below). It goes in before the pull
-request is opened, not after.
+mod-to-server-and-back test that 1.3.0 did without (see "What 1.3.0 taught" below) written at the same time, not
+after. It branches from the road-graph branch, since it builds on nothing in it but will conflict if it does not.
+
+If the road graph's review asks for changes, those go on **its** branch; this one rebases. The two are not merged
+into one request at any point.
 
 ### 3. The mod side, behind its own capability flag
 
