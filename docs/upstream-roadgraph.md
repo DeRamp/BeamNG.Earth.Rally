@@ -216,7 +216,9 @@ every bug this call has had lived in the gap between the two sides' stand-ins. 5
 
 **Python — the wider gate, `python -I tools/run_tests.py <the 60 modules of tools/quality_gate.py>
 test_road_graph_api test_navgraph test_places_api test_protocol_agreement test_roads test_mapdata_singleflight
-test_addons --par 4 --timeout 900`:** 62 of its 66 modules OK. **The four that were not are this machine's,
+test_addons --par 4 --timeout 900`:** 62 of its 66 modules OK. That run was at `8314a3da`, one commit back; the
+head's diff to it is `server/dem.py`, `server/earthd.py`, `docs/ADDONS.md` and the road-graph tests, and the
+modules above were each re-run at the head. **The four that were not are this machine's,
 measured rather than assumed.** `test_cache` wants the Windows privilege to make a symbolic link (`WinError 1314`
 from `os.symlink`); `test_germany` cannot import `tools/build_regional_data.py`, which takes `compression.zstd`
 (Python 3.14+) and finds no `zstandard` here; `test_roadgeo`'s `RealDataTest` reads Overture tiles this machine has
