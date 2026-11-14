@@ -171,20 +171,33 @@ the line -- so every line made before that change is stale, and there is current
 one. Two of this machine's lines are in exactly that state (`dalles-mtn-up`, `low-gap-stage`): their tiles are
 worked out on the fly every time the page is polled.
 
-**What it needs to cover**, which is more than one button:
+### Decided (the user, 2026-11-14)
 
-- A line the player wants re-made, on a stage that already has one.
-- The difference between a line from an **auto recce** and a **driven recce**. Re-running the auto recce over
-  someone's driven recce would throw away the thing they spent real time on: a recce must not be silently replaced,
-  and the two want different wording.
-- What "reset" means exactly: re-run the auto recce in place, or remove the line and leave the stage as it was?
-  The first is what the user asked for; the second is what the word says. Probably both, worded plainly.
-- Where it lives. The stage page has room (its action row already holds four buttons). A stage **list** row does
-  not, and the Status column cannot take a second control -- that arithmetic is already in
-  `docs/mockups-1.3.1/`/`mockups-1.3.0/`.
+> "The rerun button should just replace the auto recce button once a stage has recce. Call it 'reset'. Then you can
+> go an manually recce it or use autorecce"
 
-**Mock-up first**, as any UI change, and it folds naturally into the 1.3.0 button's four endings: a fifth path from
-a stage that is already *Ready*.
+**One control in one place, two labels.** The slot that holds **Auto recce** on a stage with no line holds
+**Reset** on a stage that has one. Reset removes the line; the stage goes back to *Recce needed*; from there the
+player drives a recce or presses Auto recce, exactly as they would on a stage that never had one.
+
+That answers the three questions this section was holding open, and answers them by removing them:
+
+- **Re-run in place, or remove?** Remove. "Reset" then means what the word says, and the re-run is just the two
+  ordinary paths that already exist -- no third code path that re-matches over an existing line, and nothing new
+  for the auto recce itself to understand.
+- **Auto versus driven line?** No distinction in what the button does. Reset removes whichever kind is there.
+- **Where?** The Auto recce slot, so the stage never shows both, and the list row needs no second control -- which
+  the column arithmetic in `mockups-1.3.0/` said there was no room for anyway.
+
+**The one hazard, and it is real: Reset on a driven recce throws away time, not computation.** An auto recce costs
+1.25 s to make again; a driven recce on a 16 km stage costs the player twenty minutes of driving and cannot be got
+back. The design is already much safer than the silent overwrite this section feared -- removing is now a
+deliberate, separately labelled act rather than a side effect of pressing Auto recce -- but the two cases are still
+not equal, and the mock-up draws **a confirm for a driven recce and none for an auto one**, since confirming the
+cheap case trains people to click through the expensive one. (The stage's own figures say which kind it is: a
+matched file carries `source`, a driven recce does not.)
+
+**Mock-up first**, as any UI change.
 
 ## Also in 1.3.1: the stage page's four tiles (the user, 2026-11-13)
 

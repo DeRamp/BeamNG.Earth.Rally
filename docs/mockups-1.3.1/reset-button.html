@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Rally reset button</title>
+<!-- Mock-up for 1.3.1 (not built): the way back from a stage that already has a line. The question is
+     docs/plan-1.3.1.md, "Also in 1.3.1: running an auto recce again", and the design is the user's, 2026-11-14:
+
+       "The rerun button should just replace the auto recce button once a stage has recce. Call it 'reset'. Then
+        you can go an manually recce it or use autorecce"
+
+     So: ONE control in ONE slot with TWO labels. Where a stage with no line shows Auto recce, a stage with a line
+     shows Reset. Reset removes the line, the stage goes back to Recce needed, and from there the player drives a
+     recce or presses Auto recce -- the two paths that already exist. No third code path that re-matches over an
+     existing line.
+
+     WHAT IT DRAWS
+       1. the stage list as it is now (1.3.0): the action cell is EMPTY on every row that has a line -- the dead
+          end this fixes
+       2. the same list proposed: Reset in that cell
+       3. the stage page's action row, now and proposed, for each kind of line
+       4. the confirm, which a DRIVEN recce gets and an auto one does not, and why that asymmetry is the point
+       5. what Reset removes, which is both files and not one (see THE TWO-FILE FINDING)
+       6. the states side by side, so the slot can be read down a column
+
+     WHAT IT CHANGES in the game's own UI
+       - EarthRally.vue:89 (the list row's .er-act cell): today
+             v-else-if="st.autoOk && s.status === 'none'"   -> Auto recce / Try again
+         gains a second branch for s.status !== 'none' -> Reset. The cell and the 160px column already exist
+         (1.3.0 added them), so there is NO grid change: .er-srow stays
+         `100px 1fr 130px 260px 160px 150px 30px`.
+       - EarthRally.vue:137 (the stage page's .er-actions row): the Auto recce button is `v-if="stg.autoCan"`,
+         and menu.lua:139 sets `autoCan = st.status == 'none' or nil`. So on a stage with a line that button is
+         already absent and Reset takes its place -- `v-else-if="stg.line"`. The row keeps four buttons, never
+         five, which is what its own comment asks for ("While one runs it is replaced in place by its Stop, not
+         joined by a fifth button").
+       - menu.lua:104 (the list row's data): the row carries `status` but NOT the line's kind, and the confirm
+         needs the kind. `line = st.kind` is already sent for the stage page (menu.lua:133); the list row wants
+         the same field. One word, and it is the only data change.
+       - a `reset` action beside `autoRecce` in the action handler, and in events.lua a function that removes the
+         stage's line files. Nothing else: the status, the pill, the note and the tiles all already follow from
+         whether a line is there.
+
+     THE TWO-FILE FINDING (read in events.lua:137 stageLine, not assumed)
+       A stage can have BOTH lines on disk at once -- recce/<event>__<stage>.json and matched/<event>__<stage>.json
+       -- and stageLine picks between them: the driven recce wins unless it is short (share < 0.9, or stopping
+       RECCE_SHORT_OF_FF_M before the flying finish) and a matched line exists.
+
+       So Reset must remove BOTH. Removing only the one in use would leave the other to answer stageLine, the
+       stage would not go back to Recce needed, and the player would be told to recce a stage that still has a
+       line. "Reset" has to mean the stage is as it was before either.
+
+       That is also why the confirm asks about the DRIVEN recce specifically: it is the file that cannot be
+       remade. If both are there, the sentence names both and the driven one is the reason it is being asked.
+
+     THE ASYMMETRY, which is the one judgement here
+       An auto recce costs 1.25 s to make again (Maryhill, measured 2026-11-14). A driven recce on a 16 km stage
+       costs twenty minutes of real driving and cannot be recovered from anywhere. So:
+         - a line made by the auto recce         -> Reset acts at once, no confirm
+         - a line that includes a driven recce   -> Reset confirms first
+       Confirming the cheap case as well would be worse than not confirming at all: it would teach the habit of
+       clicking through the dialog, and the one time it mattered the player would click through that too.
+
+     MEASURED, AND HOW (arithmetic against the component's own CSS, not a browser)
+       - the list row's action column is 160px (EarthRally.vue:382) with the row's 0 28px padding outside it.
+         "Reset" at the row's compact button size (15px, weight 900 from accent secondary, 0.5em padding each
+         side) is about 52px of text in a 6em min-width = 90px button. It fits with 70px to spare, and is
+         narrower than "Auto recce" (about 110px) which already fits -- so the proposed label cannot overflow a
+         column the current one lives in.
+       - the stage page's .er-actions is `display: flex; gap: 14px; flex-wrap: wrap` (EarthRally.vue:420), so the
+         row needs no width arithmetic: Reset is one button narrower than the Auto recce it replaces.
+       - the four pill states and their exact colours are STATUS in store.js:122-130 and .er-pill in
+         EarthRally.vue:340-344, reproduced below unchanged.
+
+     Stand-ins, said plainly: BngButton is reproduced from its own CSS as .btn (the 1.3.0 mock-up's copy), and the
+     confirm is drawn as the game's dialog would sit rather than from BngDialog's own styles -- its exact chrome
+     is not what this drawing is for. Everything with a file:line above was read in the source today.
+-->
+<style>
+:root {
+  --fnt: "Noto Sans", system-ui, sans-serif;
+  --mno: "Overpass Mono", ui-monospace, monospace;
+
+  /* the component's own (EarthRally.vue:306-310) */
+  --er-orange: #f26b1d;
+  --er-orange-500: #c75b1e;
+  --er-muted: #b8bcc6;
+  --er-dim: #8a909a;
+  --er-blue: #1f8fff;
+
+  /* the game's colours (ui-vue/src/styles/modules/_colors.scss) */
+  --orange-500: oklch(61.95% 0.1801 43.40);     /* BngButton accent main */
+  --tbg-700: oklch(38.57% 0.0507 243.31);       /* BngButton accent secondary */
+  --cg-600: oklch(50.63% 0.0185 266.15);        /* BngButton accent outlined, its border */
+  --black-o4: rgba(0, 0, 0, 0.4);
+  --off-white: #f0f0f0;
+
+  --mark: #ff5d5d;                              /* the mock-up's own marks, never the game's */
+  --good: #6fdc9b;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0d0f12; color: var(--off-white); font-family: var(--fnt); }
+
+/* ---------------------------------------------------------------- the mock-up's own chrome */
+.mock-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; padding: 10px 16px; background: #1a1d22; border-bottom: 1px solid #2a2e35; position: sticky; top: 0; z-index: 10; }
+.mock-bar b { margin-right: 8px; font-weight: 600; }
+.mock-bar a { color: var(--er-muted); font-size: 13px; text-decoration: none; border-bottom: 1px solid #3a3f48; }
+.mock-bar a:hover { color: #fff; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 28px 16px 90px; }
+h2 { font-size: 21px; margin: 44px 0 6px; }
+h2 .n { color: var(--er-orange); font-family: var(--mno); margin-right: 10px; }
+h3 { font-size: 16px; font-weight: 600; margin: 26px 0 8px; color: var(--er-muted); }
+p, li { font-size: 15px; line-height: 1.65; color: #d7dae0; }
+p.lead { color: var(--off-white); }
+code { font-family: var(--mno); font-size: 0.92em; background: #1b1f25; padding: 1px 5px; border-radius: 3px; }
+.note { border-left: 3px solid var(--er-orange); padding: 2px 0 2px 14px; margin: 14px 0; }
+.bad { border-left-color: var(--mark); }
+.good { border-left-color: var(--good); }
+.shot { width: 980px; max-width: 100%; margin: 14px 0 6px; background: rgba(10, 12, 16, 0.72); border: 1px solid #23272e; border-radius: 6px; padding: 18px; }
+.cap { font-size: 13px; color: var(--er-dim); margin: 0 0 22px; }
+.cap b { color: var(--mark); font-weight: 600; }
+table.m { border-collapse: collapse; margin: 14px 0; font-size: 14px; width: 100%; }
+table.m th, table.m td { border: 1px solid #272b32; padding: 7px 10px; text-align: left; vertical-align: top; }
+table.m th { background: #16191e; font-weight: 600; color: var(--er-muted); }
+table.m td.c { text-align: center; }
+
+/* ---------------------------------------------------------------- the component, reproduced */
+.er-card { background: rgba(0, 0, 0, 0.6); border-radius: 0.5rem; }
+.er-stages { padding: 8px 0; }
+.er-srow { display: grid; grid-template-columns: 100px 1fr 130px 260px 160px 150px 30px; align-items: center; height: 58px; padding: 0 28px; font-size: 20px; border-left: 4px solid transparent; }
+.er-srow + .er-srow { border-top: 1px solid rgba(255, 255, 255, 0.06); }
+.er-srow.er-hdr { height: 40px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--er-muted); }
+.er-srow .er-ss { font-family: var(--mno); font-weight: 700; color: var(--er-muted); }
+.er-srow .er-r { text-align: right; }
+.er-srow .er-st { padding-left: 30px; }
+.er-srow .er-none { color: #6f7480; }
+.er-srow .er-go { color: var(--er-dim); text-align: right; }
+.er-mono { font-family: var(--mno); }
+
+.er-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; padding: 3px 12px; border-radius: 999px; white-space: nowrap; }
+.er-pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.er-pill.ready { background: rgba(40, 140, 80, 0.55); color: #d9ffe6; }
+.er-pill.recce { background: rgba(190, 140, 30, 0.45); color: #fff1cc; }
+.er-pill.none { background: rgba(170, 60, 60, 0.45); color: #ffdede; }
+
+.er-stage-ss { font-family: var(--mno); font-size: 20px; color: var(--er-orange); font-weight: 700; letter-spacing: 0.05em; }
+.er-stage-name { font-size: 52px; font-weight: 700; line-height: 1.1; }
+.er-line-note { display: flex; align-items: center; gap: 14px; padding: 14px 18px; font-size: 17px; margin-top: 18px; }
+.er-actions { display: flex; gap: 14px; margin-top: 24px; flex-wrap: wrap; }
+.er-act-help { margin-top: 16px; font-size: 15px; line-height: 1.7; color: var(--er-muted); }
+.er-act-help b { color: #e6e9ee; }
+
+/* ---------------------------------------------------------------- BngButton, reproduced */
+.btn {
+  display: inline-flex; align-items: baseline; justify-content: center; gap: 10px;
+  font-family: var(--fnt); font-size: 1rem; line-height: 1.5rem; color: var(--off-white);
+  min-width: 6em; max-width: 20em; margin: 0.25rem; padding: 0.3em 0.5em 0.325em;
+  border: 0; border-radius: 0.25rem; background: var(--tbg-700); white-space: nowrap; cursor: pointer;
+}
+.btn.main { background: var(--orange-500); }
+.btn.secondary { font-weight: 900; }
+.btn.outlined { background: var(--black-o4); box-shadow: inset 0 0 0 1px var(--cg-600); }
+.btn.off { opacity: 0.5; pointer-events: none; }
+/* the row's own compact size: see the 1.3.0 mock-up for why the game's `small` cannot be used as it stands */
+.er-srow .btn { font-size: 15px; line-height: 1.15em; padding: 0.35em 0.7em; margin: 0; min-width: 0; }
+
+/* the empty action cell, drawn so the dead end can be seen rather than described */
+.gap-mark { display: inline-block; font-size: 13px; color: var(--mark); border: 1px dashed var(--mark); border-radius: 3px; padding: 2px 8px; opacity: 0.85; }
+
+/* ---------------------------------------------------------------- the confirm (chrome is a stand-in) */
+.dlg { width: 560px; max-width: 100%; background: #14171c; border: 1px solid #2d323a; border-radius: 8px; padding: 22px 24px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6); }
+.dlg h4 { margin: 0 0 10px; font-size: 22px; font-weight: 700; }
+.dlg p { margin: 0 0 8px; font-size: 16px; color: #d7dae0; }
+.dlg .figs { font-family: var(--mno); font-size: 14px; color: var(--er-muted); margin: 12px 0 18px; }
+.dlg .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 6px; }
+</style>
+</head>
+<body>
+
+<div class="mock-bar">
+  <b>Earth Rally 1.3.1 — reset</b>
+  <span style="font-size:13px;color:var(--er-muted)">not built; the drawing the decision gets reviewed on</span>
+  <a href="#s1">1 today</a><a href="#s2">2 the list</a><a href="#s3">3 the stage page</a>
+  <a href="#s4">4 the confirm</a><a href="#s5">5 what it removes</a><a href="#s6">6 every state</a>
+</div>
+
+<div class="wrap">
+
+<p class="lead">One control, one slot, two labels. <b>Auto recce</b> on a stage with no line; <b>Reset</b> on a
+stage that has one. Reset removes the line, the stage goes back to <i>Recce needed</i>, and from there the player
+drives a recce or presses Auto recce — the two paths that already exist.</p>
+
+<!-- ================================================================= 1 -->
+<h2 id="s1"><span class="n">1</span>Today: the action cell is empty on every row that has a line</h2>
+
+<p>This is the dead end, drawn rather than described. The 160px action column was added in 1.3.0 and is used by
+exactly one branch — <code>st.autoOk &amp;&amp; s.status === 'none'</code>. The moment a line exists the cell is
+blank and there is no way back short of deleting a file by hand.</p>
+
+<div class="shot">
+  <div class="er-card er-stages">
+    <div class="er-srow er-hdr"><span>Stage</span><span>Name</span><span class="er-r">Length</span><span class="er-st">Status</span><span></span><span class="er-r">Best</span><span></span></div>
+    <div class="er-srow">
+      <span class="er-ss">SS1</span><span>Maryhill Up</span><span class="er-r er-mono">4.10 km</span>
+      <span class="er-st"><span class="er-pill ready">Ready</span></span>
+      <span><span class="gap-mark">nothing here</span></span>
+      <span class="er-r er-mono er-none">–</span><span class="er-go">›</span>
+    </div>
+    <div class="er-srow">
+      <span class="er-ss">SS2</span><span>Dalles Mountain Up</span><span class="er-r er-mono">16.09 km</span>
+      <span class="er-st"><span class="er-pill ready">Ready</span></span>
+      <span><span class="gap-mark">nothing here</span></span>
+      <span class="er-r er-mono er-none">–</span><span class="er-go">›</span>
+    </div>
+    <div class="er-srow">
+      <span class="er-ss">SS3</span><span>Low Gap Stage</span><span class="er-r er-mono">6.95 km</span>
+      <span class="er-st"><span class="er-pill recce">Recce recommended</span></span>
+      <span><span class="gap-mark">nothing here</span></span>
+      <span class="er-r er-mono er-none">–</span><span class="er-go">›</span>
+    </div>
+    <div class="er-srow">
+      <span class="er-ss">SS4</span><span>Deep Ford</span><span class="er-r er-mono">7.52 km</span>
+      <span class="er-st"><span class="er-pill none">Recce needed</span></span>
+      <span><button class="btn secondary">Auto recce</button></span>
+      <span class="er-r er-mono er-none">–</span><span class="er-go">›</span>
+    </div>
+  </div>
+</div>
+<p class="cap">1.3.0 as installed. <b>Three of four rows have a column reserved for them and nothing in it.</b>
+The amber row is the sharpest case: its line has a stretch with no road on the map, the player is told a recce
+would be better, and the one thing they cannot do from here is start over.</p>
+
+<!-- ================================================================= 2 -->
+<h2 id="s2"><span class="n">2</span>Proposed: Reset in that cell</h2>
+
+<div class="shot">
+  <div class="er-card er-stages">
+    <div class="er-srow er-hdr"><span>Stage</span><span>Name</span><span class="er-r">Length</span><span class="er-st">Status</span><span></span><span class="er-r">Best</span><span></span></div>
+    <div class="er-srow">
+      <span class="er-ss">SS1</span><span>Maryhill Up</span><span class="er-r er-mono">4.10 km</span>
+      <span class="er-st"><span class="er-pill ready">Ready</span></span>
+      <span><button class="btn outlined">Reset</button></span>
+      <span class="er-r er-mono er-none">–</span><span class="er-go">›</span>
+    </div>
+    <div class="er-srow">
+      <span class="er-ss">SS2</span><span>Dalles Mountain Up</span><span class="er-r er-mono">16.09 km</span>
+      <span class="er-st"><span class="er-pill ready">Ready</span></span>
+      <span><button class="btn outlined">Reset</button></span>
+      <span class="er-r er-mono er-none">–</span><span class="er-go">›</span>
+    </div>
+    <div class="er-srow">
+      <span class="er-ss">SS3</span><span>Low Gap Stage</span><span class="er-r er-mono">6.95 km</span>
+      <span class="er-st"><span class="er-pill recce">Recce recommended</span></span>
+      <span><button class="btn outlined">Reset</button></span>
+      <span class="er-r er-mono er-none">–</span><span class="er-go">›</span>
+    </div>
+    <div class="er-srow">
+      <span class="er-ss">SS4</span><span>Deep Ford</span><span class="er-r er-mono">7.52 km</span>
+      <span class="er-st"><span class="er-pill none">Recce needed</span></span>
+      <span><button class="btn secondary">Auto recce</button></span>
+      <span class="er-r er-mono er-none">–</span><span class="er-go">›</span>
+    </div>
+  </div>
+</div>
+<p class="cap">The same four rows. Every row now has exactly one control, and the column finally reads as one
+thing: <i>what can I do about this stage's line?</i></p>
+
+<div class="note">
+  <p><b>Why Reset is <code>outlined</code> and Auto recce stays <code>secondary</code>.</b> The game's accents
+  already carry this distinction and it is worth using rather than inventing: <code>secondary</code> is the filled
+  weight the row uses for the thing you probably want, <code>outlined</code> the quieter one it uses for Stop. A
+  destructive action should not be the loudest thing in the row, and Reset is the only destructive control in this
+  UI.</p>
+</div>
+
+<h3>Why not a seventh state on the pill, or a second control in Status</h3>
+<p>Both were drawn and dropped in 1.3.0's own mock-up and the arithmetic has not changed: Status is 260px and
+already holds the longest pill (<i>Recce recommended</i>, about 177px) with its 30px padding, so it cannot take a
+control as well. And Reset is not a <i>state</i> of the stage — it is something the player does to it, which is
+what the action column is for.</p>
+
+<!-- ================================================================= 3 -->
+<h2 id="s3"><span class="n">3</span>The stage page</h2>
+
+<p>The same substitution, and it needs no new condition: the Auto recce button is
+<code>v-if="stg.autoCan"</code>, and <code>menu.lua:139</code> sets
+<code>autoCan = st.status == 'none' or nil</code> — so on a stage with a line it is <i>already</i> absent. Reset is
+its <code>v-else-if</code>.</p>
+
+<h3>A stage whose line came from the auto recce</h3>
+<div class="shot">
+  <div class="er-stage-ss">SS1</div>
+  <div class="er-stage-name">Maryhill Up</div>
+  <div class="er-card er-line-note"><span class="er-pill ready">Ready</span><span>Notes from the map's roads, all the way. No recce needed.</span></div>
+  <div class="er-actions">
+    <button class="btn main">Drive stage</button>
+    <button class="btn secondary">Route to start</button>
+    <button class="btn outlined">Reset</button>
+    <button class="btn secondary">Recce</button>
+  </div>
+  <div class="er-act-help">
+    <b>Drive stage</b>: takes you to the start, then through the stage as in a real rally.<br>
+    <b>Route to start</b>: the way there on the GPS, arrows on the road. No teleport.<br>
+    <b>Reset</b>: removes this stage's line, so you can make it again — with the auto recce or by driving a recce.<br>
+    <b>Recce</b>: drive the stage once at your own pace; the line you drive gives the notes.
+  </div>
+</div>
+<p class="cap">Four buttons, as now. Reset sits exactly where Auto recce sat, so the two recce-shaped controls stay
+together and the row never grows to five.</p>
+
+<h3>A stage whose line the player drove</h3>
+<div class="shot">
+  <div class="er-stage-ss">SS7</div>
+  <div class="er-stage-name">Founders, Olmstead, Moore, Nagle Super Special</div>
+  <div class="er-card er-line-note"><span class="er-pill ready">Ready</span><span>Notes from your recce.</span></div>
+  <div class="er-actions">
+    <button class="btn main">Drive stage</button>
+    <button class="btn secondary">Route to start</button>
+    <button class="btn outlined">Reset</button>
+    <button class="btn secondary">Recce</button>
+  </div>
+  <div class="er-act-help">
+    <b>Reset</b>: removes this stage's line, so you can make it again — with the auto recce or by driving a recce.<br>
+  </div>
+</div>
+<p class="cap">Identical. The button does not change its label or its look by kind — only whether it
+<b>asks first</b>, which is section 4.</p>
+
+<!-- ================================================================= 4 -->
+<h2 id="s4"><span class="n">4</span>The confirm, and why only one kind gets it</h2>
+
+<table class="m">
+  <tr><th>the line</th><th>cost to make again</th><th>Reset</th></tr>
+  <tr><td>auto recce (<code>matched/</code>)</td><td>1.25 s, measured on Maryhill 2026-11-14</td><td class="c">acts at once</td></tr>
+  <tr><td>driven recce (<code>recce/</code>)</td><td>the length of the stage, driven, and unrecoverable</td><td class="c"><b>asks first</b></td></tr>
+</table>
+
+<p>Confirming the cheap case as well would be <i>worse</i> than not confirming at all: it teaches the habit of
+clicking through the dialog, and the one time it mattered the player would click through that too. The data to tell
+them apart is already there — <code>stg.line</code> is <code>st.kind</code>, <code>'matched'</code> or
+<code>'recce'</code> (<code>menu.lua:133</code>).</p>
+
+<div class="shot" style="display:flex;justify-content:center;padding:34px 18px">
+  <div class="dlg">
+    <h4>Reset Founders, Olmstead, Moore, Nagle Super Special?</h4>
+    <p>This removes the recce you drove. There is no way to get it back, and the auto recce cannot make one here —
+    the map has no roads for this stage on your computer.</p>
+    <p class="figs">your recce: 5.7 km, 1400 points, driven 14 Nov 01:08</p>
+    <div class="row">
+      <button class="btn outlined">Keep it</button>
+      <button class="btn main">Remove the recce</button>
+    </div>
+  </div>
+</div>
+<p class="cap">The dialog names what is lost and what can replace it. On this stage nothing can — it is one of the
+82 stages with no cached roads — and saying so is the difference between a confirm and a formality. The buttons say
+what they do rather than Yes and No.</p>
+
+<div class="note good">
+  <p><b>The second sentence is conditional, and worth the trouble.</b> Where the auto recce <i>can</i> run it reads
+  “the auto recce can make one from the map's roads in a couple of seconds” — which is the case where Reset is
+  harmless. Where it cannot, the player is told before they press, not after.</p>
+</div>
+
+<!-- ================================================================= 5 -->
+<h2 id="s5"><span class="n">5</span>What Reset removes: both files, not one</h2>
+
+<p>Read in <code>events.lua:137</code> rather than assumed. A stage can have both lines on disk at once, and
+<code>stageLine</code> picks between them — the driven recce wins unless it is short
+(<code>share &lt; 0.9</code>, or stopping <code>RECCE_SHORT_OF_FF_M</code> before the flying finish) and a matched
+line exists.</p>
+
+<table class="m">
+  <tr><th>on disk</th><th>remove only the one in use</th><th>remove both (proposed)</th></tr>
+  <tr><td>matched only</td><td class="c">→ Recce needed ✓</td><td class="c">→ Recce needed ✓</td></tr>
+  <tr><td>recce only</td><td class="c">→ Recce needed ✓</td><td class="c">→ Recce needed ✓</td></tr>
+  <tr><td>both</td><td class="c"><b>→ still has a line ✗</b></td><td class="c">→ Recce needed ✓</td></tr>
+</table>
+
+<p>In the third row, removing the driven recce would leave the matched line to answer <code>stageLine</code>, the
+stage would stay <i>Ready</i> or <i>Recce recommended</i>, and the player would have pressed Reset and watched
+nothing happen. <b>Reset removes both</b>, so the word means what it says: the stage is as it was before either
+line existed.</p>
+
+<p>This is also why the confirm asks about the driven recce specifically. Where both are present the dialog names
+both, and the driven one is the reason it is being asked at all.</p>
+
+<!-- ================================================================= 6 -->
+<h2 id="s6"><span class="n">6</span>Every state of the slot, read down one column</h2>
+
+<table class="m">
+  <tr><th>stage</th><th>status pill</th><th>line kind</th><th>the slot</th><th>pressing it</th></tr>
+  <tr><td>no line</td><td><span class="er-pill none">Recce needed</span></td><td>–</td>
+      <td><button class="btn secondary">Auto recce</button></td><td>runs the auto recce</td></tr>
+  <tr><td>no line, auto recce tried and refused</td><td><span class="er-pill none">Recce needed</span></td><td>–</td>
+      <td><button class="btn secondary">Try again</button></td><td>runs it again (1.3.0, unchanged)</td></tr>
+  <tr><td>auto recce running</td><td><span class="er-pill recce">Auto recce 2 / 3</span></td><td>–</td>
+      <td><button class="btn outlined">Stop</button></td><td>stops it (1.3.0, unchanged)</td></tr>
+  <tr><td>matched line, a stretch with no road</td><td><span class="er-pill recce">Recce recommended</span></td><td><code>matched</code></td>
+      <td><button class="btn outlined">Reset</button></td><td>removes it at once</td></tr>
+  <tr><td>matched line, complete</td><td><span class="er-pill ready">Ready</span></td><td><code>matched</code></td>
+      <td><button class="btn outlined">Reset</button></td><td>removes it at once</td></tr>
+  <tr><td>driven recce, stops short of the finish</td><td><span class="er-pill recce">Recce recommended</span></td><td><code>recce</code></td>
+      <td><button class="btn outlined">Reset</button></td><td><b>asks first</b></td></tr>
+  <tr><td>driven recce, complete</td><td><span class="er-pill ready">Ready</span></td><td><code>recce</code></td>
+      <td><button class="btn outlined">Reset</button></td><td><b>asks first</b></td></tr>
+  <tr><td>BeamNG.Earth cannot hand out its road graph</td><td><span class="er-pill none">Recce needed</span></td><td>–</td>
+      <td><span class="gap-mark">nothing here</span></td><td>— (1.3.0: no Auto recce where it cannot run)</td></tr>
+  <tr><td>… but the stage has a line</td><td><span class="er-pill ready">Ready</span></td><td>either</td>
+      <td><button class="btn outlined">Reset</button></td><td>removes it — <b>Reset does not need the road graph</b></td></tr>
+</table>
+
+<div class="note">
+  <p><b>The last row is the one to check.</b> Reset removes files and asks BeamNG.Earth for nothing, so it must
+  <i>not</i> be gated on <code>st.autoOk</code> the way Auto recce is. A player on a stock BeamNG.Earth who drove
+  a recce they are unhappy with still gets their way back. Gating both on the same flag would be the easy mistake
+  here, and it would lock exactly the players who have no auto recce to fall back on.</p>
+</div>
+
+<h3>What this leaves open for the owner</h3>
+<ul>
+  <li><b>The confirm's wording</b> above is a first draft. The shape is what matters: name what is lost, say
+  whether anything can replace it, and label the buttons with their actions.</li>
+  <li><b>Does Reset also clear the stage's times?</b> Drawn as <i>no</i> — <code>results/</code> is a record of
+  what the player drove and a line is not part of it. Worth a word, since "reset" could be read either way.</li>
+</ul>
+
+</div>
+</body>
+</html>
