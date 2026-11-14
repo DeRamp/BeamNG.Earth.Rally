@@ -242,7 +242,7 @@ local r = runner.current()
 T.check(r.checks.rallyEngine == 'loaded', 'the rally engine loaded (' .. tostring(r.checks.rallyEngine) .. ')')
 T.check((r.checks.cornersFound or 0) >= 1, 'the bend is a corner (' .. tostring(r.checks.cornersFound) .. ')')
 T.check(r.checks.notesLoaded == r.checks.notesWritten and r.checks.notesWritten > r.checks.cornersFound,
-  'every note written is loaded: one per corner, and the finish and "to stop" (' .. tostring(r.checks.notesLoaded) ..
+  'every note written is loaded: one per corner, and the finish (' .. tostring(r.checks.notesLoaded) ..
   ' of ' .. tostring(r.checks.notesWritten) .. ', ' .. tostring(r.checks.cornersFound) .. ' corners)')
 T.check(type(r.checks.calls) == 'string' and r.checks.calls:find('finish 1', 1, true) ~= nil,
   'the calls written are listed for the panel (' .. tostring(r.checks.calls) .. ')')
@@ -995,8 +995,8 @@ do
   end
   local got = table.concat(found, ' | ')
   -- (the bend after 900 m of straight is a care: 144 km/h down to under 60; the finish has no corner near it, so it
-  --  is a note of its own, and "to stop" one after it)
-  T.check(got == '5:pastJunction | 5:overBridge | 1:caution,4:corner,5:atJunction | 2:keepLeft | 2:finish | 5:toStop',
+  --  is a note of its own)
+  T.check(got == '5:pastJunction | 5:overBridge | 1:caution,4:corner,5:atJunction | 2:keepLeft | 2:finish',
     'junctions and bridges called, in order, on their corner or on their own, none where there is no road (' .. got .. ')')
   T.check(lm.landmarks == 4 and lm.corners == 1, 'four calls, the one corner (' .. lm.landmarks .. ', ' .. lm.corners .. ')')
   local inOrder, geo = true, require('earthRally/geo')

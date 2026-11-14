@@ -117,6 +117,7 @@ local function checksText(c)
   add('Corners found / notes written / loaded', tostring(c.cornersFound or '-') .. ' / ' ..
     tostring(c.notesWritten or '-') .. ' / ' .. tostring(c.notesLoaded or '-'))
   if c.calls and c.calls ~= '' then add('Calls', c.calls) end
+  if c.voiceStyle then add('Co-driver style', c.voiceStyle) end
   add('Notes called', c.notesCalled)
   add('Origin moved to the stage centre', c.originMoved or '-')
   add('World shifts during the run', c.shifts .. (c.shifts > 0 and

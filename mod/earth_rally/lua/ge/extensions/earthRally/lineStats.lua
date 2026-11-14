@@ -22,6 +22,11 @@ local writer = require('earthRally/stageWriter')
 
 local M = {}
 
+-- The figures' own version, kept with them (`figures`): a line's saved figures are read back only when they are of
+-- this version, and worked out again otherwise (events.lineFigures). 2: chicanes counted as one corner, as they are
+-- one note (1.5.0). A line saved before has no `figures` and is counted again on its first look.
+M.VERSION = 2
+
 M.CONTROL_OFF_LINE_M = 200  -- a start or finish control further than this from the line is not on it (runner.lua's
                             -- own rule where it cuts a line round a stage: stageLatLon)
 
@@ -81,7 +86,7 @@ function M.of(points, stage)
   if from then mute[#mute + 1] = { from - writer.MUTE_PAD_M, total } end
 
   local corners = writer.stageCorners(line, cum, { startM = startM, finishM = finishM, mute = mute })
-  local out = { corners = #corners }
+  local out = { corners = #corners, figures = M.VERSION }
   local gain, loss = geo.rise(geo.slice(line, cum, startM, finishM))
   if gain then
     out.gainM = math.floor(gain * 10 + 0.5) / 10

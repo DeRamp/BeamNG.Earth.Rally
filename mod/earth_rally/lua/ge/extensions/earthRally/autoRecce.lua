@@ -811,6 +811,7 @@ function M.match(stage, graph, info)
     lengthM = round(total, 1),
     mapLineM = round(kmlCum, 1),
     corners = fig.corners,
+    figures = fig.figures,
     gainM = fig.gainM,
     lossM = fig.lossM,
     gaps = gapsOut,

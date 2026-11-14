@@ -511,8 +511,12 @@ local function stepBuild()
       if s and off and off <= M.LANDMARK_OFF_M then lms[#lms + 1] = { s = s, type = lm.type } end
     end
   end
+  -- (only the calls the player's voice can say: rallyAdapter.speaks)
+  local okS, speaks, style = pcall(rallyA.speaks)
+  if not okS then speaks, style = nil, nil end
+  run.checks.voiceStyle = style or 'not known (every call written)'
   local okB, built = pcall(writer.build, run.line, { startM = run.startM, finishM = run.finishM, name = run.stage.name,
-    mute = mute, landmarks = lms,
+    mute = mute, landmarks = lms, speaks = speaks,
     quatFn = function(x, y, z) local q = quatFromDir(vec3(x, y, z), vec3(0, 0, 1)) return q.x, q.y, q.z, q.w end })
   if not okB then fail('could not build the stage: ' .. tostring(built)) return end
   writer.write(run.dir, built)

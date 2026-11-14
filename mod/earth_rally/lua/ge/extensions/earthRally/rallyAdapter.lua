@@ -105,6 +105,28 @@ function M.systemNote(name)
   end
 end
 
+-- The calls the player's co-driver voice can say: { [call] = true } off the english style its voice pack is made for
+-- (gameplay/rally/compositors/styles/<style>.lua: its modifiers and their aliases), and that style's name. The casual
+-- voices (four of the game's seven packs) say a dozen of the calls the detailed ones do and nothing at all for the
+-- rest, so stageWriter.build leaves those out rather than writing notes that are silent. nil when it cannot be told
+-- (another game version, no voice pack): then every call is written, as before.
+M.VOICEPACK = '/lua/ge/extensions/gameplay/rally/voicepack'
+M.STYLES = '/lua/ge/extensions/gameplay/rally/compositors/styles/'
+function M.speaks()
+  local okV, vp = pcall(require, M.VOICEPACK)
+  if not okV or type(vp) ~= 'table' or type(vp.resolveEffectiveEntry) ~= 'function' then return nil end
+  local okE, _, entry = pcall(vp.resolveEffectiveEntry, nil, nil, { globalOnly = true })
+  local style = okE and type(entry) == 'table' and entry.compositorStyle or nil
+  if type(style) ~= 'string' or not style:match('^[%w_/]+$') then return nil end
+  local okS, st = pcall(require, M.STYLES .. style)
+  local ct = okS and type(st) == 'table' and st.componentTypes or nil
+  if type(ct) ~= 'table' or type(ct.modifiers) ~= 'table' then return nil end
+  local out = {}
+  for name in pairs(ct.modifiers) do out[name] = true end
+  for name in pairs(type(ct.modifierAliases) == 'table' and ct.modifierAliases or {}) do out[name] = true end
+  return out, style
+end
+
 -- Stage the co-driver for a fresh run (after the car was put at the start line).
 function M.resync()
   local rm = M.manager()

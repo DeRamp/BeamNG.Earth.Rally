@@ -308,10 +308,16 @@ do
   files['/earthRally/matched/ev__a.json'].corners = 7
   files['/earthRally/matched/ev__a.json'].gainM = 11.1
   files['/earthRally/matched/ev__a.json'].lossM = 22.2
+  -- (of an older count -- before a chicane was one note -- they are not: worked out again)
+  events.forget()
+  local sOld = menu.stage('ev', 'a', 'start')
+  T.check(sOld.corners == 1, 'figures kept by an older version are counted again (' .. tostring(sOld.corners) .. ')')
+  files['/earthRally/matched/ev__a.json'].figures = require('earthRally/lineStats').VERSION
   events.forget()
   local sKept = menu.stage('ev', 'a', 'start')
   T.check(sKept.corners == 7 and sKept.gainM == 11.1 and sKept.lossM == 22.2,
     'the figures kept with the line are the ones shown (' .. tostring(sKept.corners) .. ')')
+  files['/earthRally/matched/ev__a.json'].figures = nil
   files['/earthRally/matched/ev__a.json'].corners = nil
   files['/earthRally/matched/ev__a.json'].gainM, files['/earthRally/matched/ev__a.json'].lossM = nil, nil
   events.forget()

@@ -186,7 +186,7 @@ end
 function M.lineFigures(eventId, stageId, stage)
   local line = M.stageLine(eventId, stageId, stage)
   if not line then return nil end
-  if type(line.corners) == 'number' then
+  if type(line.corners) == 'number' and line.figures == lineStats.VERSION then
     return { corners = line.corners, gainM = line.gainM, lossM = line.lossM }
   end
   if not line._figures or line._figuresFor ~= line.points then

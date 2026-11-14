@@ -67,9 +67,11 @@ def main():
         return writer.build(line, { startM = 0, finishM = cum[#cum], mute = mute, landmarks = lms,
                                     quatFn = function() return 0, 0, 0, 1 end })
       end''')
+    geo = lua.require('earthRally/geo')
+    locate, cumulative = geo.locate, geo.cumulative
 
     total = Counter()
-    km = 0.0
+    km, stages = 0.0, 0
     for f in files:
         m = json.loads(f.read_text(encoding='utf-8'))
         pts = m.get('points') or []
@@ -96,7 +98,10 @@ def main():
                              for p in line])
         lmt = lua.table_from([lua.table_from(x) for x in lms])
         built = build(lt, lmt)
+        if a.stage:
+            line_t, cum_t = lt, cumulative(lt)
         km += built.lengthM / 1000
+        stages += 1
         calls = built.calls
         for k in calls.keys():
             total[k] += calls[k]
@@ -122,8 +127,10 @@ def main():
                                 w += ' ' + x.shape
                         words.append(w)
                 p = pn.pacenoteWaypoints[1].pos
-                print('%3d  %s' % (n, ' | '.join(words)))
-    print('%d stages, %.1f km, %d notes (%.2f / km)' % (len(files), km, total['notes'], total['notes'] / max(km, 1e-9)))
+                _, _, along, _ = locate(line_t, cum_t, lua.table_from({'x': p[1], 'y': p[2]}))
+                print('%3d  %6.0f m  %s' % (n, along, ' | '.join(words)))
+    print('%d stages, %.1f km, %d notes (%.2f / km; one finish note on each stage among them)' %
+          (stages, km, total['notes'], total['notes'] / max(km, 1e-9)))
     for k, v in sorted(total.items(), key=lambda kv: -kv[1]):
         if k != 'notes':
             print('  %-22s %6d   %6.2f / km' % (k, v, v / max(km, 1e-9)))
