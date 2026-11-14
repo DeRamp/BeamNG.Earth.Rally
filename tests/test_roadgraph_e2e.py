@@ -99,6 +99,21 @@ def is_app(c):
     return (c / 'server' / 'earthd.py').is_file() and (c / 'mod' / 'beamng_earth').is_dir()
 
 
+def has_road_graph(c):
+    """Does this checkout's modding API carry api.roadGraph at all?
+
+    It is on a branch, and a checkout sitting on another one is a BeamNG.Earth this test cannot drive -- it fails
+    inside api.lua with 'attempt to call field roadGraph', which reads like a bug in the mod and is not one. So a
+    checkout without the call is skipped over the way a missing checkout is."""
+    p = c / 'mod' / 'lua' / 'ge' / 'extensions' / 'beamngEarth' / 'api.lua'
+    if not p.is_file():
+        p = c / 'mod' / 'beamng_earth' / 'lua' / 'ge' / 'extensions' / 'beamngEarth' / 'api.lua'
+    try:
+        return 'roadGraph' in p.read_text(encoding='utf-8', errors='replace')
+    except OSError:
+        return False
+
+
 def app_repo():
     """The BeamNG.Earth checkout to drive, or None.
 
@@ -108,11 +123,17 @@ def app_repo():
     if env:
         c = Path(env)
         return c if is_app(c) else None
-    for name in ('beamng.earth', 'BeamNG.Earth', 'beamng-earth'):
+    # A checkout WITH api.roadGraph wins: this repository's siblings include one per branch in flight, and the
+    # plain name may well be sitting on a branch that has no road graph in it.
+    found = []
+    for name in ('beamng.earth', 'BeamNG.Earth', 'beamng-earth', 'beamng.earth-run'):
         c = ROOT.parent / name
         if is_app(c):
+            found.append(c)
+    for c in found:
+        if has_road_graph(c):
             return c
-    return None
+    return found[0] if found else None
 
 
 def have_numpy():
