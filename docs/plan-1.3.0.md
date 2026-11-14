@@ -7,7 +7,7 @@ Everything here is backbone. The route editor and rally setup mode are 1.5.0 and
 top of what this version lays down (the matched line, the stage file, the corridor), and starting them before the
 backbone is solid would mean building an editor for a thing that still changes underneath it.
 
-## Decided with the user (2026-11-14)
+## Decided with the user (2026-11-13)
 
 - **Version checks warn, they do not refuse.** A BeamNG.drive or BeamNG.Earth this mod does not know says so and
   lets the player carry on. "If people have issues, they'll just have to let me know and we'll fix them."
@@ -38,7 +38,7 @@ of them comes back "no", the whole shape of this version changes. Leaving them t
 there is no room left to change course. So the unknowns are answered first, and nothing is built on them until they
 are.
 
-The self-test's co-driver gap is **not** in this version (the user, 2026-11-14). It moves to 1.4.0, which is the
+The self-test's co-driver gap is **not** in this version (the user, 2026-11-13). It moves to 1.4.0, which is the
 co-driver version: the pacenote work happens there, so the test that listens for pacenotes belongs with it rather
 than ahead of a version about roads.
 

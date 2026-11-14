@@ -596,7 +596,10 @@ def main():
     import dem as demmod
     import roads as roadsmod
     md = mapdata.MapData(args.cache_dir)
-    dem = demmod.Dem(args.cache_dir)
+    # the dem sub-folder, not the cache root: Dem lays its tiles out as <dir>/<source>/<z>/<x>/<y>, and the server
+    # gives it `<cache>/dem` (earthd.py). Passing the root made it look for tiles that were never there and fetch
+    # every one again -- 0 of 14,376 already-downloaded tiles seen on this machine (measured, 2026-11-13).
+    dem = demmod.Dem(os.path.join(args.cache_dir, 'dem'))
     with open(os.path.join(args.user_dir, 'earthRally', 'events', args.event + '.json'), encoding='utf-8') as f:
         event = json.load(f)
     out_dir = os.path.join(args.user_dir, 'earthRally', 'matched')
