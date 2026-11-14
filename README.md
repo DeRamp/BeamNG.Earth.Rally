@@ -225,6 +225,11 @@ The developer panel (Settings > Developer panel) lists what each run found out, 
   the way to 1.2.5, by which point its name said nothing and `main` had sat at the 1.2.1 release for days.)
 - Tests, no game needed: `pip install lupa`, then `python tests/run_tests.py` (the importer is also checked against
   `tools/import_kml.py` on the maps in `../Rally Docs/` when they are there).
+  `tests/test_roadgraph_e2e.py` drives the auto recce end to end against BeamNG.Earth's own server code -- a
+  `beamng.earth` checkout beside this one, or `$BNGE_REPO`; it says what is missing and passes without one. It
+  reaches into that checkout read-only and talks to no network. It also reports a fifth bug it found in
+  `api.roadGraph` (a cached-only window does download cells); `BNGE_RG_E2E_STRICT=1` makes that count as a
+  failure.
 - **In-game self-test** (`tools/selftest.py`, the mod's `earthRally/selftest.lua`) -- **unstable; not a gate on a
   release.** It cannot check the co-driver yet, so it exits 1 on every run: read its checks, do not read its exit
   code as a verdict (1.4.0 fixes it, with the co-driver work). The real check on a release is driving it yourself
