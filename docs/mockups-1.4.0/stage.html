@@ -126,6 +126,8 @@ const R = {
   POST_AFTER: 6,        // the post just after a radio / medical board
   SPEC_OFF: 5,          // spectator tape off the road's edge
   FENCE_BEHIND: 2.5,    // the mesh fence behind the tape
+  MARSHAL_BEHIND: 5,    // a junction marshal stands on the closed road this far behind its tape ...
+  MARSHAL_SIDE: 1.5,    // ... this far off that road's centre
 };
 const BOARD_W = 1.6, BOARD_T = 0.25;   // estimated footprint of a board
 
@@ -268,18 +270,22 @@ function placeJunction(j) {
     const sgn = brd.side === 'right' ? 1 : -1;
     out.boards.push({ p: add(p, mul(right(t), sgn * (j.half + R.BOARD_OUT))), face: mul(t, -1), shape: brd.shape, t, sgn });
   }
-  if (j.kind === 'turn') {                           // a junction marshal: before the junction, away from the turn
-    const { p, t } = at(j.stage, j.along - 9);
-    const sgn = turn < 0 ? -1 : 1;                   // turning right -> the left-hand corner
-    const c = add(p, mul(right(t), sgn * (j.half + 3)));
-    out.marshal = { c, t, sgn };
+  if (j.kind === 'turn' && out.tapes.length) {      // a junction marshal: on a closed road, behind its tape (the user, 2026-11-14)
+    // the closed road a car is likeliest to run into by mistake: the one most in line with the way in
+    let tp = out.tapes[0];
+    for (const x of out.tapes) if (x.d.x * tin.x + x.d.y * tin.y > tp.d.x * tin.x + tp.d.y * tin.y) tp = x;
+    const c = add(add(tp.at, mul(tp.d, tp.s + R.MARSHAL_BEHIND)), mul(right(tp.d), R.MARSHAL_SIDE));
+    out.marshal = { c, t: mul(tp.d, -1), sgn: 1, road: tp };
   }
   return out;
 }
 function drawJunction(v, g, j, res) {
   for (const tp of res.tapes) {
     D.tape(v, g, tp.a, tp.b);
-    const q = add(tp.at, mul(tp.d, tp.s + 6)); D.label(v, g, q, `${tp.L} m tape`, tp.d.x < -0.3 ? 'end' : tp.d.x > 0.3 ? 'start' : 'middle');
+    // beside whichever end of the tape is farther from the stage, clear of the road behind it
+    const [n, f] = clearOfStage(tp.a, j.stage, j.half) > clearOfStage(tp.b, j.stage, j.half) ? [tp.b, tp.a] : [tp.a, tp.b];
+    const e = norm(sub(f, n)), q = add(f, mul(e, 1.5));
+    D.label(v, g, q, `${tp.L} m tape`, e.x < -0.3 ? 'end' : e.x > 0.3 ? 'start' : 'middle');
   }
   for (const b of res.boards) {
     D.board(v, g, b.p, b.face, 'var(--dir)', b.shape.replace('s_corner_', ''), b.sgn);
@@ -289,7 +295,7 @@ function drawJunction(v, g, j, res) {
     const m = res.marshal;
     D.table(v, g, m.c, m.t); D.chair(v, g, add(m.c, mul(right(m.t), m.sgn * 0.9)), m.t);
     D.flag(v, g, add(m.c, mul(m.t, 1.6)));
-    D.label(v, g, add(m.c, mul(right(m.t), m.sgn * 2.4)), 'marshal', m.sgn < 0 ? 'end' : 'start');
+    D.label(v, g, add(m.c, mul(right(m.t), 2.4)), 'marshal', 'start');
   }
 }
 function placeRadio(v, g, stage, along, half, withMedical) {
@@ -344,7 +350,9 @@ scenes.push({
         <code>s_tape_road_closure_6m</code> for a 6 m road (8 m and 10 m tape for wider ones).</li>
     <li><b>Board</b> <code>s_corner_dir_right</code> ${R.BOARD_BEFORE} m before, on the side of the turn, its face to the car.
         The turn here reads ${Math.round(this.res.turnDeg)}&deg;: 60&ndash;120&deg; is a plain left / right board.</li>
-    <li><b>Marshal</b> (only when the map marks none near): a table, a chair and a flag ~9 m before the junction, on the corner away from the turn, set back 3 m.</li></ul>`; },
+    <li><b>Marshal</b> (only when the map marks none near): a table, a chair and a flag <b>on the closed road, ${R.MARSHAL_BEHIND} m behind its tape</b>,
+        off the stage altogether (the user, 2026-11-14). Of the closed roads it takes the one a car is likeliest to run into by mistake,
+        the one most in line with the way in: here, straight on.</li></ul>`; },
 });
 // 2. a fork, keep left
 scenes.push({

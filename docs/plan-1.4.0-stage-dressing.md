@@ -113,8 +113,10 @@ Each kind is a `props.LAYOUTS` entry, placed like the controls (along the road, 
   (gazebo, table, chair).
 - **Medical point:** `medical_warning` ~100 m before, `medical_point` at it, a gazebo. Where a radio point is
   within 50 m, the two share one post.
-- **Marshal post:** a chair, a folding table and a flag marker, off the road's edge; at a junction, on the corner
-  beside the tape.
+- **Marshal post:** a chair, a folding table and a flag marker, off the road's edge. **At a junction, on the closed
+  road behind its tape** (~5 m behind, a little off that road's centre), never on the stage (the user, 2026-11-14,
+  from the mock-up): of the closed roads, the one most in line with the way in, where a car that misses the turn
+  would go.
 - **Spectator area:** on the inside of the corner, set back: a run of `s_spectator_tape_5m` 4-6 m off the road's
   edge along ~30 m of road, mesh fence behind it, a tarp or two, one gazebo, chairs, a couple of hay bales at the
   road's edge in front.
