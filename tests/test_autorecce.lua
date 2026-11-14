@@ -617,4 +617,32 @@ do
   T.near(after and after.lengthM or 0, before.lengthM, 0.2, 'and the same line as without the double answer')
 end
 
+------------------------------------------------------------------------------------------ narrows: the road's widths
+do
+  -- a straight sampled every OUT_STEP_M, two lanes (3.3 m half width) for 600 m, then one lane (1.65 m)
+  local res, along, flags = {}, {}, {}
+  for k = 1, 300 do
+    local s = (k - 1) * auto.OUT_STEP_M
+    res[k] = { x = 0, y = s, w = s < 600 and 3.3 or 1.65 }
+    along[k], flags[k] = s, 0
+  end
+  local nw = auto.narrows(res, along, flags)
+  T.check(#nw == 1 and math.abs(nw[1] - 600) <= auto.OUT_STEP_M, 'two lanes to one: one narrowing, where it starts (' ..
+    table.concat(nw, ', ') .. ')')
+  for k = 1, 300 do res[k].w = 3.3 end
+  T.check(#auto.narrows(res, along, flags) == 0, 'the same width all the way: none')
+  for k = 1, 300 do res[k].w = (along[k] < 600) and 3.3 or 1.65 end
+  for k = 140, 160 do flags[k] = 1 end
+  T.check(#auto.narrows(res, along, flags) == 0, 'not across a stretch with no road on the map')
+  for k = 1, 300 do flags[k], res[k].w = 0, nil end
+  T.check(#auto.narrows(res, along, flags) == 0, 'no widths (a graph without them): none')
+  -- the width rides through the snap, the route and the resample from the graph's node radius
+  local g = { xy = { a = { x = 0, y = 0, w = 3 }, b = { x = 0, y = 100, w = 1 } }, ea = { 'a' }, eb = { 'b' }, edges = 1,
+              nbr = { a = { b = { w = 100, len = 100 } }, b = { a = { w = 100, len = 100 } } } }
+  local sn = auto.snap(g, { x = 1, y = 50 }, { x = 0, y = 1 })
+  T.near(sn and sn.w or -1, 2, 1e-9, 'a snap halfway along an edge: the width halfway between its ends')
+  local rs = auto.resample({ { x = 0, y = 0, w = 3 }, { x = 0, y = 8, w = 1 } }, 4)
+  T.near(rs[2].w, 2, 1e-9, 'resampled: the width interpolated')
+end
+
 T.done('test_autorecce')

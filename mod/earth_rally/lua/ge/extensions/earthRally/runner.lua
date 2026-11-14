@@ -521,7 +521,14 @@ local function stepBuild()
   rallyA.notesOn(false)        -- (no calls on the way to the start: on at GO)
   run.checks.rallyEngine = ok and 'loaded' or ('failed: ' .. tostring(why))
   run.checks.cornersFound = built.corners
+  run.checks.notesWritten = built.notes
   run.checks.junctionsBridges = built.landmarks
+  -- (what the notes call, as one line for the developer panel and the results file: "crest 12, hairpin 3, ...")
+  local names = {}
+  for t in pairs(built.calls or {}) do if t ~= 'corner' then names[#names + 1] = t end end
+  table.sort(names)
+  for i, t in ipairs(names) do names[i] = t .. ' ' .. built.calls[t] end
+  run.checks.calls = table.concat(names, ', ')
   if not ok then
     log('E', logTag, 'rally engine: ' .. tostring(why) .. ' (the run goes on without a co-driver)')
   else

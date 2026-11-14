@@ -241,7 +241,11 @@ frames(3)
 local r = runner.current()
 T.check(r.checks.rallyEngine == 'loaded', 'the rally engine loaded (' .. tostring(r.checks.rallyEngine) .. ')')
 T.check((r.checks.cornersFound or 0) >= 1, 'the bend is a corner (' .. tostring(r.checks.cornersFound) .. ')')
-T.check(r.checks.notesLoaded == r.checks.cornersFound, 'one note per corner')
+T.check(r.checks.notesLoaded == r.checks.notesWritten and r.checks.notesWritten > r.checks.cornersFound,
+  'every note written is loaded: one per corner, and the finish and "to stop" (' .. tostring(r.checks.notesLoaded) ..
+  ' of ' .. tostring(r.checks.notesWritten) .. ', ' .. tostring(r.checks.cornersFound) .. ' corners)')
+T.check(type(r.checks.calls) == 'string' and r.checks.calls:find('finish 1', 1, true) ~= nil,
+  'the calls written are listed for the panel (' .. tostring(r.checks.calls) .. ')')
 -- The Corners tile is the co-driver's own count, by construction: the tile reads what was worked out from the
 -- line (menu.stage -> events.lineFigures -> lineStats.of -> stageWriter.stageCorners) and the run has just
 -- written one pacenote per corner the same function found, in the game's own coordinates. If these two ever part,
@@ -545,7 +549,10 @@ do
   T.check(built.corners >= 10, 'the wiggly road has its corners (' .. tostring(built.corners) .. ')')
   T.check(fig.corners == built.corners, 'the count kept with a line is the count the notebook gets (' ..
     tostring(fig.corners) .. ' vs ' .. tostring(built.corners) .. ')')
-  T.check(#built.notebook.pacenotes == built.corners, 'one pacenote per corner, so the tile counts pacenotes')
+  local cornerNotes = 0
+  for _, pn in ipairs(built.notebook.pacenotes) do if pn.metadata.earthRally.dir then cornerNotes = cornerNotes + 1 end end
+  T.check(cornerNotes == built.corners, 'one pacenote per corner, so the tile counts the corner notes (' ..
+    cornerNotes .. ' vs ' .. built.corners .. ')')
   -- and the corners inside a stretch with no road on the map are not counted, exactly as no notes are called
   -- there: the same flag, the same padding, off the line's own points
   local muted = {}
@@ -987,14 +994,19 @@ do
     found[#found + 1] = table.concat(kinds, ',')
   end
   local got = table.concat(found, ' | ')
-  T.check(got == '5:pastJunction | 5:overBridge | 4:corner,5:atJunction | 2:keepLeft',
+  -- (the bend after 900 m of straight is a care: 144 km/h down to under 60; the finish has no corner near it, so it
+  --  is a note of its own, and "to stop" one after it)
+  T.check(got == '5:pastJunction | 5:overBridge | 1:caution,4:corner,5:atJunction | 2:keepLeft | 2:finish | 5:toStop',
     'junctions and bridges called, in order, on their corner or on their own, none where there is no road (' .. got .. ')')
   T.check(lm.landmarks == 4 and lm.corners == 1, 'four calls, the one corner (' .. lm.landmarks .. ', ' .. lm.corners .. ')')
-  local inOrder = true
-  for k = 2, #lm.notebook.pacenotes do
-    local a = lm.notebook.pacenotes[k - 1].pacenoteWaypoints[1].pos
-    local b = lm.notebook.pacenotes[k].pacenoteWaypoints[1].pos
-    if b[2] < a[2] and b[1] >= a[1] then inOrder = false end
+  local inOrder, geo = true, require('earthRally/geo')
+  local lcum = geo.cumulative(line)
+  local prev = -1
+  for k = 1, #lm.notebook.pacenotes do
+    local p = lm.notebook.pacenotes[k].pacenoteWaypoints[1].pos
+    local _, _, s = geo.locate(line, lcum, { x = p[1], y = p[2] })
+    if s <= prev then inOrder = false end
+    prev = s
   end
   T.check(inOrder and lm.notebook.pacenotes[1].triggerType == 15, 'notes in driving order, the first one immediate')
 end

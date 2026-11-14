@@ -2,11 +2,15 @@
 -- coordinates (made at the start of each run, in the world's frame of that moment):
 --   race.race.json                       start line, stop control, a pathnode every ~1 km and one at the finish
 --   rally/drivelineSpline.json           the line the co-driver measures along (with our heights)
---   rally/notebooks/structured.notebook.json   one pacenote per corner (geo.corners); the game works out each one's
---                                        severity, direction and the distance calls, and voices them
+--   rally/notebooks/structured.notebook.json   one pacenote per corner (geo.corners) with what pacenotes.lua reads
+--                                        off the line about it (hairpin, tightens, over crest, caution...), and
+--                                        notes of their own for crests, jumps, dips and landmarks between corners,
+--                                        the finish and "to stop"; the game works out each corner's severity,
+--                                        direction, length and the distance calls, and voices them
 -- The layout follows the game's own stages (gameplay/missions/italy/rallyStage/*). build() is pure (tests); write()
 -- saves with the game's jsonWriteFile.
 local geo = require('earthRally/geo')
+local pacenotes = require('earthRally/pacenotes')
 
 local M = {}
 
@@ -30,21 +34,36 @@ M.NOTE_CLEAR_M = 25         -- no note's corner starting this close to the start
 M.MUTE_PAD_M = 30           -- no notes this far either side of a stretch with no road on the map (runner.lua
                             -- builds the ranges, lineStats.lua builds the same ones off a saved line)
 
--- Junctions and bridges (opts.landmarks) as the game's structured notes carry them (its own stages: the english
--- style's modifiers): on the corner they are part of, else a note of their own. slot: the note's item they go in
--- (2 before the corner, 5 after it).
+-- Junctions, bridges and narrowings (opts.landmarks) as the game's structured notes carry them (its own stages: the
+-- english style's modifiers): on the corner they are part of, else a note of their own. keep: always a note of its
+-- own, its call before where the corner would be (slot 2), and "keep left over crest" on a crest.
 M.LANDMARKS = {
-  atJunction = { slot = 5 }, pastJunction = { slot = 5 }, overBridge = { slot = 5 },
-  keepLeft = { slot = 2 }, keepRight = { slot = 2 },
+  atJunction = {}, pastJunction = {}, overBridge = {}, narrows = {},
+  keepLeft = { keep = true }, keepRight = { keep = true },
 }
 M.LANDMARK_BEFORE_M = 20    -- a landmark this far before a corner's start, or in it, or ...
 M.LANDMARK_AFTER_M = 10     -- ... this far past its end, is called with the corner
+M.HEIGHT_BEFORE_M = 40      -- a crest, a jump or a dip this far before a corner's start ("crest, left 4") ...
+M.HEIGHT_AFTER_M = 30       -- ... or this far past its end ("left 4 into crest"), or a hill starting there, is
+                            -- called with the corner; else on a note of its own, if it is big enough to be
+M.ALONE_MERGE_M = 15        -- calls this close together that have no corner share one note
+M.TIGHTENS_DOWN_GRADE = 0.06 -- a tightening corner this steep downhill on average: "tightens down"
+M.FINISH_ON_NOTE_M = 100    -- the last note ending this close to the finish says "over finish" too
+M.TO_STOP_AFTER_M = 30      -- "to stop": a note of its own this far past the finish
+-- Which calls are spoken when a note has more than its two slots before (or after) the corner can hold: the highest
+-- here first, then the nearest. A jump or a blind crest can hurt; a side road cannot.
+M.PRIORITY = {
+  finish = 100, jump = 90, group = 80, crest = 70, keepLeft = 65, keepRight = 65, dip = 60, narrows = 55,
+  overBridge = 50, atJunction = 45, pastJunction = 40, landmark = 40, hill = 30,
+}
 
 -- The corners the stage's notebook gets, in order, and the samples they index into (the stage's own stretch of the
 -- line, every M.NOTE_STEP_M): geo.corners over that stretch, less the ones too close to either end of the stage to
--- be called and the ones on a stretch with no road on the map. build() writes one pacenote per corner this returns
--- and reports their number, and lineStats.lua calls this over a line as it is saved -- so the number the menu's
--- Corners tile shows is the co-driver's own count and not a second opinion about it.
+-- be called and the ones on a stretch with no road on the map, with chicanes and twisty runs made one each
+-- (pacenotes.group). build() writes one pacenote per entry this returns and reports their number, and lineStats.lua
+-- calls this over a line as it is saved -- so the number the menu's Corners tile shows is the co-driver's own count
+-- of corner notes and not a second opinion about it. (The notebook also has notes with no corner in them -- a crest
+-- on a straight, the finish -- which that tile does not count.)
 --   o.startM, o.finishM   the stage along `line`
 --   o.lead                of line extended in before startM, if any: mute is read in the coordinates of the line
 --                         as it came, which is where its gaps were measured
@@ -63,7 +82,8 @@ function M.stageCorners(line, cum, o)
   for _, c in ipairs(geo.corners(stagePts, M.NOTE_STEP_M, o.corners)) do
     if c.i0 > clear and c.i1 < #stagePts and not muted(c.i0) and not muted(c.i1) then corners[#corners + 1] = c end
   end
-  return corners, stagePts, muted
+  -- (a chicane, or a twisty run of fast corners, is one note: one entry here, so the count is still one per note)
+  return pacenotes.group(corners, M.NOTE_STEP_M), stagePts, muted
 end
 
 -- line: { {x, y, z}... } in game coordinates, the stage from (about) its start to (about) its finish.
@@ -142,83 +162,254 @@ function M.build(line, opts)
     segments = segments, startPositions = startPositions,
   }
 
-  -- notebook: corners between the start and the finish (opts.mute: { {fromM, toM}... } along the line as given)
+  -- notebook: corners between the start and the finish (opts.mute: { {fromM, toM}... } along the line as given),
+  -- with what pacenotes.lua reads off the line round them, and the junctions and bridges (opts.landmarks)
+  local step = M.NOTE_STEP_M
   local corners, stagePts, muted = M.stageCorners(line, cum, { startM = startM, finishM = finishM, lead = lead,
                                                                mute = opts.mute, corners = opts.corners })
-  local clear = math.ceil(M.NOTE_CLEAR_M / M.NOTE_STEP_M)
-  local pacenotes = {}
+  local np = #stagePts
+  local clear = math.ceil(M.NOTE_CLEAR_M / step)
+  local function callable(i) return i > clear and i < np and not muted(i) end
+  local _, k = geo.curvature(stagePts, step, opts.corners and opts.corners.smoothM)
+  local v = pacenotes.speeds(k, step)
+  local events, hills, grade = pacenotes.heights(stagePts, step, v)
+
   local nid = 0
+  local function wpAt(name, kind, pos, dir)
+    nid = nid + 1
+    return { name = name, normal = { dir.x, dir.y, 0 }, oldId = nid, pos = arr(pos), radius = 8, waypointType = kind }
+  end
   local function wp(name, kind, i)
-    local a, b = stagePts[math.max(1, i - 1)], stagePts[math.min(#stagePts, i + 1)]
+    local a, b = stagePts[math.max(1, i - 1)], stagePts[math.min(np, i + 1)]
     local dx, dy = b.x - a.x, b.y - a.y
     local l = math.sqrt(dx * dx + dy * dy)
-    nid = nid + 1
-    return { name = name, normal = l > 1e-9 and { dx / l, dy / l, 0 } or { 0, 1, 0 }, oldId = nid,
-             pos = arr(stagePts[i]), radius = 8, waypointType = kind }
+    return wpAt(name, kind, stagePts[i], l > 1e-9 and { x = dx / l, y = dy / l } or { x = 0, y = 1 })
   end
-  -- the notes: one per corner, with the junctions and bridges on it; those on no corner a note of their own
+
+  -- one entry per corner (a chicane or a twisty run is one); pre / post: the calls before and after its corner, of
+  -- which the two of highest M.PRIORITY are spoken (slots 2, 3 and 5, 6)
   local entries = {}
-  for _, c in ipairs(corners) do
-    entries[#entries + 1] = { i0 = c.i0, i1 = c.i1, corner = c,
-      items = { ['1'] = {}, ['2'] = {}, ['3'] = {}, ['4'] = { type = 'corner' }, ['5'] = {}, ['6'] = {} } }
-  end
-  -- (keep left / right before the corner, slot 2; the rest where they lie: before its start slot 3, else 5 then 6)
-  local function put(items, kind, beforeCorner)
-    local slots = M.LANDMARKS[kind].slot == 2 and { '2' } or (beforeCorner and { '3' } or { '5', '6' })
-    for _, k in ipairs(slots) do
-      if not items[k].type then items[k].type = kind return true end
-    end
-    return false
-  end
-  local landmarks = 0
-  local before = math.ceil(M.LANDMARK_BEFORE_M / M.NOTE_STEP_M)
-  local after = math.ceil(M.LANDMARK_AFTER_M / M.NOTE_STEP_M)
-  for _, lm in ipairs(opts.landmarks or {}) do
-    local i = math.floor((lm.s + lead - startM) / M.NOTE_STEP_M + 0.5) + 1
-    if M.LANDMARKS[lm.type] and i > clear and i < #stagePts and not muted(i) then
-      local host = nil
-      -- (keep left / right: a note of its own, as the game's stages always have it)
-      local alone = M.LANDMARKS[lm.type].slot == 2
-      for _, e in ipairs(entries) do
-        if not alone and e.corner and i >= e.i0 - before and i <= e.i1 + after then host = e break end
-      end
-      -- (another junction or bridge note a step or two away: one note for both)
-      if not host then
-        for _, e in ipairs(entries) do
-          if not e.corner and math.abs(i - (e.i0 + 1)) <= 2 then host = e break end
+  for ci, c in ipairs(corners) do
+    local e = { i0 = c.i0, i1 = c.i1, corner = c, pre = {}, post = {} }
+    if c.group == 'chicane' then
+      e.pre[1] = { type = c.dir == 'left' and 'chicaneLeftEntry' or 'chicaneRightEntry', i = c.i0, prio = M.PRIORITY.group }
+    elseif c.group == 'twisty' then
+      e.pre[1] = { type = 'twisty', i = c.i0, prio = M.PRIORITY.group }
+    else
+      local item = { type = 'corner' }
+      item.descriptor = pacenotes.descriptor(c, step)
+      local shape, measurement = pacenotes.shape(c, k, step)
+      -- (a crest inside the corner is part of its shape: "over crest", "tightens over crest", "opens over crest")
+      for _, ev in ipairs(events) do
+        if not ev.used and ev.kind == 'crest' and ev.i >= c.i0 and ev.i <= c.i1 then
+          local over = shape == nil and 'overCrest' or shape == 'tightens' and 'tightensOverCrest' or
+                       shape == 'opens' and 'opensOverCrest' or nil
+          if over then shape, ev.used = over, true end
+          break
         end
       end
-      if host then
-        if put(host.items, lm.type, host.corner ~= nil and i < host.i0) then landmarks = landmarks + 1 end
+      if shape == 'tightens' and grade then
+        local g = 0
+        for i = c.i0, c.i1 do g = g + grade[i] end
+        if g / (c.i1 - c.i0 + 1) <= -M.TIGHTENS_DOWN_GRADE then shape = 'tightensDown' end
+      end
+      item.shape, item.measurementType = shape, measurement
+      e.item = item
+      e.caution = pacenotes.caution(c, v, step, corners[ci - 1] and corners[ci - 1].i1)
+    end
+    entries[#entries + 1] = e
+  end
+
+  -- the nearest corner note whose stretch (less `before` samples, plus `after`) holds sample i
+  local function host(i, before, after)
+    local best, bd = nil, nil
+    for _, e in ipairs(entries) do
+      if e.corner and i >= e.i0 - before and i <= e.i1 + after then
+        local d = i < e.i0 and e.i0 - i or (i > e.i1 and i - e.i1 or 0)
+        if not bd or d < bd then best, bd = e, d end
+      end
+    end
+    return best
+  end
+  local mergeN = math.ceil(M.ALONE_MERGE_M / step)
+  -- f: { i, pre, within, post, alone (the call on a note of its own, or nil: none), aloneSlot ('pre' | 'post'),
+  --      prio, before, after (samples), keep (a note of its own, always), landmark }
+  local function place(f)
+    if not callable(f.i) then return false end
+    local e = not f.keep and host(f.i, f.before, f.after) or nil
+    if e then
+      local where = f.i < e.i0 and 'pre' or (f.i > e.i1 and 'post' or 'within')
+      local t = f[where]
+      if where == 'within' then where, t = 'post', f.within or f.post end
+      if t then
+        table.insert(e[where], { type = t, i = f.i, prio = f.prio, landmark = f.landmark })
+        return true
+      end
+    end
+    if not f.alone then return false end
+    local item = { type = f.alone, i = f.i, prio = f.prio, landmark = f.landmark }
+    if not f.keep then
+      for _, a in ipairs(entries) do
+        if not a.corner and a.at and math.abs(f.i - a.at) <= mergeN then
+          table.insert(a[f.aloneSlot], item)
+          return true
+        end
+      end
+    end
+    local a = { i0 = math.max(1, f.i - 1), i1 = math.min(np, f.i + 1), at = f.i, pre = {}, post = {} }
+    table.insert(a[f.aloneSlot], item)
+    entries[#entries + 1] = a
+    return true
+  end
+
+  local hb, ha = math.ceil(M.HEIGHT_BEFORE_M / step), math.ceil(M.HEIGHT_AFTER_M / step)
+  -- (keep left / right: a note of its own, as the game's stages always have it; on a crest, "keep left over crest")
+  local lmb, lma = math.ceil(M.LANDMARK_BEFORE_M / step), math.ceil(M.LANDMARK_AFTER_M / step)
+  local features = {}
+  for _, lm in ipairs(opts.landmarks or {}) do
+    local def = M.LANDMARKS[lm.type]
+    if def then
+      local i = math.floor((lm.s + lead - startM) / step + 0.5) + 1
+      local f = { i = i, prio = M.PRIORITY[lm.type] or M.PRIORITY.landmark, before = lmb, after = lma, landmark = true }
+      if def.keep then
+        local t = lm.type
+        for _, ev in ipairs(events) do
+          if not ev.used and ev.kind == 'crest' and math.abs(ev.i - i) <= mergeN and callable(i) then
+            t, ev.used = t .. 'OverCrest', true
+            break
+          end
+        end
+        f.keep, f.alone, f.aloneSlot = true, t, 'pre'
       else
-        local items = { ['1'] = {}, ['2'] = {}, ['3'] = {}, ['4'] = {}, ['5'] = {}, ['6'] = {} }
-        put(items, lm.type, false)
-        entries[#entries + 1] = { i0 = math.max(1, i - 1), i1 = math.min(#stagePts, i + 1), items = items }
-        landmarks = landmarks + 1
+        f.pre, f.post, f.alone, f.aloneSlot = lm.type, lm.type, lm.type, 'post'
+      end
+      features[#features + 1] = f
+    end
+  end
+  for _, ev in ipairs(events) do
+    if not ev.used then
+      local big = ev.size == 'big'
+      local f = { i = ev.i, before = hb, after = ha, aloneSlot = 'pre' }
+      if ev.kind == 'jump' then
+        f.prio = M.PRIORITY.jump
+        f.pre = big and 'bigJump' or 'jump'
+        f.post = big and 'bigJump' or 'overJump'
+        f.alone = f.pre
+      elseif ev.kind == 'crest' then
+        f.prio = M.PRIORITY.crest
+        f.pre = big and 'bigCrest' or (ev.size == 'small' and 'smallCrest' or 'crest')
+        f.post = 'intoCrest'
+        f.alone = ev.alone and (big and 'bigCrest' or 'crest') or nil
+      else
+        f.prio = M.PRIORITY.dip
+        f.pre = big and 'badDip' or 'dip'
+        f.within = 'throughDip'
+        f.post = f.pre
+        f.alone = ev.alone and f.pre or nil
+      end
+      features[#features + 1] = f
+    end
+  end
+  for _, h in ipairs(hills) do
+    features[#features + 1] = { i = h.i0, post = h.kind, within = h.kind, prio = M.PRIORITY.hill, before = 0, after = ha }
+  end
+  table.sort(features, function(a, b) return a.i < b.i end)
+  for _, f in ipairs(features) do place(f) end
+
+  -- a crest just before a corner with a caution on it: "brake over crest", and one caution more (it is blind)
+  for _, e in ipairs(entries) do
+    if e.caution then
+      for _, it in ipairs(e.pre) do
+        if it.type == 'crest' or it.type == 'bigCrest' or it.type == 'smallCrest' then
+          it.type, it.prio = 'brakeOverCrest', M.PRIORITY.jump
+          e.caution = math.min(3, e.caution + 1)
+          break
+        end
       end
     end
   end
+
   table.sort(entries, function(a, b) return a.i0 < b.i0 end)
+  -- the finish: on the last note when that is close to it, else a note of its own on the line; then "to stop", a
+  -- note of its own on the run-out (the game's own stages, every one)
+  local last = entries[#entries]
+  if last and (np - last.i1) * step <= M.FINISH_ON_NOTE_M then
+    table.insert(last.post, { type = 'finish', i = np, prio = M.PRIORITY.finish })
+  else
+    entries[#entries + 1] = { i0 = math.max(1, np - 2), i1 = np, at = np, pre = { { type = 'finish', i = np,
+      prio = M.PRIORITY.finish } }, post = {} }
+  end
+  local stopA, stopDir = geo.pointAt(line, cum, math.min(total, finishM + M.TO_STOP_AFTER_M))
+  local stopB = geo.pointAt(line, cum, math.min(total, finishM + M.TO_STOP_AFTER_M + 10))
+  entries[#entries + 1] = { stop = { stopA, stopB, stopDir }, pre = {}, post = { { type = 'toStop', i = np + 1,
+    prio = M.PRIORITY.finish } } }
+
+  local landmarks = 0
+  local calls = {}
+  local function count(t) calls[t] = (calls[t] or 0) + 1 end
+  local function pick(list)
+    table.sort(list, function(a, b)
+      if a.prio ~= b.prio then return a.prio > b.prio end
+      return a.i < b.i
+    end)
+    local out, seen = {}, {}
+    for _, it in ipairs(list) do
+      if #out < 2 and not seen[it.type] then seen[it.type] = true out[#out + 1] = it end
+    end
+    table.sort(out, function(a, b)
+      if a.i ~= b.i then return a.i < b.i end
+      return a.prio > b.prio
+    end)
+    for _, it in ipairs(out) do
+      count(it.type)
+      if it.landmark then landmarks = landmarks + 1 end
+    end
+    return out
+  end
+
+  local pacenotes_ = {}
   for n, e in ipairs(entries) do
     nid = nid + 1
     local noteId = nid
     local c = e.corner
-    pacenotes[n] = {
-      audioMode = 1, distanceBeforeModifier = false, ignoreDistanceCalls = false, includeLinkWord = c ~= nil,
+    local items = { ['1'] = {}, ['2'] = {}, ['3'] = {}, ['4'] = {}, ['5'] = {}, ['6'] = {} }
+    if e.caution then items['1'] = { type = 'caution', level = e.caution } count('caution' .. e.caution) end
+    -- ("tightens down" says the hill already)
+    if e.item and e.item.shape == 'tightensDown' then
+      for j = #e.post, 1, -1 do if e.post[j].type == 'down' then table.remove(e.post, j) end end
+    end
+    local pre, post = pick(e.pre), pick(e.post)
+    for j, it in ipairs(pre) do items[tostring(1 + j)] = { type = it.type } end
+    for j, it in ipairs(post) do items[tostring(4 + j)] = { type = it.type } end
+    if e.item then
+      items['4'] = e.item
+      count('corner')
+      if e.item.descriptor then count(e.item.descriptor) end
+      if e.item.shape then count('shape:' .. e.item.shape) end
+    end
+    local wps
+    if e.stop then
+      wps = { wpAt('corner start', 'cornerStart', e.stop[1], e.stop[3]), wpAt('corner end', 'cornerEnd', e.stop[2], e.stop[3]) }
+    else
+      wps = { wp('corner start', 'cornerStart', e.i0), wp('corner end', 'cornerEnd', e.i1) }
+    end
+    pacenotes_[n] = {
+      audioMode = 1, distanceBeforeModifier = false, ignoreDistanceCalls = false, includeLinkWord = e.item ~= nil,
       isolate = false,
-      metadata = { earthRally = c and { dir = c.dir, angleDeg = c.angleDeg, minRadius = c.minRadius } or { landmark = true } },
+      metadata = { earthRally = c and { dir = c.dir, angleDeg = c.angleDeg, minRadius = c.minRadius, group = c.group }
+                   or { landmark = true } },
       name = 'Pacenote ' .. n, oldId = noteId,
-      pacenoteWaypoints = { wp('corner start', 'cornerStart', e.i0), wp('corner end', 'cornerEnd', e.i1) },
+      pacenoteWaypoints = wps,
       pk = string.format('%08x', (n * 2654435761) % 4294967296), slowCorner = false, slowCornerReleaseType = 30,
-      structured = { items = e.items, schemaVersion = 3 },
+      structured = { items = items, schemaVersion = 3 },
       todo = false, triggerType = n == 1 and 15 or 1,
     }
   end
   local notebook = { audioMode = 4, authors = 'Earth Rally', created_at = 0, description = '', metadata = {},
-                     name = 'structured', pacenotes = pacenotes, updated_at = 0, version = '4' }
+                     name = 'structured', pacenotes = pacenotes_, updated_at = 0, version = '4' }
 
   return { race = race, driveline = driveline, notebook = notebook, nodes = nodes, corners = #corners, landmarks = landmarks,
-           startM = startM, finishM = finishM, lengthM = finishM - startM, leadM = lead }
+           notes = #pacenotes_, calls = calls, startM = startM, finishM = finishM, lengthM = finishM - startM, leadM = lead }
 end
 
 function M.write(dir, built)

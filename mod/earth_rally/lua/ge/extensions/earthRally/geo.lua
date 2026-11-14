@@ -217,16 +217,13 @@ end
 -- Same-direction corners closer than opts.mergeM (default 20 m) are one corner. Each corner:
 --   { i0, i1 (sample indices of its start and end), dir = 'left' | 'right', angleDeg, minRadius (m) }.
 -- The game measures each corner's severity itself from the driveline; this only finds where they are.
-function M.corners(pts, step, opts)
-  opts = opts or {}
-  local maxRadius = opts.maxRadius or 200
-  local minAngle = math.rad(opts.minAngleDeg or 12)
-  local mergeN = math.max(1, floor((opts.mergeM or 20) / step + 0.5))
-  local half = math.max(1, floor((opts.smoothM or 15) / step / 2 + 0.5))
+-- The turn at each sample of a line sampled evenly every `step` m (radians, positive left, from the headings of the
+-- segments either side) and the curvature smoothed over smoothM (1 / m, signed the same way). M.corners reads its
+-- corners off these, and pacenotes.lua reads a corner's shape and the speed along the road off the same numbers, so
+-- the two never disagree about where a corner is tighter.
+function M.curvature(pts, step, smoothM)
+  local half = math.max(1, floor((smoothM or 15) / step / 2 + 0.5))
   local n = #pts
-  if n < 3 then return {} end
-
-  -- turn at each sample (radians, positive left), from the headings of the segments either side
   local turn = {}
   for i = 1, n do turn[i] = 0 end
   for i = 2, n - 1 do
@@ -234,7 +231,6 @@ function M.corners(pts, step, opts)
     local h2 = atan2(pts[i + 1].y - pts[i].y, pts[i + 1].x - pts[i].x)
     turn[i] = wrap(h2 - h1)
   end
-  -- smoothed curvature (1 / m)
   local k = {}
   for i = 1, n do
     local s, c = 0, 0
@@ -243,6 +239,18 @@ function M.corners(pts, step, opts)
     end
     k[i] = s / (c * step)
   end
+  return turn, k
+end
+
+function M.corners(pts, step, opts)
+  opts = opts or {}
+  local maxRadius = opts.maxRadius or 200
+  local minAngle = math.rad(opts.minAngleDeg or 12)
+  local mergeN = math.max(1, floor((opts.mergeM or 20) / step + 0.5))
+  local n = #pts
+  if n < 3 then return {} end
+
+  local turn, k = M.curvature(pts, step, opts.smoothM)
 
   local kMin = 1 / maxRadius
   local runs = {}

@@ -201,7 +201,7 @@ function M.lineFigures(eventId, stageId, stage)
   return line._figures
 end
 
--- The junctions and bridges along a stage (found by tools/auto_recce.py on the map's roads, kept with its matched
+-- The junctions, bridges and narrowings along a stage (found by an auto recce on the map's roads, kept with its matched
 -- line, as lat / lon: they hold whichever line the stage runs on). Returns { { lat, lon, type }... } with type a key
 -- of stageWriter.LANDMARKS; empty without a matched line made from this map.
 function M.landmarks(eventId, stageId, stage)
@@ -215,6 +215,9 @@ function M.landmarks(eventId, stageId, stage)
   end
   for _, b in ipairs(m.bridges or {}) do
     out[#out + 1] = { lat = b[1], lon = b[2], type = 'overBridge' }
+  end
+  for _, nw in ipairs(m.narrows or {}) do
+    out[#out + 1] = { lat = nw[1], lon = nw[2], type = 'narrows' }
   end
   return out
 end

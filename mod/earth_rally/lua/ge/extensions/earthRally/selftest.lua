@@ -428,7 +428,8 @@ local function stepPrep()
   if s == 'toAtc' or s == 'toStart' then
     check('stage built: line, rally engine, car placed', T.run.checks.rallyEngine == 'loaded',
       'rally engine ' .. tostring(T.run.checks.rallyEngine) .. ', line ' .. tostring(T.run.checks.line) ..
-      ', corners ' .. tostring(T.run.checks.cornersFound) .. ', notes ' .. tostring(T.run.checks.notesLoaded))
+      ', corners ' .. tostring(T.run.checks.cornersFound) .. ', notes ' .. tostring(T.run.checks.notesLoaded) ..
+      ' of ' .. tostring(T.run.checks.notesWritten))
     phase('liaison')
   elseif inPhase() > M.PREP_BUDGET_S then
     fail(string.format('the run stayed in %s for %d s', s, M.PREP_BUDGET_S))
