@@ -35,6 +35,7 @@ Pacenotes worth trusting.
 |---|---|
 | Pacenote generator overhaul: crests, jumps, cautions from the height profile (2) | L |
 | Co-driver settings: call timing, detail, voice (26) | M |
+| The self-test hears the co-driver (carried from 1.2): a tracker of our own through setVehicleTracker, so a stage walked by the test calls its notes | S |
 
 ## 1.5.0: make and share stages
 

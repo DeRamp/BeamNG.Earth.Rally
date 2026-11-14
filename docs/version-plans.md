@@ -25,21 +25,27 @@ The full order and the reasoning are in docs/plan-1.3.0.md. In short, and not in
    this version, and if one fails the whole shape of it changes -- better to know in an afternoon than at the end.
 1. Send the two upstream pull requests (api.hudHide; a companion's path and folder env vars), so they wait in
    someone else's queue while we build.
-2. The self-test's co-driver (setVehicleTracker), so every step after it has an automated gate. It kept being
-   deferred for being not-a-feature, and it is why 1.2 needed a human at the wheel for every release.
-3. Version checks at startup (23): small, and it protects everything after.
-4. The matcher add-on (1): the backbone, and the large one. Stage page mock-up first.
-5. Stage pre-loading with how much is loaded on screen (21); mock-up first. Revisit the self-test's settle gate when
+2. Version checks at startup (23): small, and it protects everything after.
+3. The matcher add-on (1): the backbone, and the large one. Stage page mock-up first.
+4. Stage pre-loading with how much is loaded on screen (21); mock-up first. Revisit the self-test's settle gate when
    it lands -- that gate is a workaround for the problem this step fixes properly.
-6. Folder-based import (4) and the automatic ATC (3): contained, offline tests, and the easiest to drop if the
+5. Folder-based import (4) and the automatic ATC (3): contained, offline tests, and the easiest to drop if the
    matcher needs the time.
-7. Release 1.3.0 as a **full** release, tested on a clean PC rather than this one; ask TecnaGamer to list Earth
+6. Release 1.3.0 as a **full** release, tested on a clean PC rather than this one; ask TecnaGamer to list Earth
    Rally (mod + matcher) in the add-on registry.
+
+Not in 1.3.0: the self-test's co-driver check, which moves to 1.4.0 with the rest of the co-driver work. Note that
+until it is done `tools/selftest.py` exits 1 on every run, so it is a report to read rather than a gate to trust
+(docs/plan-1.3.0.md says what it would take to make it one meanwhile).
 
 Done: on a clean PC, a dropped-in map's stages drive without a recce, with no Python installed.
 
 ## 1.4.0: the co-driver
 
+0. The self-test's co-driver check (carried from 1.2, deferred from 1.3.0): `drivelineRoute:setVehicleTracker()` is
+   the lead -- a duck-typed tracker reporting a synthetic speed and position would drive the whole pacenote
+   pipeline with no real vehicle. It belongs here: a test that listens for pacenotes is worth most in the version
+   that changes them, and it gates every change below. docs/plan-1.3.0.md has the findings and what was tried.
 1. Agree with the user what the overhaul covers (call style, which features).
 2. Heights along the matched line: crests, jumps, dips; cautions from tightening corners and narrow sections.
 3. Better corner grading and distance calls, checked against the game's own stages' notebooks.

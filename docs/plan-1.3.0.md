@@ -15,9 +15,9 @@ of them comes back "no", the whole shape of this version changes. Leaving them t
 there is no room left to change course. So the unknowns are answered first, and nothing is built on them until they
 are.
 
-The other reordering: the self-test's co-driver gap comes early, before the features. It is not a feature itself,
-which is exactly why it keeps getting deferred -- and it is the reason 1.2 needed a human at the wheel for every
-release. Fixing it first means every step after it has an automated gate.
+The self-test's co-driver gap is **not** in this version (the user, 2026-11-14). It moves to 1.4.0, which is the
+co-driver version: the pacenote work happens there, so the test that listens for pacenotes belongs with it rather
+than ahead of a version about roads.
 
 ### 0. Answer the matcher's unknowns, build nothing (an afternoon)
 
@@ -44,22 +44,13 @@ the background while we build.
 - **Whatever step 0 turned up**: `server/` on a companion's path in the dev tree, and an env var giving a companion
   the user and cache folders. Both are one-liners for BeamNG.Earth and remove the need for fallbacks here.
 
-### 2. The self-test's co-driver (a few sessions)
-
-`drivelineRoute:setVehicleTracker()` is the lead: a duck-typed tracker reporting our synthetic speed and position
-would drive the whole pacenote pipeline with no real vehicle. Details and what has already been tried are in
-"Carried out of 1.2" below.
-
-Done when `python tools/selftest.py` passes 23 of 23 on Maryhill Up in about four minutes, with the co-driver
-calling notes. From then on every step below is checked by machine before it reaches a play-test.
-
-### 3. Version checks at startup (23) (small)
+### 2. Version checks at startup (23) (small)
 
 A clear message when BeamNG.drive or BeamNG.Earth is not the version this mod knows, instead of a stage failing
 halfway with something obscure. Small, and it protects everything after it -- including the matcher, which will be
 reading another project's file formats.
 
-### 4. The matcher (the backbone proper, and the large one)
+### 3. The matcher (the backbone proper, and the large one)
 
 In the order in "Road matching for every player" below: the companion file made from `tools/match_roads.py`, tested
 first against the dev tree's `--run-addon`, then against the packaged app; the status file; the stage page's matcher
@@ -68,7 +59,7 @@ state (**mock-up first**); a `local.json` entry for testing; the registry entry 
 Done when a map dropped into the import folder on a machine with no Python matches itself, with the stage page
 showing progress while it happens.
 
-### 5. Stage pre-loading, with how much is loaded on screen (21) (medium)
+### 4. Stage pre-loading, with how much is loaded on screen (21) (medium)
 
 BeamNG.Earth's area pre-cache along the stage corridor before the start, so a stage does not begin into a world that
 is still arriving. **Mock-up of the loading display first.**
@@ -78,7 +69,7 @@ This one has already shown its teeth: in 1.2 the self-test started a stage mid-s
 settle gate in `selftest.lua` is a workaround for a real problem that this step fixes properly, for players too --
 so when it lands, that gate should be revisited rather than left in.
 
-### 6. The import smalls (4, 3) (small, and genuinely small)
+### 5. The import smalls (4, 3) (small, and genuinely small)
 
 - Maps that group each stage with its controls in folders (SOFR and others): read the folders, not only the names.
   Two of the user's own rallies import with no controls today because their points are called just "Start" and
@@ -88,9 +79,9 @@ so when it lands, that gate should be revisited rather than left in.
 Left to last deliberately: they are contained, they have offline tests, and they are the easiest things to drop if
 the matcher turns out to need the time.
 
-### 7. Release
+### 6. Release
 
-A **full** release, not a pre-release -- the first one. That is a different bar: the version checks in step 3 have
+A **full** release, not a pre-release -- the first one. That is a different bar: the version checks in step 2 have
 to be in, the self-test has to pass end to end, and a clean PC has to be the thing actually tested rather than this
 one. Then ask TecnaGamer to list Earth Rally and the matcher in BeamNG.Earth's add-on registry.
 
@@ -182,7 +173,16 @@ and gets a start time as usual. Put in 1.3.0 by the user (2026-11-13), with the 
 
 Two things 1.2 left behind, both worth doing early because the rest of 1.3 leans on them.
 
-### The self-test cannot check the co-driver
+### The self-test cannot check the co-driver -- deferred to 1.4.0
+
+*Not in 1.3.0.* It moves to the co-driver version, where the pacenote work is. The findings are kept here because
+this is where they were made.
+
+**What it costs in the meantime.** The pacenote check fails on every run, so `tools/selftest.py` exits 1 every time:
+as it stands it cannot be used as a pass/fail gate at all, and a test that is always red is a test nobody reads. If
+it is to be useful through 1.3.0 it needs that one check reported as a known gap rather than a failure -- a few
+lines, honest as long as the report says plainly that the co-driver was not checked. Worth doing before leaning on
+the self-test for anything in 1.3.0; not worth doing if it is only going to be run by hand.
 
 `tools/selftest.py` walks the car along the stage line: deterministic, about four minutes, 22 of 23 checks. The one
 it cannot make is the co-driver, and the reason is in the game rather than in us. `drivelineRoute:onUpdate` only
