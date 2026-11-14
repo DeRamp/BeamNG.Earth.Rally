@@ -430,9 +430,9 @@ def part_a(c, app, mod):
     c.ok(got is not None, "the add-on's callback was called")
     res, kinds = got['res'], got['types']
     c.ok(res.get('error') is None, 'no error in the answer')
-    c.ok(kinds['ok'] == 'boolean' and res['ok'] is True, 'BUG A: ok came over as a boolean (got %r)' % kinds['ok'])
+    c.ok(kinds['ok'] == 'boolean' and res.get('ok') is True, 'ok came over as a boolean (got %r)' % kinds['ok'])
     for f in ('km', 'km2', 'items', 'missing', 'downloadBytes', 'diskBytes'):
-        c.ok(kinds[f] == 'number', 'BUG A: %s reached the add-on as a number (got %r)' % (f, kinds[f]))
+        c.ok(kinds[f] == 'number', '%s reached the add-on as a number (got %r)' % (f, kinds[f]))
     c.ok((res.get('km') or 0) > 2.0, 'the line it measured is the line we sent (%r km)' % (res.get('km'),))
     c.ok((res.get('items') or 0) > 0 and (res.get('missing') or 0) > 0, 'it has items to do (%r of %r missing)'
          % (res.get('missing'), res.get('items')))
@@ -523,7 +523,7 @@ def part_b(c, app, mod):
     c.ok(a.get('layers') == RECCE_LAYERS, 'and the subset, so a restart shows what this area is for')
     c.ok(abs(float(a.get('half', 0)) - HALF) < 1e-9, 'and its width, with the line for the map to draw')
 
-    mod.g.SET_AREAS(json.dumps(app.broadcast[-1]))
+    mod.g.SET_AREAS(json.dumps(app.broadcast[-1] if app.broadcast else {'areas': []}))
     v = jl(mod.g.RECCE_VERDICT(aid)) or {'gone': True}
     v.setdefault('types', {})
     c.ok(v.get('gone') is not True, 'api.areaStatus found the area by the id it was handed')
@@ -828,7 +828,10 @@ def main():
 #   BUG R  the regression this change exists for.  Explicit points fell through _area_route to the box path, and
 #          the caller was answered "an area needs south, west, north and east in degrees". Part E asks area_plan
 #          for a line and requires an estimate, and asks area_add for a malformed one and requires an answer
-#          rather than a task that dies with nothing sent.
+#          rather than a task that dies with nothing sent. Measured: 32 checks red, and then the run gives up --
+#          reverting this one is reverting the foundation the rest of the feature stands on, so most of the suite
+#          has nothing left to test. The other five each go red in place and the run still finishes:
+#            U 5 red, P 4 red, L 2 red (+1 more if phase_steps ignores the subset instead), F 2 red, N 7 red.
 #
 # Not covered here, deliberately:
 #   * the mod half of 1.3.1 (earthAdapter's wrapper, the auto recce's download offer): not written yet. The Lua

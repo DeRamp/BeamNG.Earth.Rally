@@ -142,7 +142,85 @@ it is the reason this change does not go anywhere near fast mode — but you may
 
 Windows 11, Python 3.13, BeamNG.drive not launched (see the end of this section).
 
-VALIDATION_NUMBERS_GO_HERE
+### Not in a game yet, and that is the gap in this
+
+The road-graph pull request leaned on an in-game run, and this one cannot: the machine it was written on had
+BeamNG.drive in use throughout and the app will not start on it at all (see the note at the end). Everything below
+is outside the game. What that leaves unchecked is the one thing a stand-in cannot reach — whether an add-on
+calling `areaAdd` mid-session behaves itself against a live download thread with the player driving — and the
+mod-to-server test below exists because that is exactly the gap four bugs lived in last time. Treat the figures as
+real and the in-game behaviour as untested, and say so if you would rather wait for one.
+
+### A mod-to-server-and-back test, written with the change
+
+The server half and the mod half each have their own suites below, and on the road-graph call both of those were
+green while it was broken four separate times — every one of those bugs lived in the gap between the two sides'
+stand-ins. So this call has a test that stands in for neither side: BeamNG.Earth's own `api.lua` under LuaJIT, its
+own `protocol.py` encoded and decoded both ways, and `Connection.area_route_plan` / `area_route_add` over a real
+`areas.Areas` with a real store in a temporary directory. Only the producers are stood in for, as
+`server/tests/test_areas.py` stands them in. **95 checks, 0 failed.**
+
+It lives in the add-on's own repository, so it is not in this diff. What it holds down is below, and each line was
+checked by putting the bug back and watching it go red, because that is the only way to know a test is
+load-bearing:
+
+| put back | checks red |
+|---|---|
+| `Areas.message()` drops `unavailable` | 5 |
+| the layers subset is not persisted | 4 |
+| `plan_route` does not echo the subset | 2 |
+| `phase_steps` ignores the subset | 1 |
+| `area_route_add` reads `fast` from the message | 2 |
+| `_onAreaAdd` hands the raw message through (`area` vs `result.id`) | 7 |
+| `_area_route` takes only `"current"` again | 32, and then the run gives up |
+
+It also caught a real one while this was being written: a file left in a half-reverted state during that exercise,
+which both unit suites were happy with.
+
+### The suites
+
+**Lua — `python tools/run_lua_tests.py`:** `Lua modules: 123 passed, 0 failed`. `test_api` is **154 checks against
+106 on `dev`**, covering the request as it goes out (no `fast`, no `mode`), the ten argument refusals that happen
+before anything is sent, the estimate and the new area's id decoded, every result field defended against a wrong
+type, `areaStatus` over the area list (`unavailable` and `msg` surfaced, an empty `msg` as nil, an older app's
+missing field as 0, and a copy the caller cannot edit), and a timeout heard once with a failing callback contained.
+
+**Python — `python tools/run_tests.py test_areas test_areaprops`:** `2 OK, 0 not OK` — `test_areas` **25 tests
+against 23 on `dev`**, `test_areaprops` 13. The two new ones are `test_layers_subset` (the names `check_layers`
+takes and refuses, what each one narrows, the estimate, the store, the plan a resume walks, and a stored subset
+naming a layer this version no longer has being dropped as a bad route is) and `test_area_route_messages` (both new
+types through a real session, the subset echoed, five refusals in words, the forged `"fast": true`, and the
+player's own `area_plan` / `area_add` taking the same points).
+
+**Python — `python tools/run_tests.py test_protocol_agreement`:** `1 OK` — 32 tests in 77 s, with both new message
+types in the agreement table both ways, `route`'s new form on the old two, and `layers` on `area_plan_result`.
+
+**The measured cost of the layers subset**, on a 300 m corridor over a 10 km line, through the real `plan_route`:
+
+```
+whole ground   549 items   309 MB to download   125 MB pinned
+['roads']       51 items    31 MB               67 MB pinned
+```
+
+9 % of the items and 10 % of the bytes. Pinned disk only halves because a cell's raw source blocks are shared by
+its layers and come down whichever one was asked for — `diskBytes` reports that honestly rather than scaling with
+the subset.
+
+`git diff --check`: clean. The branch merges into `dev` cleanly (`git merge-tree`), including over the New York
+shard work that landed on `dev` after it was cut.
+
+### What was not run, and why
+
+**This machine cannot run the app or much of its suite, and the cause has nothing to do with this change.** Its
+`server/earthfast.pyd` is VERSION **295** against `dev`'s `fast.MIN_VERSION` of **296**, there is no Rust toolchain
+on it to rebuild (`cargo` and `rustc` are both absent), and the committed binary cannot be swapped in — Windows
+holds the file and an Application Control policy blocks loading a freshly written copy. So `earthd` itself refuses
+to start (`fast.require(fast.MIN_VERSION, "the world server")` in `main`), and `plancache.py`'s
+`fast.native(296, "shared road stages")` takes out every suite that reaches the shared plan store: **of the 19
+modules that import `plancache`, 13 fail and 6 pass**, every failure carrying *"shared road stages (…) needs the
+server's native module (earthfast) version 296 or newer, version 295 was"*. None of the 13 imports `areas` or
+touches a message this change adds. The wider quality gate was therefore not run as a whole; the modules this
+change touches were each run at the head of the branch, as above.
 
 ## A note on #1249
 
@@ -160,4 +238,40 @@ https://claude.ai/code/session_01E8t7g6utD5smCkMxbL4cji
 
 ## Status, not part of the body
 
-STATUS_GOES_HERE
+**The patch is written, tested and pushed. The pull request has NOT been opened** — the body above is for
+review first.
+
+Branch `addon-api-area-route` in `C:\Users\Station\Documents\Claude\beamng.earth`, pushed to
+`deramp/addon-api-area-route`. Three commits, 8 files, 879 insertions:
+
+```
+913661e4  Modding API: the ground along a route downloaded ahead (api.areaPlan / areaAdd / areaStatus), never fast
+16c0e18e  A saved area's route may be points the caller names, not only the one the player planned
+1d6c05b2  A saved area downloads only the layers it was asked for, and says what never arrived
+```
+
+Cut from `dev` at `2cd8b7a4`; `dev` has since moved to `2c661ea5` (the New York shard work). Not rebased onto it:
+`server/earthfast.pyd` shows as modified in the working tree because Windows held the binary during the checkout,
+and a rebase wants a clean tree. It is not in any of the three commits, and `git merge-tree` says the branch merges
+into the current `dev` with no conflict, `server/earthd.py` included.
+
+The pull request, when the body is approved, is one command:
+
+```
+gh pr create --repo TecnaGamer/BeamNG.Earth --base dev --head DeRamp:addon-api-area-route \
+  --title "Modding API: the ground along a route downloaded ahead (api.areaPlan / api.areaAdd), layers subset, never fast" \
+  --body-file <this body>
+```
+
+**Two things worth deciding before it goes:**
+
+1. **There is no in-game run behind it.** The validation section says so plainly rather than hiding it. The game
+   was in use and the app cannot start on this machine anyway (the earthfast gap above). If the in-game run is
+   wanted first, the thing to drive is an `areaAdd` mid-session with the player moving, watching that the download
+   thread's gates hold and that nothing pauses.
+2. **No remove in the API.** Written up above as a deliberate decision with its reasoning, and offered to him. If
+   you would rather ship it with one, it wants an owner field in `areas.json` so a stale id cannot delete the
+   player's own area — a bigger change than it sounds.
+
+Also: `docs/upstream-roadgraph.md` says the road-graph push was refused for a missing `workflow` OAuth scope. That
+is now stale — `deramp/addon-api-road-graph` exists on the fork and this branch pushed without complaint.
