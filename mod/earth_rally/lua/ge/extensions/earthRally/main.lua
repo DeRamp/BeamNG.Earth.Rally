@@ -461,6 +461,7 @@ function M.uiSet(key, value) return settings.set(key, value) end
 local streamT, streamOn, inactiveSent = 0, false, true
 local previewT = nil
 local previewLayout = nil
+local unloadNext = false      -- the mod was switched off: stop being a loaded extension next frame (onModDeactivated)
 
 -- The HUD preview: sample frames through the real HUD apps (the stage layout put on for it), without driving.
 function M.previewHud()
@@ -561,6 +562,13 @@ M._sendStreams = sendStreams
 ------------------------------------------------------------------------------------------ hooks
 
 function M.onUpdate(dtReal, dtSim)
+  -- switched off a frame ago: stop running (see onModDeactivated)
+  if unloadNext then
+    unloadNext = false
+    local ext = rawget(_G, 'extensions')
+    if ext and ext.unload then pcall(ext.unload, 'earthRally_main') end
+    return
+  end
   if scanIn then
     scanIn = scanIn - (dtReal or 0)
     if scanIn <= 0 then scanIn = nil M.scanImports(false) end
@@ -636,18 +644,48 @@ function M.selfTest(eventId, stageId, opts)
 end
 function M.selfTestStop() if selftest then selftest.stop('stopped from the console') end end
 
+-- The level left, or back at the menu: the run put away. This is the hook that really fires for a player, so every
+-- call in it is pcall'd and the strips are given back even if something before that throws -- tidy() reaches
+-- layoutOff sixth of nine, so a throw in the traffic or the props would otherwise take the release with it, and a
+-- strip left held outlives the level it was held in.
 function M.onClientEndMission()
   if selftest then pcall(selftest.onClientEndMission) end
-  if recce.active() then recce.stop(false) end
-  if previewT then M.previewStop() end
-  runner.abort(true)
-  earth.reset()
+  if recce.active() then pcall(recce.stop, false) end
+  if previewT then pcall(M.previewStop) end
+  pcall(runner.abort, true)
+  pcall(earth.holdStrips, false)
+  pcall(earth.reset)
 end
 
--- The mod switched off, or its Lua reloaded, part way through a run: everything it put in the game taken back now,
--- while there is still code here to do it. onExtensionLoaded below does the same on the way back in, but only if the
--- mod comes back at all -- and BeamNG.Earth leaves its own imgui status bar and banner out while it believes an app
--- holds them, so a hold left behind takes its "server not running" message with it on any layout without its apps.
+-- Earth Rally switched off in the mod manager, or its zip deleted. The game does **not** unload a mod's extensions
+-- for this: modmanager.deactivateMod unmounts the zip, sets active = false and fires this hook, and never calls
+-- extensions.unload (checked in the game's own Lua, build 302427) -- and this extension is 'manual'
+-- (scripts/earth_rally/modScript.lua), so a level change does not unload it either. Without this hook we would keep
+-- running inside a switched-off mod: runner.update would re-assert the hold on BeamNG.Earth's strips every frame and
+-- put the stage layout back every second, over apps whose files have just been unmounted -- a blank HUD the player
+-- cannot get out of until they change level.
+--
+-- Telling whether the mod that went is ours: deactivateMod unmounts before it fires this, so our own file has gone
+-- from the virtual file system. (Steadier than matching the zip's name, which a player can rename.)
+M.OUR_FILE = '/lua/ge/extensions/earthRally/main.lua'
+function M.onModDeactivated()
+  local fs = rawget(_G, 'FS')
+  if fs and fs.fileExists and fs:fileExists(M.OUR_FILE) then return end   -- another mod went: not our business
+  log('I', logTag, 'Earth Rally switched off: the run stopped and BeamNG.Earth left as it was')
+  if recce.active() then pcall(recce.stop, false) end
+  if previewT then pcall(M.previewStop) end
+  pcall(runner.abort, true)
+  pcall(earth.holdStrips, false)
+  pcall(earth.reset)
+  unloadNext = true     -- (not from in here: extensions.hook is walking the extension list while we run)
+end
+
+-- The extension unloaded part way through a run -- a full Lua reload (Ctrl+L), extensions.reload, or an unload from
+-- the console: everything the run put in the game taken back while there is still code here to do it. This is **not**
+-- the hook for the mod being switched off in the mod manager; that is onModDeactivated above, and the game does not
+-- unload extensions for it. onExtensionLoaded below cleans up on the way back in, but only if the mod comes back at
+-- all -- and BeamNG.Earth leaves its own imgui status bar and banner out while it believes an app holds them, so a
+-- hold left behind takes its "server not running" message with it on any layout without its apps.
 function M.onExtensionUnloaded()
   if recce.active() then pcall(recce.stop, false) end
   if previewT then pcall(M.previewStop) end

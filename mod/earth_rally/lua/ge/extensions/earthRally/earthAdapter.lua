@@ -150,16 +150,31 @@ end
 -- are on screen, because otherwise it draws each with ImGui itself (its core.lua: `if not hudapps.mounted('status')
 -- then statusbar.draw(...)`), which would be worse than leaving them alone.
 --
--- `core.hudApp` is an internal, not a published entry point. It is not in BeamNG.Earth's docs/ADDONS.md, which is the
--- surface it does publish; it is the call its own apps make every three seconds to announce themselves, and what we
--- tell it is not true -- that its apps are on screen, when we have taken them out of the layout. That is our risk to
--- carry, and we carry it on purpose because it fails cheaply: if the call goes or changes, holdStrips returns false,
--- the strips just stay on screen for a stage, and nothing is lost or stuck. The version check (1.3.0) is what says
--- the BeamNG.Earth underneath is one this mod does not know.
+-- `core.hudApp` is an internal, not a published entry point. It is not in BeamNG.Earth's docs/ADDONS.md, which is
+-- the surface it does publish; it is the call its own apps make every three seconds to announce themselves, and what
+-- we tell it is not true -- that its apps are on screen, when we have taken them out of the layout. That is our risk
+-- to carry. What makes it a small one:
+--
+--   * The state we assert is BeamNG.Earth's own default. All three of its apps are in both layouts it ships
+--     (beamngEarth.uilayout.json, beamngEarthMP.uilayout.json), so "status and banner mounted" is what almost every
+--     player is in, every session, and the code that reads it runs constantly upstream. We are not pushing another
+--     project's bookkeeping into a corner nobody exercises.
+--   * Only the three imgui draw gates read mount state at all (its core.lua, ~2270). The place request, the payload,
+--     the minimap label and api.place() do not, so a held strip costs no data -- which is why M.place() below keeps
+--     working through a stage.
+--   * It fails cheaply. If the call is gone, holdStrips returns false; if a strip is renamed it returns false too
+--     (the check above). Either way the strips stay on screen for a stage: ugly for one run, nothing lost or stuck.
+--
+-- What none of that covers: if BeamNG.Earth ever gates its place request on `mounted` -- an ordinary optimisation,
+-- and `mounted` already gates its payload sends -- our assertion would quietly stop the road name feeding M.place()
+-- and the HUD's own row, with no error anywhere. That is the one to watch for, and the one a version check cannot
+-- catch, because core.hudApp is not part of the versioned API surface: a change to it need not bump the minor.
 --
 -- An API for this was drafted and deliberately not sent (docs/plan-1.3.0.md, "The strips: no pull request"): the
 -- shape that reads well for a third-party mod would also let any mod take BeamNG.Earth's data credits down, and a
--- CC BY attribution strip is the one thing that must not have a one-call off switch.
+-- CC BY attribution strip is the one thing that must not have a one-call off switch. Earth Rally never touches
+-- credits by either route -- EARTH_STRIPS is status and banner, and our own stage layout keeps `beamngEarthCredits`
+-- on screen (earthRallyStage.uilayout.json), so the attribution stays up, drawn by its own app, all through a stage.
 --
 -- Held, not set once: those apps fire `hudApp(name, false)` as they are destroyed in the layout swap, so the runner
 -- asserts this every frame while the stage layout is on. Given back on every way out -- runner's layoutOff, and
@@ -170,9 +185,15 @@ M.EARTH_STRIPS = { 'status', 'banner' }
 function M.holdStrips(on)
   local c = core()
   if not (c and c.hudApp) then return false end
+  local want = on and true or false
   local ok = true
   for _, n in ipairs(M.EARTH_STRIPS) do
-    if not pcall(c.hudApp, n, on and true or false) then ok = false end
+    -- What it answers matters, not only that it did not throw: BeamNG.Earth's setMounted returns false for a strip
+    -- name it does not know, with no error, so a renamed strip would otherwise look held to us while it was still
+    -- on screen. (Releasing answers false for both the real case and the unknown name, which is harmless: giving
+    -- back a strip nobody holds does nothing.)
+    local okCall, res = pcall(c.hudApp, n, want)
+    if not okCall or res ~= want then ok = false end
   end
   return ok
 end

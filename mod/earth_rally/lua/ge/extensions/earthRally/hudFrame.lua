@@ -81,8 +81,12 @@ end
 
 -- A word of our own for BeamNG.Earth's banner, by its id (its banner.lua sets them): its own sentence runs to a
 -- hundred characters and more, which belongs in the panel before a stage, not across a stage.
+-- (every banner id BeamNG.Earth can raise: its strip is off screen during a stage, so an id missing from here is a
+--  warning nobody draws at all. 'offline' and 'degraded' are its data-source warnings -- "areas never visited have
+--  no terrain" -- which matter more to a stage on streamed ground than they do to free driving.)
 M.WARN_WORDS = { noserver = 'no server', lost = 'reconnecting', edge = 'world edge',
-                 drophold = 'loading ground', starting = 'starting' }
+                 drophold = 'loading ground', starting = 'starting', offline = 'offline data',
+                 degraded = 'data missing' }
 
 -- Where the car is and what BeamNG.Earth has to say about it, for the HUD's own row (its strips are off screen
 -- during a stage). nil when there is nothing to say.

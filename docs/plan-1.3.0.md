@@ -286,9 +286,17 @@ already reached the same place:
   returns nothing. That claim is now corrected in `earthAdapter.lua`, where it had been repeated.
 
 **So the mount call stays, knowingly.** What makes that defensible rather than lazy: it fails cheaply (the strips
-stay on screen; nothing is stuck or lost), it is now released on every way out of a run including the mod being
-switched off mid-stage (`main.onExtensionUnloaded`, tested in `tests/test_run.lua`), and step 1's version check is
-what will say the BeamNG.Earth underneath is one this mod does not know. It also never touches `credits`:
+stay on screen; nothing is stuck or lost, and a renamed strip is now reported rather than assumed held), and it is
+released on every way out of a run that can leave one held: the level being left (`main.onClientEndMission`, every
+call pcall'd so a throw in the tidy cannot take the release with it), a Lua reload or console unload
+(`main.onExtensionUnloaded`), and the mod being switched off in the mod manager (`main.onModDeactivated` -- the game
+does **not** unload a mod's extensions for that, checked in its own Lua, so without that hook the runner would go on
+re-asserting the hold every frame inside a switched-off mod). All four paths are tested in `tests/test_run.lua`.
+
+A version check cannot be the safety net here, and an earlier draft of this wrongly said it would be: `core.hudApp`
+is not part of the versioned API surface, so a change to it need not bump the minor. The real protection is that the
+state we assert is BeamNG.Earth's own default in both layouts it ships, that only its three imgui draw gates read
+mount state at all, and that `M.place()` and the minimap keep their data throughout. It also never touches `credits`:
 `earthAdapter.EARTH_STRIPS` is `status` and `banner` only.
 
 The draft is on the local branch `addon-api-hud-hide` in the BeamNG.Earth clone, unpushed, kept for reference.

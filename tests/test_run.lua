@@ -1355,11 +1355,56 @@ do
   main.onExtensionUnloaded()
   T.check(held() == 0, 'the mod unloaded mid-stage: both strips given back')
 
+  -- the level left: the hook that really fires for a player, and it gives the strips back even when the tidy that
+  -- normally does it is not reached
+  toTheLine()
+  T.check(held() == 2, 'on a stage: both held')
+  main.onClientEndMission()
+  T.check(held() == 0, 'the level left: both strips given back')
+
+  -- Earth Rally switched off in the mod manager. The game does not unload a mod's extensions for that, so this is
+  -- the only hook that fires: without it the runner would go on re-asserting the hold every frame inside a
+  -- switched-off mod. Our own file has gone from the VFS by the time it fires, which is how we know it was us.
+  toTheLine()
+  T.check(held() == 2, 'on a stage: both held')
+  files[main.OUR_FILE] = { some = 'other mod is still mounted' }
+  main.onModDeactivated()
+  T.check(held() == 2 and runner.current() ~= nil, 'another mod switched off: our run left alone')
+  files[main.OUR_FILE] = nil
+  local unloaded = {}
+  -- (abort unloads the rally start-clock extension of its own accord, so count only ours)
+  local function ourUnloads()
+    local n = 0
+    for _, name in ipairs(unloaded) do if name == 'earthRally_main' then n = n + 1 end end
+    return n
+  end
+  extensions = { unload = function(n) unloaded[#unloaded + 1] = n end }
+  main.onModDeactivated()
+  T.check(held() == 0 and runner.current() == nil, 'Earth Rally switched off: the strips back and the run stopped')
+  T.check(ourUnloads() == 0, 'and not unloaded from inside the hook (the game is walking its extension list)')
+  main.onUpdate(0.05, 0.05)
+  T.check(ourUnloads() == 1, 'unloaded the frame after (' .. table.concat(unloaded, ',') .. ')')
+  main.onUpdate(0.05, 0.05)
+  T.check(ourUnloads() == 1, 'and only once')
+  extensions = nil
+
+  -- a strip BeamNG.Earth does not know: it answers false without throwing, so the call has to read the answer and
+  -- not just survive it (otherwise a renamed strip looks held while it is still on screen)
+  local realHudApp2 = beamngEarth_core.hudApp
+  beamngEarth_core.hudApp = function(name, on)
+    if name == 'banner' then return false end       -- as setMounted answers for a name not in its list
+    return realHudApp2(name, on)
+  end
+  T.check(earth.holdStrips(true) == false, 'a strip it does not know: the hold reports it did not take')
+  earth.holdStrips(false)
+  beamngEarth_core.hudApp = realHudApp2
+  T.check(held() == 0, 'and nothing left held after it')
+
   -- only one of the two takes: the one that did is still given back (1.2.5 released only when both took, so a
   -- half-held strip stayed off screen for the rest of the session with nothing able to put it back)
   local realHudApp = beamngEarth_core.hudApp
   beamngEarth_core.hudApp = function(name, on)
-    if name == 'banner' and on then error('BeamNG.Earth said no') end
+    if name == 'banner' and on then error('BeamNG.Earth said no') end   -- (a throw, not a refusal: both are covered)
     return realHudApp(name, on)
   end
   toTheLine()
