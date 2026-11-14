@@ -57,23 +57,13 @@ If the answers hold, the companion approach stands and the rest of this plan is 
 re-plan before writing a line of it -- the alternatives (matching inside the mod in Lua; a matcher service in the
 world server) are different enough that no work carries over.
 
-### 1. Send the two upstream pull requests (a day, then they wait)
-
-Both are small, both unblock later steps, and both sit in someone else's review queue -- so they go first and run in
-the background while we build.
-
-- **`api.hudHide`** (see "Carried out of 1.2"): replaces the mount-call fiction 1.2.5 uses to take BeamNG.Earth's
-  strips off screen.
-- **Whatever step 0 turned up**: `server/` on a companion's path in the dev tree, and an env var giving a companion
-  the user and cache folders. Both are one-liners for BeamNG.Earth and remove the need for fallbacks here.
-
-### 2. Version checks at startup (23) (small)
+### 1. Version checks at startup (23) (small)
 
 A clear message when BeamNG.drive or BeamNG.Earth is not the version this mod knows, instead of a stage failing
 halfway with something obscure. Small, and it protects everything after it -- including the matcher, which will be
 reading another project's file formats.
 
-### 3. The matcher (the backbone proper, and the large one)
+### 2. The matcher (the backbone proper, and the large one)
 
 In the order in "Road matching for every player" below: the companion file made from `tools/match_roads.py`, tested
 first against the dev tree's `--run-addon`, then against the packaged app; the status file; the stage page's matcher
@@ -82,7 +72,7 @@ state (**mock-up first**); a `local.json` entry for testing; the registry entry 
 Done when a map dropped into the import folder on a machine with no Python matches itself, with the stage page
 showing progress while it happens.
 
-### 4. Stage pre-loading, with how much is loaded on screen (21) (medium)
+### 3. Stage pre-loading, with how much is loaded on screen (21) (medium)
 
 BeamNG.Earth's area pre-cache along the stage corridor before the start, so a stage does not begin into a world that
 is still arriving. **Mock-up of the loading display first.**
@@ -92,7 +82,7 @@ This one has already shown its teeth: in 1.2 the self-test started a stage mid-s
 settle gate in `selftest.lua` is a workaround for a real problem that this step fixes properly, for players too --
 so when it lands, that gate should be revisited rather than left in.
 
-### 5. The import smalls (4, 3), and the late-start rule (small, and genuinely small)
+### 4. The import smalls (4, 3), and the late-start rule (small, and genuinely small)
 
 - Maps that group each stage with its controls in folders (SOFR and others): read the folders, not only the names.
   Two of the user's own rallies import with no controls today because their points are called just "Start" and
@@ -106,9 +96,9 @@ so when it lands, that gate should be revisited rather than left in.
 Left to last deliberately: they are contained, they have offline tests, and they are the easiest things to drop if
 the matcher turns out to need the time.
 
-### 6. Release
+### 5. Release
 
-A **full** release, not a pre-release -- the first one. That is a different bar: the version checks in step 2 have
+A **full** release, not a pre-release -- the first one. That is a different bar: the version checks in step 1 have
 to be in, the self-test has to pass end to end, and a clean PC has to be the thing actually tested rather than this
 one. Then ask TecnaGamer to list Earth Rally and the matcher in BeamNG.Earth's add-on registry.
 
@@ -198,7 +188,8 @@ and gets a start time as usual. Put in 1.3.0 by the user (2026-11-13), with the 
 
 ## Carried out of 1.2
 
-Two things 1.2 left behind, both worth doing early because the rest of 1.3 leans on them.
+Two things 1.2 left behind. Neither is in 1.3.0 in the end: one moved to 1.4.0 where the work it tests belongs, and
+the other was reviewed and dropped. Both write-ups are kept here because this is where the findings were made.
 
 ### The self-test cannot check the co-driver -- deferred to 1.4.0
 
@@ -230,18 +221,35 @@ involved, which would give the walked run its co-driver check and keep it determ
 with `applyClusterVelocityScaleAdd` was tried and did not work: the velocity is real enough to move the car, but the
 teleport each frame leaves the tracker reading zero.
 
-### A pull request to BeamNG.Earth for `api.hudHide`
+### The strips: no pull request (closed, 2026-11-13)
 
 Earth Rally takes BeamNG.Earth's place-name strip and connection banner off screen for a stage by dropping the apps
-from its stage layout and then telling BeamNG.Earth they are mounted anyway (`core.hudApp`, its own published call),
-so it does not draw them with ImGui instead. That touches no data path and no player setting, and it is the only
-option available today -- but it is a polite fiction, and upstream could tidy it away without warning.
+from its stage layout and then telling BeamNG.Earth they are mounted anyway (`core.hudApp`), so it does not draw them
+with ImGui instead. An `api.hudHide` was drafted to replace that, reviewed, and **not sent**. The decision is the
+user's (2026-11-13: "avoid having to do that push entirely ... so nobody else has any issues"), and the review had
+already reached the same place:
 
-The clean shape is about 30 lines and no JS: `hudapps.setHidden(name, by, on)` and `hudapps.hidden(name)` beside the
-mount registry, four `and not hudapps.hidden(...)` terms in `core.hudTexts` and its two ImGui draw calls, and
-`api.hudHide` / `hudShow` / `hudHidden` behind `has('hud')` with a minor bump. The same size and shape as the
-`onBeamNGEarthRebased` contribution. Earth Rally would gate on `api.has('hud')` and drop the mount call where it is
-available.
+- **The drafted API would have let any add-on hide BeamNG.Earth's data credits with one call.** Its `credits.lua`
+  says the strip is on by default because "CC BY and similar licences ask for visible attribution". No prose in a
+  docs page makes that safe, and this project had already decided for itself (docs/notes-1.2.4.md) that "a mod
+  turning it off for them is not the same as the player choosing to".
+- **The patch had a real defect**, and it was the same shape as the one found on our own side: a hold could be taken
+  and never released -- `hudapps._reset()` has no production caller, `onClientEndMission` does not clear holds, and
+  BeamNG.Earth's own Add-ons page can uninstall the holder, after which no code exists in the session that can give
+  the strip back. For `credits` that is attribution off for the session with the player unable to restore it.
+- Two factual errors in the docs it added (a frame rate the status bar no longer shows; a manifest `id` field that
+  does not exist), and `banner` made hideable although `banner.lua`'s first line is "never silent" and it carries
+  "server not running" and "the car is held in place".
+- It also claimed `core.hudApp` is "a published entry point". It is not -- `grep -rn hudApp docs/` in BeamNG.Earth
+  returns nothing. That claim is now corrected in `earthAdapter.lua`, where it had been repeated.
+
+**So the mount call stays, knowingly.** What makes that defensible rather than lazy: it fails cheaply (the strips
+stay on screen; nothing is stuck or lost), it is now released on every way out of a run including the mod being
+switched off mid-stage (`main.onExtensionUnloaded`, tested in `tests/test_run.lua`), and step 1's version check is
+what will say the BeamNG.Earth underneath is one this mod does not know. It also never touches `credits`:
+`earthAdapter.EARTH_STRIPS` is `status` and `banner` only.
+
+The draft is on the local branch `addon-api-hud-hide` in the BeamNG.Earth clone, unpushed, kept for reference.
 
 ## Also for later
 

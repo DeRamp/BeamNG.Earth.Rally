@@ -79,8 +79,11 @@ package.loaded['beamngEarth/rebase'] = { distance = 15000 }
 local camshift = { RADIUS_MIN = 1000, RADIUS_MAX = 5000 }
 package.loaded['beamngEarth/camshift'] = camshift
 local radiusAtMove = nil
+local stripsMounted = {}      -- BeamNG.Earth's view of which of its strips an app has
 beamngEarth_core = {
   rebaseTo = function(lat, lon) moveAsk = { lat = lat, lon = lon, frames = 3 } radiusAtMove = camshift.RADIUS_MAX return true end,
+  -- an app saying it is on screen; while one says so, BeamNG.Earth leaves its own imgui drawing of that strip out
+  hudApp = function(name, on) stripsMounted[name] = on and true or nil return on and true or false end,
   setRebaseDistance = function(m) rebaseDistance = math.max(2000, math.min(16000, m))
     package.loaded['beamngEarth/rebase'].distance = rebaseDistance return rebaseDistance end,
 }
@@ -1314,6 +1317,56 @@ do
   settings.set('devPanel', true)
   T.check(main.onUpdate ~= nil, 'main loaded')
   settings.reset()
+end
+
+------------------------------------------------------------------------------------------ the strips given back
+-- A run takes BeamNG.Earth's status bar and banner off screen (earthAdapter.holdStrips, through BeamNG.Earth's own
+-- mount call), and BeamNG.Earth leaves its imgui drawing of a strip out while it believes an app has it. Nothing else
+-- will put them back, and the banner is where "BeamNG.Earth server not running" and "the car is held in place" are
+-- said -- so every way out of a run has to give them back, not only the tidy one.
+do
+  local main = require('earthRally/main')
+  local function held()
+    local n = 0
+    for _, v in pairs(stripsMounted) do if v then n = n + 1 end end
+    return n
+  end
+  -- (a run gets as far as the start line, which is where the stage layout and the hold go on)
+  local function toTheLine()
+    runner.abort(true)
+    car.lat, car.lon = full[1][1], full[1][2]
+    local started = runner.start(event, event.stages[1])
+    frames(20)
+    return started and runner.current() ~= nil
+  end
+  runner.abort(true)
+  T.check(held() == 0, 'before a run: BeamNG.Earth draws its own strips')
+
+  -- the ordinary way out
+  T.check(toTheLine(), 'a run for the strips')
+  T.check(held() == 2 and stripsMounted.status and stripsMounted.banner,
+    'on a stage: the status bar and the banner off screen (' .. held() .. ')')
+  runner.abort(true)
+  T.check(held() == 0, 'the run over: both strips given back')
+
+  -- the mod switched off or its Lua reloaded mid-stage: given back while there is still code here to do it
+  toTheLine()
+  T.check(held() == 2, 'on a stage again: both held')
+  main.onExtensionUnloaded()
+  T.check(held() == 0, 'the mod unloaded mid-stage: both strips given back')
+
+  -- only one of the two takes: the one that did is still given back (1.2.5 released only when both took, so a
+  -- half-held strip stayed off screen for the rest of the session with nothing able to put it back)
+  local realHudApp = beamngEarth_core.hudApp
+  beamngEarth_core.hudApp = function(name, on)
+    if name == 'banner' and on then error('BeamNG.Earth said no') end
+    return realHudApp(name, on)
+  end
+  toTheLine()
+  T.check(stripsMounted.status == true and not stripsMounted.banner, 'one strip of the two taken, the other refused')
+  beamngEarth_core.hudApp = realHudApp
+  runner.abort(true)
+  T.check(held() == 0, 'half held: the one that took is given back too')
 end
 
 T.done('test_run')

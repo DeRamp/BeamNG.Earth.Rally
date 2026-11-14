@@ -312,10 +312,15 @@ local function layoutOn()
   run.oldLayout = stateLayout() or 'beamngEarth'
   if run.oldLayout ~= M.STAGE_LAYOUT then pcall(gs.setGameState, nil, M.STAGE_LAYOUT) end
   run.layoutCheckIn = M.LAYOUT_CHECK_S
-  -- BeamNG.Earth's own strips off screen for the stage: the HUD shows what they carried, in its own panel
-  run.stripsHeld = earth.holdStrips(true)
+  -- BeamNG.Earth's own strips off screen for the stage: the HUD shows what they carried, in its own panel.
+  -- stripsHeld means "we asked", not "every strip took": holdStrips asks for two and can get one, and the one it got
+  -- still has to be given back. (1.2.5 released only when both took, so a half-held strip stayed off screen for the
+  -- rest of the session -- and BeamNG.Earth leaves its own imgui drawing out while it believes an app has the strip,
+  -- so that is its connection banner gone, with the "server not running" message in it.)
+  run.stripsHeld = true
+  local held = earth.holdStrips(true)
   log('I', logTag, string.format('stage layout put on (was %s; game state now %s)%s', tostring(run.oldLayout),
-    tostring(stateLayout()), run.stripsHeld and "; BeamNG.Earth's strips off screen" or ''))
+    tostring(stateLayout()), held and "; BeamNG.Earth's strips off screen" or ''))
 end
 local function layoutOff()
   local gs = rawget(_G, 'core_gamestate')

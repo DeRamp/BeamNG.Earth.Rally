@@ -644,6 +644,18 @@ function M.onClientEndMission()
   earth.reset()
 end
 
+-- The mod switched off, or its Lua reloaded, part way through a run: everything it put in the game taken back now,
+-- while there is still code here to do it. onExtensionLoaded below does the same on the way back in, but only if the
+-- mod comes back at all -- and BeamNG.Earth leaves its own imgui status bar and banner out while it believes an app
+-- holds them, so a hold left behind takes its "server not running" message with it on any layout without its apps.
+function M.onExtensionUnloaded()
+  if recce.active() then pcall(recce.stop, false) end
+  if previewT then pcall(M.previewStop) end
+  pcall(runner.abort, true)
+  pcall(earth.holdStrips, false)
+  pcall(earth.reset)
+end
+
 function M.onExtensionLoaded()
   -- (boards and tents a run left before a Lua reload: taken away; the car's brake / clutch overrides handed back,
   --  and BeamNG.Earth's strips given back in case a run was cut short holding them)

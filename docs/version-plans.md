@@ -23,16 +23,18 @@ The full order and the reasoning are in docs/plan-1.3.0.md. In short, and not in
 
 0. Answer the matcher's three unknowns with a throwaway spike, building nothing. They are the only real unknowns in
    this version, and if one fails the whole shape of it changes -- better to know in an afternoon than at the end.
-1. Send the two upstream pull requests (api.hudHide; a companion's path and folder env vars), so they wait in
-   someone else's queue while we build.
-2. Version checks at startup (23): small, and it protects everything after.
-3. The matcher add-on (1): the backbone, and the large one. Stage page mock-up first.
-4. Stage pre-loading with how much is loaded on screen (21); mock-up first. Revisit the self-test's settle gate when
+1. Version checks at startup (23): small, and it protects everything after.
+2. The matcher add-on (1): the backbone, and the large one. Stage page mock-up first.
+3. Stage pre-loading with how much is loaded on screen (21); mock-up first. Revisit the self-test's settle gate when
    it lands -- that gate is a workaround for the problem this step fixes properly.
-5. Folder-based import (4), the automatic ATC (3), and dropping the late-start penalty: contained, offline tests,
+4. Folder-based import (4), the automatic ATC (3), and dropping the late-start penalty: contained, offline tests,
    and the easiest to drop if the matcher needs the time.
-6. Release 1.3.0 as a **full** release, tested on a clean PC rather than this one; ask TecnaGamer to list Earth
+5. Release 1.3.0 as a **full** release, tested on a clean PC rather than this one; ask TecnaGamer to list Earth
    Rally (mod + matcher) in the add-on registry.
+
+Nothing goes upstream for 1.3.0 (the user, 2026-11-13): the api.hudHide pull request was drafted, reviewed and
+dropped -- docs/plan-1.3.0.md, "The strips: no pull request" -- and the mount call Earth Rally already uses stays,
+with the strips now given back on every way out of a run.
 
 Not in 1.3.0: the self-test's co-driver check, which moves to 1.4.0 with the rest of the co-driver work. Note that
 until it is done `tools/selftest.py` exits 1 on every run, so it is a report to read rather than a gate to trust

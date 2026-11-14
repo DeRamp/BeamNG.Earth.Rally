@@ -148,11 +148,24 @@ end
 --
 -- Instead the two apps are simply not in our stage layout, so nothing draws them -- and we tell BeamNG.Earth they
 -- are on screen, because otherwise it draws each with ImGui itself (its core.lua: `if not hudapps.mounted('status')
--- then statusbar.draw(...)`), which would be worse than leaving them alone. `core.hudApp` is its own published
--- entry point: the very call its apps make, every three seconds, to announce themselves.
+-- then statusbar.draw(...)`), which would be worse than leaving them alone.
+--
+-- `core.hudApp` is an internal, not a published entry point. It is not in BeamNG.Earth's docs/ADDONS.md, which is the
+-- surface it does publish; it is the call its own apps make every three seconds to announce themselves, and what we
+-- tell it is not true -- that its apps are on screen, when we have taken them out of the layout. That is our risk to
+-- carry, and we carry it on purpose because it fails cheaply: if the call goes or changes, holdStrips returns false,
+-- the strips just stay on screen for a stage, and nothing is lost or stuck. The version check (1.3.0) is what says
+-- the BeamNG.Earth underneath is one this mod does not know.
+--
+-- An API for this was drafted and deliberately not sent (docs/plan-1.3.0.md, "The strips: no pull request"): the
+-- shape that reads well for a third-party mod would also let any mod take BeamNG.Earth's data credits down, and a
+-- CC BY attribution strip is the one thing that must not have a one-call off switch.
 --
 -- Held, not set once: those apps fire `hudApp(name, false)` as they are destroyed in the layout swap, so the runner
--- asserts this every frame while the stage layout is on, and gives them back at the end.
+-- asserts this every frame while the stage layout is on. Given back on every way out -- runner's layoutOff, and
+-- main.onExtensionUnloaded for the mod being switched off part way through a stage -- because while BeamNG.Earth
+-- believes an app has a strip it leaves its own drawing of it out, and the banner is where "BeamNG.Earth server not
+-- running" and "the car is held in place" are said.
 M.EARTH_STRIPS = { 'status', 'banner' }
 function M.holdStrips(on)
   local c = core()

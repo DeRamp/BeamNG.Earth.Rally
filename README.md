@@ -242,11 +242,11 @@ The developer panel (Settings > Developer panel) lists what each run found out, 
 
 ## Plan
 
-Next: 1.3.0 (`docs/plan-1.3.0.md`): road matching for every player (a BeamNG.Earth
-add-on, no Python), the pacenote generator overhauled, an ATC added to stages without one. With it, two things left
-over from 1.2: the self-test's co-driver check (above), and a small pull request to BeamNG.Earth for an add-on way to
-hide its own strips -- Earth Rally does it today through `core.hudApp`, its published mount call, which works but is
-a polite fiction. Later: course tape, junction
+Next: 1.3.0 (`docs/plan-1.3.0.md`): road matching for every player, so a dropped-in map's stages drive with no recce
+and no Python; version checks at startup; the stage corridor loaded before the start; an ATC added to stages without
+one; and no time penalty for a late start, as in a real rally. How the matching runs is being settled -- in this
+mod's own Lua, or by asking BeamNG.Earth for it -- and nothing goes upstream for this version. Later: the co-driver
+(better pacenotes, and the self-test hearing them), course tape, junction
 direction signs,
 better pacenotes (crests, cautions), stages wider than ~26 km, itineraries (loops, road sections, service), an
 in-game editor.
