@@ -94,15 +94,22 @@ STRICT = os.environ.get('BNGE_RG_E2E_STRICT') == '1'
 # --------------------------------------------------------------------------------------------------
 # finding BeamNG.Earth, and an interpreter that can run its server code
 # --------------------------------------------------------------------------------------------------
+def is_app(c):
+    return (c / 'server' / 'earthd.py').is_file() and (c / 'mod' / 'beamng_earth').is_dir()
+
+
 def app_repo():
-    """The BeamNG.Earth checkout to drive, or None. $BNGE_REPO first, then a sibling of this repository."""
-    cands = []
+    """The BeamNG.Earth checkout to drive, or None.
+
+    $BNGE_REPO decides when it is set, even if it names nothing: a run that was pointed somewhere should say so
+    rather than quietly test a different checkout. Otherwise a sibling of this repository."""
     env = os.environ.get('BNGE_REPO')
     if env:
-        cands.append(Path(env))
-    cands += [ROOT.parent / name for name in ('beamng.earth', 'BeamNG.Earth', 'beamng-earth')]
-    for c in cands:
-        if (c / 'server' / 'earthd.py').is_file() and (c / 'mod' / 'beamng_earth').is_dir():
+        c = Path(env)
+        return c if is_app(c) else None
+    for name in ('beamng.earth', 'BeamNG.Earth', 'beamng-earth'):
+        c = ROOT.parent / name
+        if is_app(c):
             return c
     return None
 
@@ -871,7 +878,8 @@ def part_b(c, app_dir, lupa, roads=True, label='with roads'):
 def main():
     app_dir = app_repo()
     if app_dir is None:
-        print('test_roadgraph_e2e: no BeamNG.Earth checkout (set BNGE_REPO, or put one beside this repo): skipped')
+        print('test_roadgraph_e2e: no BeamNG.Earth checkout at %s: skipped'
+              % (os.environ.get('BNGE_REPO') or ('%s/beamng.earth' % ROOT.parent)))
         return 0
     if not have_numpy():
         if os.environ.get('BNGE_RG_E2E_CHILD'):
