@@ -249,3 +249,35 @@ same shape, at the same time.
   with 2 junctions against 5, Dalles Mtn Up with 28 against 14 (measured, 2026-11-13) -- but the user is catching
   note errors by driving the stages rather than by comparing the two (their call, 2026-11-13), so there is no
   offline comparison to wait for. Anything heard on a stage goes in docs/notes-1.3.x.md like any other report.
+
+## How this gets tested, and on which stages
+
+Measured on this machine, 2026-11-14, over the 116 stage lines in the user's twelve rallies: the `roads` layer is
+cached (`mapdata/v2/overture-pmt2/*/roads.9/14/x/y.npz`, 3,415 cells) under **34** of them and **82 have no cached
+roads at all**. That is the case for this version in one number: the auto recce today works on under a third of the
+stages this user has imported.
+
+### The download, smallest first
+
+1. **`2026-sofr-thursday-kml / 1`** -- 1.3 km, **1 cell**, nothing cached. The least bytes that can prove the whole
+   path: corridor sent, area added, gated download, coverage re-checked, line written. Run this before anything
+   larger, because every failure mode shows up here for the lowest cost.
+2. **`2026-100-acre-wood / deep-ford`** -- 7.5 km, 4 cells, nothing cached. A real stage, still small.
+
+Expect the first press to be slow for reasons that are not faults and must not read as faults: one area downloads
+at a time in list order, the pacer holds a download to 40% duty while the car moves, and `predownload` takes a
+token only above the 0.75-burst `BACKGROUND_RESERVE`. **And `complete` does not mean the data arrived** -- see the
+saved-area section -- so a gap after a finished download is the upstream data not existing, not this feature
+failing.
+
+### Gain and loss, needing no download at all
+
+**`otr-2024-final / dalles-mtn-up` and `/ dalles-mtn-down`**: the same 16.1 km road in opposite directions, both
+**100% cached**. Auto recce both and **gain and loss must swap** -- up's gain is down's loss to within the rise
+threshold's own slack. This is the check the Maryhill result wants: Maryhill Up came back 184.1 m gain and
+**exactly 0 m loss**, which is consistent with a monotonic climb and `geo.RISE_THRESHOLD_M = 2` absorbing anything
+smaller, and also exactly what a broken loss figure would print. The pair tells the two apart, and it can be run
+the moment a build is in the game.
+
+Note that `matched/otr-2024-final__dalles-mtn-up.json` (03:37 UTC, before the tiles) carries no `corners`, `gainM`
+or `lossM` at all, so it has to be re-run regardless -- the stale-line case the re-run button exists for.
