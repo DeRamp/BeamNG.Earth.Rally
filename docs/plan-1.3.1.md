@@ -91,13 +91,22 @@ these was read in the source rather than assumed:
 - It persists in `<cache>/areas/areas.json` and **survives a restart**: an incomplete area is re-queued on the next
   server start and resumes **unasked**, with no mod and no client involved.
 - **The player sees it** in the 3D map's area list, line drawn, broadcast to every connection on every change.
-  There are no saved areas on this machine today, so the first the player ever sees would be one Earth Rally made.
+  There is **one on this machine** as of 2026-11-13 20:24 -- "Area 1", world mode, over the Smokies -- so a mod
+  area would join a list the player already uses rather than starting it. Worth re-reading before the UI is drawn:
+  the assumption that the list is empty was wrong within a day of being written down.
 - `MAX_AREAS = 10`. The mod competes for the player's ten slots, and when full **their own** add fails.
 - Its data is **pinned**: never evicted, surviving "Clear cache". `PIN_SHARE` is 0.9 of a default 20 GB cap, and at
   0.5-1.4 GB a stage, ten stages is 5-14 GB un-evictable. `_add` refuses past that share with a message telling the
   player to raise their cache size, which the mod must surface rather than swallow.
 - One area downloads at a time, in list order. A mod area appended last waits behind anything already queued, so a
   progress display can legitimately sit at zero and must not read as broken.
+- **`complete` does not mean the data arrived.** After `MAX_FAILED_PASSES` passes the items still failing are
+  counted as `unavailable`, the area is marked done, and `msg` becomes *"N items unavailable (no server had them in
+  N tries): Resume tries again"* (`areas.py:103, 874`). The area on this machine finished **complete with 122 of its
+  1079 items unavailable -- 11%**, after 3 failed passes. So a download that reports success can still leave the
+  stage with holes in it, and two things follow: the auto recce must treat a finished download as *maybe* better
+  ground rather than a guarantee and re-check rather than assume, and `msg` must be surfaced instead of swallowed,
+  because "Resume tries again" is an action only the player can take.
 - `area_cmd` offers only `pause | resume | delete | fast | slow`. No rename, no hide, no ownership.
 
 **`fast` must be hard-wired off, in the mod and in anything we expose.** In fast mode every gate is skipped, 24

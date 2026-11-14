@@ -97,3 +97,43 @@ So "the recce needed tag" is `status == 'none'`, and the button sits in or just 
 Also worth drawing while we are there: the stage page's own action row (`Drive stage` · `Route to start` · `Recce`)
 is where someone who opened a stage would look for it, so it probably wants an **Auto recce** button too, disabled
 with the reason shown when BeamNG.Earth cannot hand out its road graph.
+
+---
+
+## 3. A matched file's `seconds` reads 0 for a recce that took 1.25 s (found 2026-11-14)
+
+Found reading the file the first auto recce wrote after the elevation fix, not reported by the user.
+`matched/otr-2024-final__maryhill-up.json` has `"seconds": 0`, while the game's own log puts the run at **1.25 s**
+(87.485 to 88.734). Nothing is broken by it -- `seconds` is written for the record and nothing reads it -- but the
+field says something false, and it is the figure anyone would quote for how fast an auto recce is.
+
+### Why
+
+`autoRecce.lua:96`:
+
+```lua
+function M.clock() return os.time() end
+```
+
+`os.time()` counts whole seconds. A 1.25 s recce spans either one boundary or none, so the field reads 1 or 0
+depending on where the press landed in the second -- here, 0.
+
+The comment above it is right about what it rejected and wrong about what it chose:
+
+> wall seconds (`seconds` in the file is how long the whole auto recce took, most of it spent waiting on
+> BeamNG.Earth between windows, so this is wall time and not os.clock's CPU time).
+
+`os.clock()` is indeed the wrong clock here, for exactly the reason given -- the time is spent waiting, not
+computing. But `os.time()` is wall time at a resolution coarser than the thing being measured, which is how a
+correct reason produced a useless number. A 12 km stage at ~18 windows would read 7 or 8 and look fine, which is
+why this survived: it only shows on the short stages.
+
+### The fix
+
+`os.clockhp()` -- a high-precision wall clock in seconds. **Checked rather than assumed:** 117 uses across the
+game's own Lua in 0.40.5 (`lua/common/utils.lua`, `extensions.lua` and others), beside 57 of `hptimer()`, so it is
+the game's ordinary way of timing something that waits. `M.clock` is already overridable for the tests, so the
+change is one line plus a test that a sub-second recce rounds to something other than 0.
+
+Not fixed in 1.3.0: the build is in the user's hands for the auto recce itself, and a cosmetic field is not worth
+another install. **1.3.1**, alongside the gain/loss work that touches the same write.
