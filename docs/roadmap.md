@@ -54,20 +54,7 @@ that said nothing when the two projects under it moved on. Release notes in docs
 | ✔ | Version checks at startup, a clear message when BeamNG or BeamNG.Earth changed (23) | built |
 | ✔ | Naming a rally from its map file (4): three of the twelve rallies here came in as "Main Route Book". Written on this roadmap as "maps that group stages in folders import properly" -- the folders were never the problem, the name was | built |
 | ✔ | "Quick start on the line" dropped from Settings (the user, 2026-11-14): it did the thing the no-ATC start was fixed to stop doing, kept as an option, and the sharing of one code path between the two is most of why that bug existed | built |
-| → | The other three items are **1.3.3** below | |
-
-## 1.3.3: every stage starts the same way
-
-What 1.3.2 did for the stage with no arrival control, finished: every stage gets one, lateness stops costing time,
-and the world loads while you wait rather than against the clock.
-
-| Item | Size |
-|---|---|
-| An ATC added to stages without one (3): ~50 m before the start, walked back along the road -- which retires the no-ATC path 1.3.2 guarded rather than guarding it for ever. **Decide first**: on this machine it would add a control and a check-in to about 90 of 116 stages, so it changes how nearly every stage starts | S |
-| A no-ATC stage's start: a flat 12 s (`NO_ATC_START_S`) as now, or a real start minute as checking in gives you? Carried from 1.3.2, where the guard was written to work either way | S |
-| No penalty for a late start, just a new minute, as a real rally does (and so waiting for the world to load cannot cost time). Also takes a permanently-zero row off the results card | S |
-| Stage pre-loading *before the start*: the corridor loaded while you wait, a loaded % on screen, start any time (21). The on-demand half shipped in 1.3.1; this is the half that runs as you sit at the control | M |
-| The menu losing its styling after BeamNG.Earth's map page has been opened (`docs/notes-1.3.2.md` #1): intermittent, upstream of both mods, and a `reloadUI()` puts it right. Watch for it; a probe and what each reading would mean are written up there | S |
+| → | The three it did not reach: the automatic ATC **dropped**, pre-loading and the late-start penalty moved to **1.6.0** (the user, 2026-11-14) | |
 
 ## 1.4.0: the co-driver
 
@@ -102,6 +89,8 @@ The stage looks and feels like an event.
 | Atmosphere: spectators, marshals, radio points (29) | M |
 | Stage sketches and height profiles (15) | S |
 | Stages wider than ~26 km (8) | L |
+| Stage pre-loading *before the start*: the corridor loaded while you wait, a loaded % on screen, start any time (21). The on-demand half shipped in 1.3.1; this is the half that runs as you sit at the control. Moved here from 1.3.3 (the user, 2026-11-14) | M |
+| No penalty for a late start, just a new minute, as a real rally does. Also takes a permanently-zero row off the results card. Moved here from 1.3.3 (the user, 2026-11-14) | S |
 
 ## 1.7.0: the full rally
 
@@ -133,14 +122,32 @@ Ready for players who have never heard of it.
 
 - Multiplayer (BeamMP): BeamNG.Earth's shared world origin conflicts with ours.
 
+## Dropped
+
+Decided against, with the reason, so they are not proposed again.
+
+- **An ATC added to stages that have none** (planning item 3), dropped 2026-11-14 by the user. It was to retire
+  the no-ATC start path by giving every stage a control. On real organisers' maps that is not a tidy-up but a
+  change to nearly everything: **90 of the 116 stages here have no arrival control**, so it would have added a
+  control and a check-in wait to almost every stage anyone drives. 1.3.2's no-ATC start already gives those
+  stages a start worth having, so the special case stays and is no longer temporary.
+- **A real start minute on a stage with no ATC**, dropped 2026-11-14 by the user. It stays a flat 12 s
+  (`runner.NO_ATC_START_S`, which exists so the co-driver's 10-second call fits). The question only mattered as a
+  companion to the automatic ATC above.
+- **Watching for the menu losing its styling** after BeamNG.Earth's map page has been opened: not a roadmap item.
+  It is intermittent, it is upstream of both mods, and `reloadUI()` clears it; `docs/notes-1.3.2.md` #1 has the
+  investigation and what each reading of the probe would mean if it comes back.
+
 ## Why this order
 
-- 1.3.0 first because it removes the biggest barrier: today other players can import but every stage needs a recce.
-  Pre-loading and the automatic ATC fix the slow start seen on SnoDrift.
+- 1.3.0 first because it removes the biggest barrier: before it, every stage needed a recce driven. (The slow
+  start seen on SnoDrift was to be fixed by pre-loading and an automatic ATC; the ATC has since been dropped and
+  pre-loading moved to 1.6.0, and 1.3.2's no-ATC start fixed the part of it that hurt.)
 - 1.3.2 before 1.4.0 (the user, 2026-11-14): contained items, every one something a player meets in their first
-  stage -- against 1.4.0's generator rewrite, the largest thing left before 1.5.0. 1.3.3 carries the three that
-  1.3.2 did not reach; the automatic ATC leads it because it retires a special case rather than guarding it, but
-  it changes how nearly every stage on a real map starts, so it is a decision before it is work.
+  stage -- against 1.4.0's generator rewrite, the largest thing left before 1.5.0.
+- **There is no 1.3.3** (the user, 2026-11-14). It was drafted to carry what 1.3.2 did not reach, and then
+  emptied: the automatic ATC and the start-minute question were dropped (see Dropped), and pre-loading and the
+  late-start penalty moved to 1.6.0. So 1.4.0 is next, and the 1.3 line is finished.
 - 1.4.0 is the pacenote overhaul on its own (split from 1.3.0, the user, 2026-11-13): large, and best tested on
   the matched lines 1.3.0 gives everyone, which 1.3.1 made reachable on ground nobody has driven.
 - 1.5.0's rally file is the base for the editor, setup mode, leaderboards, the starter pack and full rallies, so it

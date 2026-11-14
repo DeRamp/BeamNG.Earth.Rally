@@ -110,7 +110,9 @@ to change, so unlike 1.3.0 and 1.3.1 this version can be finished without waitin
 
 Done: **released 2026-11-14**, with steps 1, 2 and 5 built and "Quick start on the line" dropped from Settings
 on the way (the user: "drop qikc start on line from settings"). Steps 3, 4 and 6 -- the automatic ATC, the
-late-start penalty and pre-loading before the start -- were not reached and are 1.3.3.
+late-start penalty and pre-loading before the start -- were not reached, and a 1.3.3 drafted to carry them was
+emptied the same day (the user): the automatic ATC and the start-minute question dropped outright, pre-loading and
+the late-start penalty moved to 1.6.0. docs/roadmap.md has both, under Dropped and under 1.6.0. **1.4.0 is next.**
 
 What came out of this version that was not in the plan: the no-ATC start's guard turned out not to be
 belt-and-braces over the placement but the whole of the fix at a start inside a hairpin, which is why the trigger
