@@ -1842,12 +1842,11 @@ do
   car.lat, car.lon = line[1][1], line[1][2]
   local a = main.uiAction('autoRecce', 'seq', 'near')
   T.check(a.ok, 'a near stage: the auto recce starts (' .. tostring(a.message) .. ')')
-  T.check(a.message and a.message:find('asks before downloading'),
-    'and the message no longer promises it downloads nothing, because now it can')
-  -- the graph finds nothing, so it refuses -- and the refusal is held back while the download is offered
-  tick(4)
+  T.check(a.message and a.message:find('checking what map data is missing'),
+    'and the FIRST leg is the estimate, which needs no anchor (' .. tostring(a.message) .. ')')
+  -- the estimate says 30 of 30 items are missing, so the player is asked before anything else happens
   local stt = main.uiState()
-  T.check(stt.auto and stt.auto.phase == 'asking', 'nothing on disk: the player is asked, not just refused (' ..
+  T.check(stt.auto and stt.auto.phase == 'asking', 'nothing on disk: the player is asked (' ..
     tostring(stt.auto and stt.auto.phase) .. ')')
   T.check(stt.auto.ask and stt.auto.ask.bytes == 18000000, 'and told the figure (' ..
     tostring(stt.auto.ask and stt.auto.ask.bytes) .. ')')
@@ -1862,14 +1861,20 @@ do
   -- the player says no: the stage's own refusal is what they are told, not silence
   local no = main.uiAction('autoRecceSkip')
   T.check(no.ok, 'Not now is taken')
-  T.check(main.uiState().auto == nil, 'and the sequence is over')
   T.check(area.adds == 0, 'with nothing downloaded')
+  -- Declining is NOT an ending: the stage is still tried with what is on disk, and its own refusal is what the
+  -- player is told. The estimate's `missing` counts a corridor wider than the road graph reads, so a stage that
+  -- would have matched can be offered a download it does not need -- which is only harmless if No still tries.
+  local after = main.uiStage('seq', 'near')
+  T.check(after and after.autoLine and tostring(after.autoLine.text):find('no map data'),
+    'the stage was still tried, and its own reason is what is reported (' ..
+    tostring(after and after.autoLine and after.autoLine.text ~= nil) .. ')')
+  T.check(main.uiState().auto == nil, 'and the sequence is over')
   T.check(main.uiAction('reset', 'seq', 'near').ok, 'and the page is not left busy afterwards')
 
   -- ------------------------------------------------------------ the player says yes
   area.state = 'running'
   main.uiAction('autoRecce', 'seq', 'near')
-  tick(4)
   T.check(main.uiState().auto.phase == 'asking', 'asked again on a fresh press')
   local yes = main.uiAction('autoRecceDownload')
   T.check(yes.ok and area.adds == 1, 'Download starts one download (' .. area.adds .. ')')
@@ -1894,19 +1899,24 @@ do
   -- A road-graph window is placed in the anchor's frame, so one asked for 3400 km away lands hundreds of km from
   -- the stage. Measured in a game 2026-11-14; this is the check that the button goes there before asking.
   car.lat, car.lon = line[1][1], line[1][2]
+  local wasLat = car.lat
   local b = main.uiAction('autoRecce', 'seq', 'away')
-  T.check(b.ok and b.message and b.message:find('going to the start'),
-    'a far stage: the player is taken there first (' .. tostring(b.message) .. ')')
-  T.check(main.uiState().auto.phase == 'going', 'and the page says so')
-  T.near(car.lat, far[1][1], 0.01, 'the car really was moved to the stage')
-  T.check(area.plans == 2, 'and no window and no estimate asked for from the wrong place (' .. area.plans .. ')')
+  T.check(b.ok, 'a far stage: the auto recce starts (' .. tostring(b.message) .. ')')
+  -- the point of the order the user asked for: asked BEFORE being teleported across the world
+  T.check(main.uiState().auto.phase == 'asking', 'the question comes first (' ..
+    tostring(main.uiState().auto.phase) .. ')')
+  T.near(car.lat, wasLat, 1e-9, 'and the car has NOT been moved yet')
+  -- answering sends it on its way: far, so it goes there before asking for a window
+  main.uiAction('autoRecceSkip')
+  T.check(main.uiState().auto and main.uiState().auto.phase == 'going', 'then it goes to the stage (' ..
+    tostring(main.uiState().auto and main.uiState().auto.phase) .. ')')
+  T.near(car.lat, far[1][1], 0.01, 'and the car really was moved there')
   main.uiAction('autoRecceStop')
   T.check(main.uiState().auto == nil, 'Stop ends the sequence mid-journey')
 
   -- ------------------------------------------------------------ a second press while one runs is refused
   car.lat, car.lon = line[1][1], line[1][2]
   main.uiAction('autoRecce', 'seq', 'near')
-  tick(4)
   local second = main.uiAction('autoRecce', 'seq', 'near')
   T.check(not second.ok and second.message:find('under way'),
     'a second auto recce while one waits on the player: refused (' .. tostring(second.message) .. ')')
@@ -1916,10 +1926,8 @@ do
   -- ------------------------------------------------------------ an area the app will not take
   area.addOk = false
   main.uiAction('autoRecce', 'seq', 'near')
-  tick(4)
   local bad = main.uiAction('autoRecceDownload')
   T.check(bad.ok, 'Download is taken even when the app refuses the area')
-  tick(2)
   T.check(main.uiState().auto == nil, 'and the sequence ends rather than hanging')
   -- Through autoLines, which is how an async ending reaches the page: `message` is the developer panel's own
   -- string and the Vue never sees it. The two refusals that matter -- the cache share full, all ten slots taken --
@@ -1936,11 +1944,12 @@ do
   end
   local before = area.plans
   local c = main.uiAction('autoRecce', 'seq', 'near')
-  T.check(c.ok and c.message:find('downloads nothing'),
-    'without the area capability the old promise is kept (' .. tostring(c.message) .. ')')
-  tick(4)
+  -- The stand-in road graph answers inside the call, so the refusal is already known when the action returns --
+  -- which is what 1.3.0 did too ("it can fail inside its first window, in which case autoDone has already run").
+  T.check(not c.ok and tostring(c.message):find('no map data'),
+    'without the area capability the stage is simply refused (' .. tostring(c.message) .. ')')
   T.check(area.plans == before, 'and no estimate is ever asked for (' .. area.plans .. ')')
-  T.check(main.uiState().auto == nil, 'the refusal is reported straight away, as 1.3.0 did')
+  T.check(main.uiState().auto == nil, 'nothing is left running')
 
   beamngEarth_api.has, beamngEarth_api.roadGraph = hadHas, hadGraph
   beamngEarth_api.areaPlan, beamngEarth_api.areaAdd, beamngEarth_api.areaStatus = nil, nil, nil

@@ -364,9 +364,17 @@ local function autoKey(eventId, stageId) return tostring(eventId) .. '|' .. tost
 -- stage against the wrong roads. So the player is taken to the stage BEFORE any window is asked for, and the
 -- frame is local to it.
 --
--- **The download is offered only after a match has been tried and refused**, which is what makes the loop
--- impossible: the stage's own refusal (nodata, or a partial with no map data) is the trigger, there is exactly one
--- download an attempt (`seq.downloaded`), and the second match's answer is final whatever the coverage says.
+-- **The order is: price the ground, ask, download, THEN go, then match** (the user, 2026-11-14: "re order things
+-- so it downloads first, then teliports"). It is possible because `areaPlan` is frame-free -- it takes lat/lon
+-- server-side and needs no anchor, so the ground can be priced from anywhere, before anything moves. Three things
+-- follow from doing it this way round:
+--   * the player is asked BEFORE being teleported across the world, rather than after;
+--   * no match is spent discovering what the estimate already knew;
+--   * and there is one match a press, so no loop is possible -- whatever it reports is final.
+-- The cost, stated rather than hidden: `missing` counts the area tool's own items over a corridor dilated by two
+-- map cells all round, which is wider than the road graph reads. So a stage whose windows are all cached can still
+-- have missing items out in that ring and be offered a download it does not need. **Not now carries on** to the
+-- teleport and the match for exactly that reason -- declining costs the player nothing.
 M.GO_IF_FURTHER_M = 5000     -- the car this far from the start: go there first (nearer, the frame is already local)
 M.WORLD_WAIT_S = 120         -- waiting for the world after a teleport, then give up on it
 M.AREA_WAIT_S = 1800         -- waiting for a download; it is gated to 40% duty while the car moves
@@ -377,12 +385,9 @@ local autoSeq = nil   -- { ev, stage, ss, phase, t, ready, plan, areaId, downloa
 
 local autoSeqStep     -- (declared here: autoDone drives the sequence on, and is defined above it)
 
--- Is this ending one a download could do something about? NODATA always; PARTIAL only where the stage was refused
--- for map data rather than for a line that is gap end to end -- a stretch the MAP has no road on is not something
--- downloading can fix, and offering it there would promise what it cannot do.
-local function autoFixable(kind)
-  return kind == autoRecce.NODATA or kind == autoRecce.PARTIAL
-end
+-- (1.3.0 to the first cut of 1.3.1 had an autoFixable() here, to decide whether a refusal was one a download
+-- could mend. The order changed -- the ground is priced before the match rather than after it -- so nothing asks
+-- that question any more: the estimate's own `missing` decides, and the match happens once and is final.)
 
 -- autoRecce's done callback: the only place the menu learns how one ended.
 local function autoDone(ok, matched, why, how)
@@ -390,8 +395,9 @@ local function autoDone(ok, matched, why, how)
   autoRun = nil
   if not a then return end
   local kind = (how and how.kind) or (ok and autoRecce.DONE or autoRecce.FAILED)
-  -- A sequence still running gets first refusal on this ending: it may have a download to offer, in which case
-  -- nothing is reported to the player yet. It answers true when it has taken the ending over.
+  -- A sequence still running is told how its match went, so it can add anything the download could not do -- the
+  -- app refusing the area, or items nothing could fetch -- beside the stage's own reason. There is one match a
+  -- press, so this is always the sequence's last step and it never asks for another.
   --
   -- The matched line is ALWAYS cleared here, whichever way it went. A sequence left behind by a match that
   -- succeeded would make the page busy for ever: the guard in doAction refuses every action while one is running,
@@ -456,35 +462,45 @@ local function autoSeqEnd(msg, kind)
     .. ')')
 end
 
--- The sequence, one event at a time. `what` is 'tick', 'matched', 'planned', 'added' or 'answer'.
+-- The sequence, one event at a time. `what` is 'tick', 'planned', 'added', 'answer' or 'matched'.
 -- Returns true when it has taken an ending over and the player must not be told yet.
 autoSeqStep = function(what, arg)
   local sq = autoSeq
   if not sq then return false end
 
-  if what == 'matched' then
-    -- A refusal a download could fix, on a BeamNG.Earth that can fetch it, and not already tried this press.
-    if not (autoFixable(arg) and earth.hasAreaRoute() and not sq.downloaded) then
-      autoSeqEnd(nil)
-      return false
+  -- Go to the stage if it is far, then match. The last two legs, reached once the ground is as good as it is
+  -- going to get: downloaded, declined, or nothing missing in the first place.
+  local function goThenMatch()
+    local st = sq.stage.controls and sq.stage.controls.start
+      or { lat = sq.stage.line[1][1], lon = sq.stage.line[1][2] }
+    local p = earth.pose()
+    local away = (not p) and math.huge or require('earthRally/geo').metres(p.lat, p.lon, st.lat, st.lon)
+    if away > M.GO_IF_FURTHER_M then
+      local tok, terr = earth.teleport(st.lat, st.lon, sq.stage.name .. ' start')
+      if not tok then autoSeqEnd('Could not go to the stage: ' .. tostring(terr)) return end
+      sq.phase, sq.t, sq.ready = M.GOING, 0, 0
+      return
     end
-    local pts = autoRecce.corridor(sq.stage.line)
-    if not pts then autoSeqEnd(nil) return false end
-    sq.phase, sq.t = 'planning', 0
-    local ok, why = earth.areaPlan(pts, function(r) autoSeqStep('planned', r) end)
-    if not ok then
-      log('I', logTag, 'auto recce: no estimate (' .. tostring(why) .. ')')
-      autoSeqEnd(nil)
-      return false
-    end
-    return true     -- the refusal is held back: the player is about to be offered the download instead
+    sq.phase, sq.t = 'matching', 0
+    local ok, why = autoStartMatch(sq.ev, sq.stage, sq.ss)
+    if not ok then autoSeqEnd('The auto recce could not start: ' .. tostring(why)) end
+  end
+  sq.goThenMatch = goThenMatch
 
-  elseif what == 'planned' then
+  if what == 'planned' then
     local r = arg
+    -- No estimate, or a bad one: carry on without it rather than stopping. The stage may well match from what is
+    -- already here, and refusing to try because the pricing failed would be the worse answer.
     if type(r) ~= 'table' or r.ok ~= true or type(r.downloadBytes) ~= 'number' then
-      log('I', logTag, 'auto recce: the estimate failed (' .. tostring(type(r) == 'table' and r.error or r) .. ')')
-      autoSeqEnd(nil)
-      return false
+      log('I', logTag, 'auto recce: no estimate (' .. tostring(type(r) == 'table' and r.error or r) ..
+        '), carrying on with what is on disk')
+      goThenMatch()
+      return true
+    end
+    if (r.missing or 0) <= 0 or (r.downloadBytes or 0) <= 0 then
+      log('I', logTag, 'auto recce: the ground along ' .. tostring(sq.stage.id) .. ' is already here')
+      goThenMatch()
+      return true
     end
     sq.plan, sq.phase, sq.t = r, M.ASKING, 0
     log('I', logTag, string.format('auto recce: %s needs %.1f MB of map data (%d of %d item(s) missing)',
@@ -493,9 +509,10 @@ autoSeqStep = function(what, arg)
 
   elseif what == 'answer' then
     if arg ~= true then
-      autoSeqEnd('Nothing downloaded. ' .. (sq.how and
-        autoText({ ss = sq.ss, stageName = sq.stage.name }, sq.how.kind, sq.why, sq.how) or
-        'The auto recce needs map data this computer does not have.'), autoRecce.NODATA)
+      -- Declining is not an ending. The stage may match from what is on disk, and if it cannot the match will say
+      -- so in its own words -- which is a better answer than one made up here before anything was tried.
+      log('I', logTag, 'auto recce: the player declined the download; carrying on with what is on disk')
+      goThenMatch()
       return true
     end
     local pts = autoRecce.corridor(sq.stage.line)
@@ -507,13 +524,38 @@ autoSeqStep = function(what, arg)
   elseif what == 'added' then
     local r = arg
     if type(r) ~= 'table' or r.ok ~= true or type(r.id) ~= 'string' then
-      -- (the refusal worth surfacing rather than swallowing: the saved areas' share of the cache is full, or all
-      --  ten slots are taken -- both are the player's to act on and neither is ours to work around)
-      autoSeqEnd('BeamNG.Earth would not take the download: ' ..
-        tostring(type(r) == 'table' and r.error or 'no reason given'))
+      -- the refusal worth surfacing rather than working around: the saved areas' share of the cache is full, or
+      -- all ten slots are taken. Both are the player's to act on. The stage is still tried with what is here.
+      local reason = tostring(type(r) == 'table' and r.error or 'no reason given')
+      log('I', logTag, 'auto recce: BeamNG.Earth would not take the area (' .. reason .. ')')
+      sq.addRefused = reason
+      goThenMatch()
       return true
     end
     sq.areaId, sq.t = r.id, 0
+    return true
+
+  elseif what == 'matched' then
+    -- One match a press, so this is always the end: there is nothing left to try and nothing to loop over.
+    --
+    -- Anything the download could not do is said HERE, beside the stage's own reason, and taking the ending over
+    -- (true) is what makes it stick: autoDone writes its own autoText into autoLines straight after this returns,
+    -- so a note left behind by returning false is overwritten and the player never sees it. Only the stage's
+    -- reason would survive -- and "the auto recce never downloads" is exactly the wrong thing to tell someone
+    -- whose download was just refused for want of a cache slot.
+    local note = nil
+    if sq.addRefused then
+      note = 'BeamNG.Earth would not take the download: ' .. sq.addRefused
+    elseif (sq.unavailable or 0) > 0 then
+      note = string.format('The download finished with %d item(s) nothing could fetch. %s',
+        sq.unavailable, tostring(sq.areaMsg or 'Resume that area to try those again.'))
+    end
+    if not note then
+      autoSeqEnd(nil)
+      return false              -- nothing to add: autoDone reports the stage's own ending, as 1.3.0 does
+    end
+    local own = autoText({ ss = sq.ss, stageName = sq.stage.name }, arg, sq.why, sq.how)
+    autoSeqEnd((own and (own .. ' ') or '') .. note, arg)
     return true
 
   elseif what == 'tick' then
@@ -532,16 +574,14 @@ autoSeqStep = function(what, arg)
       local st = earth.areaStatus(sq.areaId)
       if st and (st.state == 'done' or st.state == 'failed') then
         -- `done` does not mean every tile arrived: after enough failed passes the rest are counted unavailable and
-        -- the area is marked done anyway. So the ground is re-checked by matching again rather than trusted, and
-        -- the area's own message -- which only the player can act on -- is carried into the result.
+        -- the area is marked done anyway (measured here: an area finished done with 122 of 1079 unavailable). So
+        -- the ground is re-checked by matching rather than trusted, and the area's own message is carried through.
+        sq.unavailable, sq.areaMsg = st.unavailable, st.msg
         if (st.unavailable or 0) > 0 then
           log('I', logTag, string.format('auto recce: the download finished with %d item(s) unavailable (%s)',
             st.unavailable, tostring(st.msg)))
         end
-        sq.unavailable, sq.areaMsg = st.unavailable, st.msg
-        sq.phase, sq.t = 'matching', 0
-        local ok, why = autoStartMatch(sq.ev, sq.stage, sq.ss)
-        if not ok then autoSeqEnd('The auto recce could not start: ' .. tostring(why)) end
+        goThenMatch()
       elseif sq.t > M.AREA_WAIT_S then
         autoSeqEnd('The download is taking very long: it carries on in the background, so try again later.')
       end
@@ -632,30 +672,29 @@ doAction = function(what, eventId, stageId, fromPanel)
   end
   if what == 'autoRecce' then
     local _, _, ss = menu.findStage(ev.id, stage.id)
-    local st = stage.controls and stage.controls.start or { lat = stage.line[1][1], lon = stage.line[1][2] }
-    local p = earth.pose()
-    local away = (not p) and math.huge or require('earthRally/geo').metres(p.lat, p.lon, st.lat, st.lon)
-    autoSeq = { ev = ev, stage = stage, ss = ss, phase = 'matching', t = 0, ready = 0 }
-    -- Far from the stage: go there first. A road-graph window is placed in the anchor's frame, and asking for one
-    -- thousands of kilometres away lands it hundreds of kilometres from the stage (see the note on the sequence).
-    if away > M.GO_IF_FURTHER_M then
-      local tok, terr = earth.teleport(st.lat, st.lon, stage.name .. ' start')
-      if not tok then
-        autoSeq = nil
-        return res(false, 'Could not go to the stage: ' .. tostring(terr))
+    autoSeq = { ev = ev, stage = stage, ss = ss, phase = 'planning', t = 0, ready = 0 }
+    -- The estimate first, because it needs no anchor: `areaPlan` takes lat/lon on the server and knows nothing of
+    -- the player's frame, so the ground can be priced from where the player is standing. That is what lets the
+    -- question be asked before they are teleported across the world.
+    if earth.hasAreaRoute() then
+      local pts = autoRecce.corridor(stage.line)
+      if pts then
+        local ok, why = earth.areaPlan(pts, function(r) autoSeqStep('planned', r) end)
+        if ok then
+          return res(true, string.format('Auto recce of %s: checking what map data is missing.', stage.name))
+        end
+        log('I', logTag, 'auto recce: no estimate (' .. tostring(why) .. ')')
       end
-      autoSeq.phase = M.GOING
-      return res(true, string.format('Auto recce of %s: going to the start first (%.0f km away).',
-        stage.name, away / 1000))
     end
-    local ok, why = autoStartMatch(ev, stage, ss)
-    if not ok then
-      autoSeq = nil
-      return res(false, why)
+    -- No fetching capability (or no corridor to price): straight to the 1.3.0 path, and the promise 1.3.0 made
+    -- here still holds because nothing can be downloaded.
+    autoSeqStep('planned', nil)
+    if not autoSeq then return res(false, (autoLines[autoKey(ev.id, stage.id)] or {}).text or
+      'the auto recce could not be started') end
+    if autoSeq.phase == M.GOING then
+      return res(true, string.format('Auto recce of %s: going to the start first.', stage.name))
     end
     local pr = autoRecce.progress() or {}
-    -- 1.3.0 promised "downloads nothing" here and that was worth saying. It is still true without the fetching
-    -- capability, and no longer true with it -- so the sentence follows the capability rather than outliving it.
     return res(true, string.format('Auto recce of %s: %d windows. %s', stage.name, pr.windows or 0,
       earth.hasAreaRoute() and 'It reads the map data on your disk, and asks before downloading any it needs.'
         or 'It reads only the map data already on your disk and downloads nothing.'))

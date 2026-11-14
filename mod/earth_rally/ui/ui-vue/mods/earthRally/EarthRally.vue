@@ -17,14 +17,8 @@
       <div v-if="banner" class="er-banner">
         <span>{{ banner }}</span>
         <BngButton v-if="st.run && st.run.busy" :accent="ACCENTS.outlined" @click="action('abort')">Stop the run</BngButton>
-        <!-- The question goes in the banner, not on the stage page, because the auto recce can be started from a
-             stage ROW and the player may well be looking at the rally list when it comes back. The banner is on
-             every page, so the one place the answer can always be given is here. Stop is still beside it: saying
-             no to the download is not the same as abandoning the auto recce. -->
-        <template v-if="autoAsk">
-          <BngButton :accent="ACCENTS.main" @click="action('autoRecceDownload')">Download {{ MB(autoAsk.bytes) }}</BngButton>
-          <BngButton :accent="ACCENTS.outlined" @click="action('autoRecceSkip')">Not now</BngButton>
-        </template>
+        <!-- No Download / Not now here: the answer lives in the stage's own row and on its page, in the Auto
+             recce column, so one press is answered where it was made. The banner still SAYS what is waiting. -->
         <BngButton v-if="auto" :accent="ACCENTS.outlined" @click="action('autoRecceStop')">Stop</BngButton>
         <template v-if="st.recce">
           <BngButton :accent="ACCENTS.main" @click="action('recceSave')">Save recce</BngButton>
@@ -93,7 +87,15 @@
             <!-- @click.stop: the whole row opens the stage, so without it the button would do both. The row's
                  Enter is guarded the same way, in rowEnter: Enter on a focused button fires its click AND bubbles. -->
             <span class="er-act">
-              <BngButton v-if="autoRow(s)" :accent="ACCENTS.outlined" @click.stop="action('autoRecceStop')">Stop</BngButton>
+              <!-- Everything about the auto recce answers in THIS cell (the user, 2026-11-14: "move that to a
+                   button in the same collum as autp recce. all indication should be there"). The banner is easy to
+                   miss and the question can arrive while the player is looking at the list, so while one waits on
+                   an answer the cell holds the answer; the rest of the time it holds Stop. -->
+              <template v-if="autoRow(s) && autoAsk">
+                <BngButton :accent="ACCENTS.main" @click.stop="action('autoRecceDownload')">Download</BngButton>
+                <BngButton :accent="ACCENTS.outlined" @click.stop="action('autoRecceSkip')">Not now</BngButton>
+              </template>
+              <BngButton v-else-if="autoRow(s)" :accent="ACCENTS.outlined" @click.stop="action('autoRecceStop')">Stop</BngButton>
               <BngButton v-else-if="st.autoOk && s.status === 'none'" :accent="ACCENTS.secondary" :disabled="busy" @click.stop="action('autoRecce', rly.id, s.id)">{{ outcomeFor(s) ? "Try again" : "Auto recce" }}</BngButton>
               <!-- Reset takes the same cell on a stage that HAS a line, so every row has exactly one control and
                    the column reads as one question. Deliberately NOT gated on st.autoOk: it removes files and asks
@@ -152,7 +154,11 @@
           <div class="er-actions">
             <BngButton :accent="ACCENTS.main" :disabled="!stg.canDrive || busy" @click="action('drive', stg.eventId, stg.id)">Drive stage</BngButton>
             <BngButton :accent="ACCENTS.secondary" :disabled="busy" @click="action('route', stg.eventId, stg.id)">Route to start</BngButton>
-            <BngButton v-if="autoHere" :accent="ACCENTS.outlined" @click="action('autoRecceStop')">Stop the auto recce</BngButton>
+            <template v-if="autoHere && autoAsk">
+              <BngButton :accent="ACCENTS.main" @click="action('autoRecceDownload')">Download {{ MB(autoAsk.bytes) }}</BngButton>
+              <BngButton :accent="ACCENTS.outlined" @click="action('autoRecceSkip')">Not now</BngButton>
+            </template>
+            <BngButton v-else-if="autoHere" :accent="ACCENTS.outlined" @click="action('autoRecceStop')">Stop the auto recce</BngButton>
             <BngButton v-else-if="stg.autoCan" :accent="ACCENTS.secondary" :disabled="busy || !st.autoOk" @click="action('autoRecce', stg.eventId, stg.id)">Auto recce</BngButton>
             <!-- menu.lua sets autoCan only on a stage with no line, so on a stage that has one the Auto recce
                  button is already absent and Reset is simply its v-else-if: the row keeps four buttons, never
@@ -270,7 +276,7 @@ const autoLeg = computed(() => {
   if (!a) return ""
   if (a.phase === "going") return "going there"
   if (a.phase === "planning") return "checking"
-  if (a.phase === "asking") return "your call"
+  if (a.phase === "asking") return a.ask ? MB(a.ask.bytes) + "?" : "your call"
   if (a.phase === "downloading") return a.area && a.area.total ? `${a.area.done || 0} / ${a.area.total}` : "starting"
   return `${autoWindow.value} / ${a.windows || 1}`
 })
@@ -465,10 +471,13 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .er-rally-head { display: flex; align-items: flex-end; gap: 48px; margin-bottom: 22px; }
 .er-rh-name { font-size: 40px; font-weight: 700; }
 .er-stages { padding: 8px 0; }
-/* Seven tracks: the 160px action column comes out of Name's 1fr, NOT out of Status -- Status already holds the
-   longest pill ("Recce recommended", about 177px) with its 30px padding, and below about 215px that pill overruns
-   the column. Name goes from about 1066px to 906px at 1920, and the longest name in a real rally is about 460px. */
-.er-srow { display: grid; grid-template-columns: 100px 1fr 130px 260px 160px 150px 30px; align-items: center; height: 58px; padding: 0 28px; font-size: 20px; border-left: 4px solid transparent;
+/* Seven tracks: the action column comes out of Name's 1fr, NOT out of Status -- Status already holds the longest
+   pill ("Recce recommended", about 177px) with its 30px padding, and below about 215px that pill overruns the
+   column. 210px rather than 1.3.0's 160px, because the cell now holds TWO controls while a download waits on an
+   answer: at the row's own button size (15px on a 20px line, no min-width, no margin) "Download" is about 92px
+   and "Not now" about 83px, which with a 12px gap is 187px. Name goes from about 1066px to 856px at 1920, and the
+   longest name in a real rally is about 460px. */
+.er-srow { display: grid; grid-template-columns: 100px 1fr 130px 260px 210px 150px 30px; align-items: center; height: 58px; padding: 0 28px; font-size: 20px; border-left: 4px solid transparent;
   & + .er-srow { border-top: 1px solid rgba(255, 255, 255, 0.06); }
   &.er-hdr { height: 40px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--er-muted); }
   &.er-click { cursor: pointer; }
@@ -488,6 +497,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
      utility/button.vue:91-92) so those need :deep, while min-width (6em -- more than this cell has) and margin are
      custom properties it reads from whatever contains it. 15px text on a 20px line is a 29px button in a 58px row. */
   .er-act { padding-left: 24px; --bng-button-min-width: 0; --bng-button-margin: 0;
+    display: flex; gap: 12px; align-items: center;
     :deep(.bng-button) { font-size: 15px; line-height: 20px; } }
 }
 .er-help { margin-top: 14px; font-size: 15px; }
