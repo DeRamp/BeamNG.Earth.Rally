@@ -38,8 +38,8 @@ export function loadStage(eventId, stageId) {
   engineLua(`earthRally_main and earthRally_main.uiStage(${q(eventId)}, ${q(stageId)}) or nil`, s => { if (s) stage.value = s })
 }
 
-// A button: drive / route / recce / autoRecce / autoRecceStop / recceSave / recceSaveAnyway / recceCancel /
-// abort / openFolder / rescan
+// A button: drive / route / recce / autoRecce / autoRecceStop / reset / recceSave / recceSaveAnyway /
+// recceCancel / abort / openFolder / rescan
 export function action(what, eventId, stageId, cb) {
   busyMsg.value = ""
   engineLua(`earthRally_main and earthRally_main.uiAction(${q(what)}, ${q(eventId)}, ${q(stageId)}) or nil`, r => {

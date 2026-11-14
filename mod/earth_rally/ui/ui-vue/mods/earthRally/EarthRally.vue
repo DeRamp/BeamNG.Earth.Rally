@@ -87,6 +87,14 @@
             <span class="er-act">
               <BngButton v-if="autoRow(s)" :accent="ACCENTS.outlined" @click.stop="action('autoRecceStop')">Stop</BngButton>
               <BngButton v-else-if="st.autoOk && s.status === 'none'" :accent="ACCENTS.secondary" :disabled="busy" @click.stop="action('autoRecce', rly.id, s.id)">{{ outcomeFor(s) ? "Try again" : "Auto recce" }}</BngButton>
+              <!-- Reset takes the same cell on a stage that HAS a line, so every row has exactly one control and
+                   the column reads as one question. Deliberately NOT gated on st.autoOk: it removes files and asks
+                   BeamNG.Earth for nothing, so a player on a stock BeamNG.Earth still has their way back from a
+                   recce they are unhappy with -- gating it the way Auto recce is gated would lock out exactly the
+                   players with no auto recce to fall back on. A driven recce is confirmed on the stage page, where
+                   there is room to say what is lost; the row opens it rather than deleting from under them. -->
+              <BngButton v-else-if="s.line === 'matched'" :accent="ACCENTS.outlined" :disabled="busy" @click.stop="action('reset', rly.id, s.id)">Reset</BngButton>
+              <BngButton v-else-if="s.line" :accent="ACCENTS.outlined" @click.stop="askReset(rly.id, s.id)">Reset</BngButton>
             </span>
             <span class="er-r er-mono" :class="{ 'er-none': !s.best }">{{ s.best ? time(s.best) : "–" }}</span><span class="er-go">›</span>
           </div>
@@ -135,7 +143,28 @@
             <BngButton :accent="ACCENTS.secondary" :disabled="busy" @click="action('route', stg.eventId, stg.id)">Route to start</BngButton>
             <BngButton v-if="autoHere" :accent="ACCENTS.outlined" @click="action('autoRecceStop')">Stop the auto recce</BngButton>
             <BngButton v-else-if="stg.autoCan" :accent="ACCENTS.secondary" :disabled="busy || !st.autoOk" @click="action('autoRecce', stg.eventId, stg.id)">Auto recce</BngButton>
+            <!-- menu.lua sets autoCan only on a stage with no line, so on a stage that has one the Auto recce
+                 button is already absent and Reset is simply its v-else-if: the row keeps four buttons, never
+                 five. A matched line goes at once (1.25 s to make again); a driven recce asks first, because it
+                 cost the stage, driven, and cannot be got back. -->
+            <BngButton v-else-if="stg.line === 'matched'" :accent="ACCENTS.outlined" :disabled="busy" @click="action('reset', stg.eventId, stg.id)">Reset</BngButton>
+            <BngButton v-else-if="stg.line && !confirmReset" :accent="ACCENTS.outlined" @click="confirmReset = true">Reset</BngButton>
             <BngButton :accent="ACCENTS.secondary" :disabled="busy" @click="action('recce', stg.eventId, stg.id)">Recce</BngButton>
+          </div>
+          <!-- The confirm, for a driven recce only. Confirming the cheap case as well would be worse than not
+               confirming at all: it teaches clicking through, and the once it mattered that habit would carry. -->
+          <div v-if="confirmReset && stg.line && stg.line !== 'matched'" class="er-card er-confirm">
+            <div>
+              <b>Remove the recce you drove?</b><br>
+              <!-- It does NOT promise the auto recce will manage one here: whether the map has roads for this
+                   stage on this computer is only known by asking for them, and a confirm that guessed would be
+                   worse than one that does not say. -->
+              <span>This cannot be undone. Afterwards you can run the auto recce, or drive the recce again.</span>
+            </div>
+            <div class="er-confirm-row">
+              <BngButton :accent="ACCENTS.outlined" @click="confirmReset = false">Keep it</BngButton>
+              <BngButton :accent="ACCENTS.main" :disabled="busy" @click="confirmReset = false; action('reset', stg.eventId, stg.id)">Remove the recce</BngButton>
+            </div>
           </div>
           <!-- beside the row, never a tooltip: a disabled BngButton takes no pointer events and can never show one -->
           <div v-if="stg.autoWhy" class="er-msg">{{ stg.autoWhy }}</div>
@@ -145,6 +174,7 @@
             <b>Drive stage</b>: takes you to the {{ stg.atc ? "time control before the start" : "start" }}, then through the stage as in a real rally.<br>
             <b>Route to start</b>: the way there on the GPS, arrows on the road. No teleport.<br>
             <template v-if="stg.autoCan"><b>Auto recce</b>: {{ st.autoOk ? "works the line out from the map's roads. Reads only the map data already on your disk; downloads nothing." : "works the line out from the map's roads. Not available with this BeamNG.Earth." }}<br></template>
+            <template v-if="stg.line"><b>Reset</b>: removes this stage's line, so you can make it again -- with the auto recce or by driving a recce. Your times are kept.<br></template>
             <b>Recce</b>: drive the stage once at your own pace; the line you drive gives the notes.
           </div>
         </div>
@@ -262,10 +292,23 @@ function openRally(id) {
   loadRally(id)
   go("rally")
 }
+// Reset's confirm, for a driven recce (the matched case needs none). Held here rather than per stage because
+// it must not survive leaving the page: a confirm still up when another stage is opened would sit over a line it
+// was never asked about.
+const confirmReset = ref(false)
+
 function openStage(eventId, stageId) {
   sel.value = { eventId, stageId }
+  confirmReset.value = false
   loadStage(eventId, stageId)
   go("stage")
+}
+
+// Reset pressed on a list row whose line was driven: open the stage and put the confirm up there, rather than
+// deleting from under the player in a row that has no room to say what is lost.
+function askReset(eventId, stageId) {
+  openStage(eventId, stageId)
+  confirmReset.value = true
 }
 function back() {
   if (view.value === "stage") openRally(sel.value.eventId)
@@ -419,6 +462,15 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .er-line-note { display: flex; align-items: center; gap: 14px; padding: 14px 18px; font-size: 17px; }
 .er-actions { display: flex; gap: 14px; margin-top: 24px; flex-wrap: wrap; }
 .er-act-help { margin-top: 16px; font-size: 15px; line-height: 1.7; color: var(--er-muted); }
+/* Reset's confirm. Orange rather than red: the game has no destructive-red anywhere else, and one red card in a
+   menu that has none would read as an error rather than a question. */
+.er-confirm { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap;
+  margin-top: 14px; padding: 16px 20px; font-size: 16px; line-height: 1.5;
+  box-shadow: inset 0 0 0 1px var(--er-orange-500);
+  b { font-size: 17px; }
+  span { color: var(--er-muted); }
+}
+.er-confirm-row { display: flex; gap: 12px; flex-shrink: 0; }
 .er-runs { padding: 22px 26px; h3 { margin: 0 0 12px; font-size: 20px; } }
 .er-best-box { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; .er-t { font: 700 44px "Overpass Mono", monospace; } }
 .er-badge { background: rgb(0, 200, 0); color: #002a00; font-weight: 800; padding: 2px 10px; border-radius: 6px; }

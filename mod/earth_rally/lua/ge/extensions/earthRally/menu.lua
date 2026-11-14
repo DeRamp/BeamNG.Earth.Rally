@@ -101,7 +101,10 @@ function M.rally(eventId, reports, autoRecce)
   out.list = {}
   for i, s in ipairs(e.stages or {}) do
     local st = M.stageStatus(e.id, s, autoRecce)
-    out.list[i] = { id = s.id, ss = i, name = s.name, lengthM = s.lengthM, status = st.status,
+    -- `line` is st.kind ('recce' | 'matched' | nil), the same field the stage page already gets. The row needs
+    -- it for Reset: a driven recce cannot be made again and is confirmed before it goes, a matched line is 1.25 s
+    -- of work and is not. Without it the row would have to treat both alike, and the cheap case is the common one.
+    out.list[i] = { id = s.id, ss = i, name = s.name, lengthM = s.lengthM, status = st.status, line = st.kind,
       best = events.best(e.id, s.id) }
   end
   return out

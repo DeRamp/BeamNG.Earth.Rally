@@ -374,6 +374,7 @@ M._autoDone = autoDone
 -- One action of the menu page (or the developer panel): returns { ok, message, closeMenu }.
 --   drive / route / recce / goStart   a stage's buttons (eventId, stageId)
 --   autoRecce                         the auto recce of one stage (eventId, stageId); autoRecceStop stops it
+--   reset                             remove a stage's line, both kinds, so it can be made again
 --   recceSave / recceSaveAnyway / recceCancel / abort
 --   openFolder / rescan
 doAction = function(what, eventId, stageId, fromPanel)
@@ -416,6 +417,22 @@ doAction = function(what, eventId, stageId, fromPanel)
   -- autoRun had been overwritten, and the page would lose the banner and the row mark of the run still going.
   if autoRecce.active() then
     return res(false, 'An auto recce is under way: stop it first.')
+  end
+  if what == 'reset' then
+    -- Behind the same busy and autoRecce.active() guards as an auto recce, and for the same reason: the runner and
+    -- the auto recce both read the stage's line while they work, so removing it under either is how a car gets
+    -- driven off the end of a line that is no longer there.
+    local removed, why = events.resetLine(ev.id, stage.id)
+    if not removed then return res(false, why or 'that line could not be removed') end
+    -- the ending text from the last auto recce goes with it, or the page would still be showing "matched, 4.1 km"
+    -- under a stage that now has no line at all
+    autoLines[autoKey(ev.id, stage.id)] = nil
+    if not (removed.recce or removed.matched) then
+      return res(true, string.format('%s had no line to remove.', stage.name))
+    end
+    local what_ = (removed.recce and removed.matched) and 'its recce and its matched line'
+      or (removed.recce and 'the recce you drove' or 'its matched line')
+    return res(true, string.format('%s: %s removed. Run the auto recce, or drive a recce.', stage.name, what_))
   end
   if what == 'autoRecce' then
     local _, _, ss = menu.findStage(ev.id, stage.id)

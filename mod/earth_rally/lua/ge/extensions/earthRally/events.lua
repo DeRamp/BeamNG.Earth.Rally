@@ -70,6 +70,35 @@ end
 -- The stage's map line matched to the roads: { points = { { lat, lon, alt }... }, gaps = { {fromM, toM}... }, ... }.
 function M.matched(eventId, stageId) return readOnce(M.MATCHED_DIR .. key(eventId, stageId), lineValid) end
 
+-- Remove a stage's line so the stage is as it was before it had one: { matched = true?, recce = true? } naming what
+-- was there, or nil and why. The menu's Reset button (main.lua, 'reset').
+--
+-- **Both kinds, deliberately.** M.stageLine picks between a driven recce and a matched line when a stage has both
+-- -- the driven one wins unless it is short -- so removing only the one in use would leave the other to answer it
+-- and the stage would still have a line, its pill unchanged. The player would press Reset and watch nothing
+-- happen. "Reset" has to mean there is no line at all.
+--
+-- A file that will not delete is reported rather than shrugged off: the caller has told the player their line is
+-- gone, and on the next poll it would be back.
+function M.resetLine(eventId, stageId)
+  local out = {}
+  for _, k in ipairs({ { 'recce', M.RECCE_DIR }, { 'matched', M.MATCHED_DIR } }) do
+    local kind, path = k[1], k[2] .. key(eventId, stageId)
+    if FS:fileExists(path) then
+      pcall(FS.removeFile, FS, path)
+      if FS:fileExists(path) then
+        files[path] = nil
+        return nil, "that line's file could not be removed (" .. path .. ')'
+      end
+      out[kind] = true
+    end
+    -- read from disk again next time, whether or not there was a file: readOnce caches the absence too, so
+    -- without this a stage reset and then recced again would go on looking empty until the next Reload.
+    files[path] = nil
+  end
+  return out
+end
+
 -- Save a matched line (the auto recce's, autoRecce.lua). Written whole and in one call, and only ever called with a
 -- line that covers the whole stage: lineValid above checks a line has two points and no more than that, so a
 -- half-covered file would read as runnable and the car would be driven off the end of it. The copy kept here is

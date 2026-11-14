@@ -10,6 +10,7 @@ function jsonWriteFile(path, data) files[path] = data return true end
 function jsonReadFile(path) return files[path] end
 FS = {
   fileExists = function(_, path) return files[path] ~= nil end,
+  removeFile = function(_, path) files[path] = nil end,
   findFiles = function(_, dir, pattern)
     local out = {}
     for k in pairs(files) do if k:sub(1, #dir) == dir and k:match('%.json$') then out[#out + 1] = k end end
@@ -1688,6 +1689,104 @@ do
   beamngEarth_api.has = hadHas
   beamngEarth_api.roadGraph = nil
   settings.reset()
+end
+
+------------------------------------------------------------------------------------- Reset a stage's line (1.3.1)
+
+-- "The rerun button should just replace the auto recce button once a stage has recce. Call it 'reset'. Then you
+-- can go an manually recce it or use autorecce" (the user, 2026-11-14).
+do
+  local main = require('earthRally/main')
+  local menu = require('earthRally/menu')
+  local line = event.stages[1].line
+  local evr = { format = 1, id = 'rst', name = 'Reset Rally', stages = {
+    { id = 'am', name = 'Auto Matched', lengthM = 3000, line = line },
+    { id = 'dr', name = 'Driven', lengthM = 3000, line = line },
+    { id = 'bo', name = 'Both', lengthM = 3000, line = line },
+    { id = 'no', name = 'Nothing', lengthM = 3000, line = line },
+  } }
+  files['/earthRally/events/rst.json'] = evr
+  events.list(true)
+
+  local function matched(id)
+    events.saveMatched('rst', id, { format = 1, points = line, lengthM = 3000, gapM = 0 })
+  end
+  local function driven(id)
+    events.saveRecce('rst', id, { format = 1, points = recFrom, lengthM = 3000, share = 1 })
+  end
+
+  -- ------------------------------------------------------------ a matched line: gone, and the stage is 'none'
+  matched('am')
+  T.check(select(2, events.stageLine('rst', 'am', evr.stages[1])) == 'matched', 'a matched line is there to remove')
+  local r = events.resetLine('rst', 'am')
+  T.check(r ~= nil and r.matched == true and r.recce == nil, 'reset reports what it removed (matched)')
+  T.check(events.matched('rst', 'am') == nil, 'and the matched line is gone')
+  T.check(events.stageLine('rst', 'am', evr.stages[1]) == nil, 'the stage has no line at all')
+  T.check(menu.stageStatus('rst', evr.stages[1], true).status == 'none',
+    'and its pill is back to Recce needed, which is what makes Auto recce show again')
+
+  -- ------------------------------------------------------------ a driven recce: the same, reported as a recce
+  driven('dr')
+  local r2 = events.resetLine('rst', 'dr')
+  T.check(r2 ~= nil and r2.recce == true and r2.matched == nil, 'a driven recce is reported as the recce')
+  T.check(events.recce('rst', 'dr') == nil and events.stageLine('rst', 'dr', evr.stages[2]) == nil,
+    'and it is gone')
+
+  -- ------------------------------------------------------------ BOTH on disk: both go, which is the whole point
+  -- stageLine picks between the two when a stage has both, so removing only the one in use would leave the other
+  -- to answer it: the player would press Reset and watch nothing happen.
+  matched('bo')
+  driven('bo')
+  T.check(events.recce('rst', 'bo') ~= nil and events.matched('rst', 'bo') ~= nil, 'both lines on disk')
+  local r3 = events.resetLine('rst', 'bo')
+  T.check(r3 ~= nil and r3.recce == true and r3.matched == true, 'reset reports both')
+  T.check(events.recce('rst', 'bo') == nil and events.matched('rst', 'bo') == nil, 'and removes both files')
+  T.check(events.stageLine('rst', 'bo', evr.stages[3]) == nil,
+    'so the stage really has no line -- removing one of the two would have left this answering')
+
+  -- ------------------------------------------------------------ nothing to remove: not an error
+  local r4 = events.resetLine('rst', 'no')
+  T.check(r4 ~= nil and r4.recce == nil and r4.matched == nil, 'a stage with no line: reset is not an error')
+
+  -- ------------------------------------------------------------ a file that will not delete is REPORTED
+  -- The caller tells the player their line is gone; if the file is still there it would be back on the next poll.
+  matched('am')
+  local hadRemove = FS.removeFile
+  FS.removeFile = function() end                       -- the game's own removeFile can fail; saveMatched pcalls it
+  local r5, why5 = events.resetLine('rst', 'am')
+  T.check(r5 == nil and type(why5) == 'string' and why5:find('could not be removed'),
+    'a file that will not delete: reset says so rather than claiming success (' .. tostring(why5) .. ')')
+  FS.removeFile = hadRemove
+  T.check(events.resetLine('rst', 'am') ~= nil and events.matched('rst', 'am') == nil, 'and it removes once it can')
+
+  -- ------------------------------------------------------------ the action, and what it tells the player
+  driven('dr')
+  local a = main.uiAction('reset', 'rst', 'dr')
+  T.check(a.ok and a.message and a.message:find('recce you drove'),
+    'uiAction reset names the driven recce (' .. tostring(a.message) .. ')')
+  T.check(a.message:find('Run the auto recce, or drive a recce'), 'and says what to do next')
+  T.check(events.stageLine('rst', 'dr', evr.stages[2]) == nil, 'and the line is gone')
+  matched('am')
+  local a2 = main.uiAction('reset', 'rst', 'am')
+  T.check(a2.ok and a2.message and a2.message:find('matched line'),
+    'a matched line is named as that (' .. tostring(a2.message) .. ')')
+  local a3 = main.uiAction('reset', 'rst', 'no')
+  T.check(a3.ok and a3.message and a3.message:find('no line to remove'),
+    'a stage with nothing to remove is told plainly (' .. tostring(a3.message) .. ')')
+  T.check(not main.uiAction('reset', 'rst', 'nope').ok, 'a stage that is not there: refused')
+
+  -- ------------------------------------------------------------ the list row carries the kind the confirm needs
+  matched('am')
+  driven('dr')
+  local card = menu.rally('rst')
+  local by = {}
+  for _, row in ipairs(card and card.list or {}) do by[row.id] = row end
+  T.check(by.am and by.am.line == 'matched', "the list row says a matched line is matched (" ..
+    tostring(by.am and by.am.line) .. ')')
+  T.check(by.dr and by.dr.line == 'recce', 'and a driven one is a recce (' .. tostring(by.dr and by.dr.line) .. ')')
+  T.check(by.no and by.no.line == nil, 'and a stage with no line says nothing')
+  events.resetLine('rst', 'am')
+  events.resetLine('rst', 'dr')
 end
 
 T.done('test_run')
