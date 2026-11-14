@@ -3,8 +3,21 @@
 Real-world rally stages for [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth): drive a real rally's stages
 on the real roads, timed, with BeamNG.drive's own co-driver calling pacenotes made from the road.
 
-Status: alpha (1.2.5, in testing: one panel on screen rather than three -- where you are and BeamNG.Earth's warnings are drawn by the rally HUD itself, its own strips off screen for the stage). Needs BeamNG.drive 0.40.5 and BeamNG.Earth with modding API 1.6 or newer (1.7, with the
-`onBeamNGEarthRebased` event, is used when present: BeamNG.Earth's dev builds from 1.9.1-beta.dev.398).
+Status: alpha (1.3.0, in testing: **the auto recce** -- a stage's driving line worked out from BeamNG.Earth's own
+roads, in the game, with no recce to drive and no Python). Needs BeamNG.drive 0.40.5 and BeamNG.Earth with modding
+API 1.6 or newer (1.7, with the `onBeamNGEarthRebased` event, is used when present: BeamNG.Earth's dev builds from
+1.9.1-beta.dev.398).
+
+> ### The auto recce needs a BeamNG.Earth that does not exist yet
+>
+> It is built on **`api.roadGraph`**, a new call that asks BeamNG.Earth for one window of its road graph around a
+> point. That is [a pull request waiting on TecnaGamer](https://github.com/DeRamp/BeamNG.Earth/tree/addon-api-road-graph);
+> until he merges it, the only BeamNG.Earth that can answer is the fork it is on:
+> **`github.com/DeRamp/BeamNG.Earth`, branch `addon-api-road-graph`**.
+>
+> **With a stock BeamNG.Earth, Earth Rally works exactly as 1.2.5 did** -- the mod asks `api.has('roadGraph')`, gets
+> no for an answer, and shows no auto recce anywhere. Nothing is broken and nothing else changes; you drive a recce,
+> as before. The only thing you lose is the feature this version is named for.
 
 **Open it in game with Ctrl + Alt + K**, or from the pause menu's **Earth Rally** tab ([all controls](#controls)).
 
@@ -15,10 +28,13 @@ Status: alpha (1.2.5, in testing: one panel on screen rather than three -- where
 2. **The stage's line on the road.** A stage is timed and called on one of these:
    - **a recce** you drive once in game: the stage's map line is drawn on the road ahead of you (orange; a green ball
      at the flying finish) and the mod records the line you drive, with real heights;
-   - **an auto recce**: its map line matched to BeamNG.Earth's roads, no recce needed. For now this takes a
-     developer tool with Python and BeamNG.Earth's source (`tools/auto_recce.py`, below), so for most players every
-     stage still needs a recce. Where the map has no road the organisers' line is used, no notes are called there,
-     and the window says a recce is better.
+   - **an auto recce**: its map line matched to BeamNG.Earth's roads, no recce to drive. Press **Auto recce** on
+     a stage that needs a line and the mod asks BeamNG.Earth for the roads along the stage, a window at a time, and
+     works the line out from them -- a 4 km stage in about two seconds. Where the map has no road the organisers'
+     line is used, no notes are called there, and the stage still says a recce is better. It reads only map data
+     already on your computer and **downloads nothing**, so a stage over ground you have never been near will say
+     so rather than fetch it; drive near it, or drive its recce. It needs the BeamNG.Earth above. (The same thing
+     offline, over BeamNG.Earth's source with Python: `tools/auto_recce.py`, below.)
 
    A recce, when there is one, is used first (unless it was saved short and the matched line covers the stage).
 3. **Run** the stage, through its controls as in a real rally:
@@ -242,13 +258,12 @@ The developer panel (Settings > Developer panel) lists what each run found out, 
 
 ## Plan
 
-Next: 1.3.0 (`docs/plan-1.3.0.md`): the auto recce for every player, so a dropped-in map's stages drive with no recce
-and no Python; version checks at startup; the stage corridor loaded before the start; an ATC added to stages without
-one; and no time penalty for a late start, as in a real rally. How the auto recce runs is being settled -- in this
-mod's own Lua, or by asking BeamNG.Earth for it -- and nothing goes upstream for this version. Later: the co-driver
-(better pacenotes, and the self-test hearing them), course tape, junction
-direction signs,
-better pacenotes (crests, cautions), stages wider than ~26 km, itineraries (loops, road sections, service), an
+In 1.3.0 so far: the auto recce, in this mod's own Lua on BeamNG.Earth's `api.roadGraph` (the pull request above).
+Still to come before it is a full release (`docs/plan-1.3.0.md`): version checks at startup; the stage corridor
+loaded before the start, and on demand for a stage you have never been near -- which is what the auto recce needs to
+work anywhere rather than only on ground you have driven; an ATC added to stages without one; and no time penalty
+for a late start, as in a real rally. Later: the co-driver (better pacenotes, and the self-test hearing them),
+course tape, junction direction signs, stages wider than ~26 km, itineraries (loops, road sections, service), an
 in-game editor.
 
 ## License
