@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Rally auto recce button</title>
+<!-- Mock-up for 1.3.0 (not built): where the Auto recce button goes, and what the row does while an auto recce
+     runs. The question is docs/notes-1.3.0.md section 2 and the user's own words: "for adding an auto recce buton,
+     that should go to the right of the status colum when a map has the recce needed tag btw."
+
+     WHAT IT DRAWS
+       1. the stage list as it is now (1.2.5), for comparison
+       2. A -- the button inside the Status cell, no grid change (two forms: icon-sized, and labelled)
+       3. B -- a seventh column of its own between Status and Best
+       4. the running state: a fourth pill, the progress in it, and the three ways an auto recce ends
+       5. the stage page's action row with a fourth button: available, running, and disabled with the reason
+
+     WHAT IT CHANGES in the game's own UI
+       - EarthRally.vue .er-srow: a seventh grid track, 160px, between Status and Best (section B)
+       - EarthRally.vue .er-pill: a fourth state, .working, blue, whose background carries the window count as a
+         fill (--er-done). No fifth state: a failure or a no-data outcome puts the pill back to red or amber.
+       - store.js STATUS: a 'working' entry; the outcome sentence goes in a line under the card, in the shape of
+         the existing .er-warnline / .er-msg, not in the row (a 58px row has no second line).
+       - the row's left border (already `4px solid transparent`) turns blue on the stage being matched.
+
+     MEASURED, AND HOW (arithmetic from the real sources, not a browser -- see the report)
+       - the game's own BngButton: padding .3em .5em .325em, line-height 1.5rem, margin .25rem, min-width 6em,
+         radius .25rem, disabled = opacity .5; accent secondary is font-weight 900 !important; accent main is
+         --bng-orange-500 = oklch(61.95% .1801 43.40); secondary is --bng-ter-blue-gray-700 = oklch(38.57% .0507
+         243.31). It also has a compact `small` size -- font-size .875em, line-height 1.15em, weight 500, padding
+         .125em -- which cannot be used in a row as it stands: .875em resolves against the parent, and the parent
+         is the 20px row, so `small` there is 17.5px text with a min-width of 6em = 105px. A row button therefore
+         sets its own 15px/20px and clears --bng-button-min-width: 29px tall, which a 58px row can hold.
+         (BeamNG.drive/ui/ui-vue/src/common/components/utility/button.vue:88-190, base/bngButton.vue:151-310)
+       - the grid at 1920x1080: page padding 64 each side -> the card is 1792px; row padding 28 each side -> 1736px
+         of tracks. Now: 100+130+260+150+30 = 670 fixed, so Name (1fr) = 1066px. With the seventh column at 160px:
+         830 fixed, Name = 906px. Longest name in this rally, "Founders Olmstead, Moore, Nagle Super Special",
+         is about 460px at 20px, so 906px is not cramped.
+       - the Status cell is 260px with padding-left 30px -> 230px usable. Pill widths (8px dot + 8px gap + 24px
+         padding + text at roughly .54em per character, 15px): Ready about 82px, Recce needed about 129px, Recce
+         recommended about 177px, and the new Auto recce 7 / 19 about 175px (the counter is Overpass Mono).
+         So beside Recce needed there are about 101px left, and a row button labelled "Auto recce" is about 100px
+         of it (15px text at the 900 weight accent secondary forces, plus the button's own .5em of padding each
+         side): it lands flush on the column edge, inside the error of this arithmetic either way. Beside Recce
+         recommended only 23px are left. That is the ground for section A's two forms.
+       - the windows: a window is only trustworthy CORRIDOR_M = 300m inside its own edge (tools/auto_recce.py:31),
+         so at a 1000m radius the step is 700m and the count is floor(lengthM / 700) + 1 centres along the line.
+         This rally: Boyd Loop 9033m -> 13, Starveout 12921.8m -> 19, Dalles Mtn Up 16136.6m -> 24, Dalles Mtn
+         Down 16083.2m -> 23. notes-1.3.0.md's "~18 for a 12km stage" is 19 for the 12.9km one.
+       - stages, lengths and numbers are the user's own OTR 2024 Final
+         (%LOCALAPPDATA%/BeamNG/BeamNG.drive/current/earthRally/events/otr-2024-final.json). Statuses are mixed as
+         a freshly imported rally's would be. Lengths in km: store.js units() defaults to "km".
+
+     The shots below are the page's content box at 1920 (1792px), not the whole screen: the 64px page padding and
+     the top bar are cropped. They are drawn at true size, so at a 1920-wide window they are 1:1 and nothing is
+     scaled; in a narrower window each shot scrolls sideways.
+
+     Sibling of docs/mockups-1.2.0 and -1.2.5. Nothing here is built. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700;800;900&family=Overpass+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* ---------------------------------------------------------------- the game's own values */
+:root {
+  --fnt: "Noto Sans", system-ui, sans-serif;
+  --mono: "Overpass Mono", ui-monospace, monospace;
+
+  /* EarthRally.vue .er-page */
+  --er-orange: #f26b1d;
+  --er-orange-500: #c75b1e;
+  --er-muted: #b8bcc6;
+  --er-dim: #8a909a;
+  --er-blue: #1f8fff;
+
+  /* the game's colours (ui-vue/src/styles/modules/_colors.scss) */
+  --orange-500: oklch(61.95% 0.1801 43.40);     /* BngButton accent main */
+  --tbg-700: oklch(38.57% 0.0507 243.31);       /* BngButton accent secondary */
+  --cg-600: oklch(50.63% 0.0185 266.15);        /* BngButton accent outlined, its border */
+  --black-o4: rgba(0, 0, 0, 0.4);
+  --off-white: #f0f0f0;
+
+  --mark: #ff5d5d;                              /* the mock-up's own marks, never the game's */
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0d0f12; color: var(--off-white); font-family: var(--fnt); }
+
+/* ---------------------------------------------------------------- the mock-up's own chrome */
+.mock-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; padding: 10px 16px; background: #1a1d22; border-bottom: 1px solid #2a2e35; position: sticky; top: 0; z-index: 10; }
+.mock-bar b { margin-right: 8px; font-weight: 600; }
+.mock-bar a { color: var(--er-muted); font-size: 13px; text-decoration: none; border-bottom: 1px solid #3a3f48; }
+.mock-bar a:hover { color: #fff; }
+.mock-bar .hint { margin-left: auto; font-size: 13px; color: #8a909a; }
+
+.sec { padding: 26px 16px 8px; }
+.sec h2 { margin: 0 0 6px; font-size: 20px; font-weight: 700; }
+.sec h3 { margin: 18px 0 6px; font-size: 16px; font-weight: 600; color: var(--er-muted); }
+.cap { margin: 0 0 14px; max-width: 1150px; color: var(--er-muted); font-size: 14px; line-height: 1.6; }
+.cap + .cap { margin-top: -6px; }
+.cap b { color: var(--off-white); }
+.cap code { color: #ffc69b; font-family: var(--mono); font-size: 13px; }
+.cap .bad { color: #ff8a8a; }
+.cap .ok { color: #6fd39a; }
+.rule { height: 1px; background: #23272e; border: 0; margin: 26px 16px 0; }
+
+/* a shot: the page's content box at true size, over the game as the menu sees it */
+.shot {
+  overflow-x: auto; border-radius: 6px; box-shadow: 0 0 0 1px #2a2e35;
+  background:
+    radial-gradient(ellipse at 70% 20%, rgba(80, 110, 90, 0.35), transparent 60%),
+    radial-gradient(ellipse at 20% 80%, rgba(120, 90, 60, 0.30), transparent 55%),
+    linear-gradient(180deg, #2b3a40 0%, #1d2622 55%, #17140f 100%);
+}
+.shot-in { width: 1792px; padding: 22px 0; background: rgba(10, 12, 16, 0.72); font-family: var(--fnt); font-size: 16px; color: var(--off-white); }
+.shot-in.tight { padding: 14px 0; }
+
+/* ---------------------------------------------------------------- EarthRally.vue, reproduced */
+.er-card { background: rgba(0, 0, 0, 0.6); border-radius: 0.5rem; }
+.er-muted { color: var(--er-muted); }
+.er-dim { color: var(--er-dim); font-size: 15px; }
+.er-mono { font-family: var(--mono); }
+.er-stages { padding: 8px 0; }
+
+.er-srow { display: grid; grid-template-columns: 100px 1fr 130px 260px 150px 30px; align-items: center; height: 58px; padding: 0 28px; font-size: 20px; border-left: 4px solid transparent; }
+.er-srow + .er-srow { border-top: 1px solid rgba(255, 255, 255, 0.06); }
+.er-srow.er-hdr { height: 40px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--er-muted); }
+.er-srow.er-click { cursor: pointer; }
+.er-srow .er-ss { font-family: var(--mono); font-weight: 700; color: var(--er-muted); }
+.er-srow .er-r { text-align: right; }
+.er-srow .er-st { padding-left: 30px; }
+.er-srow .er-none { color: #6f7480; }
+.er-srow .er-go { color: var(--er-dim); text-align: right; }
+
+.er-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; padding: 3px 12px; border-radius: 999px; white-space: nowrap; }
+.er-pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.er-pill.ready { background: rgba(40, 140, 80, 0.55); color: #d9ffe6; }
+.er-pill.recce { background: rgba(190, 140, 30, 0.45); color: #fff1cc; }
+.er-pill.none { background: rgba(170, 60, 60, 0.45); color: #ffdede; }
+
+.er-banner { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; padding: 12px 18px; border-radius: 0.5rem; background: rgba(31, 143, 255, 0.25); border-left: 4px solid var(--er-blue); font-size: 18px; }
+.er-banner > span { margin-right: auto; }
+.er-warnline { margin-bottom: 14px; color: #ffd36b; }
+.er-msg { margin-top: 12px; color: #ffd36b; }
+.er-help { margin-top: 14px; font-size: 15px; line-height: 1.5; }
+
+.er-stage-ss { font-family: var(--mono); font-size: 20px; color: var(--er-orange); font-weight: 700; letter-spacing: 0.05em; }
+.er-stage-name { font-size: 52px; font-weight: 700; line-height: 1.1; }
+.er-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 26px 0; }
+.er-tile { padding: 18px 20px; }
+.er-tile .er-v { font-family: var(--mono); font-size: 40px; font-weight: 700; line-height: 1.1; }
+.er-tile .er-v small { font-size: 18px; margin-left: 4px; color: var(--er-muted); }
+.er-tile .er-l { font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--er-muted); }
+.er-line-note { display: flex; align-items: center; gap: 14px; padding: 14px 18px; font-size: 17px; }
+.er-actions { display: flex; gap: 14px; margin-top: 24px; flex-wrap: wrap; }
+.er-act-help { margin-top: 16px; font-size: 15px; line-height: 1.7; color: var(--er-muted); }
+
+/* ---------------------------------------------------------------- BngButton, reproduced */
+.btn {
+  display: inline-flex; align-items: baseline; justify-content: center; gap: 10px;
+  font-family: var(--fnt); font-size: 1rem; line-height: 1.5rem; color: var(--off-white);
+  min-width: 6em; max-width: 20em; margin: 0.25rem; padding: 0.3em 0.5em 0.325em;
+  border: 0; border-radius: 0.25rem; background: var(--tbg-700); white-space: nowrap; cursor: pointer;
+}
+.btn.main { background: var(--orange-500); }
+.btn.secondary { font-weight: 900; }
+.btn.outlined { background: var(--black-o4); box-shadow: inset 0 0 0 1px var(--cg-600); }
+.btn.off { opacity: 0.5; pointer-events: none; }        /* the game's own :disabled */
+
+/* A button sized for a 58px row. The game's own compact size (`small`: font-size .875em, line-height 1.15em,
+   weight 500, padding .125em) cannot be used here as it stands: its .875em resolves against the parent, and the
+   parent is the 20px row -- 17.5px text and a min-width of 6em = 105px, which is more than the Status cell has
+   left. So the row drives the size itself, which is what BngButton asks for in as many words ("Button size should
+   be driven by the line-height", utility/button.vue:94), and clears min-width the way the game means it to, with
+   --bng-button-min-width. Everything else -- padding, radius, the 900 weight of accent secondary -- is the
+   button's own. 15px text on a 20px line is 29px tall in a 58px row. */
+.er-srow .btn { font-size: 15px; line-height: 20px; margin: 0; min-width: 0; }   /* in the game: --bng-button-min-width: 0 */
+.er-srow .btn.ic { padding-left: 0.4em; padding-right: 0.4em; }                   /* label dropped: section A1 only */
+
+/* ---------------------------------------------------------------- what 1.3.0 would add */
+
+/* the fourth pill: the auto recce running. Its background is the progress: --er-done is set per row, from the
+   window count, and the hard stop between the two blues is how far through the stage's windows it is. */
+.er-pill.working { color: #cfe8ff; background: linear-gradient(to right, rgba(31, 143, 255, 0.62) var(--er-done, 0%), rgba(31, 143, 255, 0.22) var(--er-done, 0%)); }
+.er-pill.working .er-wn { font-family: var(--mono); font-weight: 700; margin-left: -2px; }
+.er-pill.working::before { animation: er-pulse 1.2s ease-in-out infinite; }
+@keyframes er-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* the row being matched, findable while scrolling: the left border it already has, in blue */
+.er-srow.er-running { border-left-color: var(--er-blue); }
+
+/* the seventh column (section B): Stage | Name | Length | Status | (action) | Best | > */
+.er-stages-7 .er-srow { grid-template-columns: 100px 1fr 130px 260px 160px 150px 30px; }
+.er-act { padding-left: 24px; }
+
+/* the outcome lines under the card. The amber is the page's own .er-warnline; the other two are new. */
+.er-under { padding: 0 28px; }
+.er-outcome { margin-top: 14px; font-size: 15px; line-height: 1.5; }
+.er-outcome.warn { color: #ffd36b; }
+.er-outcome.flat { color: var(--er-muted); }
+.er-outcome.err { color: #ff8a8a; }
+.er-outcome .er-ssx { font-family: var(--mono); font-weight: 700; margin-right: 6px; }
+
+/* hover last, as in the component itself: it is why a running row's blue left border is lost under the pointer */
+.er-srow.er-click:hover { background: rgba(199, 91, 30, 0.22); border-left-color: var(--er-orange); }
+
+/* ---------------------------------------------------------------- the mock-up's own marks (never the game's) */
+.mk-edge .er-st { border-right: 2px dashed var(--mark); }      /* the Status column's right edge, drawn */
+.mk-note { padding: 10px 28px 2px; font-size: 13px; color: #ff8a8a; }
+.mk-strip { display: flex; align-items: center; gap: 28px; padding: 8px 28px 10px; }
+.mk-strip .mk-l { font-size: 13px; color: var(--er-dim); min-width: 92px; }
+
+/* No rule follows that can hide anything. Every state above is a class on the element itself
+   (.working, .er-running, .off, .mk-edge) -- there is deliberately no late, broad selector touching
+   display / visibility / opacity, which is how an earlier mock-up in this project drew nothing at all. */
+</style>
+</head>
+<body>
+
+<div class="mock-bar">
+  <b>Earth Rally 1.3.0 &mdash; the Auto recce button</b>
+  <a href="#today">now</a>
+  <a href="#a">A: in the status cell</a>
+  <a href="#b">B: a column of its own</a>
+  <a href="#run">running</a>
+  <a href="#ends">how it ends</a>
+  <a href="#stage">the stage page</a>
+  <a href="#open">open questions</a>
+  <span class="hint">true size: 1:1 in a 1920-wide window, otherwise each shot scrolls sideways</span>
+</div>
+
+<!-- ======================================================= now ======================================================= -->
+<section class="sec" id="today">
+  <h2>1 &middot; the list as it is now (1.2.5)</h2>
+  <p class="cap">OTR 2024 Final, the user's own rally, with the statuses a freshly imported map gives: four
+    <b>Recce needed</b>, one <b>Recce recommended</b>, three <b>Ready</b>. Six columns,
+    <code>100px 1fr 130px 260px 150px 30px</code>. The whole row is the click target, and the only thing in the
+    Status cell is one pill. Nothing else on this page is clickable per cell.</p>
+  <div class="shot"><div class="shot-in">
+    <div class="er-card er-stages">
+      <div class="er-srow er-hdr"><span>Stage</span><span>Name</span><span class="er-r">Length</span><span class="er-st">Status</span><span class="er-r">Best</span><span></span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS1</span><span>Boyd Loop Very Short</span><span class="er-r er-mono">9.0 km</span><span class="er-st"><span class="er-pill none">Recce needed</span></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS2</span><span>Shadow Buck</span><span class="er-r er-mono">7.5 km</span><span class="er-st"><span class="er-pill ready">Ready</span></span><span class="er-r er-mono">6:12.4</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS3</span><span>Maryhill Up</span><span class="er-r er-mono">4.1 km</span><span class="er-st"><span class="er-pill recce">Recce recommended</span></span><span class="er-r er-mono">3:48.1</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS4</span><span>Starveout</span><span class="er-r er-mono">12.9 km</span><span class="er-st"><span class="er-pill none">Recce needed</span></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS5</span><span>Dalles Mtn Up</span><span class="er-r er-mono">16.1 km</span><span class="er-st"><span class="er-pill none">Recce needed</span></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS6</span><span>Oak Flat</span><span class="er-r er-mono">9.1 km</span><span class="er-st"><span class="er-pill ready">Ready</span></span><span class="er-r er-mono">7:48.9</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS7</span><span>Nagle&rsquo;s Revenge</span><span class="er-r er-mono">7.8 km</span><span class="er-st"><span class="er-pill ready">Ready</span></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS8</span><span>Dalles Mtn Down</span><span class="er-r er-mono">16.1 km</span><span class="er-st"><span class="er-pill none">Recce needed</span></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+    </div>
+  </div></div>
+</section>
+<hr class="rule">
+
+<!-- ======================================================= A ======================================================= -->
+<section class="sec" id="a">
+  <h2>2 &middot; A &mdash; the button inside the Status cell, no grid change</h2>
+  <p class="cap">This is the owner's instruction read literally: the button goes to the right of the pill, in the
+    260px Status cell, and nothing about the grid changes. The cell has 230px of room (260 less its 30px
+    <code>padding-left</code>). <b>Recce needed</b> is about 129px of that, so <b>about 101px is left</b> &mdash;
+    and a row-sized button labelled "Auto recce" is <b>about 100px</b> (15px text at the 900 weight accent
+    <code>secondary</code> forces, plus the button's own <code>.5em</code> of padding each side). It fits by
+    nothing. That is not a measurement, it is arithmetic on the game's stylesheets, and a label that fits by
+    nothing does not fit: a different UI scale, a longer word or another language takes it over the edge.</p>
+
+  <h3>A1 &mdash; a button small enough to be sure: no label</h3>
+  <p class="cap">The only way to be sure of the room is to drop the label, which leaves a bare glyph, about 30px
+    wide, in a list where no other cell is separately clickable. The glyph here is a text character standing in for
+    an icon: the game's icon set (<code>ui-vue/src/assets/icons</code>) has no refresh, road or map icon in it, so
+    this form needs an icon drawn before it could ship, and an icon with no label is the one thing on the page that
+    cannot explain itself. The dashed red line is the Status column's right edge at 260px; it is the mock-up's
+    mark, not the game's.</p>
+  <div class="shot"><div class="shot-in">
+    <div class="er-card er-stages mk-edge">
+      <div class="er-srow er-hdr"><span>Stage</span><span>Name</span><span class="er-r">Length</span><span class="er-st">Status</span><span class="er-r">Best</span><span></span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS1</span><span>Boyd Loop Very Short</span><span class="er-r er-mono">9.0 km</span><span class="er-st"><span class="er-pill none">Recce needed</span> <button class="btn secondary ic" title="Auto recce">&#8635;</button></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS2</span><span>Shadow Buck</span><span class="er-r er-mono">7.5 km</span><span class="er-st"><span class="er-pill ready">Ready</span></span><span class="er-r er-mono">6:12.4</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS3</span><span>Maryhill Up</span><span class="er-r er-mono">4.1 km</span><span class="er-st"><span class="er-pill recce">Recce recommended</span></span><span class="er-r er-mono">3:48.1</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS4</span><span>Starveout</span><span class="er-r er-mono">12.9 km</span><span class="er-st"><span class="er-pill none">Recce needed</span> <button class="btn secondary ic" title="Auto recce">&#8635;</button></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS5</span><span>Dalles Mtn Up</span><span class="er-r er-mono">16.1 km</span><span class="er-st"><span class="er-pill none">Recce needed</span> <button class="btn secondary ic" title="Auto recce">&#8635;</button></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS6</span><span>Oak Flat</span><span class="er-r er-mono">9.1 km</span><span class="er-st"><span class="er-pill ready">Ready</span></span><span class="er-r er-mono">7:48.9</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS7</span><span>Nagle&rsquo;s Revenge</span><span class="er-r er-mono">7.8 km</span><span class="er-st"><span class="er-pill ready">Ready</span></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS8</span><span>Dalles Mtn Down</span><span class="er-r er-mono">16.1 km</span><span class="er-st"><span class="er-pill none">Recce needed</span> <button class="btn secondary ic" title="Auto recce">&#8635;</button></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="mk-note">the glyph is the whole affordance: nothing on the page says what it does until it is pressed</div>
+    </div>
+  </div></div>
+
+  <h3>A2 &mdash; the label kept, which is what it really looks like</h3>
+  <p class="cap">Same grid, the button labelled. Three things the drawing shows that the instruction cannot:
+    <span class="bad">(1)</span> the buttons land at a different x on every row, because the pill in front of them
+    is a different width &mdash; here they all follow <b>Recce needed</b> so they line up by luck, and the moment a
+    row's pill changes (an auto recce finishing, a gap found) its button jumps sideways;
+    <span class="bad">(2)</span> they land on the dashed line, or just past it, with nothing between them and the
+    Best column &mdash; grid tracks do not clip, so what crosses the line is drawn over the right-aligned times
+    rather than cut off, and a slightly longer label, a larger UI scale or another language sends it further;
+    <span class="bad">(3)</span> half the list has nothing there at all, and the empty half is the majority once a
+    rally is matched &mdash; the ragged look is not a drawing artefact, it is the steady state.</p>
+  <div class="shot"><div class="shot-in">
+    <div class="er-card er-stages mk-edge">
+      <div class="er-srow er-hdr"><span>Stage</span><span>Name</span><span class="er-r">Length</span><span class="er-st">Status</span><span class="er-r">Best</span><span></span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS1</span><span>Boyd Loop Very Short</span><span class="er-r er-mono">9.0 km</span><span class="er-st"><span class="er-pill none">Recce needed</span> <button class="btn secondary">Auto recce</button></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS2</span><span>Shadow Buck</span><span class="er-r er-mono">7.5 km</span><span class="er-st"><span class="er-pill ready">Ready</span></span><span class="er-r er-mono">6:12.4</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS3</span><span>Maryhill Up</span><span class="er-r er-mono">4.1 km</span><span class="er-st"><span class="er-pill recce">Recce recommended</span></span><span class="er-r er-mono">3:48.1</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS4</span><span>Starveout</span><span class="er-r er-mono">12.9 km</span><span class="er-st"><span class="er-pill none">Recce needed</span> <button class="btn secondary">Auto recce</button></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS5</span><span>Dalles Mtn Up</span><span class="er-r er-mono">16.1 km</span><span class="er-st"><span class="er-pill none">Recce needed</span> <button class="btn secondary">Auto recce</button></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS6</span><span>Oak Flat</span><span class="er-r er-mono">9.1 km</span><span class="er-st"><span class="er-pill ready">Ready</span></span><span class="er-r er-mono">7:48.9</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS7</span><span>Nagle&rsquo;s Revenge</span><span class="er-r er-mono">7.8 km</span><span class="er-st"><span class="er-pill ready">Ready</span></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS8</span><span>Dalles Mtn Down</span><span class="er-r er-mono">16.1 km</span><span class="er-st"><span class="er-pill none">Recce needed</span> <button class="btn secondary">Auto recce</button></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="mk-note">four rows out of eight, each button pressed up against the column edge &mdash; and the running state (section 4) needs a wider pill still</div>
+    </div>
+  </div></div>
+</section>
+<hr class="rule">
+
+<!-- ======================================================= B ======================================================= -->
+<section class="sec" id="b">
+  <h2>3 &middot; B &mdash; a seventh column between Status and Best</h2>
+  <p class="cap"><b>The widths.</b> <code>100px 1fr 130px 260px <span class="ok">160px</span> 150px 30px</code>.
+    Only one track is new and only <b>Name</b> pays for it:</p>
+  <p class="cap">&bull; <b>Status stays 260px.</b> It already holds the longest pill (<b>Recce recommended</b>,
+    about 177px) with its 30px padding and about 50px spare, and the new running pill (about 175px) fits the same
+    room. Taking the 160px out of Status instead would leave 100px, which the amber pill alone overruns.<br>
+    &bull; <b>the action column is 160px:</b> 24px of <code>padding-left</code> to separate it from the pill, then
+    the widest thing the column ever holds &mdash; <b>Auto recce</b> at about 100px, <b>Try again</b> about 92px,
+    <b>Stop</b> about 50px &mdash; and about 36px left over for a longer label or another language. It is the one
+    width here with slack in it on purpose: the cell is the only part of the row that changes wording. Everything
+    it holds starts at the same x, which is the whole point of the column.<br>
+    &bull; <b>Name gives up the 160px:</b> 1fr goes from 1066px to 906px at 1920. The longest name in this rally,
+    "Founders Olmstead, Moore, Nagle Super Special", is about 460px at 20px, so there is no clipping to worry
+    about; the first rally wide enough to care would be clipped today as well.<br>
+    &bull; <b>the header cell is there and empty.</b> An uppercase AUTO RECCE over a column that is blank on most
+    rows reads as a column of data and advertises, on every row, something half of them cannot do. The chevron
+    column's header is empty for the same reason.</p>
+  <div class="shot"><div class="shot-in">
+    <div class="er-card er-stages er-stages-7">
+      <div class="er-srow er-hdr"><span>Stage</span><span>Name</span><span class="er-r">Length</span><span class="er-st">Status</span><span></span><span class="er-r">Best</span><span></span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS1</span><span>Boyd Loop Very Short</span><span class="er-r er-mono">9.0 km</span><span class="er-st"><span class="er-pill none">Recce needed</span></span><span class="er-act"><button class="btn secondary">Auto recce</button></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS2</span><span>Shadow Buck</span><span class="er-r er-mono">7.5 km</span><span class="er-st"><span class="er-pill ready">Ready</span></span><span class="er-act"></span><span class="er-r er-mono">6:12.4</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS3</span><span>Maryhill Up</span><span class="er-r er-mono">4.1 km</span><span class="er-st"><span class="er-pill recce">Recce recommended</span></span><span class="er-act"></span><span class="er-r er-mono">3:48.1</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS4</span><span>Starveout</span><span class="er-r er-mono">12.9 km</span><span class="er-st"><span class="er-pill none">Recce needed</span></span><span class="er-act"><button class="btn secondary">Auto recce</button></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS5</span><span>Dalles Mtn Up</span><span class="er-r er-mono">16.1 km</span><span class="er-st"><span class="er-pill none">Recce needed</span></span><span class="er-act"><button class="btn secondary">Auto recce</button></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS6</span><span>Oak Flat</span><span class="er-r er-mono">9.1 km</span><span class="er-st"><span class="er-pill ready">Ready</span></span><span class="er-act"></span><span class="er-r er-mono">7:48.9</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS7</span><span>Nagle&rsquo;s Revenge</span><span class="er-r er-mono">7.8 km</span><span class="er-st"><span class="er-pill ready">Ready</span></span><span class="er-act"></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS8</span><span>Dalles Mtn Down</span><span class="er-r er-mono">16.1 km</span><span class="er-st"><span class="er-pill none">Recce needed</span></span><span class="er-act"><button class="btn secondary">Auto recce</button></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+    </div>
+    <div class="er-muted er-help" style="padding: 0 28px;">
+      <b>Ready</b>: notes from the stage's own roads or your recce. <b>Recce recommended</b>: part of the stage has
+      no road on the map (no notes there) until you drive its recce. <b>Recce needed</b>: run the auto recce, or
+      drive its recce.
+    </div>
+  </div></div>
+  <p class="cap">The help line under the card is the page's own, with its last sentence changed: it says "drive its
+    recce first" today, and that stops being the only answer the moment this button exists
+    (<code>menu.lua:18</code> writes the same sentence into the stage page's note).</p>
+  <p class="cap">One thing neither A nor B fixes: the whole row is the click target
+    (<code>@click="openStage"</code>), so a button inside it needs <code>@click.stop</code> or pressing it opens
+    the stage as well. Worth saying out loud because it is the kind of thing that works in the mock-up and not in
+    the game.</p>
+</section>
+<hr class="rule">
+
+<!-- ======================================================= running ======================================================= -->
+<section class="sec" id="run">
+  <h2>4 &middot; the running state</h2>
+  <p class="cap">An auto recce is a sequence of road-graph windows: at a 1000m radius the step is 700m (a window is
+    only trustworthy <code>CORRIDOR_M</code> = 300m inside its own edge), so <b>Starveout</b>, 12.9km, is
+    <b>19 windows</b>, and each is a real request to BeamNG.Earth that takes seconds. The row has to say how far
+    through it is, and it has to say it in 58px with no second line.</p>
+  <p class="cap"><b>The design: the pill becomes the progress bar.</b> A fourth pill state, <code>working</code>,
+    in the page's blue (<code>--er-blue: #1f8fff</code>), labelled "Auto recce" with the window count in Overpass
+    Mono as every other number on this page is. Its background is a two-stop gradient whose hard edge sits at
+    <code>--er-done</code>, set from the count &mdash; so the pill fills left to right as the windows come in. The
+    dot it already has pulses. Nothing else in the row moves, the pill stays about 175px (narrower than
+    <b>Recce recommended</b>), and the state lives exactly where the state already lives.</p>
+  <p class="cap">Why not a separate bar: a bar under the pill needs a second line the row does not have, and a bar
+    across the bottom of the row would collide with the 1px separator and read as a selection. Why no time
+    estimate: <code>plan-1.3.0.md</code> step 3 says the window cost is not measured yet, so the row would be
+    guessing &mdash; <b>19 windows, 7 done</b> is the honest figure and it is also the one that is visibly moving.</p>
+
+  <h3>the pill at three points of the same stage</h3>
+  <div class="shot"><div class="shot-in tight">
+    <div class="mk-strip"><span class="mk-l">window 1</span><span class="er-pill working" style="--er-done: 5%;">Auto recce <span class="er-wn">1 / 19</span></span><span class="er-dim">just started: the fill is one window wide</span></div>
+    <div class="mk-strip"><span class="mk-l">window 7</span><span class="er-pill working" style="--er-done: 37%;">Auto recce <span class="er-wn">7 / 19</span></span><span class="er-dim">about a third of the corridor matched</span></div>
+    <div class="mk-strip"><span class="mk-l">window 18</span><span class="er-pill working" style="--er-done: 95%;">Auto recce <span class="er-wn">18 / 19</span></span><span class="er-dim">the last window; the file is written only when the coverage is complete</span></div>
+    <div class="mk-strip"><span class="mk-l">for width</span><span class="er-pill recce">Recce recommended</span><span class="er-dim">the widest pill today, about 177px &mdash; the running pill is narrower, so the 260px cell is unchanged</span></div>
+  </div></div>
+
+  <h3>the list while one runs</h3>
+  <p class="cap">SS4 is being matched. Its pill is the progress, its left border is blue so it can be found while
+    scrolling a long rally, and its action cell offers <b>Stop</b>. The other <b>Recce needed</b> rows are
+    <b>disabled, not queued</b>: the page already has a <code>busy</code> computed that greys every action while a
+    run or a recce is going on, and one window at a time is what the Lua does
+    (<code>EarthRally.vue:164</code>). The banner above the card is the page's own
+    <code>.er-banner</code>, the one the driven recce already uses, carrying the sentence and a second
+    <b>Stop</b> &mdash; so the state is visible from the rally page even when the row is scrolled away.</p>
+  <div class="shot"><div class="shot-in">
+    <div class="er-banner"><span>Auto recce of SS4 Starveout: window 7 of 19, no map data fetched</span><button class="btn outlined">Stop</button></div>
+    <div class="er-card er-stages er-stages-7">
+      <div class="er-srow er-hdr"><span>Stage</span><span>Name</span><span class="er-r">Length</span><span class="er-st">Status</span><span></span><span class="er-r">Best</span><span></span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS1</span><span>Boyd Loop Very Short</span><span class="er-r er-mono">9.0 km</span><span class="er-st"><span class="er-pill none">Recce needed</span></span><span class="er-act"><button class="btn secondary off">Auto recce</button></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS2</span><span>Shadow Buck</span><span class="er-r er-mono">7.5 km</span><span class="er-st"><span class="er-pill ready">Ready</span></span><span class="er-act"></span><span class="er-r er-mono">6:12.4</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS3</span><span>Maryhill Up</span><span class="er-r er-mono">4.1 km</span><span class="er-st"><span class="er-pill recce">Recce recommended</span></span><span class="er-act"></span><span class="er-r er-mono">3:48.1</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click er-running"><span class="er-ss">SS4</span><span>Starveout</span><span class="er-r er-mono">12.9 km</span><span class="er-st"><span class="er-pill working" style="--er-done: 37%;">Auto recce <span class="er-wn">7 / 19</span></span></span><span class="er-act"><button class="btn outlined">Stop</button></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS5</span><span>Dalles Mtn Up</span><span class="er-r er-mono">16.1 km</span><span class="er-st"><span class="er-pill none">Recce needed</span></span><span class="er-act"><button class="btn secondary off">Auto recce</button></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS6</span><span>Oak Flat</span><span class="er-r er-mono">9.1 km</span><span class="er-st"><span class="er-pill ready">Ready</span></span><span class="er-act"></span><span class="er-r er-mono">7:48.9</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS7</span><span>Nagle&rsquo;s Revenge</span><span class="er-r er-mono">7.8 km</span><span class="er-st"><span class="er-pill ready">Ready</span></span><span class="er-act"></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS8</span><span>Dalles Mtn Down</span><span class="er-r er-mono">16.1 km</span><span class="er-st"><span class="er-pill none">Recce needed</span></span><span class="er-act"><button class="btn secondary off">Auto recce</button></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+    </div>
+  </div></div>
+  <p class="cap">Two honest snags in the drawing. The row's blue left border is <b>lost under the pointer</b>: the
+    component's <code>:hover</code> rule sets <code>border-left-color</code> to orange and comes after, so hovering
+    the running row hides the one mark that says it is running &mdash; the hover rule would have to exclude it, or
+    the running mark has to be something hover does not touch. And the banner's "no map data fetched" is there on
+    purpose: the auto recce reads only what is already on disk, and a player watching a progress bar will otherwise
+    assume it is downloading.</p>
+</section>
+<hr class="rule">
+
+<!-- ======================================================= endings ======================================================= -->
+<section class="sec" id="ends">
+  <h2>5 &middot; how it ends: four rows, four endings, one list</h2>
+  <p class="cap"><b>No fifth pill.</b> The pill answers one question &mdash; can I drive this stage now? &mdash; so
+    an ending puts it back to one of the three answers the page already has, and <i>what happened</i> goes in a
+    line under the card, in the shape of the page's own <code>.er-warnline</code> / <code>.er-msg</code>. Four red
+    rows, four endings, drawn at once:</p>
+  <p class="cap">&bull; <b>SS4 Starveout &mdash; done.</b> Green <b>Ready</b>, and the action cell is empty: the
+    button disappearing is the success signal, and the row is now indistinguishable from a stage that never needed
+    one, which is the point.<br>
+    &bull; <b>SS5 Dalles Mtn Up &mdash; not enough map data on disk, partly.</b> 18 of 24 windows had data; the
+    line is matched where there was, and 4.2km has none. That is the amber state, by the letter of
+    <code>store.js</code> &mdash; but see the caption below, because the cause is not the usual one.<br>
+    &bull; <b>SS1 Boyd Loop Very Short &mdash; no map data on disk at all.</b> Nothing to match to anywhere on the
+    stage, so the pill stays red and the line is <span class="ok">grey, not amber or red</span>: this is a normal
+    outcome for ground the player has never driven, not a failure.<br>
+    &bull; <b>SS8 Dalles Mtn Down &mdash; failed part way.</b> BeamNG.Earth stopped answering at window 12 of 23.
+    The pill is back to red, nothing was written, and the line is the only red thing on the page.</p>
+  <div class="shot"><div class="shot-in">
+    <div class="er-card er-stages er-stages-7">
+      <div class="er-srow er-hdr"><span>Stage</span><span>Name</span><span class="er-r">Length</span><span class="er-st">Status</span><span></span><span class="er-r">Best</span><span></span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS1</span><span>Boyd Loop Very Short</span><span class="er-r er-mono">9.0 km</span><span class="er-st"><span class="er-pill none">Recce needed</span></span><span class="er-act"><button class="btn secondary">Try again</button></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS2</span><span>Shadow Buck</span><span class="er-r er-mono">7.5 km</span><span class="er-st"><span class="er-pill ready">Ready</span></span><span class="er-act"></span><span class="er-r er-mono">6:12.4</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS3</span><span>Maryhill Up</span><span class="er-r er-mono">4.1 km</span><span class="er-st"><span class="er-pill recce">Recce recommended</span></span><span class="er-act"></span><span class="er-r er-mono">3:48.1</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS4</span><span>Starveout</span><span class="er-r er-mono">12.9 km</span><span class="er-st"><span class="er-pill ready">Ready</span></span><span class="er-act"></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS5</span><span>Dalles Mtn Up</span><span class="er-r er-mono">16.1 km</span><span class="er-st"><span class="er-pill recce">Recce recommended</span></span><span class="er-act"><button class="btn secondary">Try again</button></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS6</span><span>Oak Flat</span><span class="er-r er-mono">9.1 km</span><span class="er-st"><span class="er-pill ready">Ready</span></span><span class="er-act"></span><span class="er-r er-mono">7:48.9</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS7</span><span>Nagle&rsquo;s Revenge</span><span class="er-r er-mono">7.8 km</span><span class="er-st"><span class="er-pill ready">Ready</span></span><span class="er-act"></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+      <div class="er-srow er-click"><span class="er-ss">SS8</span><span>Dalles Mtn Down</span><span class="er-r er-mono">16.1 km</span><span class="er-st"><span class="er-pill none">Recce needed</span></span><span class="er-act"><button class="btn secondary">Try again</button></span><span class="er-r er-mono er-none">&ndash;</span><span class="er-go">&rsaquo;</span></div>
+    </div>
+    <div class="er-under">
+      <div class="er-outcome warn"><span class="er-ssx">SS5</span>Dalles Mtn Up: 18 of 24 windows had map data on disk. The line is matched where there was data; 4.2 km of the stage has none. Drive or fly that ground once in BeamNG.Earth, then run it again.</div>
+      <div class="er-outcome flat"><span class="er-ssx">SS1</span>Boyd Loop Very Short: no map data on disk anywhere along this stage, so there is nothing to match to. The auto recce never downloads &mdash; drive the ground once in BeamNG.Earth, or drive the recce.</div>
+      <div class="er-outcome err"><span class="er-ssx">SS8</span>Dalles Mtn Down: stopped at window 12 of 23 &mdash; BeamNG.Earth did not answer (timed out). Nothing was written; the stage is as it was.</div>
+    </div>
+  </div></div>
+  <p class="cap"><b>What the drawing turns up, and it is not small.</b> SS5's amber pill says "part of the stage has
+    no road on the map (no notes there) until you drive its recce" &mdash; the sentence
+    <code>menu.lua:31</code> writes. That is <i>true of a gap in the map</i> and <i>false of a gap in the
+    download</i>, and after an auto recce the amber state can mean either. It also undoes the reason
+    <code>notes-1.3.0.md</code> gives for keeping the button off amber rows: that re-running cannot help, because
+    there is nothing there to match to. For a missing-download gap, re-running <i>is</i> the thing that helps, once
+    the player has been over that ground. So either amber has to carry its cause (and keep the button when the
+    cause is the download), or this outcome needs a state of its own. Drawn here as amber + <b>Try again</b> +
+    the sentence, which is the smallest version of the first option.</p>
+</section>
+<hr class="rule">
+
+<!-- ======================================================= stage page ======================================================= -->
+<section class="sec" id="stage">
+  <h2>6 &middot; the stage page's action row</h2>
+  <p class="cap">The stage page is where someone who opened a stage looks for this. Its action row is three real
+    <code>BngButton</code>s today &mdash; <b>Drive stage</b> (accent <code>main</code>), <b>Route to start</b> and
+    <b>Recce</b> (accent <code>secondary</code>, which is <code>font-weight: 900</code> in the game's own
+    stylesheet) &mdash; and <b>Auto recce</b> is a fourth beside them. These shots are the left column of
+    <code>.er-stage-page</code> at 1920 (980px of the 1792px content box), so the button row is at its true width.
+    On this stage <b>Drive stage</b> is already disabled, because <code>canDrive</code> is
+    <code>line ~= nil</code> and a <b>Recce needed</b> stage has no line (<code>menu.lua:127</code>) &mdash; which
+    is the whole reason the player is here.</p>
+
+  <h3>available</h3>
+  <div class="shot"><div class="shot-in tight"><div style="width: 980px;">
+    <div class="er-stage-ss">SS4 &middot; OTR 2024 FINAL</div>
+    <div class="er-stage-name">Starveout</div>
+    <div class="er-muted">Time control before the start &middot; stop control after the flying finish</div>
+    <div class="er-tiles">
+      <div class="er-card er-tile"><div class="er-v">12.9<small>km</small></div><div class="er-l">Length</div></div>
+      <div class="er-card er-tile"><div class="er-v">&ndash;</div><div class="er-l">Corners</div></div>
+      <div class="er-card er-tile"><div class="er-v">&ndash;</div><div class="er-l">Junctions</div></div>
+      <div class="er-card er-tile"><div class="er-v">&ndash;</div><div class="er-l">Bridges</div></div>
+    </div>
+    <div class="er-card er-line-note"><span class="er-pill none">Recce needed</span><span>No line on the roads yet: run the auto recce, or drive its recce.</span></div>
+    <div class="er-actions">
+      <button class="btn main off">Drive stage</button>
+      <button class="btn secondary">Route to start</button>
+      <button class="btn secondary">Auto recce</button>
+      <button class="btn secondary">Recce</button>
+    </div>
+    <div class="er-act-help">
+      <b>Drive stage</b>: takes you to the time control before the start, then through the stage as in a real rally.<br>
+      <b>Route to start</b>: the way there on the GPS, arrows on the road. No teleport.<br>
+      <b>Auto recce</b>: works the line out from the map's roads, 19 windows for this stage. Reads only the map data already on your disk; downloads nothing.<br>
+      <b>Recce</b>: drive the stage once at your own pace; the line you drive gives the notes.
+    </div>
+  </div></div></div>
+  <p class="cap">Order: <b>Auto recce</b> before <b>Recce</b>, so the two recce buttons sit together and the cheap
+    one comes first; it is a fourth button either way. The note in the card is the page's own
+    (<code>menu.lua:18</code>) with "drive its recce first" widened &mdash; the same edit as the rally page's help
+    line.</p>
+
+  <h3>running &mdash; the same row, for comparison with the list</h3>
+  <div class="shot"><div class="shot-in tight"><div style="width: 980px;">
+    <div class="er-banner"><span>Auto recce of SS4 Starveout: window 7 of 19, no map data fetched</span><button class="btn outlined">Stop</button></div>
+    <div class="er-card er-line-note"><span class="er-pill working" style="--er-done: 37%;">Auto recce <span class="er-wn">7 / 19</span></span><span>Matching the line to the map's roads, 700 m at a time. You can leave this page.</span></div>
+    <div class="er-actions">
+      <button class="btn main off">Drive stage</button>
+      <button class="btn secondary off">Route to start</button>
+      <button class="btn outlined">Stop the auto recce</button>
+      <button class="btn secondary off">Recce</button>
+    </div>
+  </div></div></div>
+  <p class="cap">While it runs the page's existing <code>busy</code> rule greys the rest of the row, exactly as it
+    does during a driven recce, and <b>Auto recce</b> is replaced in place by <b>Stop the auto recce</b> rather
+    than a fifth button appearing. The <code>.er-line-note</code> card is the one place on either page with room
+    for a sentence beside the pill, so it says what the windows are and that leaving the page is safe.</p>
+
+  <h3>disabled, with the reason</h3>
+  <div class="shot"><div class="shot-in tight"><div style="width: 980px;">
+    <div class="er-card er-line-note"><span class="er-pill none">Recce needed</span><span>No line on the roads yet: drive its recce.</span></div>
+    <div class="er-actions">
+      <button class="btn main off">Drive stage</button>
+      <button class="btn secondary">Route to start</button>
+      <button class="btn secondary off">Auto recce</button>
+      <button class="btn secondary">Recce</button>
+    </div>
+    <div class="er-msg">Auto recce needs BeamNG.Earth to hand out its road graph, and this one does not: it is older than the version that added it. Update BeamNG.Earth, or drive the recce.</div>
+    <div class="er-act-help">
+      <b>Drive stage</b>: takes you to the time control before the start, then through the stage as in a real rally.<br>
+      <b>Route to start</b>: the way there on the GPS, arrows on the road. No teleport.<br>
+      <b>Auto recce</b>: works the line out from the map's roads. Not available with this BeamNG.Earth.<br>
+      <b>Recce</b>: drive the stage once at your own pace; the line you drive gives the notes.
+    </div>
+  </div></div></div>
+  <p class="cap">Disabled is the game's own: <code>opacity: .5</code> and no pointer events, so the button is still
+    legible and still says what it would do. The reason goes in <code>.er-msg</code>, the amber line the page
+    already uses for a button's answer &mdash; next to the row, not inside a tooltip, because a disabled BngButton
+    takes no pointer events and so can never show one. There are two reasons it can be off and they are not the
+    same sentence: <code>api.has('roadGraph')</code> false (an older BeamNG.Earth: the sentence above), or the
+    capability present but the server started without its roads, which the result has to report in words of its own
+    (<code>docs/upstream-roadgraph.md</code>: "it depends on the server having roads at all &mdash;
+    <code>has('roadGraph')</code> cannot see that, so the result carries the reason"). In the list, a stage whose
+    auto recce is unavailable has no button in the seventh column at all &mdash; eight disabled buttons down a
+    rally with no way to say why is worse than none, and the stage page is where the sentence fits.</p>
+</section>
+<hr class="rule">
+
+<!-- ======================================================= open ======================================================= -->
+<section class="sec" id="open">
+  <h2>7 &middot; what this drawing settles, and what it does not</h2>
+  <p class="cap"><b>Settled by drawing it.</b> The button does not fit beside the pill with any confidence (A), so
+    the seventh column (B) is the one to build, at 160px out of Name's 1fr with Status untouched. The running state
+    is the pill itself, filled to the window count, with the sentence in the banner the driven recce already uses.
+    Three endings, no fifth pill: green and no button, amber or red with a line underneath saying what happened.</p>
+  <p class="cap"><b>Not settled, and wanting a decision.</b>
+    (1) Amber now has two causes &mdash; no road on the map, and no map data downloaded &mdash; and only the second
+    can be fixed by running it again. Carry the cause, or add a state?
+    (2) A stop: is stopping part way worth offering at all, or should a started auto recce just run? It is drawn
+    because a 24-window stage is minutes long, but it is more code and a half-written file to think about.
+    (3) Several stages at once: drawn as disabled-while-busy, which is what the page does today. A rally of nine
+    needs a queue and "Auto recce all" sooner or later, and that button has nowhere to live on this page yet.
+    (4) The hover rule eating the running row's blue border.
+    (5) Whether <b>Auto recce</b> or <b>Match to roads</b> is the better label for a player who has never read the
+    roadmap; "recce" means driving it yourself everywhere else in this UI.</p>
+  <p class="cap"><b>Not verified.</b> Every width here is arithmetic on the game's own stylesheets, not a
+    measurement in a browser: text widths are estimated at roughly .54em per character at weight 600, and a little
+    more at the 900 weight accent <code>secondary</code> forces, so anything said to fit or miss by ten or twenty
+    pixels &mdash; A2 above all &mdash; is inside the error and has to be checked on screen before it is believed.
+    <code>1rem</code> is taken as 16px, the game's default UI scale, not a fixed fact; at another scale the row is
+    still 58px (it is in px) while the buttons are not. The row button's size is written here rather than taken
+    from BngButton's <code>small</code>, for the reason in the stylesheet, and whether
+    <code>--bng-button-min-width</code> can be cleared from outside the component is a reading of the variable's
+    purpose, not something seen working. The pills' fourth state, the gradient fill and the blue left border have
+    never been rendered by the game's own stylesheet, only by this file's copy of it.</p>
+</section>
+
+</body>
+</html>
