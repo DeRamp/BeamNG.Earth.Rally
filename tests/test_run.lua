@@ -1883,19 +1883,22 @@ do
   T.check(after and after.autoLine and tostring(after.autoLine.text):find('nothing downloaded'),
     'the player is told nothing was downloaded and it stopped (' ..
     tostring(after and after.autoLine and after.autoLine.text) .. ')')
-  T.check(after.autoLine.text:find('again'), 'and that pressing again will try without it')
   T.check(main.uiAction('reset', 'seq', 'near').ok, 'and the page is not left busy afterwards')
 
-  -- the second press is the "try it anyway": no question, straight to the stage and the match
+  -- **The second press does exactly what the first did** (the user: "the seconbd pressa should work the same as
+  -- the firest"). It prices the ground again and asks again -- nothing is remembered, so one button never has two
+  -- behaviours with no way to tell which is coming.
   local plansWas = area.plans
-  local again = main.uiAction('autoRecce', 'seq', 'near')
-  T.check(area.plans == plansWas, 'a stage already declined is not priced again (' .. area.plans .. ')')
-  T.check(graphCalls() > hadCalls, 'it went straight to matching (' .. graphCalls() .. ' window call(s))')
-  T.check(main.uiState().auto == nil, 'and finished, with the stage own reason reported')
-  T.check(not again.ok or true, 'however it ended (' .. tostring(again.message) .. ')')
+  main.uiAction('autoRecce', 'seq', 'near')
+  T.check(area.plans == plansWas + 1, 'pressing again prices it again (' .. area.plans .. ')')
+  T.check(main.uiState().auto and main.uiState().auto.phase == 'asking',
+    'and asks again, as the first press did (' .. tostring(main.uiState().auto and main.uiState().auto.phase) .. ')')
+  T.check(graphCalls() == hadCalls, 'with still no window asked for (' .. graphCalls() .. ')')
+  main.uiAction('autoRecceSkip')
 
   -- ------------------------------------------------------------ the player says yes
   area.state = 'running'
+  local plansAtYes = area.plans
   main.uiAction('autoRecce', 'seq', 'n2')
   T.check(main.uiState().auto and main.uiState().auto.phase == 'asking', 'a stage not yet declined is asked')
   local yes = main.uiAction('autoRecceDownload')
@@ -1913,7 +1916,8 @@ do
   area.state = 'done'
   tick(6)
   T.check(area.adds == 1, 'ONE download a press, however the second match goes (' .. area.adds .. ')')
-  T.check(area.plans == 2, 'and the estimate is not asked for again either (' .. area.plans .. ')')
+  T.check(area.plans == plansAtYes + 1,
+    'and the estimate was asked for once for this press, not again after the download (' .. area.plans .. ')')
   T.check(main.uiState().auto == nil, 'the sequence has ended rather than going round again')
   T.check(main.uiAction('reset', 'seq', 'near').ok, 'and the page is free')
 
@@ -1933,11 +1937,22 @@ do
   T.check(main.uiState().auto == nil, 'No stops it')
   T.near(car.lat, wasLat, 1e-9, 'and the car was never moved')
 
-  -- the second press, having taken No as read, does go there
+  -- the second press asks again, and it is the DOWNLOAD that sends it on its way
   local b2 = main.uiAction('autoRecce', 'seq', 'away')
-  T.check(b2.ok and main.uiState().auto and main.uiState().auto.phase == 'going',
-    'pressing again goes to the stage (' .. tostring(main.uiState().auto and main.uiState().auto.phase) .. ')')
-  T.near(car.lat, far[1][1], 0.01, 'and the car really was moved there')
+  T.check(b2.ok and main.uiState().auto and main.uiState().auto.phase == 'asking',
+    'pressing again asks again (' .. tostring(main.uiState().auto and main.uiState().auto.phase) .. ')')
+  T.near(car.lat, wasLat, 1e-9, 'still not moved')
+  area.state = 'running'
+  main.uiAction('autoRecceDownload')
+  T.check(main.uiState().auto and main.uiState().auto.phase == 'downloading',
+    'saying yes downloads FIRST (' .. tostring(main.uiState().auto and main.uiState().auto.phase) .. ')')
+  T.near(car.lat, wasLat, 1e-9, 'and still has not moved them -- download first, then teleport')
+  area.state = 'done'
+  tick(4)
+  T.check(main.uiState().auto and main.uiState().auto.phase == 'going',
+    'and only once it is downloaded does it go (' ..
+    tostring(main.uiState().auto and main.uiState().auto.phase) .. ')')
+  T.near(car.lat, far[1][1], 0.01, 'the car really was moved there')
   main.uiAction('autoRecceStop')
   T.check(main.uiState().auto == nil, 'Stop ends the sequence mid-journey')
 

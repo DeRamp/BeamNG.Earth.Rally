@@ -382,7 +382,6 @@ M.AREA_WAIT_S = 1800         -- waiting for a download; it is gated to 40% duty 
 M.GOING, M.ASKING, M.DOWNLOADING = 'going', 'asking', 'downloading'
 
 local autoSeq = nil   -- { ev, stage, ss, phase, t, ready, plan, areaId, downloaded, why, how }
-local autoNoDl = {}   -- stages the player said Not now to, this session: autoKey -> true
 
 local autoSeqStep     -- (declared here: autoDone drives the sequence on, and is defined above it)
 
@@ -521,10 +520,9 @@ autoSeqStep = function(what, arg)
       -- recce again goes straight to the stage and matches with whatever is already on disk, with no question.
       -- That is said in as many words below, because a button that does something different the second time has
       -- to tell you so.
-      autoNoDl[autoKey(sq.ev.id, sq.stage.id)] = true
       log('I', logTag, 'auto recce: the player declined the download; stopping')
-      autoSeqEnd(string.format('%s: nothing downloaded, and the auto recce stopped. Press Auto recce again to ' ..
-        'try it with the map data you already have.', sq.stage.name), autoRecce.NODATA)
+      autoSeqEnd(string.format('%s: nothing downloaded, and the auto recce stopped.', sq.stage.name),
+        autoRecce.NODATA)
       return true
     end
     local pts = autoRecce.corridor(sq.stage.line)
@@ -562,7 +560,6 @@ autoSeqStep = function(what, arg)
       note = string.format('The download finished with %d item(s) nothing could fetch. %s',
         sq.unavailable, tostring(sq.areaMsg or 'Resume that area to try those again.'))
     end
-    if arg == autoRecce.DONE then autoNoDl[autoKey(sq.ev.id, sq.stage.id)] = nil end
     if not note then
       autoSeqEnd(nil)
       return false              -- nothing to add: autoDone reports the stage's own ending, as 1.3.0 does
@@ -690,9 +687,11 @@ doAction = function(what, eventId, stageId, fromPanel)
     -- the player's frame, so the ground can be priced from where the player is standing. That is what lets the
     -- question be asked before they are teleported across the world.
     --
-    -- Unless the player already said Not now to this stage: then the second press is their "try it anyway", and
-    -- asking again would be the button refusing to take an answer it has already been given.
-    if earth.hasAreaRoute() and not autoNoDl[autoKey(ev.id, stage.id)] then
+    -- **Every press does the same thing** (the user, 2026-11-14: "none of this re ordering of what the button
+    -- does nonsense the seconbd pressa should work the same as the firest"). An earlier cut remembered a Not now
+    -- and made the next press skip the question: one button with two behaviours and no way to tell which you were
+    -- about to get. Nothing is remembered -- press it again and it asks again.
+    if earth.hasAreaRoute() then
       local pts = autoRecce.corridor(stage.line)
       if pts then
         local ok, why = earth.areaPlan(pts, function(r) autoSeqStep('planned', r) end)
@@ -1064,7 +1063,7 @@ function M.onClientEndMission()
   -- running. It stops the way a recce does, and writes nothing.
   -- autoSeq as well: a sequence between its legs has no window in flight, so cancelling the auto recce alone
   -- would leave it behind and the page busy for ever (the guard in doAction refuses everything while one runs)
-  autoSeq, autoNoDl = nil, {}
+  autoSeq = nil
   if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(runner.abort, true)
@@ -1093,7 +1092,7 @@ function M.onModDeactivated()
   -- running. It stops the way a recce does, and writes nothing.
   -- autoSeq as well: a sequence between its legs has no window in flight, so cancelling the auto recce alone
   -- would leave it behind and the page busy for ever (the guard in doAction refuses everything while one runs)
-  autoSeq, autoNoDl = nil, {}
+  autoSeq = nil
   if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(runner.abort, true)
@@ -1115,7 +1114,7 @@ function M.onExtensionUnloaded()
   -- running. It stops the way a recce does, and writes nothing.
   -- autoSeq as well: a sequence between its legs has no window in flight, so cancelling the auto recce alone
   -- would leave it behind and the page busy for ever (the guard in doAction refuses everything while one runs)
-  autoSeq, autoNoDl = nil, {}
+  autoSeq = nil
   if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(runner.abort, true)
