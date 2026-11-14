@@ -38,7 +38,8 @@ Nothing goes upstream for 1.3.0 (the user, 2026-11-13): the api.hudHide pull req
 dropped -- docs/plan-1.3.0.md, "The strips: no pull request" -- and the mount call Earth Rally already uses stays,
 with the strips now given back on every way out of a run.
 
-Not in 1.3.0: the self-test's co-driver check, which moves to 1.4.0 with the rest of the co-driver work. Note that
+Not in 1.3.0: the self-test's co-driver check, which moves to the co-driver version (now 1.5.0) with the rest of
+that work. Note that
 until it is done `tools/selftest.py` exits 1 on every run, so it is a report to read rather than a gate to trust
 (docs/plan-1.3.0.md says what it would take to make it one meanwhile).
 
@@ -112,14 +113,32 @@ Done: **released 2026-11-14**, with steps 1, 2 and 5 built and "Quick start on t
 on the way (the user: "drop qikc start on line from settings"). Steps 3, 4 and 6 -- the automatic ATC, the
 late-start penalty and pre-loading before the start -- were not reached, and a 1.3.3 drafted to carry them was
 emptied the same day (the user): the automatic ATC and the start-minute question dropped outright, pre-loading and
-the late-start penalty moved to 1.6.0. docs/roadmap.md has both, under Dropped and under 1.6.0. **1.4.0 is next.**
+the late-start penalty moved to on the stage (then 1.6.0, now 1.4.0). docs/roadmap.md has both, under Dropped and
+under 1.4.0. **1.4.0 is next.**
 
 What came out of this version that was not in the plan: the no-ATC start's guard turned out not to be
 belt-and-braces over the placement but the whole of the fix at a start inside a hairpin, which is why the trigger
 is now a pure function with its own tests; roadmap item 4 was not about folders at all; and 90 of the 116 stages
 here have no arrival control, so what read like an edge case was the ordinary path.
 
-## 1.4.0: the co-driver
+## 1.4.0: on the stage
+
+Moved ahead of the co-driver and the rally file (the user, 2026-11-14); it was 1.6.0. Not yet planned in detail.
+
+1. Course tape (5) and junction direction signs (6) from the junction data the auto recce finds.
+2. Ghost car and replays (27). Before the rally file now, so where a ghost's run is kept (on this machine, per
+   stage, until 1.6.0's file can carry it) is to settle first.
+3. Atmosphere (29): spectators, marshals, radio points.
+4. Height profiles / stage sketches (15).
+5. Stages wider than ~26 km (8): follow BeamNG.Earth's world shifts mid-stage (API 1.7's onBeamNGEarthRebased).
+6. Stage pre-loading before the start (21), mock-up first, and no penalty for a late start: both moved here from
+   1.3.2's unreached steps 6 and 4, which say what each is.
+
+Done: a long stage with tape, signs and a ghost, end to end.
+
+## 1.5.0: the co-driver
+
+Was 1.4.0 until on the stage moved ahead of it (the user, 2026-11-14).
 
 0. The self-test's co-driver check (carried from 1.2, deferred from 1.3.0): `drivelineRoute:setVehicleTracker()` is
    the lead -- a duck-typed tracker reporting a synthetic speed and position would drive the whole pacenote
@@ -132,7 +151,7 @@ here have no arrival control, so what read like an edge case was the ordinary pa
 
 Done: the user drives three known stages and trusts the calls.
 
-## 1.5.0: make and share stages
+## 1.6.0: make and share stages
 
 1. The Earth Rally file format (19): versioned, one file per rally; stages carry line, heights, controls, notes;
    imports write it; old event files converted.
@@ -142,16 +161,6 @@ Done: the user drives three known stages and trusts the calls.
 4. Local leaderboards (20) tied to the file's fingerprint.
 
 Done: the user makes a stage in game, shares the file, and it runs on another PC with no recce.
-
-## 1.6.0: on the stage
-
-1. Course tape (5) and junction direction signs (6) from the junction data the auto recce finds.
-2. Ghost car and replays (27).
-3. Atmosphere (29): spectators, marshals, radio points.
-4. Height profiles / stage sketches (15).
-5. Stages wider than ~26 km (8): follow BeamNG.Earth's world shifts mid-stage (API 1.7's onBeamNGEarthRebased).
-
-Done: a long stage with tape, signs and a ghost, end to end.
 
 ## 1.7.0: the full rally
 

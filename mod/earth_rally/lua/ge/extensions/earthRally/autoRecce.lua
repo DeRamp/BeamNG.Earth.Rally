@@ -1002,7 +1002,7 @@ local function onWindow(myGen, token, i, r)
           local lat, lon, alt = earth.toGeo(x, y, z or 0)
           if lat ~= nil then
             -- (radius is the road's half width, kept but not yet used: the Python tool has no width at all, and
-            --  what to do with it -- a line down the middle of a wide road, a note for a narrowing -- is 1.4.0's
+            --  what to do with it -- a line down the middle of a wide road, a note for a narrowing -- is 1.5.0's
             --  question, not this change's)
             j.graph.nodes[name] = { lat = lat, lon = lon, alt = alt, radius = radius }
             added = added + 1
