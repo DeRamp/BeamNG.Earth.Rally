@@ -38,7 +38,8 @@ export function loadStage(eventId, stageId) {
   engineLua(`earthRally_main and earthRally_main.uiStage(${q(eventId)}, ${q(stageId)}) or nil`, s => { if (s) stage.value = s })
 }
 
-// A button: drive / route / recce / recceSave / recceSaveAnyway / recceCancel / abort / openFolder / rescan
+// A button: drive / route / recce / autoRecce / autoRecceStop / recceSave / recceSaveAnyway / recceCancel /
+// abort / openFolder / rescan
 export function action(what, eventId, stageId, cb) {
   busyMsg.value = ""
   engineLua(`earthRally_main and earthRally_main.uiAction(${q(what)}, ${q(eventId)}, ${q(stageId)}) or nil`, r => {
@@ -107,7 +108,15 @@ export const STATUS = {
   ready: { label: "Ready", cls: "ready" },
   recce: { label: "Recce recommended", cls: "recce" },
   none: { label: "Recce needed", cls: "none" },
+  // The fourth state, while an auto recce runs: the pill itself is the progress (the page has no room for a second
+  // line in a 58px row), so it carries the window count and fills to it. It answers the same question the other
+  // three do -- can I drive this stage? -- and an ending puts the pill back to one of them, never to a fifth.
+  working: { label: "Auto recce", cls: "working" },
 }
+// How an auto recce ended (autoRecce.lua's M.PARTIAL / M.NODATA / M.FAILED) -> the colour of the line under the
+// card. No map data anywhere is grey on purpose: it is a normal outcome for ground never driven, not a failure,
+// and the only red line on the page is the one where something actually went wrong.
+export const AUTO_OUTCOME = { partial: "warn", nodata: "flat", failed: "err" }
 export const RUN_WORDS = {
   travel: "going to the stage", anchor: "moving the world to the stage", build: "building the stage",
   place: "setting the car down", toAtc: "driving to the time control", toStart: "moving up to the start line",

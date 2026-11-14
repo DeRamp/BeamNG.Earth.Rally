@@ -11,6 +11,7 @@ local im = ui_imgui
 local earth = require('earthRally/earthAdapter')
 local events = require('earthRally/events')
 local recce = require('earthRally/recce')
+local autoRecce = require('earthRally/autoRecce')
 local runner = require('earthRally/runner')
 local importer = require('earthRally/importer')
 local settings = require('earthRally/settings')
@@ -33,6 +34,10 @@ local scanIn = nil       -- seconds until the import folder is looked at (a file
 local menuOpen = false   -- the menu page is the screen now (onUiChangedState)
 local openAt = nil       -- the page to show when the menu opens next: { view, eventId, stageId }
 local lastImport = nil   -- the last import: { at, lines = { { text, ok }... } }
+local autoRun = nil      -- the auto recce running, as the page names it: { eventId, stageId, stageName, ss }
+local autoLines = {}     -- how the last auto recce of a stage ended, by eventId .. '|' .. stageId:
+                         -- { eventId, stageId, ss, kind, text }. One per stage, so a rally can show several at once
+                         -- (the mock-up's four rows, four endings); a stage's line goes when its auto recce works.
 local selftest = nil     -- the self-test (earthRally/selftest.lua), loaded only when one is asked for
 M.SELFTEST_REQUEST = '/earthRally/selftest/request.json'
 -- A stage to be taken to as soon as the game is up (tools/playtest.py writes it, and it is used once): the testing
@@ -182,7 +187,7 @@ local function drawWindow()
   if ev then
     im.Separator()
     for i, s in ipairs(ev.stages) do
-      local st = menu.stageStatus(ev.id, s)
+      local st = menu.stageStatus(ev.id, s, earth.hasRoadGraph())
       local label = string.format('%s  (%s)  - %s##st%d', s.name, km(s.lengthM), st.note, i)
       if im.Selectable1(label, selStage == i) then selStage = i end
     end
@@ -317,10 +322,58 @@ local function updatePlaytest(dt)
   end
 end
 
+------------------------------------------------------------------------------------------ the auto recce
+
+-- What happened, in a line under the rally's card. Four endings, four colours -- the colour is the Vue's, from
+-- `kind`; the words are here (docs/mockups-1.3.0/auto-recce-button.html section 5).
+--
+-- A written file needs no line at all: the button going away, and the pill turning green, is the whole message. The
+-- other three wrote nothing, so each has to say what it found and what would change it -- and none of them may
+-- suggest that the auto recce could have downloaded the missing map data, because it never downloads anything.
+local function autoText(a, kind, why, how)
+  local name = string.format('SS%s %s', tostring(a.ss), tostring(a.stageName))
+  if kind == autoRecce.PARTIAL then
+    return string.format(
+      '%s: %d of %d windows had map data on this computer. The stage is matched nowhere, because %.1f km of it ' ..
+      'has none and a line that stops part way is worse than no line. Drive or fly that ground once in ' ..
+      'BeamNG.Earth, then run this again.',
+      name, how and how.withData or 0, how and how.windows or 0, (how and how.shortM or 0) / 1000)
+  elseif kind == autoRecce.NODATA then
+    return string.format(
+      '%s: no map data on this computer along this stage, so there was nothing to match to. The auto recce never ' ..
+      'downloads -- drive or fly the ground once in BeamNG.Earth, or drive the recce.', name)
+  end
+  return string.format('%s: stopped at window %d of %d -- %s. Nothing was written; the stage is as it was.',
+    name, math.min((how and how.done or 0) + 1, how and how.windows or 1), how and how.windows or 0,
+    tostring(why or 'no reason given'))
+end
+
+local function autoKey(eventId, stageId) return tostring(eventId) .. '|' .. tostring(stageId) end
+
+-- autoRecce's done callback: the only place the menu learns how one ended.
+local function autoDone(ok, matched, why, how)
+  local a = autoRun
+  autoRun = nil
+  if not a then return end
+  local kind = (how and how.kind) or (ok and autoRecce.DONE or autoRecce.FAILED)
+  if ok then
+    -- (the stage speaks for itself now: ready, or amber where the map has no road there)
+    autoLines[autoKey(a.eventId, a.stageId)] = nil
+    message = string.format('Auto recce of %s: done.', a.stageName)
+  else
+    autoLines[autoKey(a.eventId, a.stageId)] =
+      { eventId = a.eventId, stageId = a.stageId, ss = a.ss, kind = kind, text = autoText(a, kind, why, how) }
+    message = nil
+  end
+  log('I', logTag, string.format('auto recce of %s: %s (%s)', tostring(a.stageId), kind, tostring(why or 'written')))
+end
+M._autoDone = autoDone
+
 ------------------------------------------------------------------------------------------ the menu page's buttons
 
 -- One action of the menu page (or the developer panel): returns { ok, message, closeMenu }.
 --   drive / route / recce / goStart   a stage's buttons (eventId, stageId)
+--   autoRecce                         the auto recce of one stage (eventId, stageId); autoRecceStop stops it
 --   recceSave / recceSaveAnyway / recceCancel / abort
 --   openFolder / rescan
 doAction = function(what, eventId, stageId, fromPanel)
@@ -345,11 +398,42 @@ doAction = function(what, eventId, stageId, fromPanel)
   elseif what == 'recceCancel' then
     recce.stop(false)
     return res(true, 'Recce cancelled.')
+  elseif what == 'autoRecceStop' then
+    local was = autoRun
+    autoRun = nil
+    -- (autoRecce.cancel does not call the done callback -- a stop is not an ending, and leaves no line behind)
+    local stopped = autoRecce.cancel()
+    return res(stopped, stopped and string.format('Auto recce of %s stopped.',
+      was and was.stageName or 'the stage') or 'No auto recce is running.')
   end
   if not stage then return res(false, 'That stage is not on this computer any more.') end
   local busy = recce.active() or (runner.current() and runner.state() ~= 'finished' and runner.state() ~= 'failed')
   if busy then return res(false, recce.active() and 'A recce is under way: save or cancel it first.' or
     'A run is under way: stop it first.') end
+  -- An auto recce holds the page as a recce does: it is one window at a time (autoRecce.start refuses a second
+  -- one of its own accord), and a run would move the world's origin out from under the window in flight. This
+  -- answers for a second Auto recce too, rather than letting it reach start: start's refusal would arrive after
+  -- autoRun had been overwritten, and the page would lose the banner and the row mark of the run still going.
+  if autoRecce.active() then
+    return res(false, 'An auto recce is under way: stop it first.')
+  end
+  if what == 'autoRecce' then
+    local _, _, ss = menu.findStage(ev.id, stage.id)
+    local key = autoKey(ev.id, stage.id)
+    autoRun = { eventId = ev.id, stageId = stage.id, stageName = stage.name, ss = ss }
+    autoLines[key] = nil
+    local ok, why = autoRecce.start(ev, stage, autoDone)
+    if not ok then
+      -- It can fail inside its first window, in which case autoDone has already run and left the ending's line
+      -- behind (and nil'd autoRun) -- which is how that is told apart from a refusal before anything happened.
+      if autoRun then autoRun = nil end
+      return res(false, why or (autoLines[key] and autoLines[key].text) or 'the auto recce could not be started')
+    end
+    local pr = autoRecce.progress() or {}
+    return res(true, string.format(
+      'Auto recce of %s: %d windows. It reads only the map data already on your disk and downloads nothing.',
+      stage.name, pr.windows or 0))
+  end
   if what == 'drive' then
     local ok, why = runner.start(ev, stage)
     return res(ok, ok and nil or why, true)
@@ -414,6 +498,26 @@ local function runSummary()
     out.recce = { eventId = eid, stageId = sid, stageName = name, share = share, lengthM = len, points = n,
       offM = off, started = started }
   end
+  -- the auto recce: whether one can be run at all (the page shows no button where it cannot, rather than a
+  -- disabled one on every row), and the one running, with the window it is on
+  out.autoOk = earth.hasRoadGraph()
+  if autoRecce.active() and autoRun then
+    local p = autoRecce.progress() or {}
+    out.auto = { eventId = autoRun.eventId, stageId = autoRun.stageId, stageName = autoRun.stageName,
+      ss = autoRun.ss, windows = p.windows, done = p.done,
+      -- (the step along the line, for the page's sentence: a window is only trustworthy CORRIDOR_M inside its edge)
+      stepM = math.floor(autoRecce.RADIUS_M - autoRecce.CORRIDOR_M) }
+  end
+  return out
+end
+
+-- The endings to show under a rally's card: one line per stage, in stage order.
+local function autoLinesFor(eventId)
+  local out = {}
+  for _, l in pairs(autoLines) do
+    if l.eventId == eventId then out[#out + 1] = l end
+  end
+  table.sort(out, function(a, b) return (a.ss or 0) < (b.ss or 0) end)
   return out
 end
 
@@ -439,9 +543,10 @@ function M.uiOpenAt()
 end
 
 function M.uiRally(eventId)
-  local out = menu.rally(eventId, importer.lastReports)
+  local out = menu.rally(eventId, importer.lastReports, earth.hasRoadGraph())
   if not out then return { missing = true } end
   for k, v in pairs(runSummary()) do out[k] = v end
+  out.autoLines = autoLinesFor(eventId)
   return out
 end
 
@@ -449,8 +554,9 @@ function M.uiStage(eventId, stageId)
   local _, stage = menu.findStage(eventId, stageId)
   if not stage then return { missing = true } end
   local _, _, arrival = runner.arrivalPoint(stage)
-  local out = menu.stage(eventId, stageId, arrival)
+  local out = menu.stage(eventId, stageId, arrival, earth.hasRoadGraph())
   for k, v in pairs(runSummary()) do out[k] = v end
+  out.autoLine = autoLines[autoKey(eventId, stageId)]
   return out
 end
 
@@ -651,6 +757,10 @@ function M.selfTestStop() if selftest then selftest.stop('stopped from the conso
 function M.onClientEndMission()
   if selftest then pcall(selftest.onClientEndMission) end
   if recce.active() then pcall(recce.stop, false) end
+  -- An auto recce converts each window through the world's origin, so one still in flight when the level goes
+  -- would answer into a world that is not there -- and the page would show a banner for something nothing is
+  -- running. It stops the way a recce does, and writes nothing.
+  if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)
@@ -673,6 +783,10 @@ function M.onModDeactivated()
   if fs and fs.fileExists and fs:fileExists(M.OUR_FILE) then return end   -- another mod went: not our business
   log('I', logTag, 'Earth Rally switched off: the run stopped and BeamNG.Earth left as it was')
   if recce.active() then pcall(recce.stop, false) end
+  -- An auto recce converts each window through the world's origin, so one still in flight when the level goes
+  -- would answer into a world that is not there -- and the page would show a banner for something nothing is
+  -- running. It stops the way a recce does, and writes nothing.
+  if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)
@@ -688,6 +802,10 @@ end
 -- hold left behind takes its "server not running" message with it on any layout without its apps.
 function M.onExtensionUnloaded()
   if recce.active() then pcall(recce.stop, false) end
+  -- An auto recce converts each window through the world's origin, so one still in flight when the level goes
+  -- would answer into a world that is not there -- and the page would show a banner for something nothing is
+  -- running. It stops the way a recce does, and writes nothing.
+  if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)

@@ -17,6 +17,7 @@
       <div v-if="banner" class="er-banner">
         <span>{{ banner }}</span>
         <BngButton v-if="st.run && st.run.busy" :accent="ACCENTS.outlined" @click="action('abort')">Stop the run</BngButton>
+        <BngButton v-if="auto" :accent="ACCENTS.outlined" @click="action('autoRecceStop')">Stop</BngButton>
         <template v-if="st.recce">
           <BngButton :accent="ACCENTS.main" @click="action('recceSave')">Save recce</BngButton>
           <BngButton :accent="ACCENTS.outlined" @click="action('recceSaveAnyway')">Save anyway</BngButton>
@@ -70,17 +71,36 @@
           <div class="er-stat"><div class="er-v">{{ len(rly.lengthM) }}</div><div class="er-l">of stages</div></div>
           <div class="er-stat"><div class="er-v">{{ rly.driven }} / {{ rly.stages }}</div><div class="er-l">driven</div></div>
         </div>
+        <!-- Seven columns: the seventh holds the Auto recce button (docs/mockups-1.3.0/auto-recce-button.html,
+             section 3). Its header cell is deliberately empty -- an AUTO RECCE heading over a column blank on most
+             rows reads as data, and advertises on every row something half of them cannot do. -->
         <div class="er-card er-stages">
-          <div class="er-srow er-hdr"><span>Stage</span><span>Name</span><span class="er-r">Length</span><span class="er-st">Status</span><span class="er-r">Best</span><span></span></div>
-          <div v-for="s in arr(rly.list)" :key="s.id" class="er-srow er-click" tabindex="0" @click="openStage(rly.id, s.id)" @keydown.enter="openStage(rly.id, s.id)">
+          <div class="er-srow er-hdr"><span>Stage</span><span>Name</span><span class="er-r">Length</span><span class="er-st">Status</span><span></span><span class="er-r">Best</span><span></span></div>
+          <div v-for="s in arr(rly.list)" :key="s.id" class="er-srow er-click" :class="{ 'er-running': autoRow(s) }" tabindex="0" @click="openStage(rly.id, s.id)" @keydown.enter="rowEnter($event, s)">
             <span class="er-ss">SS{{ s.ss }}</span><span>{{ s.name }}</span><span class="er-r er-mono">{{ len(s.lengthM) }}</span>
-            <span class="er-st"><span class="er-pill" :class="pill(s.status).cls">{{ pill(s.status).label }}</span></span>
+            <span class="er-st">
+              <span v-if="autoRow(s)" class="er-pill working" :style="{ '--er-done': autoPct }">{{ STATUS.working.label }} <span class="er-wn">{{ autoWindow }} / {{ auto.windows }}</span></span>
+              <span v-else class="er-pill" :class="pill(s.status).cls">{{ pill(s.status).label }}</span>
+            </span>
+            <!-- @click.stop: the whole row opens the stage, so without it the button would do both. The row's
+                 Enter is guarded the same way, in rowEnter: Enter on a focused button fires its click AND bubbles. -->
+            <span class="er-act">
+              <BngButton v-if="autoRow(s)" :accent="ACCENTS.outlined" @click.stop="action('autoRecceStop')">Stop</BngButton>
+              <BngButton v-else-if="st.autoOk && s.status === 'none'" :accent="ACCENTS.secondary" :disabled="busy" @click.stop="action('autoRecce', rly.id, s.id)">{{ outcomeFor(s) ? "Try again" : "Auto recce" }}</BngButton>
+            </span>
             <span class="er-r er-mono" :class="{ 'er-none': !s.best }">{{ s.best ? time(s.best) : "–" }}</span><span class="er-go">›</span>
+          </div>
+        </div>
+        <!-- how an auto recce ended, one line per stage: the pill only ever says whether the stage can be driven -->
+        <div v-if="arr(rly.autoLines).length" class="er-under">
+          <div v-for="l in arr(rly.autoLines)" :key="l.stageId" class="er-outcome" :class="outcomeCls(l.kind)">
+            <span class="er-ssx">SS{{ l.ss }}</span>{{ l.text }}
           </div>
         </div>
         <div class="er-muted er-help">
           <b>Ready</b>: notes from the stage's own roads or your recce. <b>Recce recommended</b>: part of the stage has
-          no road on the map (no notes there) until you drive its recce. <b>Recce needed</b>: drive its recce first.
+          no road on the map (no notes there) until you drive its recce. <b>Recce needed</b>:
+          {{ st.autoOk ? "run the auto recce, or drive its recce." : "drive its recce." }}
         </div>
         <details v-if="arr(rly.report).length" class="er-report er-report-full">
           <summary>Import report</summary>
@@ -100,16 +120,28 @@
             <div class="er-card er-tile"><div class="er-v">{{ dash(stg.junctions) }}</div><div class="er-l">Junctions</div></div>
             <div class="er-card er-tile"><div class="er-v">{{ dash(stg.bridges) }}</div><div class="er-l">{{ stg.bridges === 1 ? "Bridge" : "Bridges" }}</div></div>
           </div>
-          <div class="er-card er-line-note"><span class="er-pill" :class="pill(stg.status).cls">{{ pill(stg.status).label }}</span><span>{{ stg.note }}</span></div>
+          <div v-if="autoHere" class="er-card er-line-note">
+            <span class="er-pill working" :style="{ '--er-done': autoPct }">{{ STATUS.working.label }} <span class="er-wn">{{ autoWindow }} / {{ auto.windows }}</span></span>
+            <span>Matching the line to the map's roads, {{ auto.stepM }} m at a time. No map data is downloaded. You can leave this page.</span>
+          </div>
+          <div v-else class="er-card er-line-note"><span class="er-pill" :class="pill(stg.status).cls">{{ pill(stg.status).label }}</span><span>{{ stg.note }}</span></div>
+          <!-- Auto recce is the fourth button, before Recce, so the two recce buttons sit together and the cheap
+               one comes first. While one runs it is replaced in place by its Stop, not joined by a fifth button. -->
           <div class="er-actions">
             <BngButton :accent="ACCENTS.main" :disabled="!stg.canDrive || busy" @click="action('drive', stg.eventId, stg.id)">Drive stage</BngButton>
             <BngButton :accent="ACCENTS.secondary" :disabled="busy" @click="action('route', stg.eventId, stg.id)">Route to start</BngButton>
+            <BngButton v-if="autoHere" :accent="ACCENTS.outlined" @click="action('autoRecceStop')">Stop the auto recce</BngButton>
+            <BngButton v-else-if="stg.autoCan" :accent="ACCENTS.secondary" :disabled="busy || !st.autoOk" @click="action('autoRecce', stg.eventId, stg.id)">Auto recce</BngButton>
             <BngButton :accent="ACCENTS.secondary" :disabled="busy" @click="action('recce', stg.eventId, stg.id)">Recce</BngButton>
           </div>
+          <!-- beside the row, never a tooltip: a disabled BngButton takes no pointer events and can never show one -->
+          <div v-if="stg.autoWhy" class="er-msg">{{ stg.autoWhy }}</div>
+          <div v-if="stg.autoLine" class="er-outcome" :class="outcomeCls(stg.autoLine.kind)">{{ stg.autoLine.text }}</div>
           <div v-if="busyMsg" class="er-msg">{{ busyMsg }}</div>
           <div class="er-act-help">
             <b>Drive stage</b>: takes you to the {{ stg.atc ? "time control before the start" : "start" }}, then through the stage as in a real rally.<br>
             <b>Route to start</b>: the way there on the GPS, arrows on the road. No teleport.<br>
+            <template v-if="stg.autoCan"><b>Auto recce</b>: {{ st.autoOk ? "works the line out from the map's roads. Reads only the map data already on your disk; downloads nothing." : "works the line out from the map's roads. Not available with this BeamNG.Earth." }}<br></template>
             <b>Recce</b>: drive the stage once at your own pace; the line you drive gives the notes.
           </div>
         </div>
@@ -153,7 +185,7 @@ import { BngButton, ACCENTS } from "@/common/components/base"
 import EarthRallySettings from "./EarthRallySettings.vue"
 import {
   state, rally, stage, busyMsg, action as luaAction, refreshState, takeOpenAt, loadRally, loadStage, closeMenu, previewHud,
-  arr, units, len, lenNum, time, when, STATUS, RUN_WORDS,
+  arr, units, len, lenNum, time, when, STATUS, AUTO_OUTCOME, RUN_WORDS,
 } from "./store.js"
 
 const view = ref("rallies")
@@ -161,7 +193,30 @@ const sel = ref({ eventId: null, stageId: null })
 const st = computed(() => state.value || {})
 const rly = computed(() => (rally.value && !rally.value.missing && rally.value.id === sel.value.eventId) ? rally.value : null)
 const stg = computed(() => (stage.value && !stage.value.missing && stage.value.id === sel.value.stageId) ? stage.value : null)
-const busy = computed(() => !!(st.value.recce || (st.value.run && st.value.run.busy)))
+// An auto recce holds the page as a recce does: the Lua does one window at a time, so every other action is
+// greyed while one runs (the running row's own Stop is not disabled, and is the way out).
+const busy = computed(() => !!(st.value.recce || st.value.auto || (st.value.run && st.value.run.busy)))
+
+// the auto recce running, if any: which row it is, how far through, and the window it is on. progress().done
+// counts the windows finished, while the pill and the banner name the one in flight -- so it is never "0 / 19".
+const auto = computed(() => st.value.auto || null)
+const autoWindow = computed(() => {
+  const a = auto.value
+  return a ? Math.min((a.done || 0) + 1, a.windows || 1) : 0
+})
+const autoPct = computed(() => {
+  const a = auto.value
+  return a && a.windows ? `${Math.round((100 * autoWindow.value) / a.windows)}%` : "0%"
+})
+const autoRow = s => !!(auto.value && rly.value && auto.value.eventId === rly.value.id && auto.value.stageId === s.id)
+const autoHere = computed(() => !!(auto.value && stg.value &&
+  auto.value.eventId === stg.value.eventId && auto.value.stageId === stg.value.id))
+const outcomeFor = s => arr(rly.value && rly.value.autoLines).find(l => l.stageId === s.id) || null
+const outcomeCls = kind => AUTO_OUTCOME[kind] || "flat"
+// Enter on the row opens the stage -- but only when the row itself has the focus. Enter on a button inside it
+// already fires that button's own click, and the keydown bubbles up here as well, so without this the Stop button
+// would stop the auto recce and open the stage in the one keypress (the keyboard twin of needing @click.stop).
+function rowEnter(e, s) { if (e.target === e.currentTarget) openStage(rly.value.id, s.id) }
 
 const crumbs = computed(() => {
   if (view.value === "settings") return ["Settings"]
@@ -173,6 +228,11 @@ const crumbs = computed(() => {
 
 const banner = computed(() => {
   const s = st.value
+  if (s.auto) {
+    // "no map data is downloaded" is not padding: someone watching a progress bar assumes it is downloading, and
+    // the auto recce reads only what is already on this computer.
+    return `Auto recce of SS${s.auto.ss} ${s.auto.stageName}: window ${autoWindow.value} of ${s.auto.windows}, no map data is downloaded`
+  }
   if (s.recce) {
     const pct = Math.round((s.recce.share || 0) * 100)
     return s.recce.started ? `Recce of ${s.recce.stageName}: ${pct} % driven` : `Recce of ${s.recce.stageName}: drive to the start of the stage; recording begins there`
@@ -279,7 +339,17 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
   &.ready { background: rgba(40, 140, 80, 0.55); color: #d9ffe6; }
   &.recce { background: rgba(190, 140, 30, 0.45); color: #fff1cc; }
   &.none { background: rgba(170, 60, 60, 0.45); color: #ffdede; }
+  /* the auto recce running: the pill IS the progress bar. Its background is a two-stop gradient whose hard edge
+     sits at --er-done, set per row from the window count, so it fills left to right as the windows come in. A 58px
+     row has no second line for a bar of its own, and a bar across the row would read as a selection. */
+  &.working {
+    color: #cfe8ff;
+    background: linear-gradient(to right, rgba(31, 143, 255, 0.62) var(--er-done, 0%), rgba(31, 143, 255, 0.22) var(--er-done, 0%));
+    .er-wn { font-family: "Overpass Mono", monospace; font-weight: 700; margin-left: -2px; }
+    &::before { animation: er-pulse 1.2s ease-in-out infinite; }
+  }
 }
+@keyframes er-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
 .er-rallies { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 28px; }
 .er-rally-card { display: flex; flex-direction: column; min-height: 380px; border-top: 4px solid var(--er-orange); }
@@ -303,18 +373,40 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .er-rally-head { display: flex; align-items: flex-end; gap: 48px; margin-bottom: 22px; }
 .er-rh-name { font-size: 40px; font-weight: 700; }
 .er-stages { padding: 8px 0; }
-.er-srow { display: grid; grid-template-columns: 100px 1fr 130px 260px 150px 30px; align-items: center; height: 58px; padding: 0 28px; font-size: 20px; border-left: 4px solid transparent;
+/* Seven tracks: the 160px action column comes out of Name's 1fr, NOT out of Status -- Status already holds the
+   longest pill ("Recce recommended", about 177px) with its 30px padding, and below about 215px that pill overruns
+   the column. Name goes from about 1066px to 906px at 1920, and the longest name in a real rally is about 460px. */
+.er-srow { display: grid; grid-template-columns: 100px 1fr 130px 260px 160px 150px 30px; align-items: center; height: 58px; padding: 0 28px; font-size: 20px; border-left: 4px solid transparent;
   & + .er-srow { border-top: 1px solid rgba(255, 255, 255, 0.06); }
   &.er-hdr { height: 40px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--er-muted); }
   &.er-click { cursor: pointer; }
   &.er-click:hover, &.er-click:focus { background: rgba(199, 91, 30, 0.22); border-left-color: var(--er-orange); }
+  /* The stage being matched, findable while scrolling a long rally: the left border it already has, in blue.
+     This has to beat the hover and focus rules above on SPECIFICITY, not on order -- it is three classes plus the
+     pseudo-class against their two, so it holds wherever it sits in the file. Written the other way round (same
+     specificity, later in the file) the mark would vanish the moment anyone moved this block, or the pointer. */
+  &.er-running, &.er-running.er-click:hover, &.er-running.er-click:focus { border-left-color: var(--er-blue); }
   .er-ss { font-family: "Overpass Mono", monospace; font-weight: 700; color: var(--er-muted); }
   .er-r { text-align: right; }
   .er-st { padding-left: 30px; }
   .er-none { color: #6f7480; }
   .er-go { color: var(--er-dim); text-align: right; }
+  /* The action column. The button is sized by the game's own hooks rather than by overriding its rules: it sets
+     font-size / line-height itself ("default value to be overriden with the parent component's styles",
+     utility/button.vue:91-92) so those need :deep, while min-width (6em -- more than this cell has) and margin are
+     custom properties it reads from whatever contains it. 15px text on a 20px line is a 29px button in a 58px row. */
+  .er-act { padding-left: 24px; --bng-button-min-width: 0; --bng-button-margin: 0;
+    :deep(.bng-button) { font-size: 15px; line-height: 20px; } }
 }
 .er-help { margin-top: 14px; font-size: 15px; }
+/* how an auto recce ended, under the card, aligned with the rows above it */
+.er-under { padding: 0 28px; }
+.er-outcome { margin-top: 14px; font-size: 15px; line-height: 1.5;
+  &.warn { color: #ffd36b; }
+  &.flat { color: var(--er-muted); }
+  &.err { color: #ff8a8a; }
+  .er-ssx { font-family: "Overpass Mono", monospace; font-weight: 700; margin-right: 6px; }
+}
 
 .er-stage-page { display: grid; grid-template-columns: 1.25fr 1fr; gap: 28px; }
 .er-stage-ss { font-family: "Overpass Mono", monospace; font-size: 20px; color: var(--er-orange); font-weight: 700; letter-spacing: 0.05em; }

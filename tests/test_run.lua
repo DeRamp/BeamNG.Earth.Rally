@@ -1414,4 +1414,204 @@ do
   T.check(held() == 0, 'half held: the one that took is given back too')
 end
 
+------------------------------------------------------------------------------------------ the Auto recce button
+-- The Lua the menu page's seventh column rests on (docs/mockups-1.3.0/auto-recce-button.html): the statuses and
+-- wording the button is shown or hidden by, the progress the page polls, the action routing, the refusals, and the
+-- four endings it has to colour differently. The Vue itself cannot be tested offline, so what is tested here is
+-- everything the Vue reads.
+--
+-- BeamNG.Earth is given a road graph here: nodes every 20 m along the stage's own line, handed out a window at a
+-- time, so a window covering a stretch of the stage matches it exactly. `graph.*` are the knobs -- an incomplete
+-- window (map cells not on this computer), an empty one, a refusal.
+do
+  local main = require('earthRally/main')
+  local auto = require('earthRally/autoRecce')
+  settings.reset()
+  runner.abort(true)
+  events.list(true)
+
+  -- the nodes: the stage's own line, resampled, as lat / lon
+  local line = event.stages[1].line
+  local fr = auto.frame(line[1][1], line[1][2])
+  local flat = {}
+  for i, pt in ipairs(line) do flat[i] = fr.xy(pt[1], pt[2]) end
+  local nodeLL = {}
+  for i, q in ipairs(auto.resample(flat, 20)) do
+    local la, lo = fr.latlon(q.x, q.y)
+    nodeLL[i] = { la, lo }
+  end
+
+  local graph = { pending = {}, calls = 0, refuse = false, empty = false, incomplete = nil, allIncomplete = false }
+  local hadHas = beamngEarth_api.has
+  local function withRoadGraph(n)
+    return n == 'transform' or n == 'rebase' or n == 'gpsRoute' or n == 'roadGraph'
+  end
+  beamngEarth_api.has = withRoadGraph
+  beamngEarth_api.roadGraph = function(lat, lon, opts, cb)
+    graph.calls = graph.calls + 1
+    local i = graph.calls
+    if graph.refuse then return false, 'the stand-in refused the road graph' end
+    local nodes, edges = {}, {}
+    if not graph.empty then
+      local cx, cy = toGame(lat, lon, 0)
+      local prev = nil
+      for k, pt in ipairs(nodeLL) do
+        local x, y = toGame(pt[1], pt[2], 0)
+        local name = 'n' .. k
+        if math.abs(x - cx) <= opts.radius and math.abs(y - cy) <= opts.radius then
+          nodes[name] = { x = x, y = y, z = 100, radius = 4.0 }
+          if prev then edges[#edges + 1] = { inNode = prev, outNode = name, drivability = 1.0 } end
+          prev = name
+        else
+          prev = nil
+        end
+      end
+    end
+    local complete = not (graph.allIncomplete or graph.incomplete == i)
+    graph.pending[#graph.pending + 1] = function() cb({ nodes = nodes, edges = edges, complete = complete }) end
+    return true
+  end
+  local function drain()
+    local guard = 0
+    while #graph.pending > 0 do
+      table.remove(graph.pending, 1)()
+      guard = guard + 1
+      if guard > 200 then error('the auto recce did not finish') end
+    end
+  end
+  local function resetGraph()
+    graph.pending, graph.calls, graph.refuse, graph.empty = {}, 0, false, false
+    graph.incomplete, graph.allIncomplete = nil, false
+    auto.cancel()
+  end
+  local function lineFor(stageId)
+    for _, l in ipairs(main.uiRally('test8').autoLines or {}) do
+      if l.stageId == stageId then return l end
+    end
+  end
+
+  -- ---------------------------------------------------------------- what the page shows the button by
+  T.check(main.uiState().autoOk == true, 'uiState: an auto recce can be run with the capability there')
+  local rr = main.uiRally('test8')
+  T.check(rr.list[1].status == 'ready' and rr.list[2].status == 'none',
+    'uiRally: SS2 is the Recce needed row, which is the only row that gets the button')
+  local two = main.uiStage('test8', 'two')
+  T.check(two.autoCan == true and two.autoWhy == nil, 'uiStage: the button is offered on a stage with no line')
+  T.check(two.note:find('run the auto recce'), 'and the note says so (' .. tostring(two.note) .. ')')
+  T.check(main.uiStage('test8', 'hill').autoCan == nil, 'a stage that has a line is not offered one')
+
+  -- the capability missing: no button anywhere, and the reason in words instead of a greyed button with none
+  beamngEarth_api.has = hadHas
+  T.check(main.uiState().autoOk == false, 'without the capability the page is told there is no auto recce')
+  local off = main.uiStage('test8', 'two')
+  T.check(off.autoWhy and off.autoWhy:find('road graph'), 'and the stage page is given the reason (' ..
+    tostring(off.autoWhy) .. ')')
+  T.check(not off.note:find('auto recce'), 'the note does not offer what cannot be run (' .. tostring(off.note) .. ')')
+  beamngEarth_api.has = withRoadGraph
+
+  -- ---------------------------------------------------------------- started, polled, stopped
+  resetGraph()
+  local a = main.uiAction('autoRecce', 'test8', 'two')
+  T.check(a.ok and a.message and a.message:find('downloads nothing'),
+    'Auto recce starts, and says it downloads nothing (' .. tostring(a.message) .. ')')
+  T.check(auto.active(), 'the auto recce is running')
+  local prog = main.uiState().auto
+  T.check(prog and prog.stageId == 'two' and prog.eventId == 'test8' and prog.ss == 2,
+    'uiState.auto names the row the page has to mark')
+  T.check(prog and prog.windows and prog.windows >= 4 and prog.done == 0 and prog.stepM == 700,
+    'and the window count, how many are done, and the step (' .. tostring(prog and prog.windows) .. ' windows, ' ..
+    tostring(prog and prog.stepM) .. ' m)')
+  local total = prog and prog.windows or 0
+  -- One window at a time. A second Auto recce is refused, and -- the part that bit once -- the refusal leaves the
+  -- running one's banner and row mark alone instead of forgetting which row it was.
+  local second = main.uiAction('autoRecce', 'test8', 'two')
+  T.check(not second.ok and second.message and second.message:find('under way'),
+    'not a second auto recce while one is under way (' .. tostring(second.message) .. ')')
+  T.check(main.uiState().auto ~= nil, 'and the refusal does not lose the one still running')
+  T.check(not main.uiAction('drive', 'test8', 'hill').ok, 'and no run while one is under way')
+  T.check(not main.uiAction('recce', 'test8', 'hill').ok, 'and no recce either')
+  -- the progress moves as the windows come in
+  table.remove(graph.pending, 1)()
+  local p2 = main.uiState().auto
+  T.check(p2 and p2.done == 1, 'a window answered: one done (' .. tostring(p2 and p2.done) .. ')')
+  -- Stop
+  local stopped = main.uiAction('autoRecceStop')
+  T.check(stopped.ok and not auto.active() and main.uiState().auto == nil, 'Stop ends it and clears the banner')
+  T.check(lineFor('two') == nil, 'a stop leaves no ending line behind: it is not an ending')
+  T.check(not main.uiAction('autoRecceStop').ok, 'Stop with nothing running: refused')
+
+  -- ---------------------------------------------------------------- ending: no map data anywhere (grey, not red)
+  resetGraph()
+  graph.allIncomplete = true
+  T.check(main.uiAction('autoRecce', 'test8', 'two').ok, 'an auto recce over ground with no map data starts')
+  drain()
+  local l = lineFor('two')
+  T.check(l and l.kind == auto.NODATA, 'none of it covered: the ending is "no map data" (' ..
+    tostring(l and l.kind) .. ')')
+  T.check(l and l.text:find('nothing to match to') and l.text:find('never') and l.text:find('SS2'),
+    'and the line says there was nothing to match to and that it never downloads (' .. tostring(l and l.text) .. ')')
+  T.check(main.uiRally('test8').list[2].status == 'none', 'the stage stays Recce needed: nothing was written')
+  T.check(main.uiStage('test8', 'two').autoLine ~= nil, 'the stage page carries its own ending too')
+  T.check(main.uiState().auto == nil, 'and nothing is left running')
+
+  -- ---------------------------------------------------------------- ending: part of it has no map data
+  resetGraph()
+  graph.incomplete = 2
+  T.check(main.uiAction('autoRecce', 'test8', 'two').ok, 'an auto recce with one window short starts')
+  drain()
+  l = lineFor('two')
+  T.check(l and l.kind == auto.PARTIAL, 'one window of several short: the ending is "partly" (' ..
+    tostring(l and l.kind) .. ')')
+  T.check(l and l.text:find(string.format('%d of %d windows had map data', total - 1, total), 1, true),
+    'and the line counts the windows that did have data (' .. tostring(l and l.text) .. ')')
+  local km = tonumber((l and l.text or ''):match('(%d+%.%d) km of it has none'))
+  T.check(km and km > 0, 'and the ground that has none, in km (' .. tostring(km) .. ')')
+  T.check(l and not l.text:find('download '), 'without ever offering to download the rest')
+
+  -- Try again: the old sentence goes the moment it starts, not when it ends -- a stale ending under a running
+  -- progress bar reads as the outcome of the run in front of you.
+  resetGraph()
+  T.check(lineFor('two') ~= nil, 'the ending is still there before Try again is pressed')
+  T.check(main.uiAction('autoRecce', 'test8', 'two').ok, 'Try again starts another')
+  T.check(lineFor('two') == nil, 'and the old ending line is gone while it runs')
+  main.uiAction('autoRecceStop')
+
+  -- ---------------------------------------------------------------- ending: it stopped part way (the only red one)
+  resetGraph()
+  T.check(main.uiAction('autoRecce', 'test8', 'two').ok, 'an auto recce that will be cut off starts')
+  graph.refuse = true                      -- BeamNG.Earth stops answering after the first window
+  drain()
+  l = lineFor('two')
+  T.check(l and l.kind == auto.FAILED, 'BeamNG.Earth stopping part way is a failure (' ..
+    tostring(l and l.kind) .. ')')
+  T.check(l and l.text:find('stopped at window 2 of') and l.text:find('Nothing was written'),
+    'and the line says where it stopped and that nothing was written (' .. tostring(l and l.text) .. ')')
+  T.check(#(main.uiRally('test8').autoLines or {}) == 1, 'one line per stage, not one per attempt')
+
+  -- ---------------------------------------------------------------- the level left while one runs
+  -- A window in flight converts its coordinates through the world's origin, so it has to be given up when the
+  -- level goes, the way a recce is -- otherwise it answers into a world that is not there, and the page keeps a
+  -- banner for something nothing is running.
+  resetGraph()
+  T.check(main.uiAction('autoRecce', 'test8', 'two').ok, 'an auto recce starts')
+  main.onClientEndMission()
+  T.check(not auto.active() and main.uiState().auto == nil, 'the level left: the auto recce is given up')
+  T.check(#(main.uiRally('test8').autoLines or {}) == 0, 'and it leaves no ending line: it did not end, it stopped')
+
+  -- ---------------------------------------------------------------- ending: done (the button simply goes)
+  resetGraph()
+  T.check(main.uiAction('autoRecce', 'test8', 'two').ok, 'the auto recce that will work starts')
+  drain()
+  T.check(events.matched('test8', 'two') ~= nil, 'the matched line is written')
+  T.check(lineFor('two') == nil, 'a written line leaves no sentence behind: the pill and the missing button say it')
+  local done = main.uiRally('test8')
+  T.check(done.list[2].status ~= 'none', 'and the row is no longer Recce needed (' ..
+    tostring(done.list[2].status) .. '), so it has no button at all')
+  T.check(main.uiStage('test8', 'two').autoCan == nil, 'nor does the stage page')
+
+  beamngEarth_api.has = hadHas
+  beamngEarth_api.roadGraph = nil
+  settings.reset()
+end
+
 T.done('test_run')

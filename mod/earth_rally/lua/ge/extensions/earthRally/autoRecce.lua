@@ -79,6 +79,17 @@ M.BRIDGES_NOT_AVAILABLE = 'the in-game road graph has no bridge flag'
 
 M.SOURCE = "BeamNG.Earth's roads (the in-game auto recce)"
 
+-- How an auto recce ended, which the menu needs apart from the sentence because the four endings are four
+-- colours (docs/mockups-1.3.0/auto-recce-button.html section 5, main.lua's autoDone). The sentence alone will not
+-- do: the page would have to match on its wording, and the wording is the part that changes.
+--   DONE     the file is written; the stage's own status says the rest
+--   PARTIAL  part of the stage has no map data on this computer: nothing written, and running it again after
+--            driving that ground is what helps
+--   NODATA   there was nothing to match to anywhere on the stage: nothing written. A normal outcome for ground
+--            the player has never been over -- not an error, and not shown as one
+--   FAILED   it stopped part way: nothing written
+M.DONE, M.PARTIAL, M.NODATA, M.FAILED = 'done', 'partial', 'nodata', 'failed'
+
 -- Overridable for the tests: wall seconds (`seconds` in the file is how long the whole auto recce took, most of it
 -- spent waiting on BeamNG.Earth between windows, so this is wall time and not os.clock's CPU time).
 function M.clock() return os.time() end
@@ -788,6 +799,7 @@ function M.plan(line, radius)
 end
 
 -- Is the whole stage inside a window that came back complete? true, or false and how many metres of it are not.
+-- The third return is the length walked, so a caller can tell "a stretch of it" from "none of it".
 --
 -- This is the record requirement 3 of the 1.3.0 plan asks for, and the only thing standing between a half-covered
 -- stage and a file that looks runnable: events.lineValid checks a line has two points and nothing more, the mod
@@ -799,6 +811,7 @@ function M.coverage(line, windows, inner)
   local pts = {}
   for i, p in ipairs(line) do pts[i] = fr.xy(p[1], p[2]) end
   local walk, walkAlong = M.resample(pts, M.COVER_SAMPLE_M)
+  local total = walkAlong[#walkAlong] or 0
   local uncovered = 0
   for k, p in ipairs(walk) do
     local ok = false
@@ -811,8 +824,8 @@ function M.coverage(line, windows, inner)
       uncovered = uncovered + (a + b) / 2
     end
   end
-  if uncovered <= 0 then return true, 0 end
-  return false, uncovered
+  if uncovered <= 0 then return true, 0, total end
+  return false, uncovered, total
 end
 
 ------------------------------------------------------------------------------------------ running one
@@ -835,12 +848,24 @@ function M.cancel()
   return true
 end
 
-local function finish(ok, result, why)
+-- done(ok, matched, why, how). `how` is the ending in figures, for the page that has to colour and word it:
+-- { kind = M.DONE / PARTIAL / NODATA / FAILED, windows, done, withData, shortM, event, stage }. `extra` is merged
+-- into it, so each ending adds only the numbers it knows (the metres with no data, the windows that had any).
+local function finish(ok, result, why, kind, extra)
   local j = job
   job = nil
   gen = gen + 1
+  local how = nil
+  if j then
+    local withData = 0
+    for _, w in ipairs(j.plan) do if w.complete then withData = withData + 1 end end
+    how = { kind = kind or (ok and M.DONE or M.FAILED), windows = #j.plan,
+            done = math.min((j.i or 1) - 1, #j.plan), withData = withData,
+            event = j.event and j.event.id, stage = j.stage and j.stage.id }
+    for k, v in pairs(extra or {}) do how[k] = v end
+  end
   if j and j.done then
-    local okCall, err = pcall(j.done, ok, result, why)
+    local okCall, err = pcall(j.done, ok, result, why, how)
     if not okCall then log('E', 'earthRally', 'auto recce: the callback failed: ' .. tostring(err)) end
   end
   return ok
@@ -851,21 +876,25 @@ end
 local function write(j, m)
   local okWrite, err = pcall(events.saveMatched, j.event.id, j.stage.id, m)
   if not okWrite then
-    return finish(false, nil, 'the matched line could not be written: ' .. tostring(err))
+    return finish(false, nil, 'the matched line could not be written: ' .. tostring(err), M.FAILED)
   end
   log('I', 'earthRally', string.format(
     'auto recce: %s matched, %.1f km (map line %.1f km), %.0f m with no road in %d stretch(es), %d junction(s), %d window(s)',
     j.stage.id, m.lengthM / 1000, m.mapLineM / 1000, m.gapM, #m.gaps, #m.junctions, #j.plan))
-  return finish(true, m, nil)
+  return finish(true, m, nil, M.DONE)
 end
 
 local function matchAndWrite(j)
-  local covered, shortM = M.coverage(j.stage.line, j.plan, j.inner)
+  local covered, shortM, totalM = M.coverage(j.stage.line, j.plan, j.inner)
   if not covered then
     -- (never a partial line: BeamNG.Earth downloads nothing for a road-graph window, so the cells for this stretch
     --  are simply not on this computer yet -- driving near them, or a recce, is what fixes it)
+    -- None of it covered at all is a different sentence and a different colour to a stretch of it: the player has
+    -- simply never been over this ground, which is ordinary and not a fault (M.NODATA, a grey line in the menu).
+    local whole = shortM >= (totalM or 0) - M.COVER_SAMPLE_M
     return finish(false, nil, string.format(
-      '%.0f m of the stage has no map data on this computer yet: nothing written', shortM))
+      '%.0f m of the stage has no map data on this computer yet: nothing written', shortM),
+      whole and M.NODATA or M.PARTIAL, { shortM = shortM, totalM = totalM })
   end
   -- Covered by windows, but no roads came in them: nothing to match against. A line matched off an empty graph is
   -- the organisers' own line end to end with every point flagged, which is worse than writing nothing -- the stage
@@ -873,14 +902,15 @@ local function matchAndWrite(j)
   -- would be driven with no notes anywhere. (In game, 2026-11-13: three complete windows, 0 nodes in each, 4106 m
   -- of a 4.1 km stage written as one gap.)
   if next(j.graph.nodes) == nil then
-    return finish(false, nil, 'BeamNG.Earth gave no roads for this stage: nothing written')
+    return finish(false, nil, 'BeamNG.Earth gave no roads for this stage: nothing written', M.NODATA)
   end
   local m, why = M.match(j.stage, j.graph)
-  if not m then return finish(false, nil, why or 'the stage could not be matched') end
+  if not m then return finish(false, nil, why or 'the stage could not be matched', M.FAILED) end
   -- the same thing one step later: roads arrived, but none of them near enough the organisers' line to be used
   if (m.gapM or 0) >= (m.lengthM or 0) - M.OUT_STEP_M then
     return finish(false, nil, string.format(
-      'no part of the stage ran on a road (%.0f m of %.0f m is gap): nothing written', m.gapM or 0, m.lengthM or 0))
+      'no part of the stage ran on a road (%.0f m of %.0f m is gap): nothing written', m.gapM or 0, m.lengthM or 0),
+      M.NODATA)
   end
   return write(j, m)
 end
@@ -902,7 +932,7 @@ local function onWindow(myGen, token, i, r)
       log('I', 'earthRally', 'auto recce: the world\'s origin moved under window ' .. i .. ': asking again')
       return M.ask(i)
     end
-    return finish(false, nil, 'the world\'s origin kept moving while the roads were read')
+    return finish(false, nil, 'the world\'s origin kept moving while the roads were read', M.FAILED)
   end
   j.tries = 0
   if type(r) ~= 'table' or r.error ~= nil or type(r.nodes) ~= 'table' then
@@ -959,16 +989,18 @@ function M.ask(i)
   local myGen, token = gen, j.token
   local ok, why = earth.roadGraph(w.lat, w.lon, { radius = j.radius, cachedOnly = true },
     function(r) onWindow(myGen, token, i, r) end)
-  if not ok then return finish(false, nil, why or 'BeamNG.Earth refused the road graph request') end
+  if not ok then return finish(false, nil, why or 'BeamNG.Earth refused the road graph request', M.FAILED) end
   return true
 end
 
--- Start the auto recce of one stage. done(ok, matched, why) is called once, when the file has been written or when
--- it has been decided that none will be. Returns false and why if it cannot even start.
+-- Start the auto recce of one stage. done(ok, matched, why, how) is called once, when the file has been written or
+-- when it has been decided that none will be; `how` is the ending in figures (see finish). Returns false and why if
+-- it cannot even start -- including when one is already running: it is one window at a time. (The menu refuses a
+-- second one before it reaches here, so that the refusal cannot disturb the record of the one already going; this
+-- is the guard for every other caller.)
 --
--- Nothing in the mod calls this yet: the auto recce has no button, because a screen for it wants its mock-up first
--- (the project's working style). The module is complete and callable as it stands --
--- `require('earthRally/autoRecce').start(event, stage, print)` in the console runs one.
+-- The menu's button is wired to this through main.lua's uiAction ('autoRecce' / 'autoRecceStop'). It is also
+-- callable on its own -- `require('earthRally/autoRecce').start(event, stage, print)` in the console runs one.
 function M.start(event, stage, done)
   if job then return false, 'an auto recce is already running' end
   if not earth.hasRoadGraph() then

@@ -472,6 +472,29 @@ do
   T.check(earth.hasRoadGraph() == true, 'and it answers true with the capability there')
 end
 
+------------------------------------------------------------------------------------------ 8b: one at a time
+
+-- The module's own guard. The menu refuses a second Auto recce before it ever gets here (main.lua, so that the
+-- refusal cannot disturb the record of the one already running), which leaves this the guard for every other
+-- caller -- the console, and whatever runs several stages one after another later.
+do
+  reset()
+  world.roads = { eastRoad('r', 3200, 20, 0) }
+  local stage = stageOf(lineEast(3000, 200))
+  local ends = 0
+  local ok = auto.start(EVENT, stage, function() ends = ends + 1 end)
+  T.check(ok and auto.active(), 'one auto recce running')
+  local asked = world.calls
+  local ok2, why2 = auto.start(EVENT, stageOf(lineEast(1000, 100)), function() ends = ends + 1 end)
+  T.check(ok2 == false and why2 and why2:find('already running'), 'a second one is refused (' ..
+    tostring(why2) .. ')')
+  T.check(world.calls == asked, 'and nothing is asked of BeamNG.Earth for it (' .. world.calls .. ')')
+  local p = auto.progress()
+  T.check(p and p.stage == 'test-stage', 'the first one is still the one running')
+  while #pending > 0 do table.remove(pending, 1)() end
+  T.check(ends == 1 and auto.progress() == nil, 'and it finishes once, on its own (' .. ends .. ')')
+end
+
 ------------------------------------------------------------------------------------------ 9: written whole
 
 -- events.saveMatched replaces a matched line whole where the game's file system can rename a file, so a write
