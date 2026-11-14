@@ -386,42 +386,9 @@ function poll() {
   if (view.value === "rally" && sel.value.eventId) loadRally(sel.value.eventId)
   if (view.value === "stage" && sel.value.stageId) loadStage(sel.value.eventId, sel.value.stageId)
 }
-// 1.3.2 diagnostic, docs/notes-1.3.2.md #1: this page comes up with none of its own styling once BeamNG.Earth's
-// map route has been opened in the same session (and Earth's map does the same to itself -- it is BeamNG's own
-// mod-route behaviour, not either mod's). Two readings fit what is on screen and they want different fixes:
-//   * our <style> has been taken out of the document   -> "ours in head 0"
-//   * it is still there and this page no longer carries the data-v attribute its rules are scoped to
-//                                                      -> "ours in head 1" with the two scopes differing
-// Logged on every mount, so the line from a good open and the line from a bad one sit next to each other in
-// beamng.log. Costs one query of document.head when the menu opens; goes once it has answered.
-function styleCheck() {
-  try {
-    const all = [...document.head.querySelectorAll("style")]
-    const ours = all.filter(s => s.textContent && s.textContent.includes(".er-page"))
-    const root = document.querySelector(".er-page")
-    // Does it APPLY? The page's own first rule sets position: absolute and display: flex on .er-page, so this is
-    // the whole question in two words, whatever the plumbing turns out to be.
-    const cs = root ? getComputedStyle(root) : null
-    const applied = cs ? (cs.position === "absolute" && cs.display === "flex") : null
-    // every data-v the stylesheets claim and every one the element carries, so a mismatch is visible rather than
-    // inferred (ids here look like `data-v-bng-gjdi3l` and `data-v-bng-1`, not the plain hex a first guess assumed)
-    const cssScopes = [...new Set(ours.flatMap(s => [...s.textContent.matchAll(/\[(data-v-[a-z0-9-]+)\]/gi)].map(m => m[1])))]
-    const rootScopes = root ? [...root.attributes].map(a => a.name).filter(n => n.startsWith("data-v-")) : []
-    const sel = ours.length ? (ours[0].textContent.match(/[^}]*\.er-page[^{]*/) || [""])[0].trim().slice(0, 120) : ""
-    console.log("Earth Rally: style check -- applied " + applied
-      + ", ours in head " + ours.length + " of " + all.length
-      + ", css scopes [" + cssScopes.join(" ") + "]"
-      + ", page attrs [" + rootScopes.join(" ") + "]"
-      + (root ? "" : " (no .er-page element)")
-      + " | first rule: " + sel)
-  } catch (e) {
-    console.error("Earth Rally: style check failed", e)
-  }
-}
 
 onMounted(() => {
   // (opened at a page: the results card's Rally menu, a pause-menu rally)
-  styleCheck()
   refreshState()
   takeOpenAt(at => {
     if (at && at.view === "stage" && at.eventId && at.stageId) openStage(at.eventId, at.stageId)

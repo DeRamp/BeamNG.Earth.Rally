@@ -108,8 +108,14 @@ to change, so unlike 1.3.0 and 1.3.1 this version can be finished without waitin
    the stage corridor is already written, tested and in a release; this is a second caller of it with a different
    trigger and a screen of its own.
 
-Done: a map with folders and no ATCs imports, every stage has an arrival control, a slow world costs no time, and
-the user drives one from the import folder to the finish without touching anything else.
+Done: **released 2026-11-14**, with steps 1, 2 and 5 built and "Quick start on the line" dropped from Settings
+on the way (the user: "drop qikc start on line from settings"). Steps 3, 4 and 6 -- the automatic ATC, the
+late-start penalty and pre-loading before the start -- were not reached and are 1.3.3.
+
+What came out of this version that was not in the plan: the no-ATC start's guard turned out not to be
+belt-and-braces over the placement but the whole of the fix at a start inside a hairpin, which is why the trigger
+is now a pure function with its own tests; roadmap item 4 was not about folders at all; and 90 of the 116 stages
+here have no arrival control, so what read like an edge case was the ordinary path.
 
 ## 1.4.0: the co-driver
 

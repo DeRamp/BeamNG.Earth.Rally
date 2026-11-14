@@ -424,34 +424,14 @@ do
   T.check(runner.onStartLine(100, 0, 100, true) == false, 'placed and not yet driven is never on the line')
 end
 
-------------------------------------------- the quick-start setting, and a car driven to the start
--- The guard above must not touch either of these.
+------------------------------------------- a car driven to the start
+-- The guard above must not touch this one.
 --
--- "Quick start on the line" promises exactly what 1.3.2 took away from the stage with no arrival control: the car
--- set down on the line, and the stage starting a few seconds after it stops, with nothing to drive up to. It is a
--- setting the player chose, so it keeps its behaviour -- the fix is for the stage whose MAP has no control while
--- the full time controls are on, which is a different thing wearing the same code path.
-do
-  local settings = require('earthRally/settings')
-  settings.set('timeControls', 'quick')
-  car.lat, car.lon, car.speed = full[1][1], full[1][2], 0
-  local okQ = runner.start(event, event.stages[1])
-  T.check(okQ, 'the quick-start run starts')
-  frames(12)
-  local rq = runner.current()
-  local qx, qy = toGame(full[11][1], full[11][2])
-  local cpq = veh.getPosition()
-  T.check(math.sqrt((cpq.x - qx) ^ 2 + (cpq.y - qy) ^ 2) < 6,
-    'quick start: the car set down ON the line, as the setting says (' ..
-    string.format('%.0f m', math.sqrt((cpq.x - qx) ^ 2 + (cpq.y - qy) ^ 2)) .. ')')
-  T.check((rq.checks.startSetDown or ''):find('quick start') ~= nil,
-    'and the run says that is why (' .. tostring(rq.checks.startSetDown) .. ')')
-  T.check(rq.startAt ~= nil, 'quick start: a start time without driving anywhere')
-  T.near(rq.startAt - runner.clock(), runner.NO_ATC_START_S, 3, 'quick start: NO_ATC_START_S from stopping')
-  runner.abort(true)
-  settings.set('timeControls', 'full')
-end
-
+-- (The "Quick start on the line" setting was tested here too, until 1.3.2 dropped it: it set the car down on the
+-- line and started the clock a few seconds later, which is the thing the no-ATC start was fixed to stop doing.
+-- The ordinary path now does what it existed for -- away without waiting on a control -- in a way that lets the
+-- player set off when they are ready.)
+--
 -- A car the player drove up themselves is left where they chose, which is what the ATC path does with its own
 -- NO_SET_DOWN_M band. Route to start puts them 80 m short of the line; the run must not shuffle them back to 25.
 do
@@ -1269,7 +1249,7 @@ do
   settings.reset()
 end
 
--- quick start (no ATC), no zone brake, the clock view off; the HUD through every state of a run
+-- a stage with no ATC, no zone brake, the clock view off; the HUD through every state of a run
 do
   local hooks = {}
   extensions.hook = function(name, d) if name == 'onRallyDataUpdated' then hooks[#hooks + 1] = d end end
@@ -1280,17 +1260,21 @@ do
     line = event.stages[1].line }, { id = 'two', name = 'Two', lengthM = 4000, line = event.stages[1].line } } }
   files['/earthRally/events/test8.json'] = ev8
   events.saveRecce('test8', 'hill', { format = 1, points = recFrom, lengthM = 3000 })
-  T.check(select(3, runner.arrivalPoint(ev8.stages[1])) == 'ATC', 'full time controls: Route to start goes to the ATC')
-  settings.set('timeControls', 'quick')
+  T.check(select(3, runner.arrivalPoint(ev8.stages[1])) == 'ATC', 'a map with an ATC: Route to start goes to it')
+  -- the same stage with no arrival control in its map, which is what most real ones are. Put back at the end of
+  -- this block: `files` holds this very table, so a stage left without its ATC is a stage the tests after this
+  -- one would see without it (which is how this was first written, and test8's own uiStage check caught it).
+  local atc8 = ev8.stages[1].controls.atc
+  ev8.stages[1].controls.atc = nil
   settings.set('zoneBrake', false)
   settings.set('clockView', 'off')
-  T.check(select(3, runner.arrivalPoint(ev8.stages[1])) == 'start', 'quick start: Route to start goes to the start')
+  T.check(select(3, runner.arrivalPoint(ev8.stages[1])) == 'start', 'no ATC in the map: Route to start goes to the start')
   anchor = { lat = 47.0, lon = -123.0 }
   car.lat, car.lon, car.speed = full[1][1] - 0.02, full[1][2], 0
-  T.check(runner.start(ev8, ev8.stages[1]), 'the quick-start run starts')
+  T.check(runner.start(ev8, ev8.stages[1]), 'the run on a stage with no ATC starts')
   local r8 = runner.current()
   T.check(r8.atc == nil and r8.ss == 1 and r8.ssCount == 2 and r8.nextStage and r8.nextStage.name == 'Two',
-    'quick start: no ATC; SS1 of 2, the next stage known')
+    'no ATC; SS1 of 2, the next stage known')
   local seen = {}
   local function look()
     local rl, ours = runner.uiFrame()
@@ -1298,7 +1282,7 @@ do
   end
   car.speed = 3
   for _ = 1, 80 do frames(1) look() if runner.state() == 'toStart' then break end end
-  T.check(runner.state() == 'toStart', 'quick start: set down for the start line (' .. runner.state() .. ')')
+  T.check(runner.state() == 'toStart', 'set down for the start line (' .. runner.state() .. ')')
   -- roll onto the line: no zone brake
   inputs = {}
   car.lat, car.lon, car.speed = full[9][1], full[9][2], 3
@@ -1316,7 +1300,7 @@ do
   local cd = false
   for _, d in ipairs(hooks) do if d.activeState == 'countdown' then cd = true end end
   T.check(not cd and #hooks > 0, 'clock view off: the start clock never told "countdown" (its view stays off)')
-  T.check(runner.state() == 'running', 'GO (quick start)')
+  T.check(runner.state() == 'running', 'GO')
   car.speed = 30
   for i = 11, #full, 25 do
     car.lat, car.lon = full[i][1], full[i][2]
@@ -1340,6 +1324,7 @@ do
   T.check(toastTitled('Hill: ') ~= nil, 'a toast with the time at the flying finish')
   -- off route: the amber card once 60 m off, gone within 40 m
   runner.abort(true)
+  ev8.stages[1].controls.atc = atc8
   settings.reset()
 end
 
@@ -1482,7 +1467,7 @@ do
   settings.reset()
   events.list(true)          -- (the rallies added by the tests above: read again, as an import does)
   local st = main.uiState()
-  T.check(st.version == main.VERSION and #st.rallies >= 3 and #st.settings.schema == 6 and st.settings.settings.units == 'km'
+  T.check(st.version == main.VERSION and #st.rallies >= 3 and #st.settings.schema == #settings.ORDER and st.settings.settings.units == 'km'
     and st.importFolder, 'uiState: the rallies, the settings, the import folder')
   local rr = main.uiRally('test8')
   T.check(rr.name == 'Test Rally 8' and #rr.list == 2 and rr.list[1].status == 'ready' and rr.list[2].status == 'none',

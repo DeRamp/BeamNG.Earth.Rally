@@ -6,8 +6,8 @@
 --              stage up to ~26 km across (BeamNG.Earth shifts the world 15-16 km from its origin)
 --   build      the stage line (the recce, else the line matched to BeamNG.Earth's roads) put into game coordinates
 --              now, the rally engine's files written and loaded: its co-driver calls the pacenotes
---   place      the car 40 m before the ATC (25 m before the start line where the map has no ATC, on the line
---              itself with the quick-start setting), the controls' boards and tents put down
+--   place      the car 40 m before the ATC (25 m before the start line where the map has no ATC), the
+--              controls' boards and tents put down
 --   toAtc      drive to the ATC (the game's route arrows show the way); the car is braked in its zone and checked
 --              in once stopped: its start time is the next half minute (hh:mm:00 / :30) at least 30 s on (the rally
 --              clock). Driving past it to the start is a missed time control (+60 s)
@@ -406,9 +406,7 @@ function M.start(event, stage)
   -- the time controls round the stage (from the event's map), when they are near enough to be its own
   local ctl = stage.controls or {}
   local st0 = ctl.start or { lat = latlon[1][1], lon = latlon[1][2] }
-  -- (setting timeControls 'quick': no ATC, the car set down on the start line, the start a few seconds after stopping)
-  run.quick = settings.get('timeControls') == 'quick'
-  if ctl.atc and not run.quick then
+  if ctl.atc then
     local d = geo.metres(ctl.atc.lat, ctl.atc.lon, st0.lat, st0.lon)
     if d <= M.ATC_MAX_FROM_START_M and d >= 5 then run.atc = ctl.atc end
   end
@@ -807,12 +805,6 @@ local function stepPlace()
     end
     setState('toAtc')
     say('Drive to the time control and stop at its red board.', 6, 'info', run.stage.name)
-  elseif run.quick then
-    -- The quick-start setting: "start on the line", so the car goes on the line and the clock follows a few
-    -- seconds after it stops. That is what the setting promises and it stays exactly as it was.
-    toStartLine(veh, M.CAR_BEHIND_LINE_M)
-    run.checks.startSetDown = 'on the line (quick start)'
-    setState('toStart')
   else
     -- Full time controls on a stage whose map has no arrival control. Before 1.3.2 the car went 4 m behind the
     -- line -- inside the 12 m start zone -- so it was standing stopped in the zone on the first frame it was
@@ -1433,7 +1425,7 @@ function M.arrivalPoint(stage)
   local ctl = stage.controls or {}
   local st = ctl.start or (stage.line and stage.line[1] and { lat = stage.line[1][1], lon = stage.line[1][2] })
   if not st then return nil end
-  if ctl.atc and settings.get('timeControls') ~= 'quick' then
+  if ctl.atc then
     local d = geo.metres(ctl.atc.lat, ctl.atc.lon, st.lat, st.lon)
     if d <= M.ATC_MAX_FROM_START_M and d >= 5 then return ctl.atc.lat, ctl.atc.lon, 'ATC' end
   end

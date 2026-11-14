@@ -24,7 +24,6 @@
     <div class="er-set-note">
       <b>Time controls</b>: <i>Full</i>, as in a real rally: stop at the time control (the red clock board), get your
       start time, move up to the start line and wait for your minute; driving past the time control costs 60 s.
-      <i>Quick start</i>: straight to the start line, the countdown a few seconds after you stop on it. From the next stage.
     </div>
   </div>
 </template>

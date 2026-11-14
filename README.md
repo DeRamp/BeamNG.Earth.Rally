@@ -57,7 +57,9 @@ recce would be better.
 * Traffic and parked cars are cleared for the stage, and put back after.
 * Route arrows lead to each control. In a control's zone the brakes ease in as you reach the board, so you can roll
   up to the boards and tent.
-* At the ATC you get your **start time** on the rally clock. Driving past it is a missed control (+60 s).
+* At the ATC you get your **start time** on the rally clock. Driving past it is a missed control (+60 s). Where
+  the map has no ATC you are set down short of the line instead, and nothing starts until you drive up to it and
+  stop -- so you can wait for the world to finish loading.
 * On the line you are held until GO, launch control on where the car has it, with the start tree, the countdown and
   the co-driver's *30 seconds… good luck… 5-4-3-2-1*. Early? **Shift + E** while stopped on the line skips to 6 s
   before your start. Jumping the start is +10 s; arriving late is +10 s a minute.
@@ -81,8 +83,8 @@ co-driver. With an auto recce, junctions are called too — *at junction*, *past
 
 To rebind: Options > Controls > Bindings, category **Gameplay**, the actions starting **Earth Rally:**.
 
-**Settings** (menu, or the pause-menu tab): units, full time controls or a quick start on the line, the reset
-penalty, the control-zone brake, where the start clock's close-up shows.
+**Settings** (menu, or the pause-menu tab): units, the reset penalty, the control-zone brake, where the start
+clock's close-up shows.
 
 ## The menu will not open
 

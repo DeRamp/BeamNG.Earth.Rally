@@ -24,7 +24,7 @@ function log(level, _, msg) logged[#logged + 1] = level .. ' ' .. tostring(msg) 
 local settings = require('earthRally/settings')
 do
   local v = settings.load()
-  T.check(v.units == 'km' and v.timeControls == 'full' and v.resetPenalty == true and v.zoneBrake == true and
+  T.check(v.units == 'km' and v.resetPenalty == true and v.zoneBrake == true and
     v.clockView == 'right' and v.devPanel == false, 'no file: the defaults (1.1.0 behaviour, developer panel off)')
   local r = settings.set('units', 'mi')
   T.check(r.ok and settings.get('units') == 'mi' and files[settings.FILE].units == 'mi' and files[settings.FILE].version == 1,
@@ -46,9 +46,9 @@ do
   T.check(v.units == 'mi' and v.clockView == 'right' and v.zoneBrake == false, 'read back: good values taken, bad ones defaulted')
   files[settings.FILE] = 'BROKEN'
   v = settings.load()
-  T.check(v.units == 'km' and v.timeControls == 'full', 'an unreadable file: the defaults')
+  T.check(v.units == 'km', 'an unreadable file: the defaults')
   local ui = settings.uiState()
-  T.check(#ui.schema == 6 and ui.schema[1].id == 'units' and ui.schema[1].options[2].value == 'mi' and
+  T.check(#ui.schema == #settings.ORDER and ui.schema[1].id == 'units' and ui.schema[1].options[2].value == 'mi' and
     ui.schema[1].options[2].label == 'miles' and ui.settings.units == 'km', 'the page gets the schema in order and the values')
   settings.reset()
   files[settings.FILE] = nil

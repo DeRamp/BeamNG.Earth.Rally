@@ -11,9 +11,6 @@ M.VERSION = 1
 M.SCHEMA = {
   units = { default = 'km', label = 'Units', desc = 'Stage lengths and distances on the HUD',
     options = { { 'km', 'km' }, { 'mi', 'miles' } } },
-  timeControls = { default = 'full', label = 'Time controls',
-    desc = 'Check in at the time control and wait for your start time, or start on the line',
-    options = { { 'full', 'Full' }, { 'quick', 'Quick start on the line' } } },
   resetPenalty = { default = true, label = 'Reset penalty',
     desc = '+10 s for each car reset during the timed stage', options = { { true, 'On' }, { false, 'Off' } } },
   zoneBrake = { default = true, label = 'Control-zone brake',
@@ -24,9 +21,19 @@ M.SCHEMA = {
   devPanel = { default = false, label = 'Developer panel',
     desc = "The old Earth Rally window with each run's checks", options = { { true, 'On' }, { false, 'Off' } } },
 }
-M.ORDER = { 'units', 'timeControls', 'resetPenalty', 'zoneBrake', 'clockView', 'devPanel' }
+M.ORDER = { 'units', 'resetPenalty', 'zoneBrake', 'clockView', 'devPanel' }
 
 local values = nil
+-- Settings that were here and are not any more. A saved file still carrying one is not a mistake the player
+-- made, so it is dropped quietly rather than warned about: the warning would be about our own change, and it
+-- would be in their log every start until they happened to save their settings again.
+--
+-- `timeControls` ('full' | 'quick', 1.2.0 to 1.3.1) went in 1.3.2 (the user: "drop qikc start on line from
+-- settings"). Its 'quick' put the car on the start line and started the clock a few seconds later, skipping a
+-- stage's arrival control. 1.3.2's no-ATC start made the ordinary path do the thing quick start existed for --
+-- be ready to go without waiting on a control -- while still letting the player set off when they are ready.
+M.RETIRED = { timeControls = true }
+
 local listeners = {}
 
 local function defaults()
@@ -55,7 +62,7 @@ function M.load(path)
   if read and (not (fs and fs.fileExists) or fs:fileExists(path or M.FILE)) then ok, data = pcall(read, path or M.FILE) end
   if ok and type(data) == 'table' then
     for k, v in pairs(data) do
-      if k ~= 'version' then
+      if k ~= 'version' and not M.RETIRED[k] then
         local val, err = M.validate(k, v)
         if val ~= nil then values[k] = val else warnings[#warnings + 1] = err end
       end
