@@ -142,26 +142,26 @@ budget.
    tests with roads in every direction (as `test_autorecce` / `test_props`).
 2. **Tape and boards**: the two new kinds in `props.lua`, sites from step 1 in `runner.stepBuild`, despawn behind.
 3. **The organisers' points**: importer folders / styles / descriptions, `marks` per stage, the one re-read;
-   tests on fixtures shaped like the maps here (not the organisers' files themselves).
+   tests on fixtures shaped like the maps here (not the organisers' files themselves). **Waits on the rally-file
+   work:** its worktree (`BeamNG.Earth.Rally-rally-files`, branch `rally-files`) has uncommitted changes to
+   `importer.lua`, `events.lua` and `main.lua` (seen 2026-11-14), so this step is built on top of those once they
+   are committed, not beside them. Steps 1, 2 and 4 do not touch the importer.
 4. **Atmosphere**: the four layouts and the automatic fill.
 5. Offline suite, then **a debugger and a contrarian** over the build, then the user drives it.
 
 Done when: an Overmountain stage (the map's own radio and marshal points) and an LSPR or OFR stage (all
 automatic) driven end to end with tape, boards and radio points standing where they should.
 
-## Open questions
+## Settled (the user, 2026-11-14)
 
-1. **A parked car at radio points?** Real ones have a marshal's car. BeamNG's cars are vehicles, not shapes:
-   spawning one (`core_vehicles.spawnNewVehicle`) costs physics and risks taking the player's camera / focus.
-   Proposed: no car in 1.4.0, the gazebo and boards say it.
-2. **A switch for it?** "Stage dressing: full / tape and boards / off" in Settings is UI, so a mock-up first, and
-   the menus are the other session's ground right now. Proposed: no switch on this branch; dressing always on, a
-   setting added when the menus are free.
-3. **What it looks like before code.** A top-down drawing of each layout (a junction with its tape and board, a
-   radio point, a spectator area) in `docs/mockups-1.4.0/`, to agree the look the way the HUD mock-ups did. Worth it,
-   or straight to building and judging it in game?
-4. **For the rally-file session:** its format reserves `controls` on a stage; `marks` (radio / medical / spectator
-   / marshal points) wants reserving beside it so 1.6.0's file can carry them. Not edited from here.
+1. **No parked car at radio points.** BeamNG's cars are vehicles, not shapes: spawning one costs physics and risks
+   taking the player's camera. The gazebo and boards say it.
+2. **No switch on this branch:** dressing is always on. "Stage dressing: full / tape and boards / off" in Settings
+   is UI (mock-up first) and the menus are the rally-file session's ground; it comes when they are free.
+3. **A mock-up first:** top-down drawings of each layout at true scale in `docs/mockups-1.4.0/stage.html`, agreed
+   before the placement code is written.
+4. **Passed to the rally-file session** (2026-11-14): reserve `marks` beside `controls` on a stage in its format,
+   shape `[{ kind, name, lat, lon, distM, offLineM }]`, so 1.6.0's file can carry them.
 
 ## Not changed by this branch
 

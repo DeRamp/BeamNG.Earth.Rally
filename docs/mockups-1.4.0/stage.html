@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Rally stage dressing</title>
+<!-- Mock-up for 1.4.0 (not built): what the stage dressing puts down, seen from above, at true scale. The plan is
+     docs/plan-1.4.0-stage-dressing.md; the user asked for this mock-up before any placement code (2026-11-14).
+
+     WHAT IT DRAWS
+       1. a turn at a crossroads: tape across the two roads not taken, a direction board, a junction marshal
+       2. a fork: tape across the branch not taken, a 45-degree board on the kept side
+       3. straight on past a side road: tape only, no board
+       4. a radio point on a bending road: warning board, radio board, the post
+       5. a radio point and a medical point sharing one post
+       6. a spectator area on the inside of a hairpin
+       7. a whole 20 km stage, schematic: where each kind lands from the organisers' map and by rule, and what is
+          in the world at one moment (put down 350 m ahead, taken away 600 m behind)
+
+     HOW IT IS DRAWN
+       Every object below is placed by the rules the plan gives, in the script at the bottom of this file
+       (place*), working in metres along roads the way props.lua does: walked along the road, set off its edge by
+       props.lua's own constants (BOARD_OUT_M -0.3, TENT_OUT_M 1.5, DEFAULT_HALF_WIDTH_M 3.0). So moving a number
+       in the rules moves the drawing. Scenes 1-6 are drawn roads, not real ones; scene 7 is a schematic, not
+       computed from a real stage.
+
+     NOT EXACT
+       The footprints of the game's models are estimates (a board ~1.6 m wide, the gazebo its stated 3x3 m, the
+       tape its stated 5 / 6 / 8 / 10 m). The real sizes are read from the models when this is built.
+
+     Toggle: "Now" is what 1.3.2 puts at these places (nothing: the controls' boards are the only props today);
+     "Proposed" is 1.4.0. Nothing here is built. -->
+<style>
+:root {
+  --bg: #12151a; --panel: #1b2027; --line: #2c333d; --ink: #e8ecf1; --dim: #8b95a3; --accent: #f2b705;
+  --verge: #2b3a26; --road: #5b5f66; --roadEdge: #3f4349; --stage: #f2b70555;
+  --tape: #e5322d; --board: #ffffff; --dir: #f2b705; --radio: #2f7de1; --medical: #22a35a;
+  --tent: #2a5db0; --fence: #b8c0c9; --tarp: #6b8f3a; --bale: #d8b25a; --marshal: #ff8a1f;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, "Segoe UI", sans-serif; }
+header { position: sticky; top: 0; z-index: 5; background: #12151aee; border-bottom: 1px solid var(--line);
+  padding: 12px 16px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+header h1 { font-size: 18px; margin: 0; }
+header .sub { color: var(--dim); font-size: 13px; }
+.toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-left: auto; }
+.toggle button { background: transparent; color: var(--dim); border: 0; padding: 7px 16px; font: inherit; cursor: pointer; }
+.toggle button.on { background: var(--accent); color: #111; font-weight: 700; }
+main { max-width: 1240px; margin: 0 auto; padding: 16px; }
+.intro { color: var(--dim); max-width: 860px; }
+.scene { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; margin: 20px 0; padding: 16px;
+  display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; }
+.scene h2 { margin: 0 0 6px; font-size: 17px; }
+.scene .rules { font-size: 13.5px; color: var(--dim); }
+.scene .rules b { color: var(--ink); font-weight: 600; }
+.scene .rules ul { padding-left: 18px; margin: 6px 0; }
+.scene svg { width: 100%; height: auto; display: block; background: var(--verge); border-radius: 8px; }
+.scene .scale { font-size: 12px; color: var(--dim); margin-top: 4px; }
+@media (max-width: 860px) { .scene { grid-template-columns: 1fr; } }
+.legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px 16px; font-size: 13px; }
+.legend div { display: flex; align-items: center; gap: 8px; }
+.legend svg { width: 44px; height: 22px; flex: none; background: var(--verge); border-radius: 4px; }
+.legend code { color: var(--dim); font-size: 11.5px; }
+body.now .p { display: none; }
+body:not(.now) .n { display: none; }
+text { font-family: system-ui, "Segoe UI", sans-serif; }
+.lbl { fill: var(--ink); font-size: 11px; paint-order: stroke; stroke: #000a; stroke-width: 3px; }
+.dimt { fill: var(--accent); font-size: 11.5px; paint-order: stroke; stroke: #000c; stroke-width: 3px; }
+.strip text { font-size: 12px; fill: var(--ink); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Earth Rally stage dressing</h1>
+  <span class="sub">1.4.0 mock-up, seen from above at true scale. Not built.</span>
+  <div class="toggle" role="group" aria-label="Now or proposed">
+    <button id="bNow" type="button">Now (1.3.2)</button>
+    <button id="bProp" type="button" class="on">Proposed (1.4.0)</button>
+  </div>
+</header>
+<main>
+  <p class="intro">Each drawing is a stretch of road seen from above, north up, and the car comes in from the bottom.
+  The yellow wash is the stage's line. Everything else is a stock BeamNG model from the game's rally kit,
+  placed by the rules in the plan. <b>No people:</b> the game has no human models, so a crowd or a marshal is
+  implied by tape, chairs, tables, a gazebo and a flag.</p>
+
+  <section class="scene">
+    <div><h2>Legend</h2>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="rules"><b>Sizes are estimates</b> for every board and post. The tape lengths are the models' own
+      (5, 6, 8, 10 m) and the gazebo is the 3&times;3 m model props.lua already uses at the controls. Real
+      footprints get read from the models at build time.</div>
+  </section>
+
+  <div id="scenes"></div>
+
+  <section class="scene" style="grid-template-columns: 1fr;">
+    <div>
+      <h2>7. A whole stage (schematic, 20 km)</h2>
+      <p class="rules" style="margin-top:0">Where each kind lands along one stage, for a map that marks nothing (LSPR, OFR, SnoDrift, OTR)
+      and for one that does (Overmountain-style). Filled marks came from the organisers' map; outlined ones were placed by
+      rule. The bottom row shows what is in the world at one moment.</p>
+      <svg id="strip" class="strip" viewBox="0 0 1200 370" role="img" aria-label="Schematic of dressing along a 20 km stage"></svg>
+      <div class="rules"><ul>
+        <li><b>Radio</b>: every ~5 km when the map marks none, never in the last 1 km. A map's own radio points replace the rule for that stage.</li>
+        <li><b>Spectators</b>: at most one per ~4 km, at the tightest hairpins and biggest junction turns, none in the first 500 m.</li>
+        <li><b>Marshals</b>: at turns at junctions, at most one per ~1 km. <b>Medical</b>: only where the map marks it.</li>
+        <li><b>Tape</b> at every junction's untaken roads, and <b>boards</b> at every turn and fork, from either source.</li>
+        <li>The rule is applied per kind: a map that marks marshals but no radio points still gets automatic radio points.</li>
+      </ul></div>
+    </div>
+  </section>
+</main>
+
+<script>
+// ------------------------------------------------------------------ the rules (as the plan, as props.lua)
+const R = {
+  HALF: 3.0,            // props.DEFAULT_HALF_WIDTH_M
+  BOARD_OUT: -0.3,      // props.BOARD_OUT_M: a board stands a little inside the road's edge
+  TENT_OUT: 1.5,        // props.TENT_OUT_M: the gazebo's centre beyond the edge
+  TAPE_IN: 8,           // tape this far into a side road from the junction
+  TAPE_CLEAR: 1.0,      // ... moved farther in until it clears the stage's road by this much
+  BOARD_BEFORE: 75,     // direction board before a turn / fork
+  WARN_BEFORE: 100,     // radio / medical warning board
+  POST_AFTER: 6,        // the post just after a radio / medical board
+  SPEC_OFF: 5,          // spectator tape off the road's edge
+  FENCE_BEHIND: 2.5,    // the mesh fence behind the tape
+};
+const BOARD_W = 1.6, BOARD_T = 0.25;   // estimated footprint of a board
+
+// ------------------------------------------------------------------ geometry, metres, y up (north)
+const V = (x, y) => ({ x, y });
+const add = (a, b) => V(a.x + b.x, a.y + b.y), sub = (a, b) => V(a.x - b.x, a.y - b.y);
+const mul = (a, k) => V(a.x * k, a.y * k), len = a => Math.hypot(a.x, a.y);
+const norm = a => { const l = len(a) || 1; return V(a.x / l, a.y / l); };
+const right = t => V(t.y, -t.x);                // the right-hand normal of a direction
+const ang = t => Math.atan2(t.y, t.x);
+const deg = r => r * 180 / Math.PI;
+function cum(pts) { const c = [0]; for (let i = 1; i < pts.length; i++) c.push(c[i - 1] + len(sub(pts[i], pts[i - 1]))); return c; }
+function at(pts, s) {                             // point and direction s metres along a polyline (clamped, extrapolated)
+  const c = cum(pts), n = pts.length;
+  let i = 1; while (i < n - 1 && c[i] < s) i++;
+  const a = pts[i - 1], b = pts[i], t = norm(sub(b, a));
+  return { p: add(a, mul(t, s - c[i - 1])), t };
+}
+function arc(cx, cy, r, a0, a1, n = 24) {
+  const out = []; for (let k = 0; k <= n; k++) { const a = (a0 + (a1 - a0) * k / n) * Math.PI / 180; out.push(V(cx + r * Math.cos(a), cy + r * Math.sin(a))); }
+  return out;
+}
+const total = pts => cum(pts).at(-1);
+
+// ------------------------------------------------------------------ drawing
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs, parent) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+function makeView(svg, b, scale) {
+  const [x0, y0, x1, y1] = b, W = (x1 - x0) * scale, H = (y1 - y0) * scale;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.style.width = W + 'px'; svg.style.maxWidth = '100%';
+  const px = p => [(p.x - x0) * scale, (y1 - p.y) * scale];
+  const pts = arr => arr.map(p => px(p).map(v => v.toFixed(1)).join(',')).join(' ');
+  return { svg, px, pts, s: scale };
+}
+function rectPoly(c, w, h, t) {                   // a w (across) by h (along t) rectangle centred on c
+  const r = right(t), hw = w / 2, hh = h / 2;
+  return [add(add(c, mul(r, hw)), mul(t, hh)), add(add(c, mul(r, -hw)), mul(t, hh)),
+          add(add(c, mul(r, -hw)), mul(t, -hh)), add(add(c, mul(r, hw)), mul(t, -hh))];
+}
+const D = {
+  road(v, g, pts, half) {
+    el('polyline', { points: v.pts(pts), fill: 'none', stroke: 'var(--roadEdge)', 'stroke-width': (half * 2 + 1) * v.s, 'stroke-linecap': 'butt', 'stroke-linejoin': 'round' }, g);
+    el('polyline', { points: v.pts(pts), fill: 'none', stroke: 'var(--road)', 'stroke-width': half * 2 * v.s, 'stroke-linecap': 'butt', 'stroke-linejoin': 'round' }, g);
+  },
+  stage(v, g, pts) {
+    el('polyline', { points: v.pts(pts), fill: 'none', stroke: 'var(--stage)', 'stroke-width': 2.2 * v.s, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, g);
+    const T = total(pts);
+    for (let s = 12; s < T - 4; s += 18) {          // chevrons along the way
+      const { p, t } = at(pts, s), r = right(t);
+      const a = add(add(p, mul(t, -1.2)), mul(r, -1.4)), b = add(p, mul(t, 0.6)), c = add(add(p, mul(t, -1.2)), mul(r, 1.4));
+      el('polyline', { points: v.pts([a, b, c]), fill: 'none', stroke: '#f2b705aa', 'stroke-width': 0.5 * v.s, 'stroke-linejoin': 'round' }, g);
+    }
+  },
+  car(v, g, p, t) { el('polygon', { points: v.pts(rectPoly(p, 1.9, 4.4, t)), fill: '#d9dde3', stroke: '#000', 'stroke-width': 1 }, g);
+    el('polygon', { points: v.pts(rectPoly(add(p, mul(t, 1.0)), 1.6, 1.0, t)), fill: '#4a5563' }, g); },
+  tape(v, g, a, b, w = 0.18) {
+    el('line', { x1: v.px(a)[0], y1: v.px(a)[1], x2: v.px(b)[0], y2: v.px(b)[1], stroke: 'var(--tape)', 'stroke-width': Math.max(2.5, w * 2 * v.s) }, g);
+    el('line', { x1: v.px(a)[0], y1: v.px(a)[1], x2: v.px(b)[0], y2: v.px(b)[1], stroke: '#fff', 'stroke-width': Math.max(2.5, w * 2 * v.s), 'stroke-dasharray': `${0.5 * v.s} ${0.5 * v.s}` }, g);
+    for (const q of [a, b]) el('circle', { cx: v.px(q)[0], cy: v.px(q)[1], r: Math.max(2, 0.15 * v.s), fill: '#ddd' }, g);   // the stakes
+  },
+  board(v, g, p, face, fill, text, labelSide) {   // face: the way the board's face looks (towards the car)
+    const poly = rectPoly(p, BOARD_W, BOARD_T, face);
+    el('polygon', { points: v.pts(poly), fill, stroke: '#000', 'stroke-width': 1 }, g);
+    const f = add(p, mul(face, 0.9));               // a tick on the face side
+    el('line', { x1: v.px(p)[0], y1: v.px(p)[1], x2: v.px(f)[0], y2: v.px(f)[1], stroke: fill, 'stroke-width': 1.5 }, g);
+    el('circle', { cx: v.px(p)[0], cy: v.px(p)[1], r: 2.2 * v.s, fill: 'none', stroke: fill, 'stroke-width': 1.5, 'stroke-opacity': 0.8 }, g);
+    if (text) D.label(v, g, add(p, mul(right(face), -(labelSide || 1) * 3.2)), text, labelSide === -1 ? 'end' : 'start');
+  },
+  gazebo(v, g, p, t, cover = 'var(--tent)') {
+    const poly = rectPoly(p, 3, 3, t);
+    el('polygon', { points: v.pts(poly), fill: cover, 'fill-opacity': 0.75, stroke: '#cfe0ff', 'stroke-width': 1 }, g);
+    el('line', { x1: v.px(poly[0])[0], y1: v.px(poly[0])[1], x2: v.px(poly[2])[0], y2: v.px(poly[2])[1], stroke: '#cfe0ff88' }, g);
+    el('line', { x1: v.px(poly[1])[0], y1: v.px(poly[1])[1], x2: v.px(poly[3])[0], y2: v.px(poly[3])[1], stroke: '#cfe0ff88' }, g);
+  },
+  table(v, g, p, t) { el('polygon', { points: v.pts(rectPoly(p, 0.7, 1.8, t)), fill: '#c9ccd1', stroke: '#000', 'stroke-width': 0.8 }, g); },
+  chair(v, g, p, t) { el('polygon', { points: v.pts(rectPoly(p, 0.5, 0.5, t)), fill: '#1f6fd1', stroke: '#000', 'stroke-width': 0.8 }, g); },
+  flag(v, g, p) { const [x, y] = v.px(p), k = Math.max(5, 0.9 * v.s);
+    el('polygon', { points: `${x},${y} ${x + k},${y - k * 0.45} ${x},${y - k * 0.9}`, fill: 'var(--marshal)', stroke: '#000', 'stroke-width': 0.8 }, g);
+    el('circle', { cx: x, cy: y, r: 2, fill: '#fff' }, g); },
+  bale(v, g, p) { el('circle', { cx: v.px(p)[0], cy: v.px(p)[1], r: 0.8 * v.s, fill: 'var(--bale)', stroke: '#7a5f22', 'stroke-width': 1 }, g); },
+  fence(v, g, a, b) { el('line', { x1: v.px(a)[0], y1: v.px(a)[1], x2: v.px(b)[0], y2: v.px(b)[1], stroke: 'var(--fence)', 'stroke-width': Math.max(2, 0.15 * v.s), 'stroke-dasharray': '3 2' }, g); },
+  tarp(v, g, a, b) { el('line', { x1: v.px(a)[0], y1: v.px(a)[1], x2: v.px(b)[0], y2: v.px(b)[1], stroke: 'var(--tarp)', 'stroke-width': Math.max(3, 0.3 * v.s) }, g); },
+  label(v, g, p, text, anchor = 'start') { const [x, y] = v.px(p); const t = el('text', { x, y: y + 4, class: 'lbl', 'text-anchor': anchor }, g); t.textContent = text; },
+  dimAlong(v, g, stage, s0, s1, off, text) {     // off: metres to the right (+) or left (-) of the line
+    const pts = []; for (let s = s0; s <= s1 + 0.01; s += 2) { const { p, t } = at(stage, Math.min(s, s1)); pts.push(add(p, mul(right(t), off))); }
+    el('polyline', { points: v.pts(pts), fill: 'none', stroke: 'var(--accent)', 'stroke-width': 1, 'stroke-dasharray': '4 3' }, g);
+    for (const q of [pts[0], pts.at(-1)]) el('circle', { cx: v.px(q)[0], cy: v.px(q)[1], r: 2.5, fill: 'var(--accent)' }, g);
+    const m = pts[Math.floor(pts.length / 2)]; const [x, y] = v.px(m);
+    const t = el('text', { x: x + (off < 0 ? -6 : 6), y: y + 4, class: 'dimt', 'text-anchor': off < 0 ? 'end' : 'start' }, g); t.textContent = text;
+  },
+  dim(v, g, a, b, text, off = V(0, 0)) {
+    const A = add(a, off), B = add(b, off);
+    el('line', { x1: v.px(A)[0], y1: v.px(A)[1], x2: v.px(B)[0], y2: v.px(B)[1], stroke: 'var(--accent)', 'stroke-width': 1, 'stroke-dasharray': '4 3' }, g);
+    for (const q of [A, B]) el('circle', { cx: v.px(q)[0], cy: v.px(q)[1], r: 2.5, fill: 'var(--accent)' }, g);
+    const m = mul(add(A, B), 0.5); const [x, y] = v.px(m);
+    const t = el('text', { x: x + 6, y: y + 4, class: 'dimt' }, g); t.textContent = text;
+  },
+};
+
+// ------------------------------------------------------------------ placement (the rules the Lua will follow)
+// The board for a turn of `turnDeg` (+ left, - right) between the way in and the way out, or null for straight on.
+function dirBoard(turnDeg, kind) {
+  const a = Math.abs(turnDeg), side = turnDeg > 0 ? 'left' : 'right';
+  if (kind === 'fork') return { shape: `s_corner_dir45_${side}`, side };
+  if (a < 30) return null;
+  if (a < 60) return { shape: `s_corner_dir45_${side}`, side };
+  if (a <= 120) return { shape: `s_corner_dir_${side}`, side };
+  return { shape: side === 'right' ? 's_corner_dir135_right' : 's_corner_dir225_left', side };
+}
+const tapeFor = half => half * 2 <= 6 ? 6 : half * 2 <= 8 ? 8 : 10;
+// distance from point q to the stage's road (its centre line), minus its half width
+function clearOfStage(q, stagePts, half) {
+  let best = Infinity;
+  for (let i = 1; i < stagePts.length; i++) {
+    const a = stagePts[i - 1], b = stagePts[i], ab = sub(b, a), l2 = ab.x * ab.x + ab.y * ab.y;
+    const k = Math.max(0, Math.min(1, ((q.x - a.x) * ab.x + (q.y - a.y) * ab.y) / l2));
+    best = Math.min(best, len(sub(q, add(a, mul(ab, k)))));
+  }
+  return best - half;
+}
+// A junction: J, the stage's line through it, its distance along that line, the way in and out, the side roads.
+function placeJunction(j) {
+  const out = { tapes: [], boards: [], marshal: null, notes: [] };
+  for (const sr of j.sides) {
+    const d = norm(sr.dir), r = right(d), L = tapeFor(sr.half);
+    let s = R.TAPE_IN, a, b;
+    for (; s < 30; s += 0.5) {                       // farther in until both ends clear the stage's road
+      const c = add(j.at, mul(d, s)); a = add(c, mul(r, L / 2)); b = add(c, mul(r, -L / 2));
+      if (clearOfStage(a, j.stage, j.half) >= R.TAPE_CLEAR && clearOfStage(b, j.stage, j.half) >= R.TAPE_CLEAR) break;
+    }
+    out.tapes.push({ a, b, s, L, d, at: j.at, shape: `s_tape_road_closure_${L}m` });
+  }
+  const tin = norm(j.wayIn), tout = norm(j.wayOut);
+  const turn = deg(Math.atan2(tin.x * tout.y - tin.y * tout.x, tin.x * tout.x + tin.y * tout.y));
+  out.turnDeg = turn;
+  const brd = dirBoard(turn, j.kind);
+  if (brd) {
+    const { p, t } = at(j.stage, j.along - R.BOARD_BEFORE);
+    const sgn = brd.side === 'right' ? 1 : -1;
+    out.boards.push({ p: add(p, mul(right(t), sgn * (j.half + R.BOARD_OUT))), face: mul(t, -1), shape: brd.shape, t, sgn });
+  }
+  if (j.kind === 'turn') {                           // a junction marshal: before the junction, away from the turn
+    const { p, t } = at(j.stage, j.along - 9);
+    const sgn = turn < 0 ? -1 : 1;                   // turning right -> the left-hand corner
+    const c = add(p, mul(right(t), sgn * (j.half + 3)));
+    out.marshal = { c, t, sgn };
+  }
+  return out;
+}
+function drawJunction(v, g, j, res) {
+  for (const tp of res.tapes) {
+    D.tape(v, g, tp.a, tp.b);
+    const q = add(tp.at, mul(tp.d, tp.s + 6)); D.label(v, g, q, `${tp.L} m tape`, tp.d.x < -0.3 ? 'end' : tp.d.x > 0.3 ? 'start' : 'middle');
+  }
+  for (const b of res.boards) {
+    D.board(v, g, b.p, b.face, 'var(--dir)', b.shape.replace('s_corner_', ''), b.sgn);
+    D.dimAlong(v, g, j.stage, j.along - R.BOARD_BEFORE, j.along - j.half, -b.sgn * (j.half + 5), `${R.BOARD_BEFORE} m`);
+  }
+  if (res.marshal) {
+    const m = res.marshal;
+    D.table(v, g, m.c, m.t); D.chair(v, g, add(m.c, mul(right(m.t), m.sgn * 0.9)), m.t);
+    D.flag(v, g, add(m.c, mul(m.t, 1.6)));
+    D.label(v, g, add(m.c, mul(right(m.t), m.sgn * 2.4)), 'marshal', m.sgn < 0 ? 'end' : 'start');
+  }
+}
+function placeRadio(v, g, stage, along, half, withMedical) {
+  const side = 1, face = s => mul(at(stage, s).t, -1);
+  const pos = (s, out) => { const { p, t } = at(stage, s); return add(p, mul(right(t), side * (half + out))); };
+  const w = along - R.WARN_BEFORE;
+  D.board(v, g, pos(w, R.BOARD_OUT), face(w), 'var(--radio)', 'radio_point_warning');
+  D.board(v, g, pos(along, R.BOARD_OUT), face(along), 'var(--radio)', 'radio_point');
+  if (withMedical) {
+    D.board(v, g, pos(w + 8, R.BOARD_OUT), face(w + 8), 'var(--medical)', 'medical_warning');
+    D.board(v, g, pos(along + 8, R.BOARD_OUT), face(along + 8), 'var(--medical)', 'medical_point');
+  }
+  const pa = along + R.POST_AFTER + (withMedical ? 8 : 0), { t } = at(stage, pa), c = pos(pa, R.TENT_OUT);
+  D.gazebo(v, g, c, t, withMedical ? '#1f7d48' : 'var(--tent)');
+  D.table(v, g, add(c, mul(right(t), -0.6)), t); D.chair(v, g, add(add(c, mul(right(t), 0.3)), mul(t, -0.3)), t);
+  D.flag(v, g, add(c, mul(t, 2.4)));
+  D.label(v, g, add(c, mul(right(t), 3.4)), withMedical ? 'shared post' : 'radio post');
+  D.dimAlong(v, g, stage, w, along, -(half + 5), `${R.WARN_BEFORE} m`);
+}
+function placeSpectators(v, g, stage, s0, s1, half, side) {   // side: -1 left (inside of a left hairpin)
+  const off = (s, d) => { const { p, t } = at(stage, s); return add(p, mul(right(t), side * (half + d))); };
+  // tape in 5 m pieces along the offset line, the fence behind it
+  let pieces = 0;
+  for (let s = s0; s < s1 - 0.1; ) {
+    let e = s + 0.5; while (e < s1 && len(sub(off(e, R.SPEC_OFF), off(s, R.SPEC_OFF))) < 5) e += 0.25;
+    D.tape(v, g, off(s, R.SPEC_OFF), off(e, R.SPEC_OFF), 0.12); pieces++;
+    D.fence(v, g, off(s, R.SPEC_OFF + R.FENCE_BEHIND), off(e, R.SPEC_OFF + R.FENCE_BEHIND));
+    s = e;
+  }
+  return pieces;
+}
+
+// ------------------------------------------------------------------ the scenes
+const scenes = [];
+// 1. turn right at a crossroads
+scenes.push({
+  title: '1. A turn at a crossroads',
+  bounds: [-40, -92, 50, 34], scale: 6.2,
+  build(v, gN, gP) {
+    const half = R.HALF;
+    const S = [V(0, -92), V(0, -7), V(1.5, -2.2), V(4, -0.4), V(8, 0), V(50, 0)];   // the stage, a rounded right turn
+    for (const r of [[V(0, -92), V(0, 0)], [V(0, 0), V(0, 34)], [V(0, 0), V(50, 0)], [V(0, 0), V(-40, 0)]]) D.road(v, gN, r, half);
+    D.stage(v, gN, S); D.car(v, gN, V(0, -86), V(0, 1));
+    const along = at(S, 0) && total([V(0, -92), V(0, 0)]);
+    const res = placeJunction({ at: V(0, 0), stage: S, along, half, kind: 'turn', wayIn: V(0, 1), wayOut: V(1, 0),
+      sides: [{ dir: V(0, 1), half }, { dir: V(-1, 0), half }] });
+    drawJunction(v, gP, { stage: S, along, half }, res);
+    this.res = res;
+  },
+  rules() { return `<ul>
+    <li><b>Tape</b> across both roads the stage does not take: straight on, and left. ${R.TAPE_IN} m in from the junction, square to the road,
+        <code>s_tape_road_closure_6m</code> for a 6 m road (8 m and 10 m tape for wider ones).</li>
+    <li><b>Board</b> <code>s_corner_dir_right</code> ${R.BOARD_BEFORE} m before, on the side of the turn, its face to the car.
+        The turn here reads ${Math.round(this.res.turnDeg)}&deg;: 60&ndash;120&deg; is a plain left / right board.</li>
+    <li><b>Marshal</b> (only when the map marks none near): a table, a chair and a flag ~9 m before the junction, on the corner away from the turn, set back 3 m.</li></ul>`; },
+});
+// 2. a fork, keep left
+scenes.push({
+  title: '2. A fork: keep left',
+  bounds: [-36, -92, 36, 60], scale: 6.2,
+  build(v, gN, gP) {
+    const half = R.HALF, dl = norm(V(-0.34, 0.94)), dr = norm(V(0.36, 0.93));
+    const L = [V(0, 0), mul(dl, 60)], Rr = [V(0, 0), mul(dr, 58)];
+    D.road(v, gN, [V(0, -92), V(0, 0)], half); D.road(v, gN, L, half); D.road(v, gN, Rr, half);
+    const S = [V(0, -92), V(0, 0), mul(dl, 60)];
+    D.stage(v, gN, S); D.car(v, gN, V(0, -86), V(0, 1));
+    const res = placeJunction({ at: V(0, 0), stage: S, along: 92, half, kind: 'fork', wayIn: V(0, 1), wayOut: dl, sides: [{ dir: dr, half }] });
+    drawJunction(v, gP, { stage: S, along: 92, half }, res);
+    this.res = res;
+  },
+  rules() { const tp = this.res.tapes[0]; return `<ul>
+    <li><b>A fork</b> always gets the 45&deg; board toward the kept side, whatever the angle: <code>s_corner_dir45_left</code>, ${R.BOARD_BEFORE} m before, on the left.</li>
+    <li><b>Tape</b> across the branch not taken. ${tp.s > R.TAPE_IN ? `At ${R.TAPE_IN} m in, a narrow fork's branches still overlap and the tape's end would stand on the kept road, so it moves farther in
+        until both ends are ${R.TAPE_CLEAR} m clear: here at <b>${tp.s.toFixed(1)} m</b>. That rule is new: it came out of drawing this fork.` : `It clears the kept road at ${R.TAPE_IN} m here.`}</li>
+    <li>No marshal: the rule only puts one at turns.</li></ul>`; },
+});
+// 3. straight on past a side road
+scenes.push({
+  title: '3. Straight on past a side road',
+  bounds: [-46, -60, 20, 40], scale: 6.2,
+  build(v, gN, gP) {
+    const half = R.HALF, side = norm(V(-0.94, 0.34));
+    D.road(v, gN, [V(0, -60), V(0, 40)], half); D.road(v, gN, [V(0, 0), mul(side, 48)], 2.5);
+    const S = [V(0, -60), V(0, 40)];
+    D.stage(v, gN, S); D.car(v, gN, V(0, -54), V(0, 1));
+    const res = placeJunction({ at: V(0, 0), stage: S, along: 60, half, kind: 'straight', wayIn: V(0, 1), wayOut: V(0, 1), sides: [{ dir: side, half: 2.5 }] });
+    drawJunction(v, gP, { stage: S, along: 60, half }, res);
+  },
+  rules() { return `<ul>
+    <li><b>Tape only.</b> The stage goes straight on, so the tape says it all and there is no board (the plan's rule, and <code>plan-1.2.0.md</code>'s).</li>
+    <li>This side road is 5 m wide, so it takes the 6 m tape, the narrowest the game has.</li>
+    <li>Side roads under 40 m long (driveways, field gates) are left alone, as the auto recce already does.</li></ul>`; },
+});
+// 4. a radio point on a bending road
+function bend() {   // a straight, then an easy right-hander (60 m radius, 30 degrees), then straight on along its tangent
+  const a = arc(60, -60, 60, 180, 150, 10), e = a.at(-1);
+  return [V(0, -125)].concat(a).concat([V(e.x + 0.5 * 45, e.y + 0.866 * 45)]);
+}
+scenes.push({
+  title: '4. A radio point',
+  bounds: [-24, -128, 46, 20], scale: 5.0,
+  build(v, gN, gP) {
+    const S = bend(); D.road(v, gN, S, R.HALF); D.stage(v, gN, S); D.car(v, gN, at(S, 4).p, at(S, 4).t);
+    placeRadio(v, gP, S, 128, R.HALF, false);
+  },
+  rules() { return `<ul>
+    <li><b>From the organisers' map</b> when it has a radio point within 100 m of the line (Overmountain, 100 Acre Wood, Colorado); otherwise <b>every ~5 km</b>.</li>
+    <li><code>radio_point_warning</code> ${R.WARN_BEFORE} m before, <code>radio_point</code> at the point, both on the right just inside the edge, as the control boards stand.
+        The boards follow the bend: each is placed along the road, not on a straight line from the point.</li>
+    <li>The post ${R.POST_AFTER} m after: the 3&times;3 m gazebo with its near side on the road's edge, a table, a chair, a flag. <b>No parked car</b> (the user, 2026-11-14).</li></ul>`; },
+});
+// 5. radio + medical sharing one post
+scenes.push({
+  title: '5. A radio point and a medical point together',
+  bounds: [-24, -128, 46, 20], scale: 5.0,
+  build(v, gN, gP) {
+    const S = bend(); D.road(v, gN, S, R.HALF); D.stage(v, gN, S); D.car(v, gN, at(S, 4).p, at(S, 4).t);
+    placeRadio(v, gP, S, 128, R.HALF, true);
+  },
+  rules() { return `<ul>
+    <li><b>Medical points come only from the map</b> ("Midpoint - Medical", "Fire and Ambulance", "MIV"). One placed by rule would tell a player there is help where the organisers put none.</li>
+    <li>Within 50 m of a radio point the two <b>share one post</b>: both warning boards, both boards, one gazebo (green cover here to tell it apart in the drawing).</li>
+    <li>Points far off the line (Overmountain's hospital and landing zones, up to 236 m off) are not on the stage and are dropped.</li></ul>`; },
+});
+// 6. spectator area inside a hairpin
+scenes.push({
+  title: '6. A spectator area at a hairpin',
+  bounds: [-62, -70, 22, 48], scale: 5.0,
+  build(v, gN, gP) {
+    const r = 20, S = [V(0, -70), V(0, 0)].concat(arc(-r, 0, r, 0, 180, 30).slice(1)).concat([V(-2 * r, -70)]);
+    D.road(v, gN, S, R.HALF); D.stage(v, gN, S); D.car(v, gN, V(0, -64), V(0, 1));
+    const a0 = 70 - 28, a1 = 70 + Math.PI * r + 28;
+    this.pieces = placeSpectators(v, gP, S, a0, a1, R.HALF, -1);
+    const C = V(-r, -4);
+    D.gazebo(v, gP, add(C, V(0, -14)), V(0, 1), '#8a2c2c');
+    for (let k = 0; k < 4; k++) D.chair(v, gP, add(C, V(-2 + k * 1.3, -10.5)), V(0, 1));
+    D.tarp(v, gP, add(C, V(-6, -22)), add(C, V(-6, -18))); D.tarp(v, gP, add(C, V(6, -22)), add(C, V(6, -18)));
+    for (const a of [55, 90, 125]) { const q = V(-r + (r - R.HALF - 1.2) * Math.cos(a * Math.PI / 180), (r - R.HALF - 1.2) * Math.sin(a * Math.PI / 180)); D.bale(v, gP, q); }
+    D.label(v, gP, add(C, V(0, 2)), 'spectator area', 'middle');
+    D.dim(v, gP, V(-R.HALF, -36), V(-R.HALF - R.SPEC_OFF, -36), `${R.SPEC_OFF} m`, V(0, 0));
+  },
+  rules() { return `<ul>
+    <li><b>On the inside of the corner</b>, the side a car does not slide out to: a run of <code>s_spectator_tape_5m</code> ${R.SPEC_OFF} m off the road's edge
+        (${this.pieces} pieces here, along the hairpin and ~28 m up each leg), the mesh fence <code>s_spectator_grid</code> ${R.FENCE_BEHIND} m behind it.</li>
+    <li>Inside: a gazebo, a row of chairs, tarps. Hay bales on the inside edge at the apex, where the real ones go.</li>
+    <li><b>From the map</b> where it marks spectators (100 Acre Wood, Olympus, Overmountain tags); otherwise at most one per ~4 km at the tightest hairpins.</li></ul>`; },
+});
+
+// ------------------------------------------------------------------ build the page
+const host = document.getElementById('scenes');
+for (const sc of scenes) {
+  const sec = document.createElement('section'); sec.className = 'scene';
+  const left = document.createElement('div');
+  const svg = el('svg', { role: 'img', 'aria-label': sc.title }); left.appendChild(svg);
+  const sz = document.createElement('div'); sz.className = 'scale'; left.appendChild(sz);
+  const rt = document.createElement('div'); rt.className = 'rules';
+  sec.append(left, rt); host.appendChild(sec);
+  const v = makeView(svg, sc.bounds, sc.scale);
+  const gN = el('g', {}, svg), gP = el('g', { class: 'p' }, svg);
+  sc.build(v, gN, gP);
+  const bar = el('g', {}, svg), [W, H] = [(sc.bounds[2] - sc.bounds[0]) * sc.scale, (sc.bounds[3] - sc.bounds[1]) * sc.scale];
+  el('line', { x1: 12, y1: H - 14, x2: 12 + 20 * sc.scale, y2: H - 14, stroke: '#fff', 'stroke-width': 2 }, bar);
+  const tx = el('text', { x: 12, y: H - 20, class: 'lbl' }, bar); tx.textContent = '20 m';
+  const nn = el('text', { x: W - 12, y: 22, class: 'lbl n', 'text-anchor': 'end' }, svg); nn.textContent = 'now: nothing is put here';
+  rt.innerHTML = `<h2>${sc.title}</h2>` + sc.rules();
+  sz.textContent = `True scale: ${sc.scale} px per metre. North up.`;
+}
+
+// the legend
+const LG = [
+  ['tape', 'Road-closure tape', 's_tape_road_closure_6m / 8m / 10m', (v, g) => D.tape(v, g, V(-3, 0), V(3, 0))],
+  ['dir', 'Direction board', 's_corner_dir_*', (v, g) => D.board(v, g, V(0, 0), V(0, -1), 'var(--dir)')],
+  ['radio', 'Radio board', 's_rally_signboard_radio_point(_warning)', (v, g) => D.board(v, g, V(0, 0), V(0, -1), 'var(--radio)')],
+  ['med', 'Medical board', 's_rally_signboard_medical_point(_warning)', (v, g) => D.board(v, g, V(0, 0), V(0, -1), 'var(--medical)')],
+  ['tent', 'Gazebo, 3&times;3 m', 's_rally_gazebo_mod_*_3x3', (v, g) => D.gazebo(v, g, V(0, 0), V(0, 1))],
+  ['post', 'Table, chair, flag', 's_rally_fold_table_01 / chair_01, flagMarker', (v, g) => { D.table(v, g, V(-1.4, 0), V(0, 1)); D.chair(v, g, V(-0.4, 0), V(0, 1)); D.flag(v, g, V(1.4, -0.4)); }],
+  ['spec', 'Spectator tape, fence', 's_spectator_tape_5m, s_spectator_grid_*', (v, g) => { D.tape(v, g, V(-3, 0.5), V(3, 0.5), 0.12); D.fence(v, g, V(-3, -0.6), V(3, -0.6)); }],
+  ['bale', 'Hay bale, tarp', 's_haybaleround_alt_01, s_spectator_tarp_4m', (v, g) => { D.bale(v, g, V(-1.5, 0)); D.tarp(v, g, V(0.5, 0), V(3, 0)); }],
+];
+const lg = document.getElementById('legend');
+for (const [, name, code, draw] of LG) {
+  const d = document.createElement('div'); const s = el('svg', {}); d.appendChild(s);
+  const v = makeView(s, [-4, -2, 4, 2], 5.5); draw(v, s);
+  const t = document.createElement('span'); t.innerHTML = `${name}<br><code>${code}</code>`; d.appendChild(t); lg.appendChild(d);
+}
+
+// 7. the strip
+(function strip() {
+  const svg = document.getElementById('strip'), X0 = 150, X1 = 1170, km = x => X0 + (X1 - X0) * x / 20;
+  const g = el('g', {}, svg), gp = el('g', { class: 'p' }, svg), gn = el('g', { class: 'n' }, svg);
+  const rows = [['Map marks nothing', 60], ['Map marks some', 170], ['At one moment', 280]];
+  for (const [t, y] of rows) {
+    el('line', { x1: X0, y1: y, x2: X1, y2: y, stroke: '#5b5f66', 'stroke-width': 6, 'stroke-linecap': 'round' }, g);
+    const tx = el('text', { x: 10, y: y + 4 }, g); tx.textContent = t;
+  }
+  for (let k = 0; k <= 20; k += 5) { const t = el('text', { x: km(k), y: 330, 'text-anchor': 'middle', fill: 'var(--dim)' }, g); t.textContent = k + ' km'; }
+  // now: the controls only
+  for (const [y] of [[60], [170], [280]]) for (const k of [0, 20]) {
+    el('rect', { x: km(k) - 4, y: y - 16, width: 8, height: 32, fill: '#e5322d' }, g);
+  }
+  const lbl = (gg, x, y, t) => { const e = el('text', { x, y, 'text-anchor': 'middle', 'font-size': 11, fill: 'var(--dim)' }, gg); e.textContent = t; };
+  lbl(g, km(0), 96, 'start'); lbl(g, km(20), 96, 'finish');
+  const nt = el('text', { x: km(10), y: 112, 'text-anchor': 'middle', fill: 'var(--dim)' }, gn); nt.textContent = 'now: only the controls (start, finish, ATC, stop) are dressed';
+  const mark = (y, x, kind, fromMap, dy = 0) => {
+    const col = { radio: 'var(--radio)', medical: 'var(--medical)', spec: '#c0392b', marshal: 'var(--marshal)', tape: '#fff', board: 'var(--dir)' }[kind];
+    const cx = km(x), cy = y + dy;
+    if (kind === 'tape' || kind === 'board') { el('line', { x1: cx, y1: cy - 6, x2: cx, y2: cy + 6, stroke: col, 'stroke-width': 2 }, gp); return; }
+    el('circle', { cx, cy, r: 7, fill: fromMap ? col : 'none', stroke: col, 'stroke-width': 2.5 }, gp);
+  };
+  // junctions: the same in both rows (they come from the road, not the map)
+  const junc = [0.6, 1.1, 1.9, 2.4, 3.3, 4.0, 4.6, 5.8, 6.3, 7.1, 7.7, 8.5, 9.2, 9.9, 10.8, 11.6, 12.2, 13.4, 14.1, 14.9, 15.5, 16.4, 17.0, 18.3, 19.1];
+  const turns = [1.1, 2.4, 4.0, 6.3, 7.7, 9.9, 12.2, 14.1, 15.5, 17.0, 19.1];
+  for (const y of [60, 170]) { for (const j of junc) mark(y, j, 'tape', false, 0); for (const t of turns) mark(y, t, 'board', false, 0); }
+  // row 1, automatic
+  for (const k of [5, 10, 15]) mark(60, k, 'radio', false, -22);
+  for (const k of [3.2, 7.9, 12.5, 17.1]) mark(60, k, 'spec', false, 22);
+  for (const k of [1.1, 2.4, 4.0, 6.3, 7.7, 9.9, 12.2, 14.1, 15.5, 17.0]) mark(60, k, 'marshal', false, -40);
+  // row 2: the map has radio, medical, marshals; spectators by rule? no -- tagged on the map too
+  for (const k of [4.1, 8.8, 13.0, 17.6]) mark(170, k, 'radio', true, -22);
+  mark(170, 8.8, 'medical', true, 40);
+  for (const k of [2.0, 5.5, 9.4, 11.3, 14.6, 18.0]) mark(170, k, 'marshal', true, -40);
+  for (const k of [8.8, 13.0]) mark(170, k, 'spec', true, 22);
+  // row 3: the window
+  const car = 9.0, ahead = 0.35, behind = 0.6;
+  el('rect', { x: km(car - behind), y: 250, width: km(car + ahead) - km(car - behind), height: 60, fill: '#f2b70522', stroke: '#f2b705', 'stroke-dasharray': '4 3' }, gp);
+  el('rect', { x: km(car) - 5, y: 272, width: 10, height: 16, fill: '#d9dde3' }, gp);
+  for (const j of junc) if (j > car - behind && j < car + ahead) mark(280, j, 'tape', false, 0);
+  mark(280, 8.8, 'radio', true, -22); mark(280, 8.8, 'medical', true, 22);
+  const t1 = el('text', { x: km(car - behind) - 8, y: 304, 'text-anchor': 'end', fill: 'var(--dim)' }, gp); t1.textContent = 'taken away 600 m behind';
+  const t2 = el('text', { x: km(car + ahead) + 8, y: 304, fill: 'var(--dim)' }, gp); t2.textContent = 'put down 350 m ahead';
+  // key
+  const keys = [['radio', 'radio'], ['medical', 'medical'], ['spec', 'spectators'], ['marshal', 'marshal']];
+  keys.forEach(([k, t], i) => {
+    const x = X0 + i * 120, col = { radio: 'var(--radio)', medical: 'var(--medical)', spec: '#c0392b', marshal: 'var(--marshal)' }[k];
+    el('circle', { cx: x, cy: 356, r: 6, fill: col }, gp); const e = el('text', { x: x + 12, y: 360 }, gp); e.textContent = t;
+  });
+  const k2 = el('text', { x: X0 + 500, y: 360, fill: 'var(--dim)' }, gp); k2.textContent = 'filled: from the map · outlined: by rule · ticks: tape (white), boards (yellow)';
+})();
+
+// toggle
+const setNow = on => { document.body.classList.toggle('now', on); bNow.classList.toggle('on', on); bProp.classList.toggle('on', !on); };
+bNow.onclick = () => setNow(true); bProp.onclick = () => setNow(false);
+</script>
+</body>
+</html>
