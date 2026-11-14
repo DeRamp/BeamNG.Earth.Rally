@@ -190,6 +190,19 @@ function M.build(line, opts)
   -- highest M.PRIORITY are spoken (slots 2, 3 and 5, 6)
   local speaks = opts.speaks
   local function said(t) return t and (not speaks or speaks[t]) and t or nil end
+  local function saidShape(t) return t and (not speaks or speaks['shape:' .. t]) and t or nil end
+  -- (a chicane the voice cannot call is its two corners again)
+  do
+    local out = {}
+    for _, c in ipairs(corners) do
+      if c.group == 'chicane' and c.parts and not said(c.dir == 'left' and 'chicaneLeftEntry' or 'chicaneRightEntry') then
+        for _, part in ipairs(c.parts) do out[#out + 1] = part end
+      else
+        out[#out + 1] = c
+      end
+    end
+    corners = out
+  end
   local entries = {}
   for ci, c in ipairs(corners) do
     local e = { i0 = c.i0, i1 = c.i1, corner = c, pre = {}, post = {} }
@@ -199,23 +212,27 @@ function M.build(line, opts)
       local item = { type = 'corner' }
       item.descriptor = pacenotes.descriptor(c, step)
       local shape = pacenotes.shape(c, k, step)
-      -- (a crest inside the corner is part of its shape: "over crest", "tightens over crest", "opens over crest")
+      -- (a crest inside the corner is part of its shape: "over crest", "tightens over crest", "opens over crest" --
+      --  when the voice says corner shapes; one that does not (the casual ones) hears "over crest" after the corner)
+      local over = nil
       for _, ev in ipairs(events) do
         if not ev.used and ev.kind == 'crest' and ev.i >= c.i0 and ev.i <= c.i1 then
-          local over = shape == nil and 'overCrest' or shape == 'tightens' and 'tightensOverCrest' or
-                       shape == 'opens' and 'opensOverCrest' or nil
-          if over then shape, ev.used = over, true end
+          over = shape == nil and 'overCrest' or shape == 'tightens' and 'tightensOverCrest' or
+                 shape == 'opens' and 'opensOverCrest' or nil
+          if over and saidShape(over) then shape, ev.used = over, true end
           break
         end
       end
-      if shape == 'tightens' and grade then
+      if shape == 'tightens' and grade and saidShape('tightensDown') then
         local g = 0
         for i = c.i0, c.i1 do g = g + grade[i] end
         if g / (c.i1 - c.i0 + 1) <= -M.TIGHTENS_DOWN_GRADE then shape = 'tightensDown' end
       end
-      item.shape = shape
+      item.shape = saidShape(shape)
       e.item = item
-      e.caution = pacenotes.caution(c, v, step, corners[ci - 1] and corners[ci - 1].i1, shape)
+      -- (the caution reads the corner as it is, said in its shape or not)
+      e.caution = pacenotes.caution(c, v, step, corners[ci - 1] and corners[ci - 1].i1,
+                                    over == 'tightensOverCrest' and over or shape)
       if c.twisty and said('twisty') then e.post[1] = { type = 'twisty', i = c.i1, prio = M.PRIORITY.twisty } end
     end
     entries[#entries + 1] = e
@@ -240,13 +257,13 @@ function M.build(line, opts)
     local e = host(f.i, f.keep and 0 or f.before, f.keep and 0 or f.after)
     if e then
       local where = f.i < e.i0 and 'pre' or (f.i > e.i1 and 'post' or 'within')
-      local t
-      if f.keep then where, t = 'pre', f.alone             -- (inside a corner: "keep left, 4 right")
+      local t, base = nil, nil
+      if f.keep then where, t, base = 'pre', f.alone, f.keepBase   -- (inside a corner: "keep left, 4 right")
       elseif where == 'within' then where, t = 'post', f.within or f.post
       else t = f[where] end
       t = said(t)
       if t then
-        table.insert(e[where], { type = t, i = f.i, prio = f.prio, landmark = f.landmark })
+        table.insert(e[where], { type = t, base = base, i = f.i, prio = f.prio, landmark = f.landmark })
         return true
       end
     end
@@ -283,7 +300,7 @@ function M.build(line, opts)
         for _, ev in ipairs(events) do
           if not ev.used and ev.kind == 'crest' and math.abs(ev.i - i) <= mergeN and callable(i) and
              said(t .. 'OverCrest') then
-            t, ev.used = t .. 'OverCrest', true
+            f.keepBase, t, ev.used = t, t .. 'OverCrest', true
             break
           end
         end
@@ -324,9 +341,9 @@ function M.build(line, opts)
   local ahead = math.ceil(M.HILL_AHEAD_M / step)
   for _, h in ipairs(hills) do
     for _, c in ipairs(corners) do
-      local i = math.max(c.i0, h.i0)
+      local i = math.min(math.max(c.i0, h.i0), c.i1)
       if c.i1 + ha >= h.i0 and c.i1 <= h.i1 - ahead and callable(i) then
-        features[#features + 1] = { i = math.min(i, c.i1), post = h.kind, within = h.kind, prio = M.PRIORITY.hill,
+        features[#features + 1] = { i = i, post = h.kind, within = h.kind, prio = M.PRIORITY.hill,
                                     before = 0, after = ha }
         break
       end
@@ -346,7 +363,7 @@ function M.build(line, opts)
   -- the finish: on the note that ends last when that is close to it, else a note of its own on the line ("over
   -- finish", as the game's own stages have it; no "to stop" after it: the co-driver is off once the finish is crossed)
   local last = nil
-  for _, e in ipairs(entries) do if not last or e.i1 > last.i1 then last = e end end
+  for _, e in ipairs(entries) do if not e.keep and (not last or e.i1 > last.i1) then last = e end end
   if last and (np - last.i1) * step <= M.FINISH_ON_NOTE_M then
     table.insert(last.post, { type = 'finish', i = np, prio = M.PRIORITY.finish })
   else
@@ -357,6 +374,7 @@ function M.build(line, opts)
   -- calls of one family say the same thing: one of them per note
   local FAMILY = { jump = 'jump', bigJump = 'jump', overJump = 'jump', crest = 'crest', bigCrest = 'crest',
                    smallCrest = 'crest', intoCrest = 'crest', overCrest = 'crest', brakeOverCrest = 'crest',
+                   keepLeftOverCrest = 'crest', keepRightOverCrest = 'crest', keepMiddleOverCrest = 'crest',
                    dip = 'dip', badDip = 'dip', throughDip = 'dip' }
   local landmarks = 0
   local calls = {}
@@ -370,6 +388,8 @@ function M.build(line, opts)
     local out = {}
     for _, it in ipairs(list) do
       local fam = FAMILY[it.type] or it.type
+      -- (a keep over a crest where the note says the crest already: the keep alone)
+      if seen[fam] and it.base and said(it.base) then it.type, fam = it.base, FAMILY[it.base] or it.base end
       if #out < 2 and not seen[fam] then seen[fam] = true out[#out + 1] = it end
     end
     table.sort(out, function(a, b)

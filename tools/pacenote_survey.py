@@ -2,10 +2,13 @@
 """What the co-driver would call on every matched line in a folder: each call's count per km, over all of them.
 
     python tools/pacenote_survey.py <earthRally user folder or its matched/ folder> [--stage <part of a file name>]
+                                    [--casual]
 
 Builds each stage's notebook with the mod's own stageWriter.build (under LuaJIT through lupa, as the offline tests
 do), the whole matched line taken as the stage, so the thresholds in pacenotes.lua can be tuned against real roads
 before anyone drives them. With --stage it prints that stage's notes one by one, in order, with where they are.
+A line saved twice (the same points under two names) is counted once. --casual: as a casual voice hears it (the
+calls the game's english/casual style says, below), what the rallyAdapter.speaks filter does in game.
 Reads only; writes nothing. Needs `pip install lupa`.
 """
 import argparse
@@ -18,6 +21,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 LUA = ROOT / 'mod' / 'earth_rally' / 'lua' / 'ge' / 'extensions'
 R_EARTH = 6371008.8
+# gameplay/rally/compositors/styles/english/casual.lua (0.40.5): its modifiers, their aliases, its descriptors; no
+# corner shapes
+CASUAL = ['overJump', 'crest', 'watersplash', 'ontoGravel', 'ontoIce', 'ontoTarmac', 'ontoMud', 'slippy', 'stop',
+          'toStop', 'finish', 'chicaneLeftEntry', 'chicaneRightEntry', 'jump', 'badDipJump', 'badJump', 'bigJump',
+          'brakeOverCrest', 'middleOverCrest', 'keepLeftOverCrest', 'keepMiddleOverCrest', 'keepRightOverCrest',
+          'overCrest', 'crestOnly', 'intoCrest', 'longCrest', 'bigCrest', 'smallCrest', 'water', 'intoWater',
+          'overFinish', 'descriptor:flat', 'descriptor:square', 'descriptor:hairpin', 'descriptor:openHairpin',
+          'descriptor:tightHairpin']
 
 
 def flat(points):
@@ -34,6 +45,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('folder')
     ap.add_argument('--stage')
+    ap.add_argument('--casual', action='store_true')
     a = ap.parse_args()
     folder = Path(a.folder)
     if (folder / 'matched').is_dir():
@@ -51,7 +63,7 @@ def main():
     build = lua.execute('''
       local writer = require('earthRally/stageWriter')
       local geo = require('earthRally/geo')
-      return function(line, landmarks)
+      return function(line, landmarks, speaks)
         local cum = geo.cumulative(line)
         local mute, from = {}, nil
         for i, p in ipairs(line) do
@@ -65,18 +77,25 @@ def main():
           if off <= 15 then lms[#lms + 1] = { s = s, type = lm.type } end
         end
         return writer.build(line, { startM = 0, finishM = cum[#cum], mute = mute, landmarks = lms,
-                                    quatFn = function() return 0, 0, 0, 1 end })
+                                    quatFn = function() return 0, 0, 0, 1 end, speaks = speaks })
       end''')
     geo = lua.require('earthRally/geo')
     locate, cumulative = geo.locate, geo.cumulative
 
+    speaks = lua.table_from({k: True for k in CASUAL}) if a.casual else None
     total = Counter()
-    km, stages = 0.0, 0
+    km, stages, twins = 0.0, 0, 0
+    seenLines = set()
     for f in files:
         m = json.loads(f.read_text(encoding='utf-8'))
         pts = m.get('points') or []
         if len(pts) < 50:
             continue
+        key = (len(pts), tuple(round(x, 6) for x in pts[0][:2]), tuple(round(x, 6) for x in pts[-1][:2]))
+        if key in seenLines:
+            twins += 1
+            continue
+        seenLines.add(key)
         line = flat(pts)
         lat0, lon0 = pts[0][0], pts[0][1]
         c = math.cos(math.radians(lat0))
@@ -97,7 +116,7 @@ def main():
         lt = lua.table_from([lua.table_from({k: v for k, v in p.items() if v is not None and v is not False})
                              for p in line])
         lmt = lua.table_from([lua.table_from(x) for x in lms])
-        built = build(lt, lmt)
+        built = build(lt, lmt, speaks)
         if a.stage:
             line_t, cum_t = lt, cumulative(lt)
         km += built.lengthM / 1000
@@ -129,8 +148,9 @@ def main():
                 p = pn.pacenoteWaypoints[1].pos
                 _, _, along, _ = locate(line_t, cum_t, lua.table_from({'x': p[1], 'y': p[2]}))
                 print('%3d  %6.0f m  %s' % (n, along, ' | '.join(words)))
-    print('%d stages, %.1f km, %d notes (%.2f / km; one finish note on each stage among them)' %
-          (stages, km, total['notes'], total['notes'] / max(km, 1e-9)))
+    print('%d stages (%d more the same line as one of them, left out), %.1f km, %d notes (%.2f / km; one finish '
+          'note on each stage among them)%s' % (stages, twins, km, total['notes'], total['notes'] / max(km, 1e-9),
+                                               ', as a casual voice hears them' if a.casual else ''))
     for k, v in sorted(total.items(), key=lambda kv: -kv[1]):
         if k != 'notes':
             print('  %-22s %6d   %6.2f / km' % (k, v, v / max(km, 1e-9)))

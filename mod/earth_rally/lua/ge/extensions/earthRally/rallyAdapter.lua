@@ -106,16 +106,19 @@ function M.systemNote(name)
 end
 
 -- The calls the player's co-driver voice can say: { [call] = true } off the english style its voice pack is made for
--- (gameplay/rally/compositors/styles/<style>.lua: its modifiers and their aliases), and that style's name. The casual
--- voices (four of the game's seven packs) say a dozen of the calls the detailed ones do and nothing at all for the
+-- (gameplay/rally/compositors/styles/<style>.lua: its modifiers and their aliases; its corner shapes as
+-- 'shape:<name>' and descriptors as 'descriptor:<name>'), and that style's name. The casual voices (four of the
+-- game's seven packs) say a dozen of the calls the detailed ones do, no corner shape at all, and nothing for the
 -- rest, so stageWriter.build leaves those out rather than writing notes that are silent. nil when it cannot be told
--- (another game version, no voice pack): then every call is written, as before.
+-- (another game version, no voice pack): then every call is written, as before. Read from the player's chosen voice
+-- (our missions carry none of their own) when the notes are built: a voice changed in Options during a run is used
+-- from the next run (a retry rebuilds them).
 M.VOICEPACK = '/lua/ge/extensions/gameplay/rally/voicepack'
 M.STYLES = '/lua/ge/extensions/gameplay/rally/compositors/styles/'
 function M.speaks()
   local okV, vp = pcall(require, M.VOICEPACK)
   if not okV or type(vp) ~= 'table' or type(vp.resolveEffectiveEntry) ~= 'function' then return nil end
-  local okE, _, entry = pcall(vp.resolveEffectiveEntry, nil, nil, { globalOnly = true })
+  local okE, _, entry = pcall(vp.resolveEffectiveEntry, nil, nil, { globalOnly = true, writeSettings = false })
   local style = okE and type(entry) == 'table' and entry.compositorStyle or nil
   if type(style) ~= 'string' or not style:match('^[%w_/]+$') then return nil end
   local okS, st = pcall(require, M.STYLES .. style)
@@ -124,6 +127,11 @@ function M.speaks()
   local out = {}
   for name in pairs(ct.modifiers) do out[name] = true end
   for name in pairs(type(ct.modifierAliases) == 'table' and ct.modifierAliases or {}) do out[name] = true end
+  local corner = type(ct.corner) == 'table' and ct.corner or {}
+  for _, key in ipairs({ 'shapes', 'shapeAliases', 'descriptors', 'descriptorAliases' }) do
+    local prefix = key:find('^shape') and 'shape:' or 'descriptor:'
+    for name in pairs(type(corner[key]) == 'table' and corner[key] or {}) do out[prefix .. name] = true end
+  end
   return out, style
 end
 

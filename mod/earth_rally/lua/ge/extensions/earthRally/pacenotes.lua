@@ -129,12 +129,14 @@ end
 local function merged(cs, a, b, group)
   local r, ang = huge, 0
   for k = a, b do r = min(r, cs[k].minRadius) ang = max(ang, cs[k].angleDeg) end
+  local parts = {}
+  for k = a, b do parts[#parts + 1] = cs[k] end
   return { i0 = cs[a].i0, i1 = cs[b].i1, dir = cs[a].dir, angleDeg = ang, minRadius = r, group = group,
-           count = b - a + 1 }
+           count = b - a + 1, parts = parts }
 end
 
 -- corners: geo.corners' list in order. Returns the list with each chicane made one entry ({ ..., group = 'chicane',
--- count = 2 }) and the first corner of each twisty run marked (twisty = how many corners the run has).
+-- count = 2, parts = its two corners }) and the first corner of each twisty run marked (twisty = how many corners the run has).
 function M.group(corners, step)
   local out, n, i = {}, #corners, 1
   local function gap(a, b) return (b.i0 - a.i1) * step end
@@ -176,13 +178,13 @@ end
 -- A corner a lot slower than the road leading into it: the speed through it against the fastest the car got in the
 -- CAUTION_LOOK_M before it, and not before the end of the corner before it (prevI1, a sample index, or nil): the
 -- approach is the road since the last corner. Only where that approach is fast at all -- a slow corner after a slow
--- one is no surprise. Levels: 1 care, 2 caution, 3 double caution. And a corner that tightens on a fast approach
--- (shape 'tightens', 'tightensDown' or 'tightensOverCrest'): at least a care, one more over a crest -- where the
--- game's own stages put most of theirs.
+-- one is no surprise. Levels: 1 care, 2 caution, 3 double caution. And a corner that tightens over a crest on a
+-- fast approach (shape 'tightensOverCrest': blind, and tighter than it starts) is at least a caution. (A plain
+-- tightening corner is not: its shape says it, and the game's own stages put a caution on only a fifth of theirs.)
 M.CAUTION_LOOK_M = 250
 M.CAUTION_V_MS = 25      -- 90 km/h: the approach at least this fast
 M.CAUTION = { 0.40, 0.30, 0.22 }   -- corner speed / approach speed at or under these
-M.CAUTION_TIGHTENS_V_MS = 20       -- 72 km/h: a tightening corner on an approach this fast is a care
+M.CAUTION_TIGHTENS_V_MS = 20       -- 72 km/h: a corner tightening over a crest on an approach this fast
 
 function M.caution(c, v, step, prevI1, shape)
   local vc = huge
@@ -195,9 +197,7 @@ function M.caution(c, v, step, prevI1, shape)
     local r = vc / va
     for l, t in ipairs(M.CAUTION) do if r <= t then level = l end end
   end
-  if (shape == 'tightens' or shape == 'tightensDown' or shape == 'tightensOverCrest') and va >= M.CAUTION_TIGHTENS_V_MS then
-    level = math.min(3, math.max(level or 0, shape == 'tightensOverCrest' and 2 or 1))
-  end
+  if shape == 'tightensOverCrest' and va >= M.CAUTION_TIGHTENS_V_MS then level = max(level or 0, 2) end
   return level
 end
 
@@ -206,17 +206,19 @@ end
 -- Crests and dips are where the grade changes: the grade over the GRADE_OVER_M after a point against the one before
 -- it (dg, a fraction: -0.1 is a road going from level to 10 % down). Heights are smoothed over three samples first.
 -- The strongest first, and nothing of the same kind within EVENT_M of one already taken, nor of the other kind
--- within OPPOSITE_M of one RIM_RATIO times as strong: the two rims of a hollow read as crests of about half its
--- strength, and are not. A jump is a crest the car cannot follow at the speed it gets there: the sharper grade
--- change over JUMP_OVER_M gives the crest's vertical radius, and v^2 / radius over g is how much of the car's weight
--- it would take to stay on the road (1 = the tyres just go light); a big jump is a big crest as well.
+-- within OPPOSITE_M of any stronger one RIM_RATIO times as strong, taken or not: the two rims of a hollow read as
+-- crests of about half its strength, and are not (nor are they when the hollow itself gave way to a stronger crest).
+-- A jump is a big crest (JUMP_CREST_DG) the car cannot follow at the speed it gets there: the sharper grade change
+-- over JUMP_OVER_M gives the crest's vertical radius, and v^2 / radius over g is how much of the car's weight it
+-- would take to stay on the road (1 = the tyres just go light). (Only a big crest: most lifts over JUMP_LIFT are at
+-- the speed model's top speed, where a few centimetres of elevation data make the difference.)
 -- Nothing is read where the heights themselves are not a road's: a step between two samples steeper than BAD_GRADE
 -- within GRADE_OVER_M (elevation data does that -- a matched line's 6 m drop in 4 m -- roads do not).
 M.GRADE_OVER_M = 20
 M.EVENT_M = 40
 M.OPPOSITE_M = 60
 M.RIM_RATIO = 1.3
-M.BAD_GRADE = 0.25
+M.BAD_GRADE = 0.6       -- (60 %: no road; the matched line's 6 m in 4 m is 150 %)
 M.CREST_DG = 0.06        -- a crest
 M.SMALL_CREST_DG = 0.08  -- weaker than this: a small one
 M.BIG_CREST_DG = 0.14    -- this or more: a big one
@@ -226,7 +228,9 @@ M.BAD_DIP_DG = 0.22
 M.ALONE_DIP_DG = 0.18
 M.JUMP_OVER_M = 10
 M.JUMP_LIFT = 1.4
+M.JUMP_CREST_DG = 0.14   -- a jump is a crest this big at least ...
 M.BIG_JUMP_LIFT = 2.4
+M.BIG_JUMP_DG = 0.22     -- ... a big one this big, and BIG_JUMP_LIFT
 M.JUMP_MIN_V_MS = 15
 M.HILL_GRADE = 0.08      -- "up" / "down": at least this steep ...
 M.HILL_M = 100           -- ... for at least this far
@@ -292,14 +296,16 @@ function M.heights(pts, step, v)
   end)
   local eo = max(1, floor(M.OPPOSITE_M / step + 0.5))
   local taken = {}
-  for _, i in ipairs(cands) do
+  for ci, i in ipairs(cands) do
     local d, ok = dg[i], true
     for _, j in ipairs(taken) do
-      local same = (dg[j] < 0) == (d < 0)
-      if (same and abs(j - i) <= e) or (not same and abs(j - i) <= eo and abs(dg[j]) >= abs(d) * M.RIM_RATIO) then
-        ok = false
-        break
-      end
+      if (dg[j] < 0) == (d < 0) and abs(j - i) <= e then ok = false break end
+    end
+    -- (a rim: any stronger candidate of the other kind close by, whether it was taken or not)
+    for cj = 1, ci - 1 do
+      if not ok then break end
+      local j = cands[cj]
+      if (dg[j] < 0) ~= (d < 0) and abs(j - i) <= eo and abs(dg[j]) >= abs(d) * M.RIM_RATIO then ok = false end
     end
     if ok then taken[#taken + 1] = i end
   end
@@ -319,9 +325,9 @@ function M.heights(pts, step, v)
         local radius = (w2 * step) / -sharp
         lift = v[i] * v[i] / radius / M.G
       end
-      if lift >= M.JUMP_LIFT and (v[i] or 0) >= M.JUMP_MIN_V_MS then
-        events[#events + 1] = { i = i, kind = 'jump', alone = true, lift = lift, dg = d,
-                                size = (lift >= M.BIG_JUMP_LIFT and d <= -M.BIG_CREST_DG) and 'big' or nil }
+      if lift >= M.JUMP_LIFT and (v[i] or 0) >= M.JUMP_MIN_V_MS and d <= -M.JUMP_CREST_DG then
+        events[#events + 1] = { i = i, kind = 'jump', alone = true, lift = lift, dg = d, v = v[i],
+                                size = (lift >= M.BIG_JUMP_LIFT and d <= -M.BIG_JUMP_DG) and 'big' or nil }
       else
         local size = d <= -M.BIG_CREST_DG and 'big' or (d > -M.SMALL_CREST_DG and 'small' or nil)
         events[#events + 1] = { i = i, kind = 'crest', size = size, alone = d <= -M.ALONE_CREST_DG, dg = d }

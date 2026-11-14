@@ -241,6 +241,73 @@ do
   local climb = notes(build(road({ { 'straight', 100 }, { 'arc', 60, 60 }, { 'straight', 600 } }, function(x)
     return x * 0.12 end)))
   T.check(has(climb, 'up'), 'a stage that starts on a 12 % climb: "up" after the corner (' .. show(climb) .. ')')
+  -- the second reviews' cases (2026-11-14)
+  -- a casual voice says no corner shape: a crest inside a corner is "over crest" after it, not a silent shape
+  local casualSet = { finish = true, crest = true, overJump = true, overCrest = true, intoCrest = true,
+                      bigCrest = true, smallCrest = true, brakeOverCrest = true, keepLeftOverCrest = true,
+                      keepRightOverCrest = true, jump = true, bigJump = true, chicaneLeftEntry = true,
+                      chicaneRightEntry = true, ['descriptor:hairpin'] = true }
+  local ocLine = road({ { 'straight', 500 }, { 'arc', 60, 90 }, { 'straight', 500 } }, hump(547, 60, 2))
+  local occ = notes(writer.build(ocLine, { startM = 0, finishM = 1e9, quatFn = qf, speaks = casualSet }))
+  T.check(has(occ, '4:corner,5:overCrest') and not has(occ, 'corner/'),
+    'a crest inside a corner, casual voice: "over crest" after the corner, no shape (' .. show(occ) .. ')')
+  -- a dip given way to a stronger crest leaves no crest at its far rim
+  do
+    local function bump(s0, len, h) return hump(s0, len, h) end
+    local A, B = bump(600, 40, 3), bump(645, 50, 2)
+    local pts, vv = {}, {}
+    for i = 1, 240 do local s = (i - 1) * 5 pts[i] = { x = 0, y = s, z = A(s) - B(s) } vv[i] = 20 end
+    local ev = pn.heights(pts, 5, vv)
+    local rim = false
+    for _, e in ipairs(ev) do if e.kind == 'crest' and (e.i - 1) * 5 > 640 then rim = true end end
+    T.check(#ev == 1 and not rim, 'a crest, a weaker hollow just after it: the crest alone, not the hollow\'s rim (' ..
+      #ev .. ' events)')
+  end
+  -- a sharp hump a road can have (3.5 m over 30 m, 37 % at its steepest) is a jump, not bad heights
+  local kick = notes(build(road({ { 'straight', 1200 } }, hump(600, 30, 3.5))))
+  T.check(has(kick, '[Jj]ump'), 'a 3.5 m hump over 30 m, flat out: a jump (' .. show(kick) .. ')')
+  -- a fork on a second crest inside a corner that says its own crest: "keep left", one crest call on the note
+  local kk = notes(build(road({ { 'straight', 500 }, { 'arc', 90, 150 }, { 'straight', 400 } },
+    function(x) return hump(540, 50, 2)(x) + hump(620, 50, 2)(x) end), { { s = 620, type = 'keepLeft' } }))
+  local crests = 0
+  for _, n in ipairs(kk) do if n:find('4:corner') then for _ in n:gmatch('Crest') do crests = crests + 1 end end end
+  T.check(has(kk, '2:keepLeft,') and crests == 1,
+    'a fork on a crest in a corner over a crest: "keep left", "over crest" once (' .. show(kk) .. ')')
+  -- a voice with no chicane call hears the chicane's two corners
+  local chLine = road({ { 'straight', 300 }, { 'arc', 20, 60 }, { 'straight', 5 }, { 'arc', 20, -60 },
+                        { 'straight', 300 } })
+  local chNo = writer.build(chLine, { startM = 0, finishM = 1e9, quatFn = qf, speaks = { finish = true } })
+  local cn2 = notes(chNo)
+  local corners2 = 0
+  for _, n in ipairs(cn2) do if n:find('4:corner') then corners2 = corners2 + 1 end end
+  T.check(corners2 == 2 and not has(cn2, 'chicane'), 'a chicane, a voice with no chicane call: two corners (' ..
+    show(cn2) .. ')')
+  -- a corner that only tightens, on a fast approach: its shape says it, no caution for that alone
+  local tt = notes(build(road({ { 'straight', 500 }, { 'arcs', { { 120, 40 }, { 60, 50 } } }, { 'straight', 400 } })))
+  T.check(has(tt, 'tightens') and not has(tt, 'caution'), 'a fast corner that tightens: "tightens", no caution (' ..
+    show(tt) .. ')')
+  -- rallyAdapter.speaks: the style's modifiers, aliases, shapes and descriptors; and the voice settings untouched
+  do
+    local ra = require('earthRally/rallyAdapter')
+    local seenOpts
+    package.loaded[ra.VOICEPACK] = { resolveEffectiveEntry = function(_, _, o)
+      seenOpts = o
+      return 'x', { compositorStyle = 'english/casualtest' }, {} end }
+    package.loaded[ra.STYLES .. 'english/casualtest'] = { componentTypes = {
+      corner = { descriptors = { hairpin = {} }, descriptorAliases = { tightHairpin = 'hairpin' } },
+      modifiers = { crest = {} }, modifierAliases = { overCrest = 'crest' } } }
+    local sp, style = ra.speaks()
+    T.check(style == 'english/casualtest' and sp.crest and sp.overCrest and sp['descriptor:tightHairpin'] and
+            not sp['shape:overCrest'], 'speaks: modifiers, aliases and descriptors; no shape for a style with none')
+    T.check(seenOpts and seenOpts.writeSettings == false, 'speaks: the voice pack asked not to write settings')
+    package.loaded[ra.STYLES .. 'english/shapetest'] = { componentTypes = {
+      corner = { shapes = { overCrest = {} } }, modifiers = {} } }
+    package.loaded[ra.VOICEPACK] = { resolveEffectiveEntry = function()
+      return 'x', { compositorStyle = 'english/shapetest' }, {} end }
+    local sp2 = ra.speaks()
+    T.check(sp2 and sp2['shape:overCrest'], 'speaks: a style\'s corner shapes')
+    package.loaded[ra.VOICEPACK] = nil
+  end
   -- every call written is one the game's english style knows
   local mods = {
     crest = 1, bigCrest = 1, smallCrest = 1, intoCrest = 1, jump = 1, bigJump = 1, overJump = 1, dip = 1, badDip = 1,
