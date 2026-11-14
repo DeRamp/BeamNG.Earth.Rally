@@ -62,6 +62,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import contextlib
 import types
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -329,7 +330,11 @@ class App:
             anchors={AID: self._anchor(self.base)}, mapdata=self.md, surface=None, road_widths=None,
             dej_on='off', airports_db=None, grader_lock=threading.Lock(), out_dir=str(self.out),
             vfs_dir=VFS_DIR, traffic=traffic, road_pool=None,
-            dem=types.SimpleNamespace(sample=lambda la, lo, zoom: np.zeros(np.shape(la))))
+            dem=types.SimpleNamespace(sample=lambda la, lo, zoom: np.zeros(np.shape(la)),
+                                      # (the server enters this for a cached-only build: every sample of this thread
+                                      #  reads only elevation already on disk. Flat ground here, so there is nothing
+                                      #  to refuse -- the stub exists so road_graph_data can enter it at all.)
+                                      cached_only=contextlib.nullcontext))
         # the real build, bound to this stand-in: Connection.road_graph calls it through the server
         s.road_graph_data = lambda *a, **kw: self.earthd.Server.road_graph_data(s, *a, **kw)
         s.grader_for = lambda a: None

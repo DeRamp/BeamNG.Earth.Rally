@@ -148,6 +148,34 @@ real server, and a check that reintroducing each bug turns it red.
 matching. The four endings gain a fifth: asked, and told no. How loud the confirmation needs to be depends on
 whether the `layers` subset lands, so this follows step 2.
 
+## Also in 1.3.1: running an auto recce again (the user, 2026-11-13)
+
+> "I can't run auto recce on Maryhill as it's already been recced, we should add a reset button to run it again"
+
+**There is no way back.** The Auto recce button shows only on stages tagged *Recce needed*. The moment a line
+exists the button is gone, so a line the player is unhappy with -- a bad match, a wrong-looking one, one made before
+a fix -- can only be removed by deleting a file by hand. This was foreseen when the button was specified ("an amber
+stage needs a way to retry") and shipped anyway; it is now a real obstruction, hit while testing.
+
+It is not only a convenience. 1.3.1 changes what an auto recce produces (the gain/loss figures are stored with the
+line, and the auto recce's heights are to be fixed), so every line made before those changes is stale, and there is
+currently no way for a player to refresh one.
+
+**What it needs to cover**, which is more than one button:
+
+- A line the player wants re-made, on a stage that already has one.
+- The difference between a line from an **auto recce** and a **driven recce**. Re-running the auto recce over
+  someone's driven recce would throw away the thing they spent real time on: a recce must not be silently replaced,
+  and the two want different wording.
+- What "reset" means exactly: re-run the auto recce in place, or remove the line and leave the stage as it was?
+  The first is what the user asked for; the second is what the word says. Probably both, worded plainly.
+- Where it lives. The stage page has room (its action row already holds four buttons). A stage **list** row does
+  not, and the Status column cannot take a second control -- that arithmetic is already in
+  `docs/mockups-1.3.1/`/`mockups-1.3.0/`.
+
+**Mock-up first**, as any UI change, and it folds naturally into the 1.3.0 button's four endings: a fifth path from
+a stage that is already *Ready*.
+
 ## Also in 1.3.1: the stage page's four tiles (the user, 2026-11-13)
 
 > "it dosent tell you how many corners there are after you recce a stage. it should drop bridges and junctions, and
