@@ -13,105 +13,140 @@ so nobody later reads the history as inconsistent.)
 ## Why this is the next thing
 
 1.3.0's auto recce reads **only map cells already on disk and downloads nothing**. That is deliberate -- a road
-graph request must never outrun the world the player is driving in, nor double the server's own request rate
-against its upstream data sources. It also means the feature only works where the player has already been.
+graph request must never outrun the world the player is driving in, nor spend the server's rate limits with its
+upstream sources. It also means the feature works only where the player has already driven: most of twelve rallies
+on this machine, and none of a map dropped in for somewhere new. 1.3.0's stated goal was *"a dropped-in map drives
+with no recce"*. The feature is finished except for the data.
 
-On this machine that is most of twelve rallies, so it looked fine. For anyone dropping in a map of somewhere they
-have not driven -- which is the whole of 1.3.0's stated goal, *"a dropped-in map drives with no recce"* -- the
-answer today is a polite refusal. The feature is finished except for the data.
+## The decisions (the user, 2026-11-13)
 
-## What already exists, and the one thing that does not
+**1. Use BeamNG.Earth's own download-a-cached-area tool, fed a shape. A route corridor, not a polygon.**
 
-**BeamNG.Earth can already do the download.** `server/areas.py` has an area pre-cache with a **route corridor**
-mode: a route plus a half width, walked in order, fetching `area_layers()` over the corridor's tiles. That set is
-`mapdata.LAYERS + ("building_parts", "places")`, and `roads` is a plain vector layer in it, not one of the
-`OPTIONAL_LAYERS` built only on request (`server/mapdata.py:131-137`). So the corridor pre-cache fetches exactly the
-cells a road-graph window needs. It reports progress, it can be paused, resumed and deleted (`area_cmd`), and it has
-a `fast` mode the mod already pauses the game for.
+Not a fetching mode on `api.roadGraph`. A research pass recommended that and it was overruled, rightly: the open
+pull request argues at length that a road graph must *never* fetch, and teaching it to fetch after all would undo
+the argument it is being reviewed on. The area tool already exists, is already gated against hurting the running
+world, is already visible to the player and is already resumable.
 
-**What does not exist is a way for an add-on to ask for it over a line of its own.** The client messages are
-`area_plan`, `area_add` and `area_cmd` (`server/earthd.py:8677-8681`), and a route area is only ever
-`{"route": "current"}` -- the player's last planned GPS route (`_area_route`, `earthd.py:8146-8152`). There is no
-points form, and the modding API exposes none of it at all.
+**Route rather than polygon, and the reason is honesty rather than bytes:** in bytes the two are the same. Measured
+over 116 real stages, a bounding box costs **1.03x** a 300 m corridor at the median, 1.32x at p90, never worse than
+2.0x -- `CELL_RING = 2` dilates any corridor into a band about 7 km wide, which swallows the geometric difference.
+(An earlier draft of this plan claimed "more than ten times". It was wrong, which is why the research pass was run.)
+A corridor is still the right request: it describes the ground the stage crosses, it does not claim a county because
+a stage runs diagonally across one, and it is the shape a reviewer would expect an add-on to ask for.
 
-So the stage corridor cannot be asked for today. Three ways round that, and they are not equal.
+**2. We write whatever API we need ourselves, and open a pull request once it works. We do not ask him for
+anything.** No question first, no waiting on an answer -- the same way `api.roadGraph` was done: written, tested in
+a game, submitted. If a layer subset is wanted, we write that too rather than requesting it.
 
-### 1. Ask upstream for the points form -- CHOSEN (the user, 2026-11-13)
+That removes the only thing that was blocking this version. Nothing here waits on another person.
 
-Extend `area_plan` / `area_add` to take explicit points beside `route: "current"`, and expose it through the modding
-API: something of the shape `api.preloadRoute(points, halfM, opts, callback)` with progress, plus a way to cancel.
-`Areas.plan_route` / `add_route` already take `(lats, lons, half, ...)`, so the server change is small -- the same
-shape as `api.roadGraph`: a parameter that already exists, exposed at a point of the caller's choosing.
+### What we have to write, and it is small
 
-**It goes in a pull request of its own, not in the `api.roadGraph` one** (the user, 2026-11-13). The draft of this
-plan argued for folding them together -- one reviewer, one review -- and the user overruled it, rightly: the road
-graph is written, tested and working in a game, and holding it back to grow a second feature would cost it its place
-in the queue for no benefit to the thing already finished. `api.roadGraph` goes out as it stands and starts being
-reviewed; the corridor pre-load follows as a second request once it is written.
+`Areas.plan_route(lats, lons, half, mode)` and `Areas.add_route(lats, lons, half, name, mode, fast)`
+(`server/areas.py:469, 578`) are **already generic**: they take arbitrary points and validate them through
+`check_route`, with nothing downstream assuming a GPS origin. The only thing refusing our line is the message
+handler:
 
-The cost of that split, stated so nobody is surprised: the road graph arrives upstream without a way to fetch the
-data it reads, so a reviewer may well ask how an add-on is supposed to get cells it does not have. The answer is
-this plan, and the pull request should say so in a line rather than leave him to wonder.
+```python
+def _area_route(self, msg):                      # server/earthd.py:8146
+    if msg.get("route") != "current":
+        return None
+    pts = self.route_points or []
+```
 
-### 2. Use the box form through the internal message (works today, and costs)
+So: let `_area_route` accept explicit points beside `"current"`, and expose it through the modding API behind a
+capability flag. A flag is mandatory rather than nice -- on today's server, points fall through `_area_route` to the
+**box** path and the player is told *"an area needs south, west, north and east in degrees"*, which an add-on
+cannot act on.
 
-`area_add` also takes a plain `{s, w, n, e}` box, which needs nothing new. The mod could send that message itself
-(`net.send`, as `earthAdapter` already reaches internals).
+Worth writing in the same change, since we are in there: a **`layers` subset**, so an add-on's corridor can fetch
+the roads alone. The cost section below is why that is the difference between 330 MB and a tenth of it. And **`fast`
+must not be reachable by an add-on at all** -- see further down.
 
-The cost is real. A stage's bounding box is far bigger than its corridor: Dalles Mtn Up is 16 km and bends, so its
-box is on the order of 150 km2 against perhaps 10 km2 of corridor -- **more than ten times the download** for the
-same answer. And a saved area is a player-facing thing: it appears in the 3D map's list and stays there until
-something deletes it, so the mod would be creating and tidying up entries in a UI it does not own.
+**It is a pull request of its own**, not folded into the `api.roadGraph` one (the user, 2026-11-13). That one is
+written, tested, working in a game and already open; holding it back to grow a second feature would cost it its
+place in the queue and buy the finished thing nothing.
 
-Worth keeping as the fallback if the upstream ask is refused or slow, and worth measuring before dismissing: if a
-typical stage's box is only two or three times its corridor, the simplicity may win.
+## What it costs, measured
 
-### 3. Point the player's GPS at the stage and use `route: "current"` (rejected)
+Stated plainly so the trade is chosen rather than discovered. Over the 116 stage lines on this machine, a 300 m
+corridor through the area tool costs a **median ~330 MB**, p90 ~474 MB, worst ~822 MB; as pinned disk, median
+553 MB and up to 1.4 GB.
 
-It would work with today's server and no new API. It also replaces whatever the player was navigating to, in a
-feature that has nothing to do with navigation. Not acceptable for a button press.
+What the auto recce needs out of that is the `roads` layer of a median **20 cells** -- on the order of **20-60 MB**.
+The rest is the other nine layers, the terrain and the aerial imagery, which `phase_steps` fetches for every
+corridor tile with no way to narrow the set, plus the two-cell ring. **So this route costs roughly 5-30x what the
+feature needs** -- which is the argument for writing the `layers` subset ourselves rather than living with it.
+
+Either way: **the player is asked before anything downloads, and told the figure.** `area_plan` answers
+`downloadBytes` without fetching (~20-25% high against this machine's own numbers, and self-correcting as it
+learns). Show that and nothing else: `seconds` is a serial-request model with no bandwidth or concurrency in it,
+`days` is always 0 here, and `km2` is the geometric corridor, some 24x smaller than the footprint downloaded.
+
+## What a saved area is, and what that forces
+
+An area is not a function call with a side effect. It is a persistent object in the player's world, and each of
+these was read in the source rather than assumed:
+
+- It persists in `<cache>/areas/areas.json` and **survives a restart**: an incomplete area is re-queued on the next
+  server start and resumes **unasked**, with no mod and no client involved.
+- **The player sees it** in the 3D map's area list, line drawn, broadcast to every connection on every change.
+  There are no saved areas on this machine today, so the first the player ever sees would be one Earth Rally made.
+- `MAX_AREAS = 10`. The mod competes for the player's ten slots, and when full **their own** add fails.
+- Its data is **pinned**: never evicted, surviving "Clear cache". `PIN_SHARE` is 0.9 of a default 20 GB cap, and at
+  0.5-1.4 GB a stage, ten stages is 5-14 GB un-evictable. `_add` refuses past that share with a message telling the
+  player to raise their cache size, which the mod must surface rather than swallow.
+- One area downloads at a time, in list order. A mod area appended last waits behind anything already queued, so a
+  progress display can legitimately sit at zero and must not read as broken.
+- `area_cmd` offers only `pause | resume | delete | fast | slow`. No rename, no hide, no ownership.
+
+**`fast` must be hard-wired off, in the mod and in anything we expose.** In fast mode every gate is skipped, 24
+threads run, and the server re-pins the game's threads to its first cores -- and the pause that makes it survivable
+is applied by **BeamNG.Earth's own `core.lua`, for any client, on any fast area** (`M.fastAreaPause` ->
+`simhold.pause(true)`). Mid-stage that pauses the player's physics out from under a run and Earth Rally never gets a
+say. Our API must not offer it. (It also means any add-on can pause the player's game today, which is worth a line
+in the pull request.)
+
+In **normal** mode a download cannot outrun the world, three deep: `_gate` waits on `pacer.hold()` and
+`Server.live_busy()`; `_pace` holds it to 40% duty while the car moves; and at the limiter `predownload` takes a
+host slot non-blocking and a token only above the 0.75-burst `BACKGROUND_RESERVE`, behind even prefetch. That is the
+reassurance this design rests on, and it checks out.
 
 ## The order
 
-### 1. Measure the box against the corridor (an afternoon, builds nothing)
+### 1. The retry guard (ours, small, first)
 
-For each of the user's 116 stages, the bounding box area against the corridor area at the half width the auto recce
-would want. That single number decides whether option 2 is a sane fallback or only a theoretical one, and it is
-pure arithmetic over files already here.
+`complete` requires every cell in a window's bbox to have a readable `roads` layer, and there are **two ways it
+stays false after a download that worked**: a cell stored through the parquet fallback lands at a path `has()` does
+not check, and a cell whose roads layer decodes to `None` counts as missing. Either gives *download -> still
+incomplete -> download again*, forever.
 
-### 2. The upstream ask, as a second pull request
+So: **one download attempt per press, then report.** Never loop, whatever the coverage record says afterwards. It
+depends on nothing else here, so it goes first and the loop can never exist.
 
-The points form plus the modding API call, written and tested the way `api.roadGraph` was -- and this time with the
-mod-to-server-and-back test that 1.3.0 did without (see "What 1.3.0 taught" below) written at the same time, not
-after. It branches from the road-graph branch, since it builds on nothing in it but will conflict if it does not.
+### 2. The upstream half, written and tested here
 
-If the road graph's review asks for changes, those go on **its** branch; this one rebases. The two are not merged
-into one request at any point.
+`_area_route` taking points, the modding-API call over it, the `layers` subset, `fast` not exposed, and a capability
+flag. Tested the way `api.roadGraph` was -- and with a mod-to-server-and-back test written at the same time rather
+than after. `tests/test_roadgraph_e2e.py` is the pattern: the real add-on, the real `api.lua`, the real wire, the
+real server, and a check that reintroducing each bug turns it red.
 
-### 3. The mod side, behind its own capability flag
+### 3. The mod side, behind that flag
 
-- `earthAdapter` gains the wrapper, gated on `api.has('preloadRoute')` as the road graph is on `has('roadGraph')`.
-- The auto recce, on finding a stretch with no map data, asks for that corridor rather than giving up -- and then
-  runs itself again. The coverage record it already keeps says exactly which stretch is missing, so it can ask for
-  the part it needs rather than the whole stage.
-- **A download is not a button press.** It can take minutes, it uses someone's connection, and it should be the
-  player's choice: the stage says how much it would fetch and asks, rather than starting on its own. The figure is
-  available before committing -- `area_plan` answers `downloadBytes`, `diskBytes`, `seconds` and `days` without
-  fetching anything.
+- `earthAdapter` gains the wrapper; everything gated as the road graph is on `has('roadGraph')`.
+- The auto recce, finding a stretch with no map data, offers the download rather than giving up. Its coverage record
+  resolves to a **window** (a 2.4 km square stepped 700 m), not a cell, and the corridor is ring-dilated anyway, so
+  "ask for just the missing part" saves little. Per-stage is the honest granularity.
+- The line is **decimated to 20-50 m before sending**: points are persisted verbatim into `areas.json` and
+  re-validated on every load, and a 6000-point line is ~250 KB of JSON rewritten on every area change.
+- Everything in "What a saved area is" is handled rather than discovered: the pin refusal surfaced, the queue wait
+  explained, `fast` never sent, and the area tidied up afterwards -- or deliberately left, but decided.
 
-### 4. The screen for it (**mock-up first**)
+### 4. The screen (**mock-up first**)
 
-1.3.0's running state already has the shape: the pill becomes the progress. Downloading is a second phase in front
-of matching, so the pill reads something like `Downloading 41 MB` and then `Auto recce 7 / 19`. The four endings
-gain a fifth: *asked to download and the player said no*. The same rule as before -- the pill answers "can I drive
-this now", the sentence under the card says what happened.
-
-### 5. The limits that do not go away
-
-Say them on the page rather than letting a player find them:
-
-- A stage can be somewhere with no road data at all, and no amount of downloading fixes that.
-- The auto recce still never downloads **on its own**; this version only adds a way to say yes.
+1.3.0's running state already has the shape: the pill becomes the progress, and downloading is a phase in front of
+matching. The four endings gain a fifth: asked, and told no. How loud the confirmation needs to be depends on
+whether the `layers` subset lands, so this follows step 2.
 
 ## Also in 1.3.1: the stage page's four tiles (the user, 2026-11-13)
 
