@@ -73,12 +73,27 @@ async function registerPauseTab() {
   }
 }
 
+// 1.3.2 diagnostic, docs/notes-1.3.2.md #1. The page's own check (EarthRally.vue, styleCheck) says whether our
+// style element is still in the document when the menu opens; this says whether this UI mod is being unloaded and
+// loaded again at all, which is the other half of the question. If exactly ONE "ui onLoad" line turns up in a
+// session where the menu lost its styling, then nothing reloaded us, the module cache plays no part, and the
+// explanation in the notes is wrong. Goes once it has answered.
+function mark(what) {
+  try {
+    const n = [...document.head.querySelectorAll("style")].filter(s => s.textContent && s.textContent.includes(".er-page")).length
+    console.log("Earth Rally: ui " + what + " -- our style elements in head: " + n)
+  } catch (e) { /* the document is not ours to depend on here */ }
+}
+
 export async function onLoad() {
+  mark("onLoad (before)")
   await registerPauseTab()
   await registerRoute()
+  mark("onLoad (after)")
 }
 
 export async function onUnload() {
+  mark("onUnload")
   try { await lua.extensions.ui_pause_actions.unregisterModTab(TAB_ID) } catch (e) { /* none */ }   // (its buttons with it)
   try {
     if (window.bngRoutes) window.bngRoutes.remove([SOURCE])
