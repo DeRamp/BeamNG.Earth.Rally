@@ -42,8 +42,7 @@ end
 -- absent when the line carries no height (geo.rise): then the stage page's two height tiles are dashes while its
 -- Corners tile is still a number, which is the honest pair of answers.
 function M.of(points, stage)
-  -- (two points are a line and measure as one -- no corners on a straight. Only a line with no length at all has
-  --  nothing to say, and then nil is right: the stage page's dash means "no line", once.)
+  -- (two points are a line and measure as one: a straight, with no corners on it)
   if type(points) ~= 'table' or #points < 2 then return nil end
   local xy = frameAt(points[1][1], points[1][2])
   local line = {}
