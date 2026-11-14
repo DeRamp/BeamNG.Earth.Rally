@@ -219,6 +219,22 @@ function M.landmarks(eventId, stageId, stage)
   return out
 end
 
+-- The junctions along a stage with their roads, for the stage dressing (course tape, direction boards): from the
+-- matched line, as junctions.lua reads its entries -- { { lat, lon, kind, side, inDeg, outDeg, sides }... }, the
+-- last three nil in a format 1 file, which kept no roads (the live road map fills those in: junctions.merge). nil
+-- without a matched line made from this map.
+function M.junctions(eventId, stageId, stage)
+  local m = M.matched(eventId, stageId)
+  if not m or (stage and m.mapKey and m.mapKey ~= M.mapKey(stage.line)) then return nil end
+  local J = require('earthRally/junctions')
+  local out = {}
+  for _, e in ipairs(m.junctions or {}) do
+    local j = J.decode(e)
+    if j then out[#out + 1] = j end
+  end
+  return out
+end
+
 function M.results(eventId, stageId)
   return readOnce(M.RESULTS_DIR .. key(eventId, stageId)) or { runs = {} }
 end

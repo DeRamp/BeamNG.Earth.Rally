@@ -203,7 +203,7 @@ do
   T.check(res.ok == true and res.called == 1, 'it finished once, with a line (' .. tostring(res.why) .. ')')
   local m = matchedFile()
   T.check(m ~= nil, 'the matched file written where events.matched reads it')
-  T.check(m and m.format == 1 and m.stage == 'test-stage', 'format 1, the stage named')
+  T.check(m and m.format == 2 and m.stage == 'test-stage', 'format 2 (the junctions keep their roads), the stage named')
   T.check(m and m.source == auto.SOURCE and m.source:find('auto recce'), 'the source says the in-game auto recce')
   T.check(m and m.mapKey == events.mapKey(stage.line), 'the mapKey is the one events.mapKey makes')
   T.near(m and m.lengthM or 0, 3000, 30, 'the matched line is the stage\'s length')
@@ -477,6 +477,17 @@ do
     local d = geo.metres(js[1][1], js[1][2], LAT, LON)
     T.near(d, 1500, 10, 'and it is where the side road leaves (' .. string.format('%.0f', d) .. ' m along)')
   end
+  -- format 2: the way in, the way out and the side road, as compass bearings, and the side road's half width
+  local e = js[1] or {}
+  T.near(e[5], 90, 1, 'the stage comes in heading east (inDeg ' .. tostring(e[5]) .. ')')
+  T.near(e[6], 90, 1, 'and leaves heading east (outDeg ' .. tostring(e[6]) .. ')')
+  T.check(type(e[7]) == 'table' and #e[7] == 1, 'one side road kept (' .. tostring(e[7] and #e[7]) .. ')')
+  local sr = e[7] and e[7][1] or {}
+  T.near(sr[1], 0, 1, 'the side road leaves north (' .. tostring(sr[1]) .. ')')
+  T.near(sr[2], 4.0, 0.01, "its half width from the graph node's radius (" .. tostring(sr[2]) .. ')')
+  local ej = events.junctions('test-event', 'test-stage', stage)
+  T.check(ej and #ej == 1 and ej[1].kind == 'straight' and ej[1].sides and #ej[1].sides == 1 and
+    ej[1].sides[1].halfW == 4.0, 'events.junctions reads it back with its side road')
   -- events.landmarks turns it into the pacenote landmark the co-driver calls
   local lm = events.landmarks('test-event', 'test-stage', stage)
   T.check(#lm == 1 and lm[1].type == 'pastJunction', 'events.landmarks makes it "pastJunction" (' ..

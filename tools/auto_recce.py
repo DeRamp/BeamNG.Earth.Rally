@@ -117,6 +117,22 @@ def _angle(u, v):
     return math.degrees(math.atan2(u[0] * v[1] - u[1] * v[0], u[0] * v[0] + u[1] * v[1]))
 
 
+def bearing(v):
+    """A direction (x east, y north: the Frame's) as a compass bearing, degrees clockwise from north, 0 up to 360 --
+    the mod's junctions.dirToBearing."""
+    d = math.degrees(math.atan2(v[0], v[1])) % 360.0
+    return 0.0 if d >= 360.0 else d
+
+
+def junction_entry(lat, lon, kind, side, w_in, w_out, sides):
+    """A junction as the matched file's entry, format 2 -- the mod's junctions.encode:
+    [lat, lon, kind, side, inDeg, outDeg, [[sideDeg, halfW], ...]], bearings to 0.1 degree. halfW is always 0 here,
+    "not known": this tool's roads carry no width (the in-game auto recce has the road graph's)."""
+    def deg(v):
+        return round(bearing(v), 1) % 360.0       # (359.96 rounds to 360: written as 0)
+    return [lat, lon, kind, side, deg(w_in), deg(w_out), [[deg(w), 0] for w in sides]]
+
+
 def seg_dist(np, P, A, B):
     """Distance of each point of P (n, 2) to the polyline segments A -> B (m, 2) each: (n,) minimum."""
     best = np.full(len(P), np.inf)
@@ -374,8 +390,10 @@ class Roads:
 
 def landmarks(np, roads, res, res_along, flags):
     """The junctions and bridges along the matched line (res, every OUT_STEP_M; flags: 1 on a stretch with no road).
-    Junctions: [(along, kind, side)] with kind 'turn' (the stage turns there), 'straight' (on past a side road) or
-    'fork' (side: 'left' / 'right', the way the stage keeps); bridges: [(from, to)] along the line."""
+    Junctions: [(along, kind, side, w_in, w_out, sides)] with kind 'turn' (the stage turns there), 'straight' (on past
+    a side road) or 'fork' (side: 'left' / 'right', the way the stage keeps), w_in / w_out the stage's way in and out
+    and sides each side road's way out of the junction (40 m+ long, the stage's own two left out); bridges:
+    [(from, to)] along the line."""
     juncs, bridges = [], []
     if roads.edges == 0 or len(res) < 3:
         return juncs, bridges
@@ -423,7 +441,7 @@ def landmarks(np, roads, res, res_along, flags):
             if s - last < JUNCTION_GAP_M:
                 continue
             last = s
-            juncs.append((s, kind, side))
+            juncs.append((s, kind, side, w_in, w_out, sides))
     # bridges: the line along a bridge's deck for BRIDGE_MIN_M or more
     on = np.zeros(len(res), dtype=bool)
     for deck in roads.bridges:
@@ -556,7 +574,7 @@ def match_stage(np, md, mapcells, dem, stage, roadsmod=None):
     off_line = seg_dist(np, np.array(res), np.array(kml[:-1]), np.array(kml[1:]))
     gap_m = sum(b - a for a, b in gaps)
     return {
-        'format': 1, 'stage': stage['id'], 'source': "BeamNG.Earth's roads (tools/auto_recce.py)",
+        'format': 2, 'stage': stage['id'], 'source': "BeamNG.Earth's roads (tools/auto_recce.py)",
         'date': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
         'lengthM': round(total, 1), 'mapLineM': round(kml_cum[-1], 1),
         'gaps': [[round(a, 1), round(b, 1)] for a, b in gaps], 'gapM': round(gap_m, 1),
@@ -564,7 +582,9 @@ def match_stage(np, md, mapcells, dem, stage, roadsmod=None):
         'cells': roads.cells, 'roadEdges': roads.edges, 'seconds': round(time.time() - t0, 1),
         'mapKey': map_key(stage['line']),
         # (where they are on the road, as lat / lon: the mod finds them on whichever line the stage runs on, a recce's too)
-        'junctions': [ll(s) + [kind, side] for s, kind, side in juncs],
+        # (format 2: with the way in, the way out and the side roads, for the course tape -- junction_entry)
+        'junctions': [junction_entry(*ll(s), kind, side, w_in, w_out, sides)
+                      for s, kind, side, w_in, w_out, sides in juncs],
         'bridges': [ll(a) + ll(b) for a, b in bridges],
         'points': [[round(la, 7), round(lo, 7), round(float(h), 2)] + ([1] if f else [])
                    for (la, lo), h, f in zip(lat_lon, z, flags)],

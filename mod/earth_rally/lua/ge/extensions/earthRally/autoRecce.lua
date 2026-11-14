@@ -37,6 +37,7 @@
 -- M.frame below, and the two can be checked against each other -- tests/test_autorecce.lua does.)
 local earth = require('earthRally/earthAdapter')
 local events = require('earthRally/events')
+local junctions = require('earthRally/junctions')
 local lineStats = require('earthRally/lineStats')
 
 local M = {}
@@ -56,12 +57,14 @@ M.DETOUR_MAX = 1.4          -- a route between two waypoints longer than this ti
 M.BLEND_M = 120.0           -- a stretch on the organisers' line eased into the road over this at each end
 M.OUT_STEP_M = 4.0          -- the matched line's point spacing (as a recce's)
 M.HEIGHT_OFFSET_M = 0.2     -- a recce's heights (the car's position) sit this far above the surface
-M.JUNCTION_LOOK_M = 15.0    -- a junction's roads: their way this far from it
-M.SIDE_ROAD_MIN_M = 40.0    -- a side road shorter than this (a driveway, a stub of track) is no junction
-M.TURN_DEG = 30.0           -- the stage turning more than this at a junction: a turn there ("at junction")
-M.FORK_DEG = 35.0           -- a side road within this of the stage's way on: a fork ("keep left / right")
-M.JUNCTION_GAP_M = 25.0     -- junctions closer than this along the stage: one
-M.ON_LINE_M = 1.5           -- a junction node this close to the matched line is on it
+-- (the junction rule's own live in junctions.lua, shared with the live road map's finder: these are the same
+--  numbers, named here as they always were)
+M.JUNCTION_LOOK_M = junctions.JUNCTION_LOOK_M     -- a junction's roads: their way this far from it
+M.SIDE_ROAD_MIN_M = junctions.SIDE_ROAD_MIN_M     -- a side road shorter than this (a driveway, a stub) is no junction
+M.TURN_DEG = junctions.TURN_DEG                   -- the stage turning more than this at a junction: a turn there
+M.FORK_DEG = junctions.FORK_DEG                   -- a side road within this of the stage's way on: a fork
+M.JUNCTION_GAP_M = junctions.JUNCTION_GAP_M       -- junctions closer than this along the stage: one
+M.ON_LINE_M = junctions.ON_LINE_M                 -- a junction node this close to the matched line is on it
 
 -- the windows
 M.RADIUS_M = 1000.0         -- each window is a square of this half size round the point we name
@@ -152,9 +155,7 @@ function M.resample(pts, step)
 end
 
 -- The signed angle from u to v (degrees, + to the left). tools/auto_recce.py's _angle.
-function M.angle(u, v)
-  return math.deg(math.atan2(u.x * v.y - u.y * v.x, u.x * v.x + u.y * v.y))
-end
+M.angle = junctions.angle
 
 -- Distance from p to the segment a -> b.
 local function segDist(p, a, b)
@@ -275,6 +276,7 @@ end
 -- The accumulated graph (nodes in lat / lon, edges as pairs of node names) weighted against the organisers' line
 -- `kml` in the stage's frame:
 --   { xy = { [name] = {x, y, z} }, nbr = { [name] = { [name] = {w, len} } }, near = { [name] = m off the line },
+--     half = { [name] = the road's half width there, where the graph gave one },
 --     ea, eb = the edges once each, for snapping; edges = how many }
 -- fr: the stage's frame (M.frame), which places the lat / lon nodes.
 --
@@ -285,13 +287,14 @@ end
 -- what says whether it runs away from the line). Direction is ignored, as in the tool: a rally stage is a closed
 -- road, and the one-way field describes normal traffic.
 function M.build(graph, kml, fr)
-  local g = { xy = {}, nbr = {}, near = {}, ea = {}, eb = {}, edges = 0 }
+  local g = { xy = {}, nbr = {}, near = {}, half = {}, ea = {}, eb = {}, edges = 0 }
   for name, n in pairs(graph.nodes or {}) do
     local lat, lon, alt = n.lat, n.lon, n.alt
     if lat ~= nil then
       local p = fr.xy(lat, lon)
       g.xy[name] = { x = p.x, y = p.y, z = alt }
       g.near[name] = polyDist(p, kml)
+      g.half[name] = (type(n.radius) == 'number' and n.radius > 0) and n.radius or nil
       g.nbr[name] = {}
     end
   end
@@ -433,45 +436,19 @@ function M.route(gr, s, t)
   return pts, total
 end
 
--- Walking from node n through m, the road turning least at each node: its way at JUNCTION_LOOK_M from n, and how
--- far it goes (up to SIDE_ROAD_MIN_M; less at a dead end). tools/auto_recce.py's Roads.branch.
+-- Walking from node n through m, the road turning least at each node: its way at JUNCTION_LOOK_M from n, how far
+-- it goes (up to SIDE_ROAD_MIN_M; less at a dead end), and the road's half width there (nil where the graph gave
+-- none). tools/auto_recce.py's Roads.branch, which lives in junctions.lua now so the live road map's finder walks
+-- a side road the same way.
 function M.branch(gr, n, m)
-  local prev, cur = n, m
-  local d = dist(gr.xy[n], gr.xy[m])
-  local o = gr.xy[n]
-  local way = nil
-  while true do
-    if way == nil and d >= M.JUNCTION_LOOK_M then
-      local p = gr.xy[cur]
-      way = { x = p.x - o.x, y = p.y - o.y }
-    end
-    if d >= M.SIDE_ROAD_MIN_M then break end
-    local pc, pp = gr.xy[cur], gr.xy[prev]
-    local head = { x = pc.x - pp.x, y = pc.y - pp.y }
-    local bestK, bestA = nil, huge
-    for k in pairs(gr.nbr[cur] or {}) do
-      if k ~= prev then
-        local pk = gr.xy[k]
-        local a = abs(M.angle(head, { x = pk.x - pc.x, y = pk.y - pc.y }))
-        -- (a stable order: pairs() is not ordered, and two roads can leave at the same angle)
-        if a < bestA or (a == bestA and bestK and k < bestK) then bestK, bestA = k, a end
-      end
-    end
-    if not bestK then break end
-    prev, cur = cur, bestK
-    d = d + dist(gr.xy[prev], gr.xy[cur])
-  end
-  if way == nil then
-    local p = gr.xy[cur]
-    way = { x = p.x - o.x, y = p.y - o.y }
-  end
-  return way, d
+  return junctions.branch(gr.xy, gr.nbr, gr.half, n, m)
 end
 
--- The junctions along the matched line (res, every OUT_STEP_M; flags: 1 on a stretch with no road), as
--- { { along, kind, side } } with kind 'turn' (the stage turns there), 'straight' (on past a side road) or 'fork'
--- (side 'left' / 'right', the way the stage keeps). tools/auto_recce.py's landmarks(), its bridge half left out
--- (M.BRIDGES_NOT_AVAILABLE).
+-- The junctions along the matched line (res, every OUT_STEP_M; flags: 1 on a stretch with no road), each
+-- { along, kind, side, inDeg, outDeg, sides = { { deg, halfW }... } } (junctions.lua says what each is) with kind
+-- 'turn' (the stage turns there), 'straight' (on past a side road) or 'fork' (side 'left' / 'right', the way the
+-- stage keeps). tools/auto_recce.py's landmarks(), its bridge half left out (M.BRIDGES_NOT_AVAILABLE); the rule for
+-- one junction is junctions.judge, shared with the live road map's finder.
 function M.junctions(gr, res, resAlong, flags)
   local out = {}
   if gr.edges == 0 or #res < 3 then return out end
@@ -495,52 +472,24 @@ function M.junctions(gr, res, resAlong, flags)
   local last = -huge
   local look = math.max(1, floor(M.JUNCTION_LOOK_M / M.OUT_STEP_M))
   for _, c in ipairs(cand) do
-    local p = gr.xy[c.n]
-    local a = res[math.max(1, c.k - look)]
-    local b = res[math.min(#res, c.k + look)]
-    local wIn = { x = p.x - a.x, y = p.y - a.y }
-    local wOut = { x = b.x - p.x, y = b.y - p.y }
-    local ways = {}
-    for m in pairs(gr.nbr[c.n]) do
-      local way, len = M.branch(gr, c.n, m)
-      ways[#ways + 1] = { m = m, way = way, len = len }
-    end
-    table.sort(ways, function(u, v) return u.m < v.m end)
-    -- the stage's own two roads: the one it comes in on and the one it leaves by
-    local back = { x = -wIn.x, y = -wIn.y }
-    local mIn, bestA = nil, huge
-    for _, w in ipairs(ways) do
-      local d = abs(M.angle(back, w.way))
-      if d < bestA then mIn, bestA = w.m, d end
-    end
-    local mOut, bestB = nil, huge
-    for _, w in ipairs(ways) do
-      if w.m ~= mIn then
-        local d = abs(M.angle(wOut, w.way))
-        if d < bestB then mOut, bestB = w.m, d end
+    if c.s - last >= M.JUNCTION_GAP_M then
+      local p = gr.xy[c.n]
+      local a = res[math.max(1, c.k - look)]
+      local b = res[math.min(#res, c.k + look)]
+      local wIn = { x = p.x - a.x, y = p.y - a.y }
+      local wOut = { x = b.x - p.x, y = b.y - p.y }
+      local ways = {}
+      for m in pairs(gr.nbr[c.n]) do
+        local way, len, halfW = M.branch(gr, c.n, m)
+        ways[#ways + 1] = { m = m, way = way, len = len, halfW = halfW }
       end
-    end
-    local sides = {}
-    for _, w in ipairs(ways) do
-      if w.m ~= mIn and w.m ~= mOut and w.len >= M.SIDE_ROAD_MIN_M then sides[#sides + 1] = w.way end
-    end
-    if #sides > 0 and c.s - last >= M.JUNCTION_GAP_M then
-      local kind, side = 'straight', ''
-      local turn = M.angle(wIn, wOut)
-      if abs(turn) >= M.TURN_DEG then
-        kind, side = 'turn', ''
-      else
-        local close = nil
-        for _, w in ipairs(sides) do
-          if abs(M.angle(wOut, w)) < M.FORK_DEG then close = w break end
-        end
-        if close then
-          -- (our way to the left of the other road: keep left)
-          kind, side = 'fork', (M.angle(close, wOut) > 0) and 'left' or 'right'
-        end
+      -- (the stage frame is x east, y north, so the bearings junctions.judge gives are compass bearings as they are)
+      local j = junctions.judge(wIn, wOut, ways)
+      if j then
+        last = c.s
+        j.along = c.s
+        out[#out + 1] = j
       end
-      last = c.s
-      out[#out + 1] = { c.s, kind, side }
     end
   end
   return out
@@ -752,12 +701,13 @@ function M.match(stage, graph, info)
   for k, gp in ipairs(gaps) do gapsOut[k] = { round(gp[1], 1), round(gp[2], 1) } end
   local juncOut = {}
   for k, j in ipairs(juncs) do
-    local la, lo = ll(j[1])
-    juncOut[k] = { la, lo, j[2], j[3] }
+    local la, lo = ll(j.along)
+    juncOut[k] = junctions.encode(j, la, lo)     -- [lat, lon, kind, side, inDeg, outDeg, [[sideDeg, halfW]...]]
   end
 
+  -- (format 2: the junctions keep their roads -- junctions.lua. events.lua reads format 1 files as before.)
   return {
-    format = 1,
+    format = 2,
     stage = stage.id,
     source = M.SOURCE,
     date = os.date('!%Y-%m-%dT%H:%M:%SZ'),
@@ -1001,9 +951,8 @@ local function onWindow(myGen, token, i, r)
         if x ~= nil then
           local lat, lon, alt = earth.toGeo(x, y, z or 0)
           if lat ~= nil then
-            -- (radius is the road's half width, kept but not yet used: the Python tool has no width at all, and
-            --  what to do with it -- a line down the middle of a wide road, a note for a narrowing -- is 1.4.0's
-            --  question, not this change's)
+            -- (radius is the road's half width: the junctions keep it for their side roads, which the course
+            --  tape is cut to (junctions.lua). The Python tool has no width at all, and writes 0, "not known")
             j.graph.nodes[name] = { lat = lat, lon = lon, alt = alt, radius = radius }
             added = added + 1
           end

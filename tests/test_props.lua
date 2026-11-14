@@ -69,4 +69,90 @@ T.check(east and east.dx > 0.9 and west and west.dx < -0.9, 'a road across the w
 local fromEast = props.orient(e, nil, { x = 300, y = 0 })
 T.check(fromEast.dx < -0.9, 'the stop control: the way leading on from the finish')
 map = nil
+
+-- The stage dressing: put down by the car's distance along the line, taken away 600 m behind it, put down again after
+-- a world shift where it belongs. A stand-in for the game's scene: every object made, where it was put, and whether it
+-- is still there.
+local made, live, named = {}, {}, {}
+local nextId = 0
+function createObject()
+  nextId = nextId + 1
+  local o = { id = nextId, fields = {} }
+  function o:setField(k, _, v) self.fields[k] = v end
+  function o:setPosRot(x, y, z, a, b, c, d) self.pos = { x, y, z } self.q = { a, b, c, d } end
+  function o:registerObject(name) live[self.id] = self if name then named[name] = self end end
+  function o:getID() return self.id end
+  function o:delete() live[self.id] = nil end
+  function o:addObject() end
+  made[#made + 1] = o
+  return o
+end
+scenetree = { MissionGroup = { addObject = function() end }, findObjectById = function(id) return live[id] end,
+              findObject = function(name) return named[name] end }
+local function liveCount() local n = 0 for _, o in pairs(live) do if o.fields.shapeName then n = n + 1 end end return n end
+
+local D = require('earthRally/dressing')
+local line = {}
+for k = 0, 50 do line[#line + 1] = { x = 0, y = k * 100, z = 0 } end
+local js = {}
+for s = 250, 4750, 250 do
+  js[#js + 1] = { along = s, x = 0, y = s, kind = 'turn', inDeg = 0, outDeg = 90, sides = { { deg = 0 }, { deg = 270 } } }
+end
+local plan = D.plan({ line = line, startM = 0, finishM = 5000, junctions = js })
+-- (lat / lon here: a frame of our own the game's moves against, as BeamNG.Earth's origin does)
+local ox, oy = 0, 0
+local function toGeo(x, y, z) return x + ox, y + oy, z end
+local function toGame(la, lo, h) return la - ox, lo - oy, h end
+local n = props.setDressing(plan, toGeo)
+T.check(n == #plan and n > 0, 'dressing: every site taken')
+local car = { x = 0, y = 0, z = 0 }
+for _ = 1, 10 do props.update(car, toGame, 0) end
+local objs, sitesDown = props.dressingCount()
+T.check(sitesDown > 0 and objs == liveCount(), 'dressing: the sites within 350 m ahead put down (' .. sitesDown .. ')')
+local expect = 0
+for _, s in ipairs(plan) do if s.from <= 350 then expect = expect + 1 end end
+T.check(sitesDown == expect, 'dressing: and only those (' .. sitesDown .. ' of ' .. expect .. ')')
+T.check(#made <= 4 * 8 * 10, 'dressing: a few sites an update')
+-- the controls' own count untouched by the dressing
+T.check(props.count() == 0, 'dressing: not counted with the controls\' props')
+
+-- 2 km on: everything behind 1400 m gone, everything to 2350 m down
+car = { x = 0, y = 2000, z = 0 }
+for _ = 1, 20 do props.update(car, toGame, 2000) end
+local _, k = props.dressingCount()
+local want = 0
+for _, s in ipairs(plan) do if s.to >= 1400 and s.from <= 2350 then want = want + 1 end end
+T.check(k == want, 'dressing: the window 600 m behind to 350 m ahead (' .. k .. ' of ' .. want .. ')')
+T.check(select(1, props.dressingCount()) == liveCount(), 'dressing: those behind really taken away')
+local early = 0
+for _, o in pairs(live) do if o.pos and o.pos[2] < 1300 then early = early + 1 end end
+T.check(early == 0, 'dressing: nothing left standing far behind')
+
+-- a world shift: the origin moves 1000 m east; after reset the same objects stand 1000 m further west in game coordinates
+local before = {}
+for _, o in pairs(live) do if o.pos then before[#before + 1] = { o.fields.shapeName, o.pos[1], o.pos[2], o.q[3], o.q[4] } end end
+table.sort(before, function(a, b) if a[3] ~= b[3] then return a[3] < b[3] end return a[2] < b[2] end)
+ox = ox + 1000
+props.reset()
+T.check(liveCount() == 0, 'world shift: the dressing taken away')
+for _ = 1, 20 do props.update({ x = -1000, y = 2000, z = 0 }, toGame, 2000) end
+local after = {}
+for _, o in pairs(live) do if o.pos then after[#after + 1] = { o.fields.shapeName, o.pos[1] + 1000, o.pos[2], o.q[3], o.q[4] } end end
+table.sort(after, function(a, b) if a[3] ~= b[3] then return a[3] < b[3] end return a[2] < b[2] end)
+local same = #after == #before and #after > 0
+for i = 1, math.min(#after, #before) do
+  local a, b = after[i], before[i]
+  if a[1] ~= b[1] or math.abs(a[2] - b[2]) > 1e-6 or math.abs(a[3] - b[3]) > 1e-6 or math.abs(a[4] - b[4]) > 1e-6
+    or math.abs(a[5] - b[5]) > 1e-6 then same = false end
+end
+T.check(same, 'world shift: put down again where it belongs, turned the same way')
+
+-- a site asking for more than the budget gets the budget
+local big = { kind = 'spectators', along = 0, from = 0, to = 0, objects = {} }
+for i = 1, 100 do big.objects[i] = { shape = 'x.dae', x = i, y = 0, dx = 0, dy = 1 } end
+props.setDressing({ big })
+props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+T.check(select(1, props.dressingCount()) == props.DRESS_MAX_OBJS, 'dressing: a site held to its budget')
+props.clear()
+T.check(liveCount() == 0 and select(2, props.dressingCount()) == 0, 'dressing: cleared with the stage')
 T.done('test_props')

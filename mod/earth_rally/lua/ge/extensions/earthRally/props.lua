@@ -130,6 +130,7 @@ end
 function M.clear()
   for _, s in ipairs(sites) do M.removeSite(s) end
   sites = {}
+  M.clearDressing()
 end
 
 -- (a yaw-only rotation turning +Y to (dx, dy), as the game's quatFromDir(dir, up) makes it: its axes go in as the rows
@@ -363,9 +364,13 @@ local function spawn(s, carZ)
   log('I', 'earthRally', string.format('props: %s put down (%d objects, %d placed by the road map%s)', s.kind, n, onRoad, how))
 end
 
--- Every frame of a run: sites near enough the car put down (once). carPos in game coordinates.
-function M.update(carPos, toGame)
+local updateDressing        -- (the stage dressing, below)
+
+-- Every frame of a run: sites near enough the car put down (once). carPos in game coordinates; carAlong (optional):
+-- the car's distance along the stage line, which the stage dressing is put down and taken away by.
+function M.update(carPos, toGame, carAlong)
   if not carPos then return end
+  updateDressing(carPos, toGame, carAlong)
   for _, s in ipairs(sites) do
     if not s.objs and not s.failed then
       local x, y = toGame(s.lat, s.lon, 0)
@@ -394,6 +399,7 @@ end
 -- After a world shift: everything put down again where it belongs (directions re-given by the caller).
 function M.reset()
   for _, s in ipairs(sites) do M.removeSite(s) s.edge = nil end
+  M.resetDressing()
 end
 
 -- Where a site's boards stand on the road (game coordinates now: the road map's point beside the control), once its
@@ -414,6 +420,132 @@ function M.count()
   local n = 0
   for _, s in ipairs(sites) do n = n + #(s.objs or {}) end
   return n
+end
+
+------------------------------------------------------------------------------------------ the stage dressing
+
+-- The tape, boards, posts and spectator areas along a stage (1.4.0): sites worked out up front by dressing.plan,
+-- every object's place and heading already decided (a tape across a side road runs square to that road, which the
+-- walk along the stage above cannot say). Unlike a control's site, a dressing site is put down by where the car is
+-- ALONG the stage line (DRESS_AHEAD_M before the first of its objects) and taken away again once the car is
+-- DRESS_BEHIND_M past the last: a 25 km stage has tape at dozens of junctions, and all of it standing at once by the
+-- finish would be hundreds of objects. With no distance along given (the car not on the stage yet), by the straight
+-- distance to the site's first object, as the controls, and nothing is taken away.
+--
+-- A world shift (props.reset) moves the game's coordinates under the objects, so a site keeps its objects as lat /
+-- lon, not as x / y: each object's spot, and a second spot 10 m along its heading (so its heading survives whatever
+-- the shift does), turned back into game coordinates (toGame) each time it is put down. Distances along the line do
+-- not change with a shift (runner.lua's line follows it), so the window needs nothing.
+M.DRESS_AHEAD_M = M.SPAWN_M
+M.DRESS_BEHIND_M = 600
+M.DRESS_MAX_OBJS = 64        -- every dressing site's budget, whatever it asks for
+M.DRESS_SITES_PER_UPDATE = 4 -- (put down a few sites a frame: a whole window at once, after a shift, is a hitch)
+local HEAD_M = 10
+
+local dress = {}             -- { kind, along, from, to, name, objs (ids, when down), items = { { shape, lat, lon, h, hlat, hlon } } }
+
+local function removeDress(s)
+  for _, id in ipairs(s.objs or {}) do
+    local o = scenetree.findObjectById(id)
+    if o then o:delete() end
+  end
+  s.objs = nil
+end
+
+-- The stage's dressing (dressing.plan's sites, in game coordinates of the moment), replacing any there was. toGeo
+-- (x, y, z) -> lat, lon, h: earthAdapter.toGeo. Without one (the tests), the game coordinates are kept as they are
+-- and a world shift is not followed.
+function M.setDressing(list, toGeo)
+  M.clearDressing()
+  for _, site in ipairs(list or {}) do
+    local items = {}
+    for _, o in ipairs(site.objects or {}) do
+      if #items >= M.DRESS_MAX_OBJS then break end
+      local hx, hy = o.x + (o.dx or 0) * HEAD_M, o.y + (o.dy or 1) * HEAD_M
+      local it = { shape = o.shape }
+      if toGeo then
+        local la, lo, h = toGeo(o.x, o.y, o.z or 0)
+        local hla, hlo = toGeo(hx, hy, o.z or 0)
+        if la and hla then
+          it.lat, it.lon, it.h, it.hlat, it.hlon = la, lo, type(h) == 'number' and o.z and h or nil, hla, hlo
+        end
+      else
+        it.x, it.y, it.z, it.hx, it.hy = o.x, o.y, o.z, hx, hy
+      end
+      if it.lat or it.x then items[#items + 1] = it end
+    end
+    if #items > 0 then
+      dress[#dress + 1] = { kind = site.kind, along = site.along, from = site.from or site.along,
+                            to = site.to or site.along, name = site.name, items = items }
+    end
+  end
+  return #dress
+end
+
+-- (after a world shift: taken away, put down again by the next update from their lat / lon)
+function M.resetDressing()
+  for _, s in ipairs(dress) do removeDress(s) end
+end
+
+function M.clearDressing()
+  for _, s in ipairs(dress) do removeDress(s) end
+  dress = {}
+end
+
+-- (an item's spot and heading in game coordinates now)
+local function itemNow(it, toGame)
+  if it.x then return it.x, it.y, it.z, it.hx, it.hy end
+  local x, y, z = toGame(it.lat, it.lon, it.h or 0)
+  local hx, hy = toGame(it.hlat, it.hlon, it.h or 0)
+  if not (x and hx) then return nil end
+  return x, y, it.h and z or nil, hx, hy
+end
+
+local function spawnDress(s, toGame, carZ)
+  s.objs = {}
+  for _, it in ipairs(s.items) do
+    local x, y, z, hx, hy = itemNow(it, toGame)
+    if x then
+      local dx, dy = hx - x, hy - y
+      if dx * dx + dy * dy < 1e-9 then dx, dy = 0, 1 end
+      local ok, id = pcall(makeObj, it.shape, x, y, ground(x, y, z or carZ), yawQuat(dx, dy))
+      if ok then s.objs[#s.objs + 1] = id
+      else
+        log('W', 'earthRally', 'a dressing prop could not be put down (' .. tostring(id) .. ')')
+        break
+      end
+    end
+  end
+end
+
+-- Dressing sites in the window round the car put down, those left behind taken away (props.update calls it).
+function updateDressing(carPos, toGame, carAlong)
+  local budget = M.DRESS_SITES_PER_UPDATE
+  for _, s in ipairs(dress) do
+    if carAlong then
+      local want = carAlong >= s.from - M.DRESS_AHEAD_M and carAlong <= s.to + M.DRESS_BEHIND_M
+      if s.objs and not want then removeDress(s)
+      elseif want and not s.objs and budget > 0 then
+        spawnDress(s, toGame, carPos.z)
+        budget = budget - 1
+      end
+    elseif not s.objs and budget > 0 then
+      local x, y = itemNow(s.items[1], toGame)
+      if x and (x - carPos.x) ^ 2 + (y - carPos.y) ^ 2 <= M.DRESS_AHEAD_M ^ 2 then
+        spawnDress(s, toGame, carPos.z)
+        budget = budget - 1
+      end
+    end
+  end
+end
+
+-- The dressing objects standing now, and the sites they belong to.
+function M.dressingCount()
+  local n, k = 0, 0
+  for _, s in ipairs(dress) do
+    if s.objs then n, k = n + #s.objs, k + 1 end
+  end
+  return n, k
 end
 
 return M
