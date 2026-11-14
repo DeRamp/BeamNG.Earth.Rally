@@ -7,15 +7,29 @@ local M = {}
 
 M.RUNS_SHOWN = 8
 
+-- Why the Auto recce button is not offered, when it is not. There are two reasons and they are not the same
+-- sentence: this one (the capability is missing -- an older BeamNG.Earth), and the capability being there while the
+-- server has no roads at all, which only a result can report (docs/upstream-roadgraph.md). The page shows this one
+-- beside the button rather than in a tooltip: a disabled BngButton takes no pointer events, so it can never show
+-- one.
+M.AUTO_UNAVAILABLE = 'Auto recce needs BeamNG.Earth to hand out its road graph, and this one does not: it is ' ..
+  'older than the version that added it. Update BeamNG.Earth, or drive the recce.'
+
 local function basename(f) return f and tostring(f):match('([^/\\]+)$') or nil end
 
 -- A stage's line and what it means for the player:
 --   status 'ready'  notes from the stage's own roads (matched, all on the map) or a recce
 --          'recce'  recce recommended: part of the stage has no road on the map, or the recce stops short
 --          'none'   no line yet: a recce is needed before it can be driven
-function M.stageStatus(eventId, stage)
+--
+-- autoRecce: can this BeamNG.Earth run an auto recce (earthAdapter.hasRoadGraph, passed in -- no game calls here)?
+-- It changes only the wording of the 'none' note: "drive its recce first" stopped being the only answer the moment
+-- the auto recce had a button, and offering it where it cannot run would be worse than not mentioning it.
+function M.stageStatus(eventId, stage, autoRecce)
   local line, kind = events.stageLine(eventId, stage.id, stage)
-  local out = { kind = kind, status = 'none', note = 'No line on the roads yet: drive its recce first.' }
+  local out = { kind = kind, status = 'none',
+    note = autoRecce and 'No line on the roads yet: run the auto recce, or drive its recce.'
+                      or 'No line on the roads yet: drive its recce.' }
   if kind == 'recce' then
     local shortM = events.recceShortM(events.recce(eventId, stage.id), stage, events.matched(eventId, stage.id))
     if shortM >= events.RECCE_SHORT_OF_FF_M then
@@ -80,13 +94,13 @@ function M.findStage(eventId, stageId)
 end
 
 -- A rally's page: its stages in map order (SS1 = the first line in the file).
-function M.rally(eventId, reports)
+function M.rally(eventId, reports, autoRecce)
   local e = findEvent(eventId)
   if not e then return nil end
   local out = M.rallyCard(e, reports and reports[e.id])
   out.list = {}
   for i, s in ipairs(e.stages or {}) do
-    local st = M.stageStatus(e.id, s)
+    local st = M.stageStatus(e.id, s, autoRecce)
     out.list[i] = { id = s.id, ss = i, name = s.name, lengthM = s.lengthM, status = st.status,
       best = events.best(e.id, s.id) }
   end
@@ -95,10 +109,10 @@ end
 
 -- A stage's page: its numbers, line, controls and the player's runs (newest first).
 -- arrival: the run's first control ('ATC' / 'start', runner.arrivalPoint).
-function M.stage(eventId, stageId, arrival)
+function M.stage(eventId, stageId, arrival, autoRecce)
   local e, s, i = M.findStage(eventId, stageId)
   if not s then return nil end
-  local st = M.stageStatus(e.id, s)
+  local st = M.stageStatus(e.id, s, autoRecce)
   local junctions, bridges = nil, nil
   local lms = events.landmarks(e.id, s.id, s)
   if events.matched(e.id, s.id) then
@@ -125,6 +139,10 @@ function M.stage(eventId, stageId, arrival)
     status = st.status, note = st.note, line = st.kind, corners = corners, junctions = junctions, bridges = bridges,
     atc = arrival == 'ATC', stop = ctl.stop ~= nil, best = events.best(e.id, s.id), runs = runs,
     canDrive = st.kind ~= nil,
+    -- the Auto recce button's own two answers: it is offered on a stage with no line, and when it cannot be
+    -- offered at all the page says why beside it rather than greying it with nothing to read
+    autoCan = st.status == 'none' or nil,
+    autoWhy = (st.status == 'none' and not autoRecce) and M.AUTO_UNAVAILABLE or nil,
   }
 end
 

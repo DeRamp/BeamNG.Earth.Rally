@@ -2,7 +2,8 @@
 --   earthRally/events/<event>.json            a rally (imported from its map: importer.lua, or tools/import_kml.py)
 --   earthRally/recce/<event>__<stage>.json    the line driven on the recce (lat / lon / alt every few metres)
 --   earthRally/matched/<event>__<stage>.json  the stage's map line matched to BeamNG.Earth's roads, with heights
---                                             (tools/auto_recce.py, the auto recce): a stage runs on it with no recce
+--                                             (the auto recce: autoRecce.lua in the game, or tools/auto_recce.py):
+--                                             a stage runs on it with no recce
 --   earthRally/results/<event>__<stage>.json  the stage times
 -- Files are read once and kept (the window asks for them every frame); what this module writes updates its copy.
 local M = {}
@@ -66,6 +67,30 @@ end
 
 -- The stage's map line matched to the roads: { points = { { lat, lon, alt }... }, gaps = { {fromM, toM}... }, ... }.
 function M.matched(eventId, stageId) return readOnce(M.MATCHED_DIR .. key(eventId, stageId), lineValid) end
+
+-- Save a matched line (the auto recce's, autoRecce.lua). Written whole and in one call, and only ever called with a
+-- line that covers the whole stage: lineValid above checks a line has two points and no more than that, so a
+-- half-covered file would read as runnable and the car would be driven off the end of it. The copy kept here is
+-- updated with it, or the menu and the runner would go on seeing no matched line until the next Reload.
+function M.saveMatched(eventId, stageId, matched)
+  local path = M.MATCHED_DIR .. key(eventId, stageId)
+  -- (through a temporary file where the game's file system can rename one, so a matched line is replaced whole: a
+  -- write interrupted part way through would otherwise leave a shorter line that still passes lineValid. Where it
+  -- cannot, the single jsonWriteFile below is the write.)
+  local tmp = path .. '.part'
+  if type(FS.renameFile) == 'function' then
+    jsonWriteFile(tmp, matched, true)
+    local ok, done = pcall(FS.renameFile, FS, tmp, path)
+    if not (ok and done ~= false) then
+      pcall(FS.removeFile, FS, tmp)
+      jsonWriteFile(path, matched, true)
+    end
+  else
+    jsonWriteFile(path, matched, true)
+  end
+  files[path] = { data = matched }
+  return path
+end
 
 -- A stage's map line in short (its points, first and last): a matched line made from another version of the map
 -- (the map changed and was imported again since) is not used. tools/auto_recce.py writes the same as mapKey.

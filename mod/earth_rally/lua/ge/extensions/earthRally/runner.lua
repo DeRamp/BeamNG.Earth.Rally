@@ -358,7 +358,13 @@ function M.start(event, stage)
   ok, why = rallyA.check()
   if not ok then return false, why end
   local source, kind = events.stageLine(event.id, stage.id, stage)
-  if not source then return false, 'this stage has no line on the roads yet: drive its recce first' end
+  if not source then
+    -- (the auto recce named only where it can actually be run: an older BeamNG.Earth has no road graph to
+    --  match against, and the menu offers no button there either)
+    return false, earth.hasRoadGraph()
+      and 'this stage has no line on the roads yet: run the auto recce, or drive its recce'
+      or 'this stage has no line on the roads yet: drive its recce first'
+  end
   if not carPos() then return false, 'get in a car first' end
   M.abort(true)
 
