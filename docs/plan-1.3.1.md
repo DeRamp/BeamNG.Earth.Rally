@@ -121,6 +121,7 @@ same shape, at the same time.
 - The corridor pre-load **before a stage starts** (roadmap item 21) -- the comfort case, so a stage does not begin
   into a world still arriving. Same machinery, different trigger, and it belongs with the stage start rather than
   with the auto recce. It gets easier once this lands.
-- Anything about which junctions the auto recce finds. Maryhill Up came out with 2 against the Python tool's 5 and
-  Dalles Mtn Up with 28 against 14 (measured, 2026-11-13) -- a real difference in what the co-driver calls, being
-  looked into separately. It is a notes question, not a data-fetching one.
+- Anything about which junctions the auto recce finds. It does differ from the Python tool -- Maryhill Up came out
+  with 2 junctions against 5, Dalles Mtn Up with 28 against 14 (measured, 2026-11-13) -- but the user is catching
+  note errors by driving the stages rather than by comparing the two (their call, 2026-11-13), so there is no
+  offline comparison to wait for. Anything heard on a stage goes in docs/notes-1.3.x.md like any other report.
