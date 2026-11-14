@@ -19,15 +19,22 @@ Done: the display seen in game through a whole stage; the self-test passes on Ma
 
 ## 1.3.0: stages for everyone
 
-1. Version checks at startup (23): small, and it protects everything after.
-2. Folder-based import (4) and the automatic ATC (3): importer and runner, offline tests.
-3. Stage pre-loading with a loaded % (21): BeamNG.Earth's area pre-cache along the stage corridor; mock-up of the
-   loading display first.
-4. The matcher add-on (1), in the order in docs/plan-1.3.0.md: companion file from match_roads.py, tested with the
-   dev tree's `--run-addon`; a small upstream PR (server/ on the companion's path, folder env vars); a local.json
-   entry; the stage page's matcher status (mock-up first).
-5. Release 1.3.0 as a full (not pre-) release; ask TecnaGamer to list Earth Rally (mod + matcher) in the add-on
-   registry.
+The full order and the reasoning are in docs/plan-1.3.0.md. In short, and not in the obvious order:
+
+0. Answer the matcher's three unknowns with a throwaway spike, building nothing. They are the only real unknowns in
+   this version, and if one fails the whole shape of it changes -- better to know in an afternoon than at the end.
+1. Send the two upstream pull requests (api.hudHide; a companion's path and folder env vars), so they wait in
+   someone else's queue while we build.
+2. The self-test's co-driver (setVehicleTracker), so every step after it has an automated gate. It kept being
+   deferred for being not-a-feature, and it is why 1.2 needed a human at the wheel for every release.
+3. Version checks at startup (23): small, and it protects everything after.
+4. The matcher add-on (1): the backbone, and the large one. Stage page mock-up first.
+5. Stage pre-loading with how much is loaded on screen (21); mock-up first. Revisit the self-test's settle gate when
+   it lands -- that gate is a workaround for the problem this step fixes properly.
+6. Folder-based import (4) and the automatic ATC (3): contained, offline tests, and the easiest to drop if the
+   matcher needs the time.
+7. Release 1.3.0 as a **full** release, tested on a clean PC rather than this one; ask TecnaGamer to list Earth
+   Rally (mod + matcher) in the add-on registry.
 
 Done: on a clean PC, a dropped-in map's stages drive without a recce, with no Python installed.
 

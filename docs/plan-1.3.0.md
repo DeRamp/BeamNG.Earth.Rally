@@ -1,5 +1,99 @@
 # Earth Rally 1.3.0 plan
 
+**Stages for everyone.** Done when, on a clean PC with no Python installed, a map dropped in the import folder
+drives without a recce.
+
+Everything here is backbone. The route editor and rally setup mode are 1.5.0 and are not touched: they are built on
+top of what this version lays down (the matched line, the stage file, the corridor), and starting them before the
+backbone is solid would mean building an editor for a thing that still changes underneath it.
+
+## The order, and why it is not the obvious one
+
+`docs/version-plans.md` had the small safe items first and the matcher last. That is the wrong way round. The
+matcher is the only part with real unknowns, and the three that matter are answerable in an afternoon -- but if any
+of them comes back "no", the whole shape of this version changes. Leaving them to the end means finding out when
+there is no room left to change course. So the unknowns are answered first, and nothing is built on them until they
+are.
+
+The other reordering: the self-test's co-driver gap comes early, before the features. It is not a feature itself,
+which is exactly why it keeps getting deferred -- and it is the reason 1.2 needed a human at the wheel for every
+release. Fixing it first means every step after it has an automated gate.
+
+### 0. Answer the matcher's unknowns, build nothing (an afternoon)
+
+A throwaway spike, thrown away afterwards. Three questions, all from the research below:
+
+- Does a companion run by the **packaged** BeamNG.Earth app import the server's modules? The research says yes
+  (`build_app.py` hidden-imports every `server/*.py`); confirm it on a real packaged build rather than by reading.
+- Where is the packaged app's download cache? The matcher must read the data the player's BeamNG.Earth already
+  fetched, not fetch it again.
+- Can a companion find the BeamNG user folder? Today there is no env var for it. If not, the fallback chain
+  (`apppaths.saved_user_dir()`, then `install.candidate_user_dirs()`) has to carry it.
+
+If the answers hold, the companion approach stands and the rest of this plan is sound. If one fails, stop and
+re-plan before writing a line of it -- the alternatives (matching inside the mod in Lua; a matcher service in the
+world server) are different enough that no work carries over.
+
+### 1. Send the two upstream pull requests (a day, then they wait)
+
+Both are small, both unblock later steps, and both sit in someone else's review queue -- so they go first and run in
+the background while we build.
+
+- **`api.hudHide`** (see "Carried out of 1.2"): replaces the mount-call fiction 1.2.5 uses to take BeamNG.Earth's
+  strips off screen.
+- **Whatever step 0 turned up**: `server/` on a companion's path in the dev tree, and an env var giving a companion
+  the user and cache folders. Both are one-liners for BeamNG.Earth and remove the need for fallbacks here.
+
+### 2. The self-test's co-driver (a few sessions)
+
+`drivelineRoute:setVehicleTracker()` is the lead: a duck-typed tracker reporting our synthetic speed and position
+would drive the whole pacenote pipeline with no real vehicle. Details and what has already been tried are in
+"Carried out of 1.2" below.
+
+Done when `python tools/selftest.py` passes 23 of 23 on Maryhill Up in about four minutes, with the co-driver
+calling notes. From then on every step below is checked by machine before it reaches a play-test.
+
+### 3. Version checks at startup (23) (small)
+
+A clear message when BeamNG.drive or BeamNG.Earth is not the version this mod knows, instead of a stage failing
+halfway with something obscure. Small, and it protects everything after it -- including the matcher, which will be
+reading another project's file formats.
+
+### 4. The matcher (the backbone proper, and the large one)
+
+In the order in "Road matching for every player" below: the companion file made from `tools/match_roads.py`, tested
+first against the dev tree's `--run-addon`, then against the packaged app; the status file; the stage page's matcher
+state (**mock-up first**); a `local.json` entry for testing; the registry entry by pull request last.
+
+Done when a map dropped into the import folder on a machine with no Python matches itself, with the stage page
+showing progress while it happens.
+
+### 5. Stage pre-loading, with how much is loaded on screen (21) (medium)
+
+BeamNG.Earth's area pre-cache along the stage corridor before the start, so a stage does not begin into a world that
+is still arriving. **Mock-up of the loading display first.**
+
+This one has already shown its teeth: in 1.2 the self-test started a stage mid-stream and the car was off the line
+280 m in, and the ATC's boards were set out from the organisers' pin because the road map had not arrived. The
+settle gate in `selftest.lua` is a workaround for a real problem that this step fixes properly, for players too --
+so when it lands, that gate should be revisited rather than left in.
+
+### 6. The import smalls (4, 3) (small, and genuinely small)
+
+- Maps that group each stage with its controls in folders (SOFR and others): read the folders, not only the names.
+  Two of the user's own rallies import with no controls today because their points are called just "Start" and
+  "Finish".
+- An ATC added to stages without one, so every stage starts the same way.
+
+Left to last deliberately: they are contained, they have offline tests, and they are the easiest things to drop if
+the matcher turns out to need the time.
+
+### 7. Release
+
+A **full** release, not a pre-release -- the first one. That is a different bar: the version checks in step 3 have
+to be in, the self-test has to pass end to end, and a clean PC has to be the thing actually tested rather than this
+one. Then ask TecnaGamer to list Earth Rally and the matcher in BeamNG.Earth's add-on registry.
+
 ## Road matching for every player (no Python, no developer tool)
 
 Today a stage runs without a recce only when `tools/match_roads.py` has matched its line to BeamNG.Earth's roads, and
