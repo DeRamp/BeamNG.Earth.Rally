@@ -23,6 +23,7 @@ Any imported map drives with no recce and no Python, and starts when you're read
 |---|---|
 | The auto recce for every player (1): a dropped-in map's stages drive with no recce and no Python. How it runs is being settled -- in the mod's own Lua, or an upstream matching API -- after a review found the companion add-on carries defects we cannot fix (docs/plan-1.3.0.md) | L |
 | Stage pre-loading: the stage corridor loaded before the start, a loaded % on screen, start any time (21) | M |
+| Pre-load a stage on demand, from the stage page, without driving to it: the corridor's cells fetched for a stage you have never been near, so the auto recce can run on it at all. The before-the-start case above is not enough on its own -- an auto recce reads only what is already on disk, so a map dropped in for ground the player has never visited does nothing until something fetches it | M |
 | An ATC added to stages without one (3): ~50 m before the start, walked back along the road | S |
 | No penalty for a late start, just a new minute, as a real rally does (and so waiting for the world to load cannot cost time) | S |
 | Maps that group stages in folders import properly (4) | S |
