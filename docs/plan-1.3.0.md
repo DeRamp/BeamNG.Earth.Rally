@@ -63,6 +63,48 @@ A clear message when BeamNG.drive or BeamNG.Earth is not the version this mod kn
 halfway with something obscure. Small, and it protects everything after it -- including the matcher, which will be
 reading another project's file formats.
 
+### The matcher cannot run in our own Lua (spike, 2026-11-13)
+
+A second spike asked whether the matching could happen in Earth Rally's own Lua, in the running game, with no Python
+and nothing upstream -- the cheapest shape there is, and the one the companion review pointed at. **It cannot.**
+
+BeamNG.Earth only ever hands the game process **one 2200 m square of road data centred on the player**, and replaces
+it every 400 m they move (`server/navgraph.py:50` `WINDOW_M = 1100.0`, `:1246` `REBUILD_M = 400.0`; the previous
+window's file is deleted, `server/earthd.py:2242`). A 12 km stage needs six of those at an absolute minimum and
+realistically eight to twelve. The only thing that moves the window is the player's own car position
+(`earthd.py:9402`, from the mod's `pose` message) -- so matching in Lua means driving the corridor first, which is
+the recce this version exists to remove.
+
+The hoped-for way round it does not exist either: 1.3.0's corridor pre-cache (`server/areas.py`) has no navgraph
+phase at all -- `grep -c navgraph server/areas.py` is **0**. Its modes are `data` and `world` (`areas.py:186`), which
+fetch cells, DEM, imagery and road geotile content. None of that produces a graph anywhere along the corridor, so
+"match while the pre-cache runs" has nothing to match against. Teleport-hopping the player along the stage, or
+deleting their car so the free camera drives the streaming focus, both work on paper and both stream the entire world
+along the corridor to harvest a few thousand graph nodes. Neither is acceptable.
+
+**What the spike found that is worth keeping.** If the window problem were solved, the Lua matcher would be *better*
+than `tools/match_roads.py`, not merely equal: the graph is already simplified to a 0.6 m chord with junction
+connectors shared by construction, so the whole road-graph build (~140 lines of cell reading, vertex merging and
+dead-end bridging) disappears; node `z` is the drivable surface with bridge decks and tunnel floors baked in, so the
+**DEM dependency disappears entirely**; and it carries road width, `rough` (OSM smoothness) and `rumble`, none of
+which the Python tool has. Node ids are stable across windows and anchors (`navgraph.py:1249-1270`), so stitching
+would be sound. The one real loss is bridges: no node or edge carries a bridge flag, so the `overBridge` pacenote
+landmark could not be derived.
+
+**So the ask upstream should be `api.roadGraph(lat, lon, radiusM, callback)`, not `api.matchLine`.** One window of
+road data at a point we name, built from cells already on disk. `Server.build_navgraph` (`earthd.py:2226-2302`) is
+already a pure function of (anchor, x, y) plus cached data, and `navgraph.build` already takes an arbitrary centre
+and window as parameters (`navgraph.py:359`) -- upstream runs it every 400 m regardless. It is strictly smaller than
+asking for a matcher, and it keeps the matching, our bugfixes and the organisers' route-book data inside Earth Rally.
+
+*One claim from the spike that does not hold, checked before acting on it:* it reported that a partly matched line
+could reach the stage runner today, because `lineValid` (`events.lua:56`) only tests for two points and nothing in
+the mod reads a matched line's `gaps`. The premise is right and the conclusion is wrong -- `match_roads.py` never
+writes a partial line. A stretch with no road is filled with the organisers' own line, eased in and out over
+`BLEND_M` so there is no kink, and each of those points is flagged so no notes are called there
+(`match_roads.py:483-503, 541-545`). The line always spans the whole stage and `gaps` is metadata. It remains a fair
+warning for any *incremental* design: do not write the file until coverage is complete.
+
 ### 2. The matcher (the backbone proper, and the large one)
 
 In the order in "Road matching for every player" below: the companion file made from `tools/match_roads.py`, tested
