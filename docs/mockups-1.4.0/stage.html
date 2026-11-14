@@ -271,9 +271,10 @@ function placeJunction(j) {
     out.boards.push({ p: add(p, mul(right(t), sgn * (j.half + R.BOARD_OUT))), face: mul(t, -1), shape: brd.shape, t, sgn });
   }
   if (j.kind === 'turn' && out.tapes.length) {      // a junction marshal: on a closed road, behind its tape (the user, 2026-11-14)
-    // the closed road a car is likeliest to run into by mistake: the one most in line with the way in
+    // the closed road FURTHEST from the one a car would run into by mistake (the one most in line with the way in),
+    // so a car that misses the turn does not reach the marshal (the user, 2026-11-14): the least in line with the way in
     let tp = out.tapes[0];
-    for (const x of out.tapes) if (x.d.x * tin.x + x.d.y * tin.y > tp.d.x * tin.x + tp.d.y * tin.y) tp = x;
+    for (const x of out.tapes) if (x.d.x * tin.x + x.d.y * tin.y < tp.d.x * tin.x + tp.d.y * tin.y) tp = x;
     const c = add(add(tp.at, mul(tp.d, tp.s + R.MARSHAL_BEHIND)), mul(right(tp.d), R.MARSHAL_SIDE));
     out.marshal = { c, t: mul(tp.d, -1), sgn: 1, road: tp };
   }
@@ -351,8 +352,8 @@ scenes.push({
     <li><b>Board</b> <code>s_corner_dir_right</code> ${R.BOARD_BEFORE} m before, on the side of the turn, its face to the car.
         The turn here reads ${Math.round(this.res.turnDeg)}&deg;: 60&ndash;120&deg; is a plain left / right board.</li>
     <li><b>Marshal</b> (only when the map marks none near): a table, a chair and a flag <b>on the closed road, ${R.MARSHAL_BEHIND} m behind its tape</b>,
-        off the stage altogether (the user, 2026-11-14). Of the closed roads it takes the one a car is likeliest to run into by mistake,
-        the one most in line with the way in: here, straight on.</li></ul>`; },
+        off the stage altogether (the user, 2026-11-14). Of the closed roads it takes the one <b>furthest from where a car that misses
+        the turn would go</b> (that is the road most in line with the way in, here straight on), so the marshal is never in its path: here, the left road.</li></ul>`; },
 });
 // 2. a fork, keep left
 scenes.push({

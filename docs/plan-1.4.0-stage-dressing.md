@@ -115,8 +115,9 @@ Each kind is a `props.LAYOUTS` entry, placed like the controls (along the road, 
   within 50 m, the two share one post.
 - **Marshal post:** a chair, a folding table and a flag marker, off the road's edge. **At a junction, on the closed
   road behind its tape** (~5 m behind, a little off that road's centre), never on the stage (the user, 2026-11-14,
-  from the mock-up): of the closed roads, the one most in line with the way in, where a car that misses the turn
-  would go.
+  from the mock-up): of the closed roads, the one **furthest from where a car that misses the turn would go** --
+  the least in line with the way in -- so an overshooting car never reaches the marshal. With one closed road, that
+  one.
 - **Spectator area:** on the inside of the corner, set back: a run of `s_spectator_tape_5m` 4-6 m off the road's
   edge along ~30 m of road, mesh fence behind it, a tarp or two, one gazebo, chairs, a couple of hay bales at the
   road's edge in front.
