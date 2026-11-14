@@ -21,7 +21,7 @@ Any imported map drives with no recce and no Python, and starts when you're read
 
 | Item | Size |
 |---|---|
-| Road matching for every player (1): a dropped-in map's stages drive with no recce and no Python. How it runs is being settled -- in the mod's own Lua, or an upstream matching API -- after a review found the companion add-on carries defects we cannot fix (docs/plan-1.3.0.md) | L |
+| The auto recce for every player (1): a dropped-in map's stages drive with no recce and no Python. How it runs is being settled -- in the mod's own Lua, or an upstream matching API -- after a review found the companion add-on carries defects we cannot fix (docs/plan-1.3.0.md) | L |
 | Stage pre-loading: the stage corridor loaded before the start, a loaded % on screen, start any time (21) | M |
 | An ATC added to stages without one (3): ~50 m before the start, walked back along the road | S |
 | No penalty for a late start, just a new minute, as a real rally does (and so waiting for the world to load cannot cost time) | S |
@@ -100,7 +100,7 @@ Ready for players who have never heard of it.
   the matched lines 1.3.0 gives everyone.
 - 1.5.0's rally file is the base for the editor, setup mode, leaderboards, the starter pack and full rallies, so it
   comes before them.
-- 1.6.0 (on the stage) before the full rally (the user, 2026-11-13): it builds on junction data (1.3.0's matcher)
+- 1.6.0 (on the stage) before the full rally (the user, 2026-11-13): it builds on junction data (1.3.0's auto recce)
   and the rally file.
 - 1.7.0 needs the rally file (itineraries, service areas live in it).
 - 2.0.0 gathers what a newcomer needs, once the content and tools exist to fill a starter pack.

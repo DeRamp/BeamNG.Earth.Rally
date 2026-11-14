@@ -642,7 +642,7 @@ do
                  atc = { lat = full[11][1] - 150 / 111195, lon = full[11][2] } },
     line = event.stages[1].line } } }
   files['/earthRally/events/test3.json'] = ev3
-  -- no recce: the map line matched to the roads (tools/match_roads.py) instead
+  -- no recce: the map line matched to the roads (tools/auto_recce.py) instead
   files['/earthRally/matched/test3__hill.json'] = { format = 1, points = recFrom }
   local function toAtcRun()
     anchor = { lat = 47.0, lon = -123.0 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The mod (events.mapKey, Lua) and tools/match_roads.py (map_key) describe a stage's map line the same way, on the
+"""The mod (events.mapKey, Lua) and tools/auto_recce.py (map_key) describe a stage's map line the same way, on the
 real event files in the game's user folder (skipped when there are none): else every matched line would be taken for
 one made from another version of the map, and not used."""
 import json
@@ -18,7 +18,7 @@ def main():
     if not files:
         print('test_mapkey: no events in the game folder: skipped')
         return 0
-    import match_roads
+    import auto_recce
     import lupa.luajit21 as lj
     lua = lj.LuaRuntime()
     lua.execute(f"package.path = '{LUA.as_posix()}/?.lua;' .. package.path")
@@ -31,9 +31,9 @@ def main():
             n += 1
             # the line as the game's JSON reader gives it: a Lua table of {lat, lon}
             t = lua.table_from([lua.table_from(p) for p in st['line']])
-            if ev_mod.mapKey(t) != match_roads.map_key(st['line']):
+            if ev_mod.mapKey(t) != auto_recce.map_key(st['line']):
                 bad += 1
-                print('FAIL:', f.name, st['id'], ev_mod.mapKey(t), match_roads.map_key(st['line']))
+                print('FAIL:', f.name, st['id'], ev_mod.mapKey(t), auto_recce.map_key(st['line']))
     print(f'test_mapkey: {n - bad} passed, {bad} failed')
     return 1 if bad else 0
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Match each stage's map line to BeamNG.Earth's own roads, with heights, so the stage runs without a recce.
+"""The auto recce: a stage's map line matched to BeamNG.Earth's own roads, with heights, so it runs with no recce.
 
 The game drives on BeamNG.Earth's roads: Overture's road data per map cell, every bend rounded to an arc by
 BeamNG.Earth (server/roadsmooth.py). This reads those cells with BeamNG.Earth's own code (its download cache, fetching
@@ -12,7 +12,7 @@ stage has no recce (a recce, when there is one, is still used first).
 
 Needs BeamNG.Earth's source (a clone of github.com/TecnaGamer/BeamNG.Earth) and its Python environment (numpy):
 
-    <beamng.earth>/.venv/Scripts/python.exe tools/match_roads.py --earth <beamng.earth> --event olympus26
+    <beamng.earth>/.venv/Scripts/python.exe tools/auto_recce.py --earth <beamng.earth> --event olympus26
     ... --event otr24 --stage maryhill-up            (one stage)
 
 A developer tool for now: the plan is to move this into BeamNG.Earth's server as an API call, so players need nothing.
@@ -556,7 +556,7 @@ def match_stage(np, md, mapcells, dem, stage, roadsmod=None):
     off_line = seg_dist(np, np.array(res), np.array(kml[:-1]), np.array(kml[1:]))
     gap_m = sum(b - a for a, b in gaps)
     return {
-        'format': 1, 'stage': stage['id'], 'source': "BeamNG.Earth's roads (tools/match_roads.py)",
+        'format': 1, 'stage': stage['id'], 'source': "BeamNG.Earth's roads (tools/auto_recce.py)",
         'date': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
         'lengthM': round(total, 1), 'mapLineM': round(kml_cum[-1], 1),
         'gaps': [[round(a, 1), round(b, 1)] for a, b in gaps], 'gapM': round(gap_m, 1),

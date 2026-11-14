@@ -32,8 +32,8 @@ backbone is solid would mean building an editor for a thing that still changes u
 
 ## The order, and why it is not the obvious one
 
-`docs/version-plans.md` had the small safe items first and the matcher last. That is the wrong way round. The
-matcher is the only part with real unknowns, and the three that matter are answerable in an afternoon -- but if any
+`docs/version-plans.md` had the small safe items first and the auto recce last. That is the wrong way round. The
+auto recce is the only part with real unknowns, and the three that matter are answerable in an afternoon -- but if any
 of them comes back "no", the whole shape of this version changes. Leaving them to the end means finding out when
 there is no room left to change course. So the unknowns are answered first, and nothing is built on them until they
 are.
@@ -42,37 +42,37 @@ The self-test's co-driver gap is **not** in this version (the user, 2026-11-13).
 co-driver version: the pacenote work happens there, so the test that listens for pacenotes belongs with it rather
 than ahead of a version about roads.
 
-### 0. Answer the matcher's unknowns, build nothing (an afternoon)
+### 0. Answer the auto recce's unknowns, build nothing (an afternoon)
 
 A throwaway spike, thrown away afterwards. Three questions, all from the research below:
 
 - Does a companion run by the **packaged** BeamNG.Earth app import the server's modules? The research says yes
   (`build_app.py` hidden-imports every `server/*.py`); confirm it on a real packaged build rather than by reading.
-- Where is the packaged app's download cache? The matcher must read the data the player's BeamNG.Earth already
+- Where is the packaged app's download cache? The auto recce must read the data the player's BeamNG.Earth already
   fetched, not fetch it again.
 - Can a companion find the BeamNG user folder? Today there is no env var for it. If not, the fallback chain
   (`apppaths.saved_user_dir()`, then `install.candidate_user_dirs()`) has to carry it.
 
 If the answers hold, the companion approach stands and the rest of this plan is sound. If one fails, stop and
-re-plan before writing a line of it -- the alternatives (matching inside the mod in Lua; a matcher service in the
-world server) are different enough that no work carries over.
+re-plan before writing a line of it -- the alternatives (the auto recce in the mod's own Lua; an auto recce
+service in the world server) are different enough that no work carries over.
 
 ### 1. Version checks at startup (23) (small)
 
 A clear message when BeamNG.drive or BeamNG.Earth is not the version this mod knows, instead of a stage failing
-halfway with something obscure. Small, and it protects everything after it -- including the matcher, which will be
+halfway with something obscure. Small, and it protects everything after it -- including the auto recce, which will be
 reading another project's file formats.
 
-### The matcher cannot run in our own Lua (spike, 2026-11-13)
+### The auto recce cannot run in our own Lua (spike, 2026-11-13)
 
-A second spike asked whether the matching could happen in Earth Rally's own Lua, in the running game, with no Python
+A second spike asked whether the auto recce could happen in Earth Rally's own Lua, in the running game, with no Python
 and nothing upstream -- the cheapest shape there is, and the one the companion review pointed at. **It cannot.**
 
 BeamNG.Earth only ever hands the game process **one 2200 m square of road data centred on the player**, and replaces
 it every 400 m they move (`server/navgraph.py:50` `WINDOW_M = 1100.0`, `:1246` `REBUILD_M = 400.0`; the previous
 window's file is deleted, `server/earthd.py:2242`). A 12 km stage needs six of those at an absolute minimum and
 realistically eight to twelve. The only thing that moves the window is the player's own car position
-(`earthd.py:9402`, from the mod's `pose` message) -- so matching in Lua means driving the corridor first, which is
+(`earthd.py:9402`, from the mod's `pose` message) -- so an auto recce in Lua means driving the corridor first, which is
 the recce this version exists to remove.
 
 The hoped-for way round it does not exist either: 1.3.0's corridor pre-cache (`server/areas.py`) has no navgraph
@@ -82,8 +82,8 @@ fetch cells, DEM, imagery and road geotile content. None of that produces a grap
 deleting their car so the free camera drives the streaming focus, both work on paper and both stream the entire world
 along the corridor to harvest a few thousand graph nodes. Neither is acceptable.
 
-**What the spike found that is worth keeping.** If the window problem were solved, the Lua matcher would be *better*
-than `tools/match_roads.py`, not merely equal: the graph is already simplified to a 0.6 m chord with junction
+**What the spike found that is worth keeping.** If the window problem were solved, a Lua auto recce would be *better*
+than `tools/auto_recce.py`, not merely equal: the graph is already simplified to a 0.6 m chord with junction
 connectors shared by construction, so the whole road-graph build (~140 lines of cell reading, vertex merging and
 dead-end bridging) disappears; node `z` is the drivable surface with bridge decks and tunnel floors baked in, so the
 **DEM dependency disappears entirely**; and it carries road width, `rough` (OSM smoothness) and `rumble`, none of
@@ -95,23 +95,23 @@ landmark could not be derived.
 road data at a point we name, built from cells already on disk. `Server.build_navgraph` (`earthd.py:2226-2302`) is
 already a pure function of (anchor, x, y) plus cached data, and `navgraph.build` already takes an arbitrary centre
 and window as parameters (`navgraph.py:359`) -- upstream runs it every 400 m regardless. It is strictly smaller than
-asking for a matcher, and it keeps the matching, our bugfixes and the organisers' route-book data inside Earth Rally.
+asking for an auto recce, and it keeps the matching, our bugfixes and the organisers' route-book data inside Earth Rally.
 
 *One claim from the spike that does not hold, checked before acting on it:* it reported that a partly matched line
 could reach the stage runner today, because `lineValid` (`events.lua:56`) only tests for two points and nothing in
-the mod reads a matched line's `gaps`. The premise is right and the conclusion is wrong -- `match_roads.py` never
+the mod reads a matched line's `gaps`. The premise is right and the conclusion is wrong -- `auto_recce.py` never
 writes a partial line. A stretch with no road is filled with the organisers' own line, eased in and out over
 `BLEND_M` so there is no kink, and each of those points is flagged so no notes are called there
-(`match_roads.py:483-503, 541-545`). The line always spans the whole stage and `gaps` is metadata. It remains a fair
+(`auto_recce.py:483-503, 541-545`). The line always spans the whole stage and `gaps` is metadata. It remains a fair
 warning for any *incremental* design: do not write the file until coverage is complete.
 
-### 2. The matcher (the backbone proper, and the large one)
+### 2. The auto recce (the backbone proper, and the large one)
 
-In the order in "Road matching for every player" below: the companion file made from `tools/match_roads.py`, tested
-first against the dev tree's `--run-addon`, then against the packaged app; the status file; the stage page's matcher
-state (**mock-up first**); a `local.json` entry for testing; the registry entry by pull request last.
+In the order in "Auto recce for every player" below: the companion file made from `tools/auto_recce.py`, tested
+first against the dev tree's `--run-addon`, then against the packaged app; the status file; the stage page's auto
+recce state (**mock-up first**); a `local.json` entry for testing; the registry entry by pull request last.
 
-Done when a map dropped into the import folder on a machine with no Python matches itself, with the stage page
+Done when a map dropped into the import folder on a machine with no Python recces itself, with the stage page
 showing progress while it happens.
 
 ### 3. Stage pre-loading, with how much is loaded on screen (21) (medium)
@@ -136,36 +136,36 @@ so when it lands, that gate should be revisited rather than left in.
   load can never cost a player time. Touches `runner.stepToStart`, the results card and the HUD's penalty rows.
 
 Left to last deliberately: they are contained, they have offline tests, and they are the easiest things to drop if
-the matcher turns out to need the time.
+the auto recce turns out to need the time.
 
 ### 5. Release
 
 A **full** release, not a pre-release -- the first one. That is a different bar: the version checks in step 1 have
 to be in, the self-test has to pass end to end, and a clean PC has to be the thing actually tested rather than this
-one. Then ask TecnaGamer to list Earth Rally and the matcher in BeamNG.Earth's add-on registry.
+one. Then ask TecnaGamer to list Earth Rally and the auto recce in BeamNG.Earth's add-on registry.
 
-## Road matching for every player (no Python, no developer tool)
+## Auto recce for every player (no Python, no developer tool)
 
-Today a stage runs without a recce only when `tools/match_roads.py` has matched its line to BeamNG.Earth's roads, and
+Today a stage runs without a recce only when `tools/auto_recce.py` has matched its line to BeamNG.Earth's roads, and
 that needs Python and BeamNG.Earth's source. Players who import their own maps get "recce needed" on every stage.
 
 ### How
 
-- **Earth Rally Matcher**: a BeamNG.Earth *companion* add-on (docs/ADDONS.md, "Programs beside the game"), made from
-  `match_roads.py`: one Python file, installed from BeamNG.Earth's Add-ons page and run by BeamNG.Earth's own Python
+- **Earth Rally Auto Recce**: a BeamNG.Earth *companion* add-on (docs/ADDONS.md, "Programs beside the game"), made
+  from `auto_recce.py`: one Python file, installed from BeamNG.Earth's Add-ons page and run by BeamNG.Earth's own Python
   (`BeamNG.Earth --run-addon`), so players need no Python. The packaged app bundles every `server/*.py` module
   (tools/build_app.py), so `mapdata`, `mapcells`, `dem` and `roads` import as they do in the source tree.
 - Set to **start with BeamNG.Earth**. It watches `earthRally/events/`; any stage with no file in `earthRally/matched/`
-  (or an older one than its event) is matched and written there. A status file (`earthRally/matcher.json`: per stage
+  (or an older one than its event) is matched and written there. A status file (`earthRally/autoRecce.json`: per stage
   queued / matching / done / failed, with progress) tells the mod what it is doing.
-- **In game**, automatic, no button. The stage page shows the matcher's state:
+- **In game**, automatic, no button. The stage page shows the auto recce's state:
 
   ```
   Stillwater                     12.4 km
-  Line: matching to the roads… (3 of 9 stages)
+  Line: auto recce running… (3 of 9 stages)
   ```
 
-  Without the matcher installed, the page says how to install it instead of only "recce needed".
+  Without the auto recce installed, the page says how to install it instead of only "recce needed".
 - **Distribution**: a registry entry (kind `companion`, `run: {args: [...]}`, autostart) by pull request to
   BeamNG.Earth's add-on registry, its asset a `.py` in this repo's releases. Until merged: BeamNG.Earth's local list
   (`%LOCALAPPDATA%\beamng-earth\addons\local.json`).
@@ -173,8 +173,8 @@ that needs Python and BeamNG.Earth's source. Players who import their own maps g
 ### To find out first
 
 - That a companion run by the packaged app (not the source tree) imports the server's modules.
-- The packaged app's download cache folder (the source tree's is `~/.cache/beamng-earth`), so the matcher uses the data
-  the player's BeamNG.Earth already downloaded.
+- The packaged app's download cache folder (the source tree's is `~/.cache/beamng-earth`), so the auto recce uses the
+  data the player's BeamNG.Earth already downloaded.
 - Show the stage-page mock-up to the user before building it.
 
 ### Research findings (2026-11-13)
@@ -190,25 +190,25 @@ that needs Python and BeamNG.Earth's source. Players who import their own maps g
   `BNGEARTH_CACHE_DIR`, `BNGEARTH_DATA_DIR` (not `BNE_*`: those are build switches, revisit.py:140-166).
 - **Registry.** `addons.json` in TecnaGamer/BeamNG.Earth-data (addons.py:78), edited by hand by TecnaGamer with the
   author's agreement after checking the files. One entry = one kind + one asset: Earth Rally needs two entries (the
-  mod zip, `beamng-mod`; the matcher, `companion`), same repo. `run.args` flags only (`["--watch"]`).
+  mod zip, `beamng-mod`; the auto recce, `companion`), same repo. `run.args` flags only (`["--watch"]`).
   - **No registry autostart**: "Start with BeamNG.Earth" is the player's toggle (addons.py:847).
   - **Blocker:** Install only offers non-pre-releases (addons.py:437-448); every Earth Rally release so far is a
     pre-release. 1.3.0 has to be a full release.
   - The asset must have GitHub's SHA-256 digest and be one `.py` (addonrun.py:30).
 - **Talking to the game:** files in the user folder (the game can't read run.log). `events.lua`'s `readOnce` caches
-  a missing file too (events.lua:20-31): drop that entry when the matcher reports a stage done.
-- **match_roads.py changes:** optional `--earth`/`--event`; a `--watch` loop (~5 s, skip files still being written);
-  atomic writes with retry; `matcher.json` with a heartbeat; a `matcher` version in matched files; idle priority and
+  a missing file too (events.lua:20-31): drop that entry when the auto recce reports a stage done.
+- **auto_recce.py changes:** optional `--earth`/`--event`; a `--watch` loop (~5 s, skip files still being written);
+  atomic writes with retry; `autoRecce.json` with a heartbeat; an `autoRecce` version in matched files; idle priority and
   smaller pools (`MapData(threads=2)`, `Dem(fetch_workers=4)`): it inherits the server's pinned cores (cpupin.py:244,
   budget.py:669). One self-contained file, no multiprocessing. ~0-35 s per stage.
-- **matcher.json:** `{format:1, matcher, pid, heartbeat, state: idle|matching, queued, current:{event,stage,since}|null,
-  stages:{"ev__st":{state: done|failed, seconds?, error?, at}}}`; a heartbeat older than ~30 s = not running. Requests
-  from the mod: `earthRally/matcher-request.json`.
-- **local.json entry for testing:** `{"id":"earth-rally-matcher","name":"Earth Rally Matcher","author":"DeRamp",
-  "repo":"DeRamp/BeamNG.Earth.Rally","kind":"companion","asset":"^earth_rally_matcher\\.py$",
+- **autoRecce.json:** `{format:1, autoRecce, pid, heartbeat, state: idle|matching, queued,
+  current:{event,stage,since}|null, stages:{"ev__st":{state: done|failed, seconds?, error?, at}}}`; a heartbeat older
+  than ~30 s = not running. Requests from the mod: `earthRally/autoRecce-request.json`.
+- **local.json entry for testing:** `{"id":"earth-rally-auto-recce","name":"Earth Rally Auto Recce","author":"DeRamp",
+  "repo":"DeRamp/BeamNG.Earth.Rally","kind":"companion","asset":"^earth_rally_auto_recce\\.py$",
   "local":{"file":"<path>","tag":"1.3.0-dev"},"run":{"args":["--watch"]},"minEarth":"1.9.0"}`; restart the server
   after editing.
-- **Draft:** `earth_rally_matcher_draft.py` in the session scratchpad (`research-1.3.0/`); a dry run through
+- **Draft:** `earth_rally_auto_recce_draft.py` in the session scratchpad (`research-1.3.0/`); a dry run through
   `launcher.py --run-addon` found 0 stages pending.
 - **Build order:** companion file, tested via the dev `--run-addon` → small upstream PR (path fix, env vars, maybe an
   autostart default) → local.json entry → the mod's status display (mock-up first) → 1.3.0 as a full release → ask

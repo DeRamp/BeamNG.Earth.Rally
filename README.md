@@ -15,10 +15,10 @@ Status: alpha (1.2.5, in testing: one panel on screen rather than three -- where
 2. **The stage's line on the road.** A stage is timed and called on one of these:
    - **a recce** you drive once in game: the stage's map line is drawn on the road ahead of you (orange; a green ball
      at the flying finish) and the mod records the line you drive, with real heights;
-   - **its map line matched to BeamNG.Earth's roads**: no recce needed. For now this takes a developer tool with
-     Python and BeamNG.Earth's source (`tools/match_roads.py`, below), so for most players every stage still needs a
-     recce. Where the map has no road the organisers' line is used, no notes are called there, and the window says a
-     recce is better.
+   - **an auto recce**: its map line matched to BeamNG.Earth's roads, no recce needed. For now this takes a
+     developer tool with Python and BeamNG.Earth's source (`tools/auto_recce.py`, below), so for most players every
+     stage still needs a recce. Where the map has no road the organisers' line is used, no notes are called there,
+     and the window says a recce is better.
 
    A recce, when there is one, is used first (unless it was saved short and the matched line covers the stage).
 3. **Run** the stage, through its controls as in a real rally:
@@ -50,7 +50,7 @@ Status: alpha (1.2.5, in testing: one panel on screen rather than three -- where
      start and stop. The pacenote cards show during the run. Times and penalties are kept.
 
 Pacenotes: corners are found from the stage's line; the game works out each one's severity and the distance calls
-and voices them with its own co-driver voice pack. On stages matched to the roads (below), junctions and bridges are
+and voices them with its own co-driver voice pack. On stages with an auto recce (below), junctions and bridges are
 called too: "at junction" on a turn there, "past junction", "keep left / right" at a fork, "over bridge".
 
 ## Install
@@ -143,7 +143,7 @@ the rally's **Import report** in the window lists each stage with its length and
 - **"... matches no stage: did you mean ...?"**: a point's name doesn't match a stage's (often a typo). Rename it in
   the map and save the file again: it is imported again by itself.
 - **its start control is ... m from the line**: the point is in the wrong place, or matched the wrong stage.
-- **drawn in pieces with gaps**: fine; the recce (or the road matching) fills them in.
+- **drawn in pieces with gaps**: fine; the recce (or the auto recce) fills them in.
 - **too wide to run for now**: the stage is more than ~26 km across (the world would shift during it).
 
 Change the file and it is imported again (**Re-scan** imports every file again). Taking a file out of the folder
@@ -159,14 +159,14 @@ Where things are kept (your BeamNG.drive user folder, `%LOCALAPPDATA%\BeamNG\Bea
 lines), `earthRally/matched/` (map lines matched to the roads), `earthRally/results/` (times),
 `earthRally/runtime/` (the stage files written for the rally engine at each run).
 
-### 3. Matching stages to the roads (developer tool, for now)
+### 3. The auto recce (developer tool, for now)
 
-`tools/match_roads.py` routes each stage's map line along BeamNG.Earth's own roads (the ones the game draws, bends
+`tools/auto_recce.py` routes each stage's map line along BeamNG.Earth's own roads (the ones the game draws, bends
 rounded as it rounds them) and takes heights from BeamNG.Earth's elevation data, so the stage runs without a recce.
 It needs BeamNG.Earth's source and its Python environment:
 
 ```
-<beamng.earth>/.venv/Scripts/python.exe tools/match_roads.py --earth <beamng.earth> --event olympus26
+<beamng.earth>/.venv/Scripts/python.exe tools/auto_recce.py --earth <beamng.earth> --event olympus26
 ```
 
 On the two stages with a recce to compare (OTR's Maryhill Up and Boyd Loop) the matched line is 0.6-0.7 m from the
@@ -242,9 +242,9 @@ The developer panel (Settings > Developer panel) lists what each run found out, 
 
 ## Plan
 
-Next: 1.3.0 (`docs/plan-1.3.0.md`): road matching for every player, so a dropped-in map's stages drive with no recce
+Next: 1.3.0 (`docs/plan-1.3.0.md`): the auto recce for every player, so a dropped-in map's stages drive with no recce
 and no Python; version checks at startup; the stage corridor loaded before the start; an ATC added to stages without
-one; and no time penalty for a late start, as in a real rally. How the matching runs is being settled -- in this
+one; and no time penalty for a late start, as in a real rally. How the auto recce runs is being settled -- in this
 mod's own Lua, or by asking BeamNG.Earth for it -- and nothing goes upstream for this version. Later: the co-driver
 (better pacenotes, and the self-test hearing them), course tape, junction
 direction signs,

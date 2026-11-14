@@ -21,16 +21,16 @@ Done: the display seen in game through a whole stage; the self-test passes on Ma
 
 The full order and the reasoning are in docs/plan-1.3.0.md. In short, and not in the obvious order:
 
-0. Answer the matcher's three unknowns with a throwaway spike, building nothing. They are the only real unknowns in
+0. Answer the auto recce's three unknowns with a throwaway spike, building nothing. They are the only real unknowns in
    this version, and if one fails the whole shape of it changes -- better to know in an afternoon than at the end.
 1. Version checks at startup (23): small, and it protects everything after.
-2. The matcher add-on (1): the backbone, and the large one. Stage page mock-up first.
+2. The auto recce add-on (1): the backbone, and the large one. Stage page mock-up first.
 3. Stage pre-loading with how much is loaded on screen (21); mock-up first. Revisit the self-test's settle gate when
    it lands -- that gate is a workaround for the problem this step fixes properly.
 4. Folder-based import (4), the automatic ATC (3), and dropping the late-start penalty: contained, offline tests,
-   and the easiest to drop if the matcher needs the time.
+   and the easiest to drop if the auto recce needs the time.
 5. Release 1.3.0 as a **full** release, tested on a clean PC rather than this one; ask TecnaGamer to list Earth
-   Rally (mod + matcher) in the add-on registry.
+   Rally (mod + auto recce) in the add-on registry.
 
 Nothing goes upstream for 1.3.0 (the user, 2026-11-13): the api.hudHide pull request was drafted, reviewed and
 dropped -- docs/plan-1.3.0.md, "The strips: no pull request" -- and the mount call Earth Rally already uses stays,
@@ -68,7 +68,7 @@ Done: the user makes a stage in game, shares the file, and it runs on another PC
 
 ## 1.6.0: on the stage
 
-1. Course tape (5) and junction direction signs (6) from the junction data the matcher finds.
+1. Course tape (5) and junction direction signs (6) from the junction data the auto recce finds.
 2. Ghost car and replays (27).
 3. Atmosphere (29): spectators, marshals, radio points.
 4. Height profiles / stage sketches (15).

@@ -2,7 +2,7 @@
 --   earthRally/events/<event>.json            a rally (imported from its map: importer.lua, or tools/import_kml.py)
 --   earthRally/recce/<event>__<stage>.json    the line driven on the recce (lat / lon / alt every few metres)
 --   earthRally/matched/<event>__<stage>.json  the stage's map line matched to BeamNG.Earth's roads, with heights
---                                             (tools/match_roads.py): a stage runs on it without a recce
+--                                             (tools/auto_recce.py, the auto recce): a stage runs on it with no recce
 --   earthRally/results/<event>__<stage>.json  the stage times
 -- Files are read once and kept (the window asks for them every frame); what this module writes updates its copy.
 local M = {}
@@ -68,7 +68,7 @@ end
 function M.matched(eventId, stageId) return readOnce(M.MATCHED_DIR .. key(eventId, stageId), lineValid) end
 
 -- A stage's map line in short (its points, first and last): a matched line made from another version of the map
--- (the map changed and was imported again since) is not used. tools/match_roads.py writes the same as mapKey.
+-- (the map changed and was imported again since) is not used. tools/auto_recce.py writes the same as mapKey.
 function M.mapKey(line)
   if type(line) ~= 'table' or #line == 0 then return nil end
   local a, b = line[1], line[#line]
@@ -117,7 +117,7 @@ function M.stageLine(eventId, stageId, stage)
   return nil
 end
 
--- The junctions and bridges along a stage (found by tools/match_roads.py on the map's roads, kept with its matched
+-- The junctions and bridges along a stage (found by tools/auto_recce.py on the map's roads, kept with its matched
 -- line, as lat / lon: they hold whichever line the stage runs on). Returns { { lat, lon, type }... } with type a key
 -- of stageWriter.LANDMARKS; empty without a matched line made from this map.
 function M.landmarks(eventId, stageId, stage)
