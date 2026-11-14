@@ -155,9 +155,13 @@ What is left before it can ship:
   yet, deliberately.
 - Measured on a real stage against the 116 files `tools/auto_recce.py` already produced: snap rate, detour
   rejections, junction kinds, and whether the graph's heights land where a driven recce's do.
-- `bridges` cannot be reproduced -- the graph carries no bridge flag, and a cutting looks the same from the heights.
-  So the `overBridge` landmark is called on a stage recced by the Python tool and not on the same stage recced in
-  the game. Either it stops being a landmark, or it needs a source of its own.
+- **`bridges` is given up, decided (the user, 2026-11-13: "its ok to loose bridge").** The graph carries no bridge
+  flag on any node or edge, and it is not recoverable from the heights -- a cutting looks the same. So an in-game
+  auto recce writes `bridges = {}` and the `overBridge` call is simply not made on those stages. It degrades
+  quietly: `events.landmarks` returns the junctions alone, `stageWriter` places what it is given, and the stage
+  page's count shows no bridges. The 116 stages `tools/auto_recce.py` has already done keep theirs, so the same
+  rally can have bridge calls on one stage and not another -- worth a line in the release notes rather than a fix.
+  If it is ever wanted back it needs a source of its own, not a cleverer reading of the graph.
 
 Done when a map dropped into the import folder on a machine with no Python recces itself, with the stage page
 showing progress while it happens.
