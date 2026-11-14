@@ -94,8 +94,9 @@ Numbers the game can use, not text. Every field optional; a missing one is not s
 ```
 
 The Rules card shows at most these five, one short line each (all five: the user, 2026-11-14). The ARA pack
-carries the four its events state, at season level. Today's game uses only `falseStartS[1]`, as the
-jump-start penalty; the rest are for the full-rally mode (roadmap: itineraries, late / early penalties).
+carries the four its events state, at season level. The game does not read them yet: its jump start is a
+fixed 10 s (`runner.JUMP_START_PENALTY_S`), and the card marks a rule "in game" only where the two agree. Reading
+them is for the full-rally mode (roadmap: itineraries, late / early penalties).
 
 ## Kept for later versions (reserved, read by nothing yet)
 

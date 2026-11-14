@@ -2,6 +2,7 @@
 -- from the files on this computer (events.lua) as plain tables for the Vue side (lengths in metres, times in
 -- seconds, dates as written; units and wording are the page's). No game calls.
 local events = require('earthRally/events')
+local boards = require('earthRally/boards')
 
 local M = {}
 
@@ -93,8 +94,15 @@ function M.findStage(eventId, stageId)
   return e
 end
 
--- A rally's page: its stages in map order (SS1 = the first line in the file).
+-- A rally's page: its stages in map order (SS1 = the first line in the file), and what a rally file adds
+-- (M.addRallyFiles below: banner, passes, Place, Results, Rules).
 function M.rally(eventId, reports, autoRecce)
+  local out = M.rallyBase(eventId, reports, autoRecce)
+  if out then M.addRallyFiles(out, findEvent(eventId)) end
+  return out
+end
+
+function M.rallyBase(eventId, reports, autoRecce)
   local e = findEvent(eventId)
   if not e then return nil end
   local out = M.rallyCard(e, reports and reports[e.id])
@@ -111,10 +119,17 @@ function M.rally(eventId, reports, autoRecce)
 end
 
 -- A stage's page: its numbers, line, controls and the player's runs (newest first).
--- arrival: the run's first control ('ATC' / 'start', runner.arrivalPoint).
-function M.stage(eventId, stageId, arrival, autoRecce)
+-- arrival: the run's first control ('ATC' / 'start', runner.arrivalPoint). pass: the leaderboard's pass ('SS4'),
+-- nil for the one you place best on.
+function M.stage(eventId, stageId, arrival, autoRecce, pass)
   local e, s, i = M.findStage(eventId, stageId)
   if not s then return nil end
+  local out = M.stageBase(e, s, i, arrival, autoRecce)
+  M.addStageRallyFiles(out, e, s, i, pass)
+  return out
+end
+
+function M.stageBase(e, s, i, arrival, autoRecce)
   local st = M.stageStatus(e.id, s, autoRecce)
   -- The four tiles' last three numbers all come from the stage's own line: the corners the co-driver will call on
   -- it and the height it gains and loses (events.lineFigures, kept with the line when it was saved). Until 1.3.1
@@ -142,6 +157,438 @@ function M.stage(eventId, stageId, arrival, autoRecce)
     autoCan = st.status == 'none' or nil,
     autoWhy = (st.status == 'none' and not autoRecce) and M.AUTO_UNAVAILABLE or nil,
   }
+end
+
+------------------------------------------------------------------------------------------ rally files
+-- What a pack adds (docs/rally-file.md; the mock-up is docs/mockups-rally-files/menu.html): seasons, covers, the
+-- running order with its passes, your place against the real field, your rally result, the season standings and
+-- the rules. Read from the files pack.lua wrote and worked out by boards.lua. An event file with none of the new
+-- fields (a loose map, or one imported before rally files) comes out as it always did, plus its SS numbers as
+-- passes.
+
+M.STANDINGS_TOP = 10     -- the season's standings: the top 10, and you
+M.RESULTS_TOP = 10       -- a rally's results: the real top 10, and you
+-- The one rule the game applies today is a fixed 10 s jump start (runner.JUMP_START_PENALTY_S: the runner does
+-- not read an event's rules yet). The Rules tab marks the false start "in game" only when the file's first offence
+-- is that same figure, so the mark never says the game charges what the file says while it charges something else.
+M.GAME_FALSE_START_S = 10
+
+-- Where the menu loads a picture from: the ONE place a path the importer wrote (pack.MEDIA_DIR,
+-- '/earthRally/media/<rallyId>/cover.png') becomes what the page puts in an <img src>.
+-- UNVERIFIED IN GAME: the path is handed over as it is, a '/'-rooted path in the game's virtual file system, on the
+-- guess that the UI (served from that same file system) resolves it against the user folder. If the in-game check
+-- finds another form is needed (a scheme, a prefix), it changes here and nowhere else. The page draws a rally plate
+-- under every picture and drops a picture that fails to load, so a wrong guess shows plates, not holes.
+function M.mediaUrl(path)
+  if type(path) ~= 'string' or path == '' then return nil end
+  return path
+end
+
+local function mediaOf(e)
+  local m = type(e.media) == 'table' and e.media or {}
+  local out, any = {}, false
+  for _, k in ipairs({ 'cover', 'logo', 'photo' }) do
+    out[k] = M.mediaUrl(m[k])
+    any = any or out[k] ~= nil
+  end
+  return any and out or nil
+end
+
+-- (a value worked out again only when what it is made of has changed: the page asks every second or two, and a
+-- season's standings rank every crew of every pass of every round. deps are compared by identity: events.lua hands
+-- out the same tables until a file is read again, so a re-import, a new board or a new best is a changed dep.)
+local memo = {}
+local function memoised(key, deps, fn)
+  local m = memo[key]
+  if m and #m.deps == #deps then
+    local same = true
+    for i = 1, #deps do if m.deps[i] ~= deps[i] then same = false break end end
+    if same then return m.value end
+  end
+  local v = fn()
+  memo[key] = { deps = deps, value = v }
+  return v
+end
+function M.forgetMemo() memo = {} end
+
+-- The season an event is a round of, when that season's file is on this computer and lists it; else nil (the event
+-- shows as a rally of its own).
+local function seasonOfEvent(e)
+  local s = type(e.season) == 'table' and e.season.id ~= nil and events.season(e.season.id) or nil
+  if not s then return nil end
+  for _, id in ipairs(s.rounds) do if id == e.id then return s end end
+  return nil
+end
+
+-- A rally of one stage and no season: the Rallies page shows it as a stage, and it opens on the stage's page.
+local function isSingle(e) return #(e.stages or {}) == 1 and seasonOfEvent(e) == nil end
+
+local function boardOf(e) return e.boards ~= nil and events.boards(e.id) or nil end
+
+-- (your best on each stage: { [stageId] = seconds }, and the same as a list for memoised's deps)
+local function bestsOf(e)
+  local by, deps = {}, {}
+  for i, s in ipairs(e.stages or {}) do
+    local b = events.best(e.id, s.id)
+    by[s.id] = b
+    deps[i] = b or false
+  end
+  return by, deps
+end
+
+-- Each stage's passes in running order: { [stageId] = { { ss, run, km, cancelled }... } }, and the stage ids in the
+-- order they are first run. With no itinerary (a map on its own, an older file): each stage once, SS1, SS2... in
+-- map order, as the page always numbered them. A stage the itinerary never runs has no passes, and comes last.
+local function passesOf(e)
+  local by, order = {}, {}
+  for _, it in ipairs(type(e.itinerary) == 'table' and e.itinerary or {}) do
+    local s = type(it) == 'table' and boards.stageOf(e, { stage = it.stage, stageId = it.stageId }) or nil
+    if s and it.ss ~= nil then
+      if not by[s.id] then by[s.id] = {} order[#order + 1] = s.id end
+      local list = by[s.id]
+      list[#list + 1] = { ss = tostring(it.ss), run = it.run, km = it.km, cancelled = it.cancelled == true }
+    end
+  end
+  local itin = #order > 0
+  for i, s in ipairs(e.stages or {}) do
+    if not by[s.id] then
+      by[s.id] = itin and {} or { { ss = 'SS' .. i, run = 1, cancelled = false } }
+      order[#order + 1] = s.id
+    end
+  end
+  return by, order
+end
+
+-- Your place on a stage: the better of your placings over its passes (the user, 2026-11-14), each from that pass's
+-- leaderboard with your best time and the map line's length (boards.lua's 5% rule). Returns { pos, of, pass } or
+-- nil; when nil, also the reason a counted pass gave ('noTime' | 'lineMismatch'), or nothing when the board has no
+-- counted pass of this stage.
+function M.stagePlace(board, stage, bestS)
+  if type(board) ~= 'table' then return nil end
+  local first = boards.stageBoard(board, stage, { bestS = bestS, lineM = stage.lengthM })
+  if first.reason == 'noPasses' or first.reason == 'noBoard' then return nil end
+  local best, why = nil, nil
+  for _, p in ipairs(first.passes) do
+    if not p.cancelled then
+      local b = boards.stageBoard(board, stage, { pass = p.ss, bestS = bestS, lineM = stage.lengthM })
+      if b.you then
+        if not best or b.you.pos < best.pos then best = { pos = b.you.pos, of = b.you.of, pass = p.ss } end
+      else
+        why = why or b.reason
+      end
+    end
+  end
+  return best, (not best) and why or nil
+end
+
+-- (the first `top` crews of a ranked list and you at your place: up to top + 1 rows; skipped when crews were left
+-- out between the top and you)
+local function topWithYou(ranked, top)
+  local rows, crews = {}, 0
+  for i, r in ipairs(ranked or {}) do
+    local row = { pos = r.pos, name = r.name, class = r.class, timeS = r.totalS or r.timeS, gapS = r.gapS,
+      you = r.you == true }
+    if r.you then
+      row.skipped = (crews >= top and i > #rows + 1) or nil
+      rows[#rows + 1] = row
+      if crews >= top then break end
+    elseif crews < top then
+      crews = crews + 1
+      rows[#rows + 1] = row
+    end
+  end
+  return rows
+end
+
+-- What the rally page needs that takes working out, kept until a time, the board or the event changes.
+local function rallyData(e, board)
+  local by, bd = bestsOf(e)
+  local deps = { e, board or false }
+  for _, x in ipairs(bd) do deps[#deps + 1] = x end
+  return memoised('rally:' .. tostring(e.id), deps, function()
+    local passes, order = passesOf(e)
+    local byStage = {}
+    for _, s in ipairs(e.stages or {}) do
+      local d = { passes = passes[s.id] }
+      if board then d.place, d.why = M.stagePlace(board, s, by[s.id]) end
+      byStage[s.id] = d
+    end
+    return { byStage = byStage, order = order, bests = by,
+      result = board and boards.rallyResult(e, board, by) or nil }
+  end)
+end
+
+-- A season's standings and each round's rally result, kept until something under them changes.
+local function seasonData(s)
+  local rounds, deps = {}, { s }
+  for ri, id in ipairs(s.rounds or {}) do
+    local e = findEvent(id)
+    local board = e and boardOf(e) or nil
+    local by, bd = {}, {}
+    if e then by, bd = bestsOf(e) end
+    rounds[ri] = { event = e or { id = id, name = tostring(id), stages = {} }, board = board, bestByStage = by,
+      found = e ~= nil }
+    deps[#deps + 1] = e or false
+    deps[#deps + 1] = board or false
+    for _, x in ipairs(bd) do deps[#deps + 1] = x end
+  end
+  return memoised('season:' .. tostring(s.id), deps, function()
+    local results = {}
+    for ri, rd in ipairs(rounds) do
+      if rd.found then results[ri] = boards.rallyResult(rd.event, rd.board, rd.bestByStage) end
+    end
+    return { standings = boards.standings(s, rounds, { top = M.STANDINGS_TOP }), results = results,
+      rounds = rounds }
+  end)
+end
+
+-- (a number as the rules write it: 10, 2.5)
+local function num(x) return x == math.floor(x) and string.format('%d', x) or string.format('%g', x) end
+local function perMinute(s)
+  if s >= 60 and s % 60 == 0 then return num(s / 60) .. ' min a minute' end
+  return num(s) .. ' s a minute'
+end
+
+-- The Rules tab: one short line for each rule the file has (the five the format knows, so five at most), in a fixed
+-- order: { { label, value, inGame }... }, or nil when it has none (the tab is hidden).
+function M.rulesLines(rules)
+  if type(rules) ~= 'table' then return nil end
+  local out = {}
+  local fs = rules.falseStartS
+  if type(fs) == 'table' and type(fs[1]) == 'number' then
+    local v = {}
+    for i, x in ipairs(fs) do if type(x) == 'number' then v[i] = num(x) else break end end
+    out[#out + 1] = { label = 'False start', value = table.concat(v, ' / ') .. ' s',
+      inGame = fs[1] == M.GAME_FALSE_START_S or nil }
+  end
+  if type(rules.lateSPerMin) == 'number' then
+    out[#out + 1] = { label = 'Late at a time control', value = perMinute(rules.lateSPerMin) }
+  end
+  if type(rules.earlySPerMin) == 'number' then
+    out[#out + 1] = { label = 'Early at a time control', value = perMinute(rules.earlySPerMin) }
+  end
+  if type(rules.maxLatenessMin) == 'number' then
+    out[#out + 1] = { label = 'More than ' .. num(rules.maxLatenessMin) .. ' min late in a day', value = 'out' }
+  end
+  if type(rules.startIntervalMin) == 'number' then
+    out[#out + 1] = { label = 'Cars start', value = num(rules.startIntervalMin) .. ' min apart' }
+  end
+  return #out > 0 and out or nil
+end
+
+local function datesOf(d)
+  if type(d) ~= 'table' or (d.from == nil and d.to == nil) then return nil end
+  return { from = d.from or d.to, to = d.to or d.from }
+end
+
+-- (the earliest from and the latest to of a list of { from, to })
+local function span(acc, d)
+  if not d then return end
+  if d.from and (not acc.from or d.from < acc.from) then acc.from = d.from end
+  if d.to and (not acc.to or d.to > acc.to) then acc.to = d.to end
+end
+
+local function seasonRef(season, e)
+  if not season then return nil end
+  return { id = season.id, name = season.name, round = type(e.season) == 'table' and e.season.round or nil }
+end
+
+-- Your points for one round of a season, when you were placed in it.
+local function roundPoints(season, eventId)
+  local you = seasonData(season).standings.you
+  if not you then return nil end
+  for ri, id in ipairs(season.rounds) do
+    if id == eventId then
+      local pr = you.perRound and you.perRound[ri]
+      return pr and pr.pos and pr.points or nil
+    end
+  end
+  return nil
+end
+
+-- The rally page's additions. out: M.rallyBase's table, its `list` put into running order and each row given its
+-- passes and Place.
+--   season = { id, name, round } | nil      single = true | nil (one stage, no season: the page opens the stage)
+--   dates = { from, to }, place, media = { cover, logo, photo } (urls, M.mediaUrl)
+--   hasBoard (the Place column and the Results tab), anyCancelled (the legend)
+--   list[i].passes = { { ss, run, km, cancelled }... }, list[i].place = { pos, of, pass } | nil,
+--   list[i].placeWhy = 'noTime' | 'lineMismatch' | nil
+--   results (with a board) = { complete, totalS, you = { pos, of, gapS }, winnerS, stages, driven,
+--     chips = { { name, done } }, rows = top 10 and you { pos, name, class, timeS, gapS, you, skipped },
+--     points = yours for this round in its season }
+--   rules = { { label, value, inGame }... } | nil
+function M.addRallyFiles(out, e)
+  if not e then return out end
+  local season = seasonOfEvent(e)
+  local board = boardOf(e)
+  local data = rallyData(e, board)
+  out.season = seasonRef(season, e)
+  out.single = isSingle(e) or nil
+  out.dates, out.place, out.media = datesOf(e.dates), e.place, mediaOf(e)
+  out.hasBoard = board ~= nil or nil
+  local rank = {}
+  for k, id in ipairs(data.order) do rank[id] = k end
+  local list = out.list or {}
+  for _, row in ipairs(list) do
+    local d = data.byStage[row.id] or {}
+    row.passes = d.passes or {}
+    row.place, row.placeWhy = d.place, d.why
+    for _, p in ipairs(row.passes) do if p.cancelled then out.anyCancelled = true end end
+  end
+  table.sort(list, function(a, b) return (rank[a.id] or a.ss) < (rank[b.id] or b.ss) end)
+
+  local res = data.result
+  if res then
+    local chips, seen, driven, byId = {}, {}, 0, {}
+    for _, s in ipairs(e.stages or {}) do byId[s.id] = s end
+    for _, p in ipairs(res.passes) do
+      if not seen[p.stageId] then
+        seen[p.stageId] = true
+        local done = data.bests[p.stageId] ~= nil
+        if done then driven = driven + 1 end
+        chips[#chips + 1] = { name = byId[p.stageId] and byId[p.stageId].name or p.stageId, done = done }
+      end
+    end
+    local winner = nil
+    for _, r in ipairs(res.ranked) do if not r.you then winner = r.totalS break end end
+    out.results = { complete = res.complete, totalS = res.totalS,
+      you = res.you and { pos = res.you.pos, of = res.you.of, gapS = res.you.gapS } or nil,
+      winnerS = winner, stages = #chips, driven = driven, chips = chips,
+      rows = topWithYou(res.ranked, M.RESULTS_TOP),
+      points = (season and res.complete) and roundPoints(season, e.id) or nil }
+  end
+  out.rules = M.rulesLines(e.rules)
+  return out
+end
+
+-- The stage page's additions:
+--   season, single, media (as the rally's), passes = { { ss, run, km, cancelled }... }
+--   board = nil (no results for this stage: no Leaderboard card) | { passes = { { ss, run, km, cancelled }... },
+--     pass = the shown pass's ss, km, lineKm (the map line's), field (crews on it), fastestS,
+--     rows = top 10 and you { pos, name, car, class, timeS, gapS, you, skipped }, you = { pos, of, gapS... } | nil,
+--     reason = nil | 'cancelled' | 'noTime' | 'lineMismatch' }
+-- The pass shown is `pass` when it is one of this stage's, else the one you place best on, else the first counted.
+function M.addStageRallyFiles(out, e, s, i, pass)
+  local season = seasonOfEvent(e)
+  out.season = seasonRef(season, e)
+  out.single = isSingle(e) or nil
+  out.media = mediaOf(e)
+  out.passes = passesOf(e)[s.id] or {}
+  local board = boardOf(e)
+  if board then
+    local place = M.stagePlace(board, s, out.best)
+    local sb = boards.stageBoard(board, s, { pass = pass or (place and place.pass), bestS = out.best,
+      lineM = s.lengthM })
+    if sb.reason ~= 'noBoard' and sb.reason ~= 'noPasses' then
+      out.board = { passes = sb.passes, pass = sb.pass, km = sb.km, field = sb.field, fastestS = sb.fastestS,
+        rows = sb.rows, you = sb.you, reason = sb.reason, lineKm = s.lengthM and s.lengthM / 1000 or nil }
+    end
+  end
+  return out
+end
+
+-- A season's card on the Rallies page, or nil when none of its rounds is on this computer:
+--   { kind = 'season', id, name, championship, rallies, stages, driven, dates = { from, to },
+--     covers = { { round, name, url }... } (the first eight rounds'), you = { pos, points, of } | nil }
+function M.seasonCard(s)
+  local rallies, stages, driven, covers, dates = 0, 0, 0, {}, {}
+  for _, id in ipairs(s.rounds or {}) do
+    local e = findEvent(id)
+    if e then
+      rallies = rallies + 1
+      for _, st in ipairs(e.stages or {}) do
+        stages = stages + 1
+        if events.best(e.id, st.id) then driven = driven + 1 end
+      end
+      if #covers < 8 then
+        local m = mediaOf(e)
+        covers[#covers + 1] = { round = type(e.season) == 'table' and e.season.round or (#covers + 1), name = e.name,
+          url = m and m.cover or nil }
+      end
+      span(dates, datesOf(e.dates))
+    end
+  end
+  if rallies == 0 then return nil end
+  local st = seasonData(s).standings
+  return { kind = 'season', id = s.id, name = s.name, championship = s.championship, rallies = rallies,
+    stages = stages, driven = driven, covers = covers, dates = dates.from and dates or nil,
+    you = st.you and { pos = st.you.pos, points = st.you.points, of = st.entries } or nil }
+end
+
+-- The Rallies page: { seasons = { M.seasonCard... }, rallies = { card... } }. rallies: every event that is not a
+-- round of a season on this computer, as M.rallyCard plus kind ('rally' | 'stage': one stage, no season), media,
+-- dates, place, and for a stage its stageId and best.
+function M.home(reports)
+  local out, inSeason = { seasons = {}, rallies = {} }, {}
+  for _, s in ipairs(events.seasons()) do
+    local card = M.seasonCard(s)
+    if card then
+      out.seasons[#out.seasons + 1] = card
+      for _, id in ipairs(s.rounds) do inSeason[id] = true end
+    end
+  end
+  for _, e in ipairs(events.list()) do
+    if not (inSeason[e.id] and seasonOfEvent(e)) then
+      local c = M.rallyCard(e, reports and reports[e.id])
+      c.kind = isSingle(e) and 'stage' or 'rally'
+      c.media, c.dates, c.place = mediaOf(e), datesOf(e.dates), e.place
+      if c.kind == 'stage' then
+        c.stageId = e.stages[1].id
+        c.best = events.best(e.id, e.stages[1].id)
+      end
+      out.rallies[#out.rallies + 1] = c
+    end
+  end
+  return out
+end
+
+-- A season's page, or nil:
+--   { id, name, championship, dates, rallies, finished (rounds with your rally result),
+--     rounds = { { id, round, name, dates, place, stages, driven, media, complete, you = { pos, of } | nil,
+--       points } },
+--     standings = { rows = top 10 { pos, name, points, wins, you, perRound = { { pos, points } | { points = 0 } |
+--       { noBoard = true, points = 0 } } }, you = your row | nil, youShown (you among rows), entries,
+--       points = the scale, best = only the best N count | nil, rounds = { { round, name } } },
+--     next = the round to finish next (the first you have started, else the first) }
+function M.season(seasonId)
+  local s = events.season(seasonId)
+  if not s then return nil end
+  local sd = seasonData(s)
+  local out = { id = s.id or seasonId, name = s.name, championship = s.championship, rounds = {}, finished = 0 }
+  local dates, started, first, labels = {}, nil, nil, {}
+  local you = sd.standings.you
+  for ri, rd in ipairs(sd.rounds) do
+    local e = rd.event
+    local round = type(e.season) == 'table' and e.season.round or ri
+    labels[ri] = { round = round, name = e.name }
+    if rd.found then
+      local driven = 0
+      for _, st in ipairs(e.stages or {}) do if rd.bestByStage[st.id] then driven = driven + 1 end end
+      local res = sd.results[ri]
+      local pr = you and you.perRound and you.perRound[ri]
+      local r = { id = e.id, round = round, name = e.name, dates = datesOf(e.dates), place = e.place,
+        stages = #(e.stages or {}), driven = driven, media = mediaOf(e), complete = (res and res.complete) == true,
+        you = res and res.you and { pos = res.you.pos, of = res.you.of } or nil,
+        points = pr and pr.pos and pr.points or nil }
+      out.rounds[#out.rounds + 1] = r
+      if r.complete then
+        out.finished = out.finished + 1
+      else
+        if not started and driven > 0 then started = e.name end
+        first = first or e.name
+      end
+      span(dates, r.dates)
+    end
+  end
+  out.rallies = #out.rounds
+  out.dates = dates.from and dates or nil
+  out.next = started or first
+  local st = sd.standings
+  local shown = false
+  for _, r in ipairs(st.rows) do if r.you then shown = true end end
+  out.standings = { rows = st.rows, you = st.you, youShown = shown, entries = st.entries,
+    points = st.rules.points, best = st.rules.best, rounds = labels }
+  return out
 end
 
 return M

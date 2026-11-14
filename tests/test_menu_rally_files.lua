@@ -1,0 +1,189 @@
+-- menu.lua over the files a rally pack leaves (docs/rally-file.md; the screens: docs/mockups-rally-files/menu.html):
+-- the Rallies page's seasons / rallies / stages, a season's rounds and standings, a rally's passes grouped by stage
+-- with the better-of-passes Place, its Results and Rules, a stage's leaderboard, and an event file from before rally
+-- files coming out unchanged.
+local T = dofile(TESTS .. '/testlib.lua')
+
+local files = {}
+function jsonWriteFile(path, data) files[path] = data return true end
+function jsonReadFile(path) return files[path] end
+FS = {
+  fileExists = function(_, path) return files[path] ~= nil end,
+  findFiles = function(_, dir)
+    local out = {}
+    for k in pairs(files) do if k:sub(1, #dir) == dir and k:match('%.json$') then out[#out + 1] = k end end
+    table.sort(out)
+    return out
+  end,
+}
+function log() end
+
+local events = require('earthRally/events')
+local menu = require('earthRally/menu')
+
+local line = { { 47.0, -123.0 }, { 47.01, -123.0 } }
+local function stage(id, name, km) return { id = id, name = name, lengthM = km * 1000, line = line, controls = {} } end
+local function crew(s, d) return { s, d, '1', 'RC2', 'national', false } end
+local function run(t) return { finished = true, timeS = t, penaltyS = 0, date = '2026-11-14T10:00:00Z' } end
+
+files['/earthRally/seasons/ts.json'] = { format = 1, id = 'ts', name = 'Test Season', championship = 'Test Champs',
+  rounds = { 'ts-r1', 'ts-r2' }, standings = { championship = false, points = { 25, 20, 16, 13, 11 } } }
+
+-- Round 1: Alpha run twice (SS1, SS3), Bravo twice (SS2, and SS4 cancelled on the day)
+files['/earthRally/events/ts-r1.json'] = { format = 1, id = 'ts-r1', name = 'First Rally',
+  stages = { stage('alpha', 'Alpha', 10), stage('bravo', 'Bravo', 5) },
+  season = { id = 'ts', name = 'Test Season', round = 1 },
+  dates = { from = '2030-03-01', to = '2030-03-02' }, place = 'Fernvale, ZZ',
+  itinerary = {
+    { ss = 'SS1', stage = 'alpha', run = 1, km = 10, cancelled = false },
+    { ss = 'SS2', stage = 'bravo', run = 1, km = 5, cancelled = false },
+    { ss = 'SS3', stage = 'alpha', run = 2, km = 10, cancelled = false },
+    { ss = 'SS4', stage = 'bravo', run = 2, km = 5, cancelled = true },
+  },
+  rules = { falseStartS = { 10, 60, 180 }, lateSPerMin = 10, earlySPerMin = 60, maxLatenessMin = 30 },
+  media = { cover = '/earthRally/media/ts-r1/cover.png', logo = '/earthRally/media/ts-r1/logo.png' },
+  boards = 'ts-r1.json' }
+files['/earthRally/boards/ts-r1.json'] = { format = 1, passes = {
+  { ss = 'SS1', stage = 'alpha', run = 1, km = 10, cancelled = false, field = {
+    crew(280, 'Ann'), crew(285, 'Bob'), crew(290, 'Cara'), crew(295, 'Dan'), crew(300, 'Eve') } },
+  { ss = 'SS2', stage = 'bravo', run = 1, km = 5, cancelled = false, field = {
+    crew(150, 'Ann'), crew(130, 'Bob'), crew(160, 'Cara'), crew(170, 'Dan'), crew(180, 'Eve') } },
+  { ss = 'SS3', stage = 'alpha', run = 2, km = 10, cancelled = false, field = {
+    crew(300, 'Ann'), crew(310, 'Bob'), crew(320, 'Cara'), crew(330, 'Dan') } },
+  { ss = 'SS4', stage = 'bravo', run = 2, km = 5, cancelled = true, field = {} },
+} }
+-- Round 2: one stage, no results
+files['/earthRally/events/ts-r2.json'] = { format = 1, id = 'ts-r2', name = 'Second Rally',
+  stages = { stage('charlie', 'Charlie', 8) }, season = { id = 'ts', name = 'Test Season', round = 2 },
+  media = { cover = '/earthRally/media/ts-r2/cover.jpg' } }
+-- A rally from a map on its own, as every event file was before rally files
+files['/earthRally/events/old.json'] = { format = 1, id = 'old', name = 'Old Rally', source = { file = 'Old.kml' },
+  stages = { stage('o1', 'Oak', 4), stage('o2', 'Elm', 6) } }
+-- A single stage
+files['/earthRally/events/one.json'] = { format = 1, id = 'one', name = 'Coal Hill', stages = { stage('ch', 'Coal Hill', 4.6) } }
+-- A round whose season is not on this computer any more: a rally of its own
+files['/earthRally/events/orphan.json'] = { format = 1, id = 'orphan', name = 'Orphan Rally',
+  stages = { stage('p1', 'Pine', 3), stage('p2', 'Fir', 3) }, season = { id = 'gone', name = 'Gone', round = 1 } }
+
+files['/earthRally/results/ts-r1__alpha.json'] = { runs = { run(320), run(305) } }
+files['/earthRally/results/old__o1.json'] = { runs = { run(200) } }
+files['/earthRally/results/one__ch.json'] = { runs = { run(192.7) } }
+events.list(true)
+
+------------------------------------------------------------------------------------------ the Rallies page
+do
+  local h = menu.home()
+  T.check(#h.seasons == 1 and h.seasons[1].id == 'ts' and h.seasons[1].rallies == 2 and h.seasons[1].stages == 3 and
+    h.seasons[1].driven == 1, 'home: one season card, its rallies, stages and stages driven')
+  T.check(#h.seasons[1].covers == 2 and h.seasons[1].covers[1].url == '/earthRally/media/ts-r1/cover.png' and
+    h.seasons[1].covers[1].round == 1 and h.seasons[1].covers[2].name == 'Second Rally',
+    'home: the mosaic\'s covers, as urls, in round order')
+  T.check(h.seasons[1].dates.from == '2030-03-01' and h.seasons[1].you == nil,
+    'home: the season\'s dates; no standings place before any rally result')
+  local by = {}
+  for _, c in ipairs(h.rallies) do by[c.id] = c end
+  T.check(#h.rallies == 3 and by.old and by.one and by.orphan and not by['ts-r1'] and not by['ts-r2'],
+    'home: the rounds are inside the season card; the rest are cards of their own')
+  T.check(by.old.kind == 'rally' and by.old.media == nil and by.old.stages == 2 and by.old.driven == 1 and
+    by.old.file == 'Old.kml', 'home: an old rally is a rally card, no picture')
+  T.check(by.one.kind == 'stage' and by.one.stageId == 'ch' and by.one.best == 192.7,
+    'home: a one-stage rally with no season is a stage card, opening on its stage')
+  T.check(by.orphan.kind == 'rally', 'home: a round whose season is gone is a rally of its own')
+end
+
+------------------------------------------------------------------------------------------ a rally
+do
+  local r = menu.rally('ts-r1')
+  T.check(r.season and r.season.id == 'ts' and r.season.round == 1 and r.place == 'Fernvale, ZZ' and
+    r.dates.to == '2030-03-02' and r.media.logo == '/earthRally/media/ts-r1/logo.png' and r.hasBoard,
+    'rally: season crumb, dates, place, pictures, a board')
+  T.check(#r.list == 2 and r.list[1].id == 'alpha' and #r.list[1].passes == 2 and r.list[1].passes[1].ss == 'SS1' and
+    r.list[1].passes[2].ss == 'SS3' and r.list[2].passes[2].cancelled == true and r.anyCancelled,
+    'rally: a stage run twice is one row with both passes, a cancelled pass marked')
+  T.check(r.list[1].best == 305 and r.list[1].place and r.list[1].place.pos == 2 and r.list[1].place.of == 5 and
+    r.list[1].place.pass == 'SS3', 'rally: Place is the better of the passes (6th on SS1, 2nd on SS3)')
+  T.check(r.list[2].place == nil and r.list[2].placeWhy == 'noTime', 'rally: no time on Bravo, no Place')
+  T.check(r.results and r.results.complete == false and r.results.stages == 2 and r.results.driven == 1 and
+    r.results.chips[1].done and not r.results.chips[2].done and #r.results.rows == 4 and not r.results.rows[1].you,
+    'rally: Results waits for Bravo; the real field is there')
+  T.check(#r.rules == 4 and r.rules[1].value == '10 / 60 / 180 s' and r.rules[1].inGame and
+    r.rules[2].value == '10 s a minute' and r.rules[3].value == '1 min a minute' and r.rules[4].value == 'out' and
+    r.rules[4].label:find('30 min'), 'rally: the rules the file has, one short line each')
+
+  -- Bravo driven: the rally result, and the season standings from it
+  files['/earthRally/results/ts-r1__bravo.json'] = { runs = { run(140) } }
+  events.forget()
+  r = menu.rally('ts-r1')
+  -- your total: 305 (SS1) + 140 (SS2) + 305 (SS3) = 750; Ann 730, Bob 725, Cara 770, Dan 795 (Eve has no SS3)
+  T.check(r.results.complete and r.results.totalS == 750 and r.results.you.pos == 3 and r.results.you.of == 5 and
+    r.results.winnerS == 725, 'rally: your total over the counted passes, 3rd of 5')
+  T.check(r.results.rows[3].you and r.results.rows[3].timeS == 750 and r.results.rows[4].name == 'Cara' and
+    r.results.points == 16, 'rally: you in the results table; 16 points in the season')
+  T.check(r.list[2].place and r.list[2].place.pass == 'SS2' and r.list[2].place.pos == 2,
+    'rally: Bravo placed on its one counted pass')
+
+  -- the line not the stage that was run: no Place
+  local p, why = menu.stagePlace(events.boards('ts-r1'), { id = 'alpha', name = 'Alpha', lengthM = 12000 }, 305)
+  T.check(p == nil and why == 'lineMismatch', 'Place: a line 20% off the stage as run is not placed')
+end
+
+------------------------------------------------------------------------------------------ a stage
+do
+  local s = menu.stage('ts-r1', 'alpha', 'start')
+  T.check(s.board and s.board.pass == 'SS3' and s.board.you.pos == 2 and #s.board.passes == 2 and s.board.field == 4,
+    'stage: the leaderboard opens on the pass you place best on')
+  T.check(s.board.rows[2].you and s.board.rows[1].name == 'Ann' and s.board.rows[1].class == 'RC2' and
+    s.board.rows[2].class == nil, 'stage: your row slotted in, its class blank')
+  T.check(#s.passes == 2 and s.season.id == 'ts' and s.ss == 1 and s.single == nil, 'stage: its passes and season')
+  s = menu.stage('ts-r1', 'alpha', 'start', true, 'SS1')
+  T.check(s.board.pass == 'SS1' and s.board.you.pos == 6 and s.board.rows[6].you, 'stage: the pass toggle')
+  s = menu.stage('ts-r1', 'bravo', 'start', true, 'SS4')
+  T.check(s.board.pass == 'SS4' and s.board.reason == 'cancelled' and #s.board.rows == 0, 'stage: a cancelled pass')
+  s = menu.stage('ts-r2', 'charlie', 'start')
+  T.check(s.board == nil and s.season.round == 2 and s.single == nil, 'stage: no results, no leaderboard')
+  s = menu.stage('one', 'ch', 'start')
+  T.check(s.single and s.board == nil and s.season == nil and s.best == 192.7, 'stage: a single stage')
+  T.check(menu.rally('one').single, 'rally: a single stage says so (the page opens the stage)')
+end
+
+------------------------------------------------------------------------------------------ a season
+do
+  local s = menu.season('ts')
+  T.check(s.name == 'Test Season' and s.rallies == 2 and s.finished == 1 and s.dates.from == '2030-03-01' and
+    s.next == 'Second Rally', 'season: rounds, finished, dates, the round to finish next')
+  T.check(s.rounds[1].round == 1 and s.rounds[1].complete and s.rounds[1].you.pos == 3 and s.rounds[1].points == 16 and
+    s.rounds[1].driven == 2 and s.rounds[1].media.cover and s.rounds[2].you == nil and s.rounds[2].stages == 1,
+    'season: a finished round shows your place; an unfinished one does not')
+  local st = s.standings
+  T.check(st.you and st.you.pos == 3 and st.you.points == 16 and st.youShown and st.entries == 5 and
+    st.rows[1].name == 'Bob' and st.rows[1].points == 25 and st.rows[1].perRound[1].pos == 1 and
+    st.rows[1].perRound[2].noBoard, 'season: standings from boards.standings, you among them')
+  T.check(#st.points == 5 and #st.rounds == 2 and st.rounds[2].name == 'Second Rally', 'season: points scale, rounds')
+  local h = menu.home()
+  T.check(h.seasons[1].you and h.seasons[1].you.pos == 3 and h.seasons[1].you.points == 16 and h.seasons[1].driven == 2,
+    'home: the season card shows your standings place')
+  T.check(menu.season('nope') == nil, 'season: unknown id, nil')
+end
+
+------------------------------------------------------------------------------------------ an old event file
+do
+  local base = menu.rallyBase('old')
+  local r = menu.rally('old')
+  local keysBase, keysNew = {}, {}
+  for k in pairs(base) do keysBase[#keysBase + 1] = k end
+  for k in pairs(r) do keysNew[#keysNew + 1] = k end
+  table.sort(keysBase) table.sort(keysNew)
+  T.check(table.concat(keysBase, ',') == table.concat(keysNew, ','),
+    'old event: the rally page gets no new fields (' .. table.concat(keysNew, ',') .. ')')
+  T.check(r.list[1].ss == 1 and r.list[1].name == 'Oak' and r.list[2].ss == 2 and r.list[1].best == 200 and
+    r.list[1].place == nil and #r.list[1].passes == 1 and r.list[1].passes[1].ss == 'SS1' and
+    r.list[2].passes[1].ss == 'SS2', 'old event: stages in map order as SS1, SS2, no Place')
+  local s = menu.stage('old', 'o2', 'start')
+  T.check(s.ss == 2 and s.board == nil and s.season == nil and s.single == nil and s.media == nil and
+    s.passes[1].ss == 'SS2', 'old event: the stage page as before')
+  T.check(menu.rulesLines(nil) == nil and menu.rulesLines({}) == nil, 'no rules: no Rules tab')
+  T.check(menu.mediaUrl('/earthRally/media/x/cover.png') == '/earthRally/media/x/cover.png' and menu.mediaUrl('') == nil,
+    'mediaUrl: the path as it is (unverified in game)')
+end
+
+T.done('test_menu_rally_files')

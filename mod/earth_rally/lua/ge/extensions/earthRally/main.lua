@@ -1,7 +1,7 @@
 -- earthRally_main: Earth Rally's frame loop and its ways in:
 --   the menu      a full-screen page of its own (ui/ui-vue/mods/earthRally: Rallies, a rally, a stage, Settings) and
 --                 an "Earth Rally" tab in the pause menu; Ctrl+Alt+K opens / closes the page (toggleMenu). The page
---                 asks this extension for its data (uiState, uiRally, uiStage) and sends the buttons here (uiAction,
+--                 asks this extension for its data (uiState, uiSeason, uiRally, uiStage) and sends the buttons here (uiAction,
 --                 uiResults, uiSet).
 --   the HUD       the game's rally apps and ours in the stage layout, fed every frame from runner.uiFrame (streams
 --                 'rallyLoop' and 'earthRally'); previewHud() plays sample frames through it without driving
@@ -259,9 +259,16 @@ function M.scanImports(always)
   local said, lines = {}, {}
   for _, d in ipairs(done) do
     local text
-    if d.removed then text = d.file .. ' taken out of the import folder (its rally is kept)'
+    local many = (d.rallies or 1) > 1      -- (a season pack: pack.lua)
+    if d.removed then
+      text = d.file .. ' taken out of the import folder (' .. (many and 'its rallies are' or 'its rally is') .. ' kept)'
+    elseif d.ok and many then
+      text = string.format('%s: %s, %d rallies, %d stages', d.file, tostring(d.name), d.rallies, d.stages)
     elseif d.ok then text = string.format('%s: %s, %d stage%s', d.file, tostring(d.name), d.stages, d.stages == 1 and '' or 's')
     else text = 'Could not import ' .. d.file .. ': ' .. tostring(d.why) end
+    if d.ok and d.warnings and #d.warnings > 0 then
+      text = text .. string.format(' (%d warning%s: see the log)', #d.warnings, #d.warnings == 1 and '' or 's')
+    end
     said[#said + 1] = text
     lines[#lines + 1] = { text = text, ok = d.ok == true }
     if d.ok and not d.removed then
@@ -837,6 +844,9 @@ function M.uiState()
   s.versionNotes = versions.notes()
   s.settings = settings.uiState()
   s.rallies = menu.rallies(importer.lastReports)
+  -- the Rallies page: seasons, loose rallies and single stages (menu.home); `rallies` above stays for the pause
+  -- menu's tab, which lists every rally flat
+  s.home = menu.home(importer.lastReports)
   s.importFolder = importer.folderPath()
   s.lastImport = lastImport
   s.message = message
@@ -858,11 +868,20 @@ function M.uiRally(eventId)
   return out
 end
 
-function M.uiStage(eventId, stageId)
+-- A season's page (menu.season): its rounds and standings.
+function M.uiSeason(seasonId)
+  local out = menu.season(seasonId)
+  if not out then return { missing = true, id = seasonId } end
+  for k, v in pairs(runSummary()) do out[k] = v end
+  return out
+end
+
+-- pass: the leaderboard's pass ('SS4'), nil for the one you place best on
+function M.uiStage(eventId, stageId, pass)
   local _, stage = menu.findStage(eventId, stageId)
   if not stage then return { missing = true } end
   local _, _, arrival = runner.arrivalPoint(stage)
-  local out = menu.stage(eventId, stageId, arrival, earth.hasRoadGraph())
+  local out = menu.stage(eventId, stageId, arrival, earth.hasRoadGraph(), pass)
   for k, v in pairs(runSummary()) do out[k] = v end
   out.autoLine = autoLines[autoKey(eventId, stageId)]
   return out
