@@ -238,6 +238,21 @@ local r = runner.current()
 T.check(r.checks.rallyEngine == 'loaded', 'the rally engine loaded (' .. tostring(r.checks.rallyEngine) .. ')')
 T.check((r.checks.cornersFound or 0) >= 1, 'the bend is a corner (' .. tostring(r.checks.cornersFound) .. ')')
 T.check(r.checks.notesLoaded == r.checks.cornersFound, 'one note per corner')
+-- The Corners tile is the co-driver's own count, by construction: the tile reads what was worked out from the
+-- line (menu.stage -> events.lineFigures -> lineStats.of -> stageWriter.stageCorners) and the run has just
+-- written one pacenote per corner the same function found, in the game's own coordinates. If these two ever part,
+-- the tile is lying about what will be called. The recce saved above carries no figures of its own -- it stands
+-- for a line written by a version before 1.3.1 -- so this also says an older line still gets a number.
+do
+  local menu = require('earthRally/menu')
+  local st = menu.stage('test', 'hill', 'start')
+  T.check(st.corners == r.checks.cornersFound, 'the Corners tile is the co-driver\'s own count (' ..
+    tostring(st.corners) .. ' vs ' .. tostring(r.checks.cornersFound) .. ')')
+  T.check(st.junctions == nil and st.bridges == nil, 'no junctions or bridges tile')
+  -- the stage line climbs 10 m in its first kilometre and then runs level east: climb, and no drop
+  T.near(st.gainM, 9, 3, 'the stage page has the height the line gains')
+  T.check(st.lossM == 0, 'and the height it gives back (' .. tostring(st.lossM) .. ')')
+end
 T.check(r.checks.heightKeptM ~= nil and r.checks.heightKeptM < 0.01, 'our heights kept, not set down on the terrain ('
   .. tostring(r.checks.heightKeptM) .. ')')
 T.check(zSnap.conformSplineGeometry ~= nil and select(1, pcall(function()
@@ -335,6 +350,15 @@ T.check(drawn > 20, 'the stage line drawn ahead (' .. drawn .. ' segments)')
 
 T.check(done ~= nil and done > #full * 0.9, 'the recce ends at the stage end')
 T.check(recce.stop(true) == true and #events.recce('test', 'hill').points > 300, 'the recce saved')
+-- ... and saved with what the line says about itself, worked out once here rather than every time the stage page
+-- is looked at
+do
+  local saved = events.recce('test', 'hill')
+  T.check(saved.corners == r.checks.cornersFound, 'the recce is saved with the corner count the co-driver calls (' ..
+    tostring(saved.corners) .. ' vs ' .. tostring(r.checks.cornersFound) .. ')')
+  T.near(saved.gainM, 9, 3, 'and the height it gained')
+  T.check(saved.lossM == 0, 'and the height it lost (' .. tostring(saved.lossM) .. ')')
+end
 
 -- the drawn line stays on the ground (z 100 + the lift), never on a treetop (130)
 local zs = {}
@@ -347,6 +371,58 @@ local high = 0
 for _, z in ipairs(zs) do if math.abs(z - 101) > high then high = math.abs(z - 101) end end
 T.check(#zs > 40 and high < 0.6, 'the line on the ground, under the trees (' .. #zs .. ' ends, worst ' .. high .. ' m)')
 recce.stop(false)
+
+
+-- One corner count, two ways in. The number kept with a line and the number the notebook gets are the same
+-- function (stageWriter.stageCorners) over the same stretch of road -- but they reach it differently: a run puts
+-- the line into the game's coordinates, while a saved line is measured in a flat frame about its own first point.
+-- This runs both over a road with a dozen corners in it, out to lat / lon and back, so a disagreement between
+-- those two frames would show here rather than on the owner's stage page.
+do
+  local geo = require('earthRally/geo')
+  local writer = require('earthRally/stageWriter')
+  local lineStats = require('earthRally/lineStats')
+  -- 12 corners: 200 m straight, a 90 degree turn of radius 70 m, the other way next time
+  local line, x, y, h = {}, 0, 0, 0
+  local function put() line[#line + 1] = { x = x, y = y, z = 200 + y * 0.02 } end
+  put()
+  for k = 1, 12 do
+    for _ = 1, 40 do x, y = x + math.cos(h) * 5, y + math.sin(h) * 5 put() end
+    local steps, turn = 22, (k % 2 == 0) and (math.pi / 2) or -(math.pi / 2)
+    for _ = 1, steps do h = h + turn / steps x, y = x + math.cos(h) * 5, y + math.sin(h) * 5 put() end
+  end
+  -- and two long gentle bends, radius 300 m: not corners, and nothing that reads this road more loosely than the
+  -- notebook does may call them (the detector's own maxRadius is 200 m)
+  for k = 1, 2 do
+    local steps, turn = 63, (k % 2 == 0) and (math.pi / 3) or -(math.pi / 3)
+    for _ = 1, steps do h = h + turn / steps x, y = x + math.cos(h) * 5, y + math.sin(h) * 5 put() end
+    for _ = 1, 40 do x, y = x + math.cos(h) * 5, y + math.sin(h) * 5 put() end
+  end
+  local cum = geo.cumulative(line)
+  local built = writer.build(line, { startM = 0, finishM = cum[#cum], name = 'Wiggle',
+    quatFn = function(qx, qy, qz) local q = quatFromDir(vec3(qx, qy, qz), vec3(0, 0, 1)) return q.x, q.y, q.z, q.w end })
+  -- the same road as a line file holds it: lat / lon / height, no controls (the whole line is the stage)
+  local points = {}
+  for i, p in ipairs(line) do
+    local la, lo = toGeo(p.x, p.y)
+    points[i] = { la, lo, p.z }
+  end
+  local fig = lineStats.of(points, { id = 'wiggle', controls = {} })
+  T.check(built.corners >= 10, 'the wiggly road has its corners (' .. tostring(built.corners) .. ')')
+  T.check(fig.corners == built.corners, 'the count kept with a line is the count the notebook gets (' ..
+    tostring(fig.corners) .. ' vs ' .. tostring(built.corners) .. ')')
+  T.check(#built.notebook.pacenotes == built.corners, 'one pacenote per corner, so the tile counts pacenotes')
+  -- and the corners inside a stretch with no road on the map are not counted, exactly as no notes are called
+  -- there: the same flag, the same padding, off the line's own points
+  local muted = {}
+  for i, p in ipairs(points) do
+    muted[i] = { p[1], p[2], p[3] }
+    if cum[i] > 1000 and cum[i] < 3000 then muted[i][4] = 1 end
+  end
+  local figMuted = lineStats.of(muted, { id = 'wiggle', controls = {} })
+  T.check(figMuted.corners < fig.corners, 'corners on a stretch with no road on the map are not counted (' ..
+    tostring(figMuted.corners) .. ' vs ' .. tostring(fig.corners) .. ')')
+end
 
 
 -- a stage with its time controls: an ATC 150 m before the start, a stop control 300 m past the finish

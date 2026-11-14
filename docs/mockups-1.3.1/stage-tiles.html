@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Rally stage tiles</title>
+<!-- Mock-up for 1.3.1 (not built): the four tiles across the top of a stage's page. The question is
+     docs/plan-1.3.1.md, "Also in 1.3.1: the stage page's four tiles", and the user's own words: "it dosent tell
+     you how many corners there are after you recce a stage. it should drop bridges and junctions, and instead
+     give you elevation gain/loss" -- plus the instruction that decides the corners design: "base corners off the
+     co-driver."
+
+     WHAT IT DRAWS
+       1. the four tiles as they are now (1.3.0): Length | Corners | Junctions | Bridges, on two real stages --
+          one driven, one recced but never driven, which is where the corners bug shows
+       2. the four proposed: Length | Corners | Climb | Drop
+       3. every state the Corners tile can be in, including the one honest unknown
+       4. climb and drop over the range of the user's own lines: a flat stage, a hill climb, the same hill both
+          ways, and the longest line in the set
+       5. the same tiles in the imperial setting
+       6. the numbers behind the threshold, so the figure can be argued with
+
+     WHAT IT CHANGES in the game's own UI
+       - EarthRally.vue:120-121: the Junctions and Bridges tiles go. .er-tiles stays a 4-track grid; two new
+         tiles take their places, so no CSS changes at all -- .er-tiles, .er-tile, .er-v, .er-v small and .er-l
+         are reproduced here exactly as the component has them.
+       - the two new tiles carry a unit in the existing <small>, as the Length tile already does.
+       - menu.lua:124-130: `corners` stops being read out of the stage's past runs and is read from the line.
+       - menu.lua:116-123: `junctions` / `bridges` and the landmark walk that fills them leave M.stage().
+       - store.js: no change. units() already answers "km" / "mi" and that is the only switch the new tiles need
+         (metric -> m, imperial -> ft, which is what the HUD's format.js dist() already does).
+
+     MEASURED, AND HOW (arithmetic and arithmetic over the real line files, not a browser -- see the report)
+       - the layout at 1920x1080: .er-content is padding 28px 64px, so the content box is 1792px.
+         .er-stage-page is `grid-template-columns: 1.25fr 1fr; gap: 28px`, so the left column -- everything in
+         these shots -- is (1792 - 28) * 1.25 / 2.25 = 980px, and that is the width each shot is drawn at.
+         .er-tiles is `repeat(4, 1fr)` with a 16px gap, so a tile is (980 - 48) / 4 = 233px, less its own
+         `18px 20px` of padding: 193px for the number.
+       - the widest number drawn here is "3000" with a unit, at 40px Overpass Mono 700 (roughly .6em an advance,
+         so about 24px a digit) plus the 18px <small> and its 4px margin: about 122px into 193px. Nothing in this
+         set of stages crowds a tile; a five-digit metric climb would, and no line in the set has one.
+       - every number on every tile is computed from the user's own line files, 116 of them at
+         earthRally-backup-2026-11-13/matched plus the two the in-game auto recce wrote, by a port of the mod's
+         own passes (geo.frame / geo.slice / geo.resample / geo.corners for the corners; see the report for the
+         climb). The corner counts are checked against figures the game itself recorded: Maryhill Up's stored
+         runs hold cornersFound 31 on the matched line and 28 on the recce line (results/otr24__maryhill-up.json),
+         and the port gives 31 and 27 -- exact on the matched line, one out on the recce line.
+       - lengths are the stage records' own lengthM (events/*.json), through store.js lenNum(), which is what the
+         Length tile shows today. Statuses and notes are the ones those stages really have, with one exception
+         said so in place: section 3a draws Starveout as it would be on import, before it has a line.
+
+     The shots below are the stage page's left column at 1920 (980px), not the whole screen: the top bar, the
+     64px page padding and the runs card on the right are cropped. They are drawn at true size.
+
+     Sibling of docs/mockups-1.3.0. Nothing here is built. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700;800;900&family=Overpass+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* ---------------------------------------------------------------- the game's own values */
+:root {
+  --fnt: "Noto Sans", system-ui, sans-serif;
+  --mono: "Overpass Mono", ui-monospace, monospace;
+
+  /* EarthRally.vue .er-page */
+  --er-orange: #f26b1d;
+  --er-orange-500: #c75b1e;
+  --er-muted: #b8bcc6;
+  --er-dim: #8a909a;
+  --er-blue: #1f8fff;
+
+  /* the game's colours (ui-vue/src/styles/modules/_colors.scss) */
+  --orange-500: oklch(61.95% 0.1801 43.40);     /* BngButton accent main */
+  --tbg-700: oklch(38.57% 0.0507 243.31);       /* BngButton accent secondary */
+  --cg-600: oklch(50.63% 0.0185 266.15);        /* BngButton accent outlined, its border */
+  --black-o4: rgba(0, 0, 0, 0.4);
+  --off-white: #f0f0f0;
+
+  --mark: #ff5d5d;                              /* the mock-up's own marks, never the game's */
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0d0f12; color: var(--off-white); font-family: var(--fnt); }
+
+/* ---------------------------------------------------------------- the mock-up's own chrome */
+.mock-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; padding: 10px 16px; background: #1a1d22; border-bottom: 1px solid #2a2e35; position: sticky; top: 0; z-index: 10; }
+.mock-bar b { margin-right: 8px; font-weight: 600; }
+.mock-bar a { color: var(--er-muted); font-size: 13px; text-decoration: none; border-bottom: 1px solid #3a3f48; }
+.mock-bar a:hover { color: #fff; }
+.mock-bar .hint { margin-left: auto; font-size: 13px; color: #8a909a; }
+
+.sec { padding: 26px 16px 8px; }
+.sec h2 { margin: 0 0 6px; font-size: 20px; font-weight: 700; }
+.sec h3 { margin: 18px 0 6px; font-size: 16px; font-weight: 600; color: var(--er-muted); }
+.cap { margin: 0 0 14px; max-width: 1150px; color: var(--er-muted); font-size: 14px; line-height: 1.6; }
+.cap + .cap { margin-top: -6px; }
+.cap b { color: var(--off-white); }
+.cap code { color: #ffc69b; font-family: var(--mono); font-size: 13px; }
+.cap .bad { color: #ff8a8a; }
+.cap .ok { color: #6fd39a; }
+.rule { height: 1px; background: #23272e; border: 0; margin: 26px 16px 0; }
+
+/* a shot: the stage page's left column at true size, over the game as the menu sees it */
+.shot {
+  overflow-x: auto; border-radius: 6px; box-shadow: 0 0 0 1px #2a2e35;
+  background:
+    radial-gradient(ellipse at 70% 20%, rgba(80, 110, 90, 0.35), transparent 60%),
+    radial-gradient(ellipse at 20% 80%, rgba(120, 90, 60, 0.30), transparent 55%),
+    linear-gradient(180deg, #2b3a40 0%, #1d2622 55%, #17140f 100%);
+}
+.shot-in { width: 980px; padding: 22px 26px; background: rgba(10, 12, 16, 0.72); font-family: var(--fnt); font-size: 16px; color: var(--off-white); }
+.shot-in.tight { padding: 14px 26px; }
+
+/* the mock-up's own table of numbers (never the game's) */
+.tbl { border-collapse: collapse; margin: 4px 0 16px; font-size: 13px; color: var(--er-muted); }
+.tbl th, .tbl td { padding: 5px 14px 5px 0; text-align: left; border-bottom: 1px solid #23272e; white-space: nowrap; }
+.tbl th { color: var(--off-white); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+.tbl td.n { font-family: var(--mono); text-align: right; padding-right: 22px; }
+.tbl tr.pick td { color: #cfe8ff; background: rgba(31, 143, 255, 0.12); }
+.tbl caption { caption-side: bottom; padding-top: 8px; font-size: 13px; color: var(--er-dim); text-align: left; max-width: 980px; white-space: normal; line-height: 1.5; }
+
+/* ---------------------------------------------------------------- EarthRally.vue, reproduced */
+.er-card { background: rgba(0, 0, 0, 0.6); border-radius: 0.5rem; }
+.er-muted { color: var(--er-muted); }
+
+.er-stage-ss { font-family: var(--mono); font-size: 20px; color: var(--er-orange); font-weight: 700; letter-spacing: 0.05em; }
+.er-stage-name { font-size: 52px; font-weight: 700; line-height: 1.1; }
+
+/* the four tiles, exactly as EarthRally.vue:414-415 has them */
+.er-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 26px 0; }
+.er-tile { padding: 18px 20px; }
+.er-tile .er-v { font-family: var(--mono); font-size: 40px; font-weight: 700; line-height: 1.1; }
+.er-tile .er-v small { font-size: 18px; margin-left: 4px; color: var(--er-muted); }
+.er-tile .er-l { font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--er-muted); }
+
+.er-line-note { display: flex; align-items: center; gap: 14px; padding: 14px 18px; font-size: 17px; }
+.er-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; padding: 3px 12px; border-radius: 999px; white-space: nowrap; }
+.er-pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.er-pill.ready { background: rgba(40, 140, 80, 0.55); color: #d9ffe6; }
+.er-pill.recce { background: rgba(190, 140, 30, 0.45); color: #fff1cc; }
+.er-pill.none { background: rgba(170, 60, 60, 0.45); color: #ffdede; }
+/* (the fourth pill, .working, is not reproduced here: no shot in this file shows an auto recce running, and
+   docs/mockups-1.3.0/auto-recce-button.html is where it is drawn.) */
+
+.er-help { margin-top: 14px; font-size: 15px; line-height: 1.5; color: var(--er-muted); }
+
+/* ---------------------------------------------------------------- the mock-up's own marks (never the game's) */
+/* A mark is always a class put on the element itself, and each one adds -- it never takes a tile away. */
+.mk-bad .er-v { color: #ff8a8a; }                       /* a number that is wrong or dead */
+.mk-new { box-shadow: inset 0 0 0 1px rgba(31, 143, 255, 0.55); }   /* a tile that is new */
+.mk-note { padding: 2px 0 10px; font-size: 13px; color: #ff8a8a; }
+.mk-ok { padding: 2px 0 10px; font-size: 13px; color: #6fd39a; }
+.mk-lbl { padding: 0 0 6px; font-size: 13px; color: var(--er-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+/* two rows of tiles compared inside one shot: both at true size, stacked, because two 980px columns side by side
+   would be 1 988px and the content box is 1 792px. The second row's top margin is trimmed, nothing else. */
+.mk-stack + .mk-stack { margin-top: 18px; }
+.mk-stack .er-tiles { margin: 0; }
+
+/* Nothing below this line can hide anything: every state above is a class on the element that carries it
+   (.mk-bad, .mk-new, .ready / .recce / .none / .working), and there is deliberately no late or broad selector
+   anywhere in this file touching display, visibility or opacity. An earlier mock-up in this project ended with
+   `[data-m] { display: none }`, which beat each element's own display and drew a whole section as nothing. */
+</style>
+</head>
+<body>
+
+<div class="mock-bar">
+  <b>Earth Rally 1.3.1 &mdash; the stage page's four tiles</b>
+  <a href="#now">now</a>
+  <a href="#new">proposed</a>
+  <a href="#corners">corners: every state</a>
+  <a href="#range">climb &amp; drop: the range</a>
+  <a href="#units">units</a>
+  <a href="#why">the numbers behind it</a>
+  <a href="#open">open questions</a>
+  <span class="hint">true size: 1:1 in a 1920-wide window, otherwise each shot scrolls sideways</span>
+</div>
+
+<!-- ======================================================= now ======================================================= -->
+<section class="sec" id="now">
+  <h2>1 &middot; the four tiles as they are now (1.3.0)</h2>
+  <p class="cap">two real stages from the user's own OTR 2024 Final. the first has been driven eight times, the
+    second has a matched line and has never been driven. the tiles are
+    <code>Length &middot; Corners &middot; Junctions &middot; Bridges</code>,
+    <code>EarthRally.vue:118-121</code>, and all four read through <code>dash()</code>, which prints
+    <code>&ndash;</code> for nil.</p>
+
+  <div class="shot"><div class="shot-in">
+    <div class="er-stage-ss">SS4 &middot; OTR 2024 FINAL</div>
+    <div class="er-stage-name">Maryhill Up</div>
+    <div class="er-muted">ATC &middot; start &middot; flying finish &middot; stop</div>
+    <div class="er-tiles">
+      <div class="er-card er-tile"><div class="er-v">4.1<small>km</small></div><div class="er-l">Length</div></div>
+      <div class="er-card er-tile"><div class="er-v">31</div><div class="er-l">Corners</div></div>
+      <div class="er-card er-tile"><div class="er-v">5</div><div class="er-l">Junctions</div></div>
+      <div class="er-card er-tile mk-bad"><div class="er-v">0</div><div class="er-l">Bridges</div></div>
+    </div>
+    <div class="er-card er-line-note"><span class="er-pill ready">Ready</span><span>Notes from the map's own roads.</span></div>
+  </div></div>
+  <p class="mk-note">driven, so Corners has a number &mdash; 31, which is the figure the engine recorded on the
+    last run. Bridges is 0, and this stage has no bridge, so the tile happens to be true here.</p>
+
+  <div class="shot"><div class="shot-in">
+    <div class="er-stage-ss">SS6 &middot; OTR 2024 FINAL</div>
+    <div class="er-stage-name">Dalles Mtn Up</div>
+    <div class="er-muted">ATC &middot; start &middot; flying finish &middot; stop</div>
+    <div class="er-tiles">
+      <div class="er-card er-tile"><div class="er-v">16.1<small>km</small></div><div class="er-l">Length</div></div>
+      <div class="er-card er-tile mk-bad"><div class="er-v">&ndash;</div><div class="er-l">Corners</div></div>
+      <div class="er-card er-tile"><div class="er-v">14</div><div class="er-l">Junctions</div></div>
+      <div class="er-card er-tile mk-bad"><div class="er-v">0</div><div class="er-l">Bridges</div></div>
+    </div>
+    <div class="er-card er-line-note"><span class="er-pill ready">Ready</span><span>Notes from the map's own roads.</span></div>
+  </div></div>
+  <p class="mk-note">the bug, drawn: the stage is <b>Ready</b>, the line is matched end to end, the co-driver will
+    call 82 corners on it &mdash; and the tile says it does not know. it cannot know, because
+    <code>menu.lua:124-130</code> does not look at the line. it walks the stage's past runs and takes
+    <code>r.checks.cornersFound</code> from the first run that has one, and this stage has no runs.</p>
+
+  <p class="cap"><b>Bridges is dead either way.</b> across all 116 of the user's python-matched lines the matcher
+    found 109 bridges, but they are spread over only 24 of them: the median stage has none, so the tile reads 0 on
+    the great majority of stages that <i>do</i> have map data for it. the in-game auto recce finds none at all,
+    ever &mdash; BeamNG.Earth's road graph carries no bridge flag &mdash; so on every stage this version produces
+    the tile is a permanent 0. one fifth of a stage's headline numbers spent saying nothing.</p>
+  <p class="cap"><b>Junctions is the user's call</b>, and the numbers do not argue against it: a median of 8 per
+    stage, 128 on the longest line in the set, and the two line kinds do not agree about them (Maryhill Up: 5 by
+    the python matcher, 2 in game; Dalles Mtn Up: 14 against 28, measured 2026-11-13). a driver is not going to
+    plan around a number that moves when the line is remade.</p>
+</section>
+<hr class="rule">
+
+<!-- ======================================================= proposed ======================================================= -->
+<section class="sec" id="new">
+  <h2>2 &middot; the four proposed: Length &middot; Corners &middot; Climb &middot; Drop</h2>
+  <p class="cap">same two stages, same grid, same tile. two labels change and two numbers come from the line
+    instead of from the run history. the new tiles carry their unit in the <code>&lt;small&gt;</code> the Length
+    tile already uses, so a row of four reads as one kind of thing.</p>
+
+  <div class="shot"><div class="shot-in">
+    <div class="er-stage-ss">SS4 &middot; OTR 2024 FINAL</div>
+    <div class="er-stage-name">Maryhill Up</div>
+    <div class="er-muted">ATC &middot; start &middot; flying finish &middot; stop</div>
+    <div class="er-tiles">
+      <div class="er-card er-tile"><div class="er-v">4.1<small>km</small></div><div class="er-l">Length</div></div>
+      <div class="er-card er-tile"><div class="er-v">31</div><div class="er-l">Corners</div></div>
+      <div class="er-card er-tile mk-new"><div class="er-v">190<small>m</small></div><div class="er-l">Climb</div></div>
+      <div class="er-card er-tile mk-new"><div class="er-v">0<small>m</small></div><div class="er-l">Drop</div></div>
+    </div>
+    <div class="er-card er-line-note"><span class="er-pill ready">Ready</span><span>Notes from the map's own roads.</span></div>
+    <div class="er-help">Maryhill Up climbs 185 m in 4.1 km and gives none of it back &mdash; a drop of 0 is the
+      truth about this stage, not a tile that failed to fill.</div>
+  </div></div>
+
+  <div class="shot"><div class="shot-in">
+    <div class="er-stage-ss">SS6 &middot; OTR 2024 FINAL</div>
+    <div class="er-stage-name">Dalles Mtn Up</div>
+    <div class="er-muted">ATC &middot; start &middot; flying finish &middot; stop</div>
+    <div class="er-tiles">
+      <div class="er-card er-tile"><div class="er-v">16.1<small>km</small></div><div class="er-l">Length</div></div>
+      <div class="er-card er-tile mk-new"><div class="er-v">82</div><div class="er-l">Corners</div></div>
+      <div class="er-card er-tile mk-new"><div class="er-v">550<small>m</small></div><div class="er-l">Climb</div></div>
+      <div class="er-card er-tile mk-new"><div class="er-v">220<small>m</small></div><div class="er-l">Drop</div></div>
+    </div>
+    <div class="er-card er-line-note"><span class="er-pill ready">Ready</span><span>Notes from the map's own roads.</span></div>
+  </div></div>
+  <p class="mk-ok">a stage never driven, telling you what it is: 16 km, 82 corners the co-driver will call,
+    550 m up and 220 m back down. none of this needs a run, a world, or a car.</p>
+
+  <p class="cap"><b>Why 82 is allowed to be on that tile.</b> the owner's instruction was "base corners off the
+    co-driver", and 82 is not an approximation of what the co-driver calls &mdash; it is the same count, from the
+    same function. <code>cornersFound</code> is not the game's number at all: the mod finds the corners itself,
+    <code>geo.corners</code> (<code>geo.lua:184-236</code>), writes one pacenote per corner
+    (<code>stageWriter.lua:127-199</code>), and the engine then measures each one's severity and calls it. the
+    stored runs show the two agreeing: on the matched line, <code>cornersFound 31</code> and
+    <code>notesLoaded 32</code> &mdash; 31 corner notes plus one junction note standing on its own &mdash; and
+    <code>notesCalled 32</code>. the number on the tile is the number of corner calls, by construction.</p>
+  <p class="cap"><b>And it needs nothing from the game.</b> <code>geo.lua</code> says so in its first line
+    ("plain geometry on stage lines, with nothing from the game"), <code>geo.corners</code> reads only
+    <code>.x</code> and <code>.y</code>, and the frame that turns the line's lat / lon into metres is the mod's
+    own (<code>autoRecce.lua:108-114</code>, "the stage's own frame, not the game's"). so the pass can run the
+    moment a line is saved &mdash; at the end of a recce, and at the end of an auto recce &mdash; and for lines
+    saved by older versions, once, on the next look. <b>it must be kept, not recomputed on sight:</b> the stage
+    page re-asks <code>uiStage</code> every two seconds while it is open (<code>EarthRally.vue:280-288</code>),
+    and the longest line in the set is 9&nbsp;785 samples &mdash; a pass to run on save, not on a poll.</p>
+</section>
+<hr class="rule">
+
+<!-- ======================================================= corners ======================================================= -->
+<section class="sec" id="corners">
+  <h2>3 &middot; corners: every state the tile can be in</h2>
+  <p class="cap">four states, and only one of them is a dash. the dash means "there is no line", which is the one
+    thing a corner count genuinely cannot be had from &mdash; and that stage already says so in its own pill, so
+    the tile is not the only place the player hears it.</p>
+
+  <div class="shot"><div class="shot-in tight">
+    <div class="mk-lbl">a &middot; no line at all &mdash; Recce needed</div>
+    <div class="er-tiles">
+      <div class="er-card er-tile"><div class="er-v">12.9<small>km</small></div><div class="er-l">Length</div></div>
+      <div class="er-card er-tile"><div class="er-v">&ndash;</div><div class="er-l">Corners</div></div>
+      <div class="er-card er-tile"><div class="er-v">&ndash;<small>m</small></div><div class="er-l">Climb</div></div>
+      <div class="er-card er-tile"><div class="er-v">&ndash;<small>m</small></div><div class="er-l">Drop</div></div>
+    </div>
+    <div class="er-card er-line-note"><span class="er-pill none">Recce needed</span><span>No line on the roads yet: run the auto recce, or drive its recce.</span></div>
+    <div class="er-help">Starveout, 12.9 km, drawn as the rally is on import, before it has any line of its own
+      (it has a matched line on this machine, as all nine OTR stages do). three dashes and a pill that says what
+      to do about them. the dashes fill in the moment the stage has a line &mdash; not the moment it is first
+      driven.</div>
+  </div></div>
+
+  <div class="shot"><div class="shot-in tight">
+    <div class="mk-lbl">b &middot; a line, every metre of it on a road &mdash; Ready</div>
+    <div class="er-tiles">
+      <div class="er-card er-tile"><div class="er-v">16.1<small>km</small></div><div class="er-l">Length</div></div>
+      <div class="er-card er-tile"><div class="er-v">82</div><div class="er-l">Corners</div></div>
+      <div class="er-card er-tile"><div class="er-v">550<small>m</small></div><div class="er-l">Climb</div></div>
+      <div class="er-card er-tile"><div class="er-v">220<small>m</small></div><div class="er-l">Drop</div></div>
+    </div>
+    <div class="er-card er-line-note"><span class="er-pill ready">Ready</span><span>Notes from the map's own roads.</span></div>
+  </div></div>
+
+  <div class="shot"><div class="shot-in tight">
+    <div class="mk-lbl">c &middot; a line with a stretch that has no road on the map &mdash; Recce recommended</div>
+    <div class="er-tiles">
+      <div class="er-card er-tile"><div class="er-v">29.8<small>km</small></div><div class="er-l">Length</div></div>
+      <div class="er-card er-tile"><div class="er-v">209</div><div class="er-l">Corners</div></div>
+      <div class="er-card er-tile"><div class="er-v">610<small>m</small></div><div class="er-l">Climb</div></div>
+      <div class="er-card er-tile"><div class="er-v">510<small>m</small></div><div class="er-l">Drop</div></div>
+    </div>
+    <div class="er-card er-line-note"><span class="er-pill recce">Recce recommended</span><span>3.2 km of this stage has no road on the map: no notes along there until you drive its recce.</span></div>
+    <div class="er-help">Wildcat 26, Olympus. 236 corners lie on the line; 27 of them are inside the 3.2 km with
+      no road, where the run mutes the notes (<code>runner.lua:488-495</code>,
+      <code>stageWriter.lua:122-128</code>), so the co-driver calls <b>209</b>. that is the number on the tile,
+      because the tile is the co-driver's count and not the road's. the pill beside it is what says the stage has
+      a silent stretch; the Corners tile does not try to say it twice.</div>
+  </div></div>
+
+  <div class="shot"><div class="shot-in tight">
+    <div class="mk-lbl">d &middot; for comparison: the same stage as (b), as the tile reads today</div>
+    <div class="er-tiles">
+      <div class="er-card er-tile"><div class="er-v">16.1<small>km</small></div><div class="er-l">Length</div></div>
+      <div class="er-card er-tile mk-bad"><div class="er-v">&ndash;</div><div class="er-l">Corners</div></div>
+      <div class="er-card er-tile"><div class="er-v">14</div><div class="er-l">Junctions</div></div>
+      <div class="er-card er-tile mk-bad"><div class="er-v">0</div><div class="er-l">Bridges</div></div>
+    </div>
+  </div></div>
+  <p class="mk-note">today the dash in (d) and the dash in (a) look identical and mean different things: one is
+    "no line", the other is "you have not driven it yet". after the change there is only one dash and only one
+    meaning, which is the whole point of doing it this way round.</p>
+
+  <p class="cap"><b>There is no fifth state, and no fallback.</b> the owner ruled out a geometric approximation,
+    and nothing here needs one: the co-driver's own count is available from the line alone. the one case left is
+    a line whose points carry no height &mdash; the mod writes a line with <code>z</code> as 0 when the road
+    graph hands back nodes with no height (<code>autoRecce.lua:554-559</code>) &mdash; and then Climb and Drop
+    are dashes while Corners is still a number. not drawn as a state of its own because no line in the user's set
+    is like that, and a drawing of a case nobody has is a guess.</p>
+</section>
+<hr class="rule">
+
+<!-- ======================================================= range ======================================================= -->
+<section class="sec" id="range">
+  <h2>4 &middot; climb and drop over the range of the user's own stages</h2>
+  <p class="cap">four shots, so the two new tiles can be judged at the extremes rather than on one happy example.
+    every figure is the summed rise and the summed fall of that line's own heights, with the 2 m threshold of
+    section 6, rounded to the nearest 10 m.</p>
+
+  <h3>a flat stage: it has to read flat</h3>
+  <div class="shot"><div class="shot-in tight">
+    <div class="er-stage-ss">SS3 &middot; OTR 2024 FINAL</div>
+    <div class="er-stage-name">Founders Olmstead, Moore, Nagle Super Special</div>
+    <div class="er-tiles">
+      <div class="er-card er-tile"><div class="er-v">5.7<small>km</small></div><div class="er-l">Length</div></div>
+      <div class="er-card er-tile"><div class="er-v">32</div><div class="er-l">Corners</div></div>
+      <div class="er-card er-tile"><div class="er-v">0<small>m</small></div><div class="er-l">Climb</div></div>
+      <div class="er-card er-tile"><div class="er-v">0<small>m</small></div><div class="er-l">Drop</div></div>
+    </div>
+    <div class="er-card er-line-note"><span class="er-pill recce">Recce recommended</span><span>0.4 km of this stage has no road on the map: no notes along there until you drive its recce.</span></div>
+    <div class="er-help">a super special on flat ground: the whole 5.7 km lies inside a 3.2 m band of height. this
+      is the stage that settles the threshold. summed naively it reads <b>23 m of climb and 24 m of drop</b>, all
+      of it the height data's own wobble; at the 2 m threshold it reads 2 m and 2 m, which rounds to the only
+      honest answer a tile can give here.</div>
+  </div></div>
+
+  <h3>a hill climb: all of it one way</h3>
+  <div class="shot"><div class="shot-in tight">
+    <div class="er-stage-ss">SS4 &middot; OTR 2024 FINAL</div>
+    <div class="er-stage-name">Maryhill Up</div>
+    <div class="er-tiles">
+      <div class="er-card er-tile"><div class="er-v">4.1<small>km</small></div><div class="er-l">Length</div></div>
+      <div class="er-card er-tile"><div class="er-v">31</div><div class="er-l">Corners</div></div>
+      <div class="er-card er-tile"><div class="er-v">190<small>m</small></div><div class="er-l">Climb</div></div>
+      <div class="er-card er-tile"><div class="er-v">0<small>m</small></div><div class="er-l">Drop</div></div>
+    </div>
+    <div class="er-card er-line-note"><span class="er-pill ready">Ready</span><span>Notes from the map's own roads.</span></div>
+    <div class="er-help">221.0 m at the start line, 405.9 m at the flying finish, and not one metre given back on
+      the way: 185 m of climb against 0.7 m of fall over the whole 4.1 km. a drop tile of 0 is a real reading
+      and a driver can use it.</div>
+  </div></div>
+
+  <h3>the same road both ways: the figures have to swap</h3>
+  <div class="shot"><div class="shot-in tight">
+    <div class="mk-stack">
+      <div class="mk-lbl">SS6 &middot; Dalles Mtn Up</div>
+      <div class="er-tiles">
+        <div class="er-card er-tile"><div class="er-v">16.1<small>km</small></div><div class="er-l">Length</div></div>
+        <div class="er-card er-tile"><div class="er-v">82</div><div class="er-l">Corners</div></div>
+        <div class="er-card er-tile"><div class="er-v">550<small>m</small></div><div class="er-l">Climb</div></div>
+        <div class="er-card er-tile"><div class="er-v">220<small>m</small></div><div class="er-l">Drop</div></div>
+      </div>
+    </div>
+    <div class="mk-stack">
+      <div class="mk-lbl">SS9 &middot; Dalles Mtn Down</div>
+      <div class="er-tiles">
+        <div class="er-card er-tile"><div class="er-v">16.1<small>km</small></div><div class="er-l">Length</div></div>
+        <div class="er-card er-tile"><div class="er-v">81</div><div class="er-l">Corners</div></div>
+        <div class="er-card er-tile"><div class="er-v">220<small>m</small></div><div class="er-l">Climb</div></div>
+        <div class="er-card er-tile"><div class="er-v">550<small>m</small></div><div class="er-l">Drop</div></div>
+      </div>
+    </div>
+  </div></div>
+  <p class="mk-ok">two separately matched lines, 16.12 km and 16.06 km, the same mountain road in opposite
+    directions. up reads 548 / 223, down reads 223 / 550 &mdash; the two mirror each other to 0.3%. that is the
+    strongest check available without a survey, and it is what says the threshold is measuring the road rather
+    than the method.</p>
+
+  <h3>the longest line in the set</h3>
+  <div class="shot"><div class="shot-in tight">
+    <div class="er-stage-ss">SS7 &middot; 2026 OVERMOUNTAIN - PUBLISH V2.KMZ</div>
+    <div class="er-stage-name">Gulf of Tennessee Start to Newport SS</div>
+    <div class="er-tiles">
+      <div class="er-card er-tile"><div class="er-v">48.9<small>km</small></div><div class="er-l">Length</div></div>
+      <div class="er-card er-tile"><div class="er-v">166</div><div class="er-l">Corners</div></div>
+      <div class="er-card er-tile"><div class="er-v">390<small>m</small></div><div class="er-l">Climb</div></div>
+      <div class="er-card er-tile"><div class="er-v">910<small>m</small></div><div class="er-l">Drop</div></div>
+    </div>
+    <div class="er-card er-line-note"><span class="er-pill ready">Ready</span><span>Notes from the map's own roads.</span></div>
+    <div class="er-help">48.9 km, 12 238 points, 166 corners called, net 521 m downhill. the widest number any
+      tile in the user's whole set has to hold is three digits in metres and four in feet, and both fit the
+      233 px tile with room over.</div>
+  </div></div>
+
+  <p class="cap">across all 116 matched lines the figure runs from 0 to 74 m of climb per km, median 17. nothing
+    in the set produces a five-digit metric number, and the largest imperial one is 3 000 ft.</p>
+</section>
+<hr class="rule">
+
+<!-- ======================================================= units ======================================================= -->
+<section class="sec" id="units">
+  <h2>5 &middot; units: one setting, no second way of doing it</h2>
+  <p class="cap">the Length tile reads <code>lenNum(stg.lengthM)</code> with <code>units()</code> in its
+    <code>&lt;small&gt;</code>, and <code>units()</code> answers <code>"km"</code> or <code>"mi"</code> from the
+    one existing setting (<code>store.js</code>). the new tiles follow it with no new setting and no new switch:
+    metric gives metres, imperial gives feet &mdash; which is exactly the pairing the HUD's own
+    <code>format.js dist()</code> already makes (<code>&times; 3.28084</code>, feet for the imperial short
+    distance).</p>
+  <div class="shot"><div class="shot-in tight">
+    <div class="mk-stack">
+      <div class="mk-lbl">Dalles Mtn Up, units() === "km"</div>
+      <div class="er-tiles">
+        <div class="er-card er-tile"><div class="er-v">16.1<small>km</small></div><div class="er-l">Length</div></div>
+        <div class="er-card er-tile"><div class="er-v">82</div><div class="er-l">Corners</div></div>
+        <div class="er-card er-tile"><div class="er-v">550<small>m</small></div><div class="er-l">Climb</div></div>
+        <div class="er-card er-tile"><div class="er-v">220<small>m</small></div><div class="er-l">Drop</div></div>
+      </div>
+    </div>
+    <div class="mk-stack">
+      <div class="mk-lbl">Dalles Mtn Up, units() === "mi"</div>
+      <div class="er-tiles">
+        <div class="er-card er-tile"><div class="er-v">10.0<small>mi</small></div><div class="er-l">Length</div></div>
+        <div class="er-card er-tile"><div class="er-v">82</div><div class="er-l">Corners</div></div>
+        <div class="er-card er-tile"><div class="er-v">1800<small>ft</small></div><div class="er-l">Climb</div></div>
+        <div class="er-card er-tile"><div class="er-v">750<small>ft</small></div><div class="er-l">Drop</div></div>
+      </div>
+    </div>
+    <div class="mk-stack">
+      <div class="mk-lbl">Gulf of Tennessee Start to Newport SS, units() === "mi" &mdash; the widest numbers in the set</div>
+      <div class="er-tiles">
+        <div class="er-card er-tile"><div class="er-v">30.4<small>mi</small></div><div class="er-l">Length</div></div>
+        <div class="er-card er-tile"><div class="er-v">166</div><div class="er-l">Corners</div></div>
+        <div class="er-card er-tile"><div class="er-v">1250<small>ft</small></div><div class="er-l">Climb</div></div>
+        <div class="er-card er-tile"><div class="er-v">3000<small>ft</small></div><div class="er-l">Drop</div></div>
+      </div>
+    </div>
+  </div></div>
+  <p class="cap">the same stage, the same two numbers: 548 m and 223 m, or 1 798 ft and 733 ft. rounded as drawn
+    &mdash; nearest 10 m, nearest 50 ft &mdash; because those steps are about the size of the figure's own
+    uncertainty, and a tile that said <code>548</code> would be claiming a metre it has not got. the longest line
+    in the set reads <code>1250</code> / <code>3000</code> ft, four digits, which still fits.</p>
+  <p class="cap">the mirror holds in feet too: Dalles Mtn Up 1 798 ft of climb, Dalles Mtn Down 1 805 ft of drop,
+    both drawn as 1800.</p>
+</section>
+<hr class="rule">
+
+<!-- ======================================================= why ======================================================= -->
+<section class="sec" id="why">
+  <h2>6 &middot; the numbers behind the threshold</h2>
+  <p class="cap">summing every step of a 4 m-spaced line adds the height data's own wobble to the road's real
+    rise. the threshold is a hysteresis: a move is only counted once it has gone that far from the last counted
+    height, so a 1 m shiver on a flat road is dropped and a 1 m rise in the middle of a long climb still arrives
+    in the total. every column below is measured over the user's own 116 matched lines.</p>
+  <table class="tbl">
+    <caption>flat stage: Founders Olmstead, Moore, Nagle Super Special, 5.8 km, every point inside a 3.2 m band of
+      height &mdash; whatever its true climb is, it is a few metres, so the column is very nearly all error.
+      mirror: Dalles Mtn Up against Dalles Mtn Down, two separate lines of the same road, how far the one's climb
+      is from the other's drop. resampled: the same line measured again at 20 m spacing instead of 4 m, as a
+      percentage of the 4 m figure &mdash; a method reading the road gives the same answer at either spacing, a
+      method reading the wobble does not. net: how far climb minus drop falls from the line's own end-to-start
+      height change, median.</caption>
+    <thead>
+      <tr><th>threshold</th><th>flat stage</th><th>all 116, median</th><th>mirror</th><th>resampled at 20 m</th><th>net</th><th>Maryhill, python</th><th>Maryhill, in game</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>none (every step)</td><td class="n">23 m</td><td class="n">21.9 m/km</td><td class="n">0.4%</td><td class="n">94%</td><td class="n">0.00 m</td><td class="n">186</td><td class="n">262</td></tr>
+      <tr><td>1 m</td><td class="n">7 m</td><td class="n">18.5 m/km</td><td class="n">1.1%</td><td class="n">99%</td><td class="n">0.28 m</td><td class="n">185</td><td class="n">247</td></tr>
+      <tr class="pick"><td>2 m &mdash; recommended</td><td class="n">2 m</td><td class="n">16.9 m/km</td><td class="n">0.3%</td><td class="n">100%</td><td class="n">0.77 m</td><td class="n">185</td><td class="n">238</td></tr>
+      <tr><td>3 m</td><td class="n">0 m</td><td class="n">15.6 m/km</td><td class="n">0.5%</td><td class="n">101%</td><td class="n">1.07 m</td><td class="n">182</td><td class="n">225</td></tr>
+      <tr><td>5 m</td><td class="n">0 m</td><td class="n">13.3 m/km</td><td class="n">2.3%</td><td class="n">101%</td><td class="n">1.67 m</td><td class="n">184</td><td class="n">207</td></tr>
+      <tr><td>10 m</td><td class="n">0 m</td><td class="n">9.8 m/km</td><td class="n">2.9%</td><td class="n">101%</td><td class="n">3.91 m</td><td class="n">182</td><td class="n">195</td></tr>
+      <tr><td>smoothed over 60 m, then 2 m</td><td class="n">0 m</td><td class="n">14.7 m/km</td><td class="n">&mdash;</td><td class="n">108%</td><td class="n">1.01 m</td><td class="n">182</td><td class="n">209</td></tr>
+    </tbody>
+  </table>
+  <p class="cap"><b>2 m, and why not further.</b> the flat stage falls 23 &rarr; 7 &rarr; 2 m over the first two
+    metres of threshold and then has nothing left to give: that is where the wobble ends. past 2 m the figure
+    keeps falling by about 1.3 m/km for each further metre of threshold, and now it is taking real rises with it
+    &mdash; a 3 m roll over 60 m of road is a crest a driver feels, and at a 5 m threshold it is gone. 2 m is
+    also the only row that is both exactly stable when the line is resampled at 20 m and inside half a percent on
+    the mirror, and it keeps climb minus drop within a metre of the line's own net height change, so the two tiles
+    cannot quietly disagree with each other.</p>
+  <p class="cap"><b>Smoothing is the worse tool here.</b> a 60 m moving average leaves 0 m on the flat stage too,
+    but it reads 108% of itself when the line is resampled and it flattens the short rises along with the noise.
+    the threshold throws away small moves; smoothing shrinks every move, including the big ones.</p>
+  <p class="cap"><b>Maryhill Up by both methods, which is the one comparison that can be done like for like.</b>
+    the same stage exists as a python-matched line and as a line the in-game auto recce wrote.
+    <span class="ok">corners: 31 and 31, identical.</span>
+    <span class="bad">climb: 185 m against 238 m, and drop 0 m against 44 m.</span> the python line's heights come
+    from the elevation data sampled every 4 m and climb steadily; the in-game line's come from road-graph node
+    heights interpolated between nodes (<code>autoRecce.lua:554-583</code>), and they contain about 25 descending
+    stretches on a road that never descends &mdash; the worst drops 11 m in 36 m, a 30% gradient that is not
+    there. no threshold under 10 m removes them, and at 10 m the two lines agree (182 against 195) at the cost of
+    every real crest in the set. <b>Dalles Mtn Up, the other stage that exists both ways, agrees well</b>
+    &mdash; 548 / 223 python against 545 / 219 in game, 0.5% and 2% &mdash; so this is not a flaw in the in-game
+    pass as such, it is some of that road's node heights being wrong. a line a driver has driven is the third
+    kind and the cleanest: the recce of Maryhill Up gives 182 / 0, within 2% of the python line.</p>
+  <p class="cap"><b>So the honest statement is that the climb figure carries the accuracy of whichever line the
+    stage has</b>, and on one of the two stages where we can check, the in-game line overstates the climb by
+    about a quarter. that is a road-graph height problem to fix where the heights are read, not something a
+    summing rule should hide: pushing the threshold to 10 m to make Maryhill agree would cost the whole set its
+    real small climbs, which is the same trade the owner refused on corners.</p>
+</section>
+<hr class="rule">
+
+<!-- ======================================================= open ======================================================= -->
+<section class="sec" id="open">
+  <h2>7 &middot; what this drawing settles, and what it does not</h2>
+  <p class="cap"><b>Settled by drawing it.</b> the four tiles become
+    <code>Length &middot; Corners &middot; Climb &middot; Drop</code> with no change to
+    <code>.er-tiles</code>, <code>.er-tile</code>, <code>.er-v</code> or <code>.er-l</code> &mdash; two labels and
+    two sources. Corners has exactly four states and only one dash, and that dash means "no line", the one state
+    the number genuinely cannot be had in. there is no unknown state for a recced-but-undriven stage, because the
+    co-driver's own corner pass is pure geometry on the line and the count can be had the moment the line is
+    saved. the new tiles take their unit from <code>units()</code> and add no setting.</p>
+  <p class="cap"><b>Not settled, and wanting a decision.</b>
+    (1) the words. <b>Climb</b> and <b>Drop</b> are drawn because they are short enough for the 14 px label and
+    they are what a driver says; <b>Gain</b> / <b>Loss</b> is what the owner wrote in the report,
+    <b>Up</b> / <b>Down</b> is shortest, <b>Ascent</b> / <b>Descent</b> is what a map would print.
+    (2) the rounding. nearest 10 m and nearest 50 ft are drawn; <code>format.js dist()</code> rounds feet to the
+    nearest 10, and following it exactly would make the flat stage read <code>0 m</code> in metric and
+    <code>10 ft</code> in imperial, which is the sort of small lie that is worth one decision now.
+    (3) whether Junctions really goes. it is the user's call and this drawing assumes it; if it stays, Drop is the
+    tile with no room and the page needs five.
+    (4) whether a stage with a silent stretch should mark its Corners number at all &mdash; drawn plain, on the
+    grounds that the pill beside it already says the stage has one.
+    (5) where the kept figure lives: beside the line in its own file, or in the events index. not a UI question,
+    but it decides whether an old line gets its number on the next look or on its next save.</p>
+  <p class="cap"><b>Not verified.</b> no browser was opened: the 980 px column, the 233 px tile and the widths of
+    the numbers in it are arithmetic on <code>EarthRally.vue</code>'s own values, with Overpass Mono taken at
+    about .6em an advance, so a tile said to have room over has room over by arithmetic. the corner counts are a
+    python port of <code>geo.corners</code> and its callers, checked against the figures the game itself recorded
+    &mdash; exact on the matched lines (31 and 31), one out on the recce lines (27 against the stored 28, 18
+    against 19), which is almost certainly the start and finish controls' own placement along a recce line
+    (<code>runner.lua:204-215</code>) and not the detector; a stage's true figure should be confirmed from the
+    game once before these tiles are believed to the unit. the climb figures are not checked against anything
+    outside the line files themselves: there is no survey here, so "believable" means the four tests in section 6
+    and nothing stronger. and nothing in this file has been rendered by the game's own stylesheet &mdash; only by
+    this copy of it.</p>
+</section>
+
+</body>
+</html>

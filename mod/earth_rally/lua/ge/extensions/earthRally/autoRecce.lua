@@ -37,6 +37,7 @@
 -- M.frame below, and the two can be checked against each other -- tests/test_autorecce.lua does.)
 local earth = require('earthRally/earthAdapter')
 local events = require('earthRally/events')
+local lineStats = require('earthRally/lineStats')
 
 local M = {}
 
@@ -740,6 +741,13 @@ function M.match(stage, graph, info)
     if flags[k] == 1 then p[4] = 1 end           -- (runner.lua reads p[4] == 1 as "no notes along here")
     points[k] = p
   end
+  -- What the line says about itself, kept with it: how many corners the co-driver will call on it and how much
+  -- height it gains and loses, so the menu's stage page has them without measuring the line again on every look
+  -- (lineStats.lua). Two keys tools/auto_recce.py does not write, which is why a line that has none is measured
+  -- once on the first look instead (events.lineFigures) -- so a line is never lost over a figure, and this is left
+  -- out rather than raised if it cannot be had.
+  local okFig, fig = pcall(lineStats.of, points, stage)
+  if not (okFig and fig) then fig = {} end
   local gapsOut = {}
   for k, gp in ipairs(gaps) do gapsOut[k] = { round(gp[1], 1), round(gp[2], 1) } end
   local juncOut = {}
@@ -756,6 +764,9 @@ function M.match(stage, graph, info)
     mapKey = events.mapKey(line),
     lengthM = round(total, 1),
     mapLineM = round(kmlCum, 1),
+    corners = fig.corners,
+    gainM = fig.gainM,
+    lossM = fig.lossM,
     gaps = gapsOut,
     gapM = round(gapM, 1),
     maxOffMapLineM = round(maxOff, 1),

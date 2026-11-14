@@ -113,21 +113,15 @@ function M.stage(eventId, stageId, arrival, autoRecce)
   local e, s, i = M.findStage(eventId, stageId)
   if not s then return nil end
   local st = M.stageStatus(e.id, s, autoRecce)
-  local junctions, bridges = nil, nil
-  local lms = events.landmarks(e.id, s.id, s)
-  if events.matched(e.id, s.id) then
-    junctions, bridges = 0, 0
-    for _, lm in ipairs(lms) do
-      if lm.type == 'overBridge' then bridges = bridges + 1 else junctions = junctions + 1 end
-    end
-  end
-  local runs, corners = {}, nil
+  -- The four tiles' last three numbers all come from the stage's own line: the corners the co-driver will call on
+  -- it and the height it gains and loses (events.lineFigures, kept with the line when it was saved). Until 1.3.1
+  -- the corner count was taken from the stage's past runs instead -- so a stage recced but never driven showed a
+  -- dash, which is the one moment the number is worth having. There is one dash left and it means "no line yet".
+  local fig = events.lineFigures(e.id, s.id, s) or {}
+  local runs = {}
   local all = events.results(e.id, s.id).runs or {}
   for k = #all, 1, -1 do
     local r = all[k]
-    if corners == nil and type(r.checks) == 'table' and tonumber(r.checks.cornersFound) then
-      corners = tonumber(r.checks.cornersFound)
-    end
     if r.finished and #runs < M.RUNS_SHOWN then
       runs[#runs + 1] = { date = r.date, timeS = r.timeS, stageS = r.stageS, penaltyS = r.penaltyS or 0,
         text = M.penaltyText(r), last = #runs == 0 or nil }
@@ -136,7 +130,8 @@ function M.stage(eventId, stageId, arrival, autoRecce)
   local ctl = s.controls or {}
   return {
     eventId = e.id, rally = e.name, id = s.id, ss = i, ssCount = #e.stages, name = s.name, lengthM = s.lengthM,
-    status = st.status, note = st.note, line = st.kind, corners = corners, junctions = junctions, bridges = bridges,
+    status = st.status, note = st.note, line = st.kind,
+    corners = fig.corners, gainM = fig.gainM, lossM = fig.lossM,
     atc = arrival == 'ATC', stop = ctl.stop ~= nil, best = events.best(e.id, s.id), runs = runs,
     canDrive = st.kind ~= nil,
     -- the Auto recce button's own two answers: it is offered on a stage with no line, and when it cannot be

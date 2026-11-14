@@ -6,6 +6,8 @@
 --                                             a stage runs on it with no recce
 --   earthRally/results/<event>__<stage>.json  the stage times
 -- Files are read once and kept (the window asks for them every frame); what this module writes updates its copy.
+local lineStats = require('earthRally/lineStats')
+
 local M = {}
 
 M.EVENTS_DIR = '/earthRally/events/'
@@ -140,6 +142,34 @@ function M.stageLine(eventId, stageId, stage)
   if r and (not m or not short) then return r, 'recce' end
   if m then return m, 'matched' end
   return nil
+end
+
+-- What the stage's own line says about itself: { corners, gainM, lossM } (lineStats.lua), or nil when the stage has
+-- no line at all -- the one state those numbers genuinely cannot be had in. gainM and lossM are absent on a line
+-- with no heights.
+--
+-- A line saved by 1.3.1 or later carries its figures in its own file, written when it was saved (recce.lua,
+-- autoRecce.lua). A line saved before that has none, and they are worked out here instead: once, kept on the line
+-- table this module already holds, for as long as the file stays read -- never on each look, because the stage
+-- page asks for a stage every two seconds while it is open and the longest line in the user's set resamples to
+-- about 9,800 samples. (recceShortM above keeps its own figure the same way, and against the same points.) The
+-- file is left exactly as it was written: looking at a page does not rewrite the player's lines.
+function M.lineFigures(eventId, stageId, stage)
+  local line = M.stageLine(eventId, stageId, stage)
+  if not line then return nil end
+  if type(line.corners) == 'number' then
+    return { corners = line.corners, gainM = line.gainM, lossM = line.lossM }
+  end
+  if not line._figures or line._figuresFor ~= line.points then
+    local ok, fig = pcall(lineStats.of, line.points, stage)
+    if not ok then
+      log('W', 'earthRally', string.format('the line of %s could not be measured: %s', key(eventId, stageId),
+        tostring(fig)))
+      fig = nil
+    end
+    line._figures, line._figuresFor = fig or {}, line.points
+  end
+  return line._figures
 end
 
 -- The junctions and bridges along a stage (found by tools/auto_recce.py on the map's roads, kept with its matched

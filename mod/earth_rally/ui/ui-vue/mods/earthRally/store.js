@@ -86,6 +86,21 @@ export function len(m) {
   return units() === "mi" ? `${(m / MILE_M).toFixed(1)} mi` : `${(m / 1000).toFixed(1)} km`
 }
 export function lenNum(m) { return ((m || 0) / (units() === "mi" ? MILE_M : 1000)).toFixed(1) }
+
+// A height gained or lost over a stage (the Gain and Loss tiles), from the one distance setting units() already
+// answers: metres in metric, feet in imperial, at the same 3.28084 the HUD's own format.js dist() uses -- no
+// second setting and no second way of deciding.
+//
+// Rounded to the nearest 10 m, or the nearest 50 ft -- about the size of the figure's own uncertainty, and
+// deliberately not dist()'s nearest 10 ft, which is three times finer than the metric step and would print a
+// stage with nothing to climb as 0 m in metric and 10 ft in imperial. The two settings now agree about which
+// stages are flat. The dash is "the line carries no heights"; no line at all is a dash on all three tiles.
+export const FEET_PER_M = 3.28084
+export function riseUnit() { return units() === "mi" ? "ft" : "m" }
+export function riseNum(m) {
+  if (m === null || m === undefined) return "–"
+  return units() === "mi" ? String(Math.round(m * FEET_PER_M / 50) * 50) : String(Math.round(m / 10) * 10)
+}
 export function time(s) {
   if (s === null || s === undefined) return "–"
   const t = Math.round(s * 10) / 10

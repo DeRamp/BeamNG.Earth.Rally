@@ -223,6 +223,11 @@ do
   T.check(flagged == 0, 'no point flagged as having no road (' .. flagged .. ')')
   T.check(pts[1] and pts[1][3] > 100 and pts[1][3] < 101, 'the heights come from the graph (' .. tostring(pts[1] and pts[1][3]) .. ')')
   T.check(m and #m.bridges == 0, 'bridges empty: the in-game graph has no bridge flag')
+  -- what the line says about itself, written with it (lineStats.lua): the stage page reads these rather than
+  -- measuring the line again every time it is looked at. This road is straight and climbs 1 m in 100 all the way.
+  T.check(m and m.corners == 0, 'a straight road: no corners kept with the line (' .. tostring(m and m.corners) .. ')')
+  T.near(m and m.gainM or -1, 30, 3, 'the height the line gains, kept with it')
+  T.check(m and m.lossM == 0, 'and the height it loses (' .. tostring(m and m.lossM) .. ')')
   T.check(m and m.cells == 0 and m.roadEdges > 0 and m.seconds == 0, 'cells 0 (not known in the game), roadEdges counted')
 end
 

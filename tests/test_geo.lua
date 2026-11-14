@@ -72,4 +72,46 @@ local function gentle()
 end
 T.check(#geo.corners(geo.resample(gentle(), 5), 5) == 0, 'corners: a 600 m bend is not called')
 
+-- rise: the height a line gains and loses, counted once a move has gone 2 m from the last one counted
+local function zline(zs)
+  local out = {}
+  for i, z in ipairs(zs) do out[i] = { x = 0, y = (i - 1) * 4, z = z } end
+  return out
+end
+
+-- flat ground carrying the height data's own wobble, 0.8 m either way point to point (1.6 m peak to peak, under
+-- the threshold): no climb at all. The same wobble summed every step is where the false hundreds of metres come
+-- from, and the second check is what that looks like.
+local wob = {}
+for i = 1, 300 do wob[i] = 100 + ((i % 2 == 0) and 0.8 or -0.8) end
+local g, l = geo.rise(zline(wob))
+T.check(g == 0 and l == 0, 'rise: a wobble under the threshold is not climb (' .. tostring(g) .. ' / ' .. tostring(l) .. ')')
+T.check((geo.rise(zline(wob), 0)) > 200, 'rise: the same wobble summed every step reads hundreds of metres (' ..
+  tostring((geo.rise(zline(wob), 0))) .. ')')
+
+-- a 100 m climb with that same wobble on top of it: the climb, and not the climb plus the wobble
+local climb = {}
+for i = 1, 300 do climb[i] = 100 + (i - 1) * (100 / 299) + ((i % 2 == 0) and 0.8 or -0.8) end
+local gc, lc = geo.rise(zline(climb))
+T.near(gc, 100, 3, 'rise: a 100 m climb under a wobble is a 100 m climb')
+T.check(lc < 2, 'rise: and nothing worth calling a drop (' .. tostring(lc) .. ')')
+
+-- the same road measured again at 20 m spacing instead of 4: the same figure. A rule reading the road gives the
+-- same answer at either spacing; a rule reading the wobble does not.
+T.near((geo.rise(geo.resample(zline(climb), 20))), gc, 3, 'rise: the same at 20 m spacing as at 4 m')
+
+-- hills both ways: gain less loss is the line's own end-to-start height change, within the threshold, so the two
+-- tiles can never contradict each other
+local hills = {}
+for i = 1, 400 do hills[i] = 100 + 40 * math.sin(i / 25) + (i - 1) * 0.05 end
+local gh, lh = geo.rise(zline(hills))
+T.check(gh > 150 and lh > 100, 'rise: the hills counted both ways (' .. tostring(gh) .. ' / ' .. tostring(lh) .. ')')
+T.near(gh - lh, hills[#hills] - hills[1], 2.5, 'rise: gain less loss is the line\'s own height change')
+
+-- no height to read: no figure. Every point at one height is a line that was given no heights, not a flat road --
+-- flat ground still moves by centimetres and reads 0.
+T.check(geo.rise({ { x = 0, y = 0 }, { x = 0, y = 10 } }) == nil, 'rise: no heights at all is not a figure')
+T.check(geo.rise(zline({ 50, 50, 50, 50, 50 })) == nil, 'rise: one height at every point is no height data')
+T.check((geo.rise(zline({ 50, 50.02, 49.99, 50.01 }))) == 0, 'rise: ... while ground that really is flat reads 0')
+
 T.done('test_geo')

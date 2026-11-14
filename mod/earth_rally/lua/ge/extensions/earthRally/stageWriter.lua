@@ -27,6 +27,8 @@ end
 M.LEAD_IN_M = 60            -- of route before the start line, at least
 M.RUN_OUT_M = 150           -- of route past the finish, at least (the stop control at its end)
 M.NOTE_CLEAR_M = 25         -- no note's corner starting this close to the start line or past the finish
+M.MUTE_PAD_M = 30           -- no notes this far either side of a stretch with no road on the map (runner.lua
+                            -- builds the ranges, lineStats.lua builds the same ones off a saved line)
 
 -- Junctions and bridges (opts.landmarks) as the game's structured notes carry them (its own stages: the english
 -- style's modifiers): on the corner they are part of, else a note of their own. slot: the note's item they go in
@@ -37,6 +39,32 @@ M.LANDMARKS = {
 }
 M.LANDMARK_BEFORE_M = 20    -- a landmark this far before a corner's start, or in it, or ...
 M.LANDMARK_AFTER_M = 10     -- ... this far past its end, is called with the corner
+
+-- The corners the stage's notebook gets, in order, and the samples they index into (the stage's own stretch of the
+-- line, every M.NOTE_STEP_M): geo.corners over that stretch, less the ones too close to either end of the stage to
+-- be called and the ones on a stretch with no road on the map. build() writes one pacenote per corner this returns
+-- and reports their number, and lineStats.lua calls this over a line as it is saved -- so the number the menu's
+-- Corners tile shows is the co-driver's own count and not a second opinion about it.
+--   o.startM, o.finishM   the stage along `line`
+--   o.lead                of line extended in before startM, if any: mute is read in the coordinates of the line
+--                         as it came, which is where its gaps were measured
+--   o.mute                { { fromM, toM }... }: no notes along there
+--   o.corners             geo.corners options
+-- Also returns muted(i), the test it used, for the landmarks that go on these notes.
+function M.stageCorners(line, cum, o)
+  local stagePts = geo.resample(geo.slice(line, cum, o.startM, o.finishM), M.NOTE_STEP_M)
+  local clear = math.ceil(M.NOTE_CLEAR_M / M.NOTE_STEP_M)
+  local function muted(i)
+    local s = o.startM + (i - 1) * M.NOTE_STEP_M - (o.lead or 0)
+    for _, r in ipairs(o.mute or {}) do if s >= r[1] and s <= r[2] then return true end end
+    return false
+  end
+  local corners = {}
+  for _, c in ipairs(geo.corners(stagePts, M.NOTE_STEP_M, o.corners)) do
+    if c.i0 > clear and c.i1 < #stagePts and not muted(c.i0) and not muted(c.i1) then corners[#corners + 1] = c end
+  end
+  return corners, stagePts, muted
+end
 
 -- line: { {x, y, z}... } in game coordinates, the stage from (about) its start to (about) its finish.
 -- opts: startM, finishM (distances along the line), name, quatFn, mute, landmarks ({ { s (along the line as given),
@@ -114,19 +142,10 @@ function M.build(line, opts)
     segments = segments, startPositions = startPositions,
   }
 
-  -- notebook: corners between the start and the finish
-  local stagePts = geo.resample(geo.slice(line, cum, startM, finishM), M.NOTE_STEP_M)
-  local corners = {}
+  -- notebook: corners between the start and the finish (opts.mute: { {fromM, toM}... } along the line as given)
+  local corners, stagePts, muted = M.stageCorners(line, cum, { startM = startM, finishM = finishM, lead = lead,
+                                                               mute = opts.mute, corners = opts.corners })
   local clear = math.ceil(M.NOTE_CLEAR_M / M.NOTE_STEP_M)
-  -- (opts.mute: { {fromM, toM}... } along the line as given: no notes there)
-  local function muted(i)
-    local s = startM + (i - 1) * M.NOTE_STEP_M - lead
-    for _, r in ipairs(opts.mute or {}) do if s >= r[1] and s <= r[2] then return true end end
-    return false
-  end
-  for _, c in ipairs(geo.corners(stagePts, M.NOTE_STEP_M, opts.corners)) do
-    if c.i0 > clear and c.i1 < #stagePts and not muted(c.i0) and not muted(c.i1) then corners[#corners + 1] = c end
-  end
   local pacenotes = {}
   local nid = 0
   local function wp(name, kind, i)

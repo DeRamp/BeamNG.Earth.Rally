@@ -153,8 +153,9 @@ whether the `layers` subset lands, so this follows step 2.
 > "it dosent tell you how many corners there are after you recce a stage. it should drop bridges and junctions, and
 > instead give you elevation gain/loss"
 
-The tiles today are **Length · Corners · Junctions · Bridges**. They become **Length · Corners · Climb · Drop** (the
-wording is the mock-up's to settle).
+The tiles today are **Length · Corners · Junctions · Bridges**. They become **Length · Corners · Gain · Loss** --
+the mock-up (`docs/mockups-1.3.1/stage-tiles.html`) drew Climb and Drop and put the wording up for a decision; the
+owner chose **Gain** and **Loss** (2026-11-13), and that is what is built. Everything else in the drawing stands.
 
 ### Corners is a bug, and the cause is known
 

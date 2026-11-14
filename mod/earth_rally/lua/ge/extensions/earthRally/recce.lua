@@ -7,6 +7,7 @@
 local geo = require('earthRally/geo')
 local earth = require('earthRally/earthAdapter')
 local events = require('earthRally/events')
+local lineStats = require('earthRally/lineStats')
 
 local M = {}
 
@@ -188,8 +189,18 @@ function M.stop(keep, force)
     return false, 'nothing recorded yet: drive to the start of the stage'
   end
   rec = nil
-  events.saveRecce(r.event.id, r.stage.id, { format = 1, stage = r.stage.id, lengthM = r.lengthM,
-    date = os.date('!%Y-%m-%dT%H:%M:%SZ'), points = r.points, jumps = r.jumps, share = share })
+  local saved = { format = 1, stage = r.stage.id, lengthM = r.lengthM,
+    date = os.date('!%Y-%m-%dT%H:%M:%SZ'), points = r.points, jumps = r.jumps, share = share }
+  -- What the line says about itself, kept with it: the stage page reads the corners and the height gained and lost
+  -- from here rather than measuring a 9,800-sample line every time it is looked at (lineStats.lua). A recce that
+  -- has just been driven is never lost because a figure could not be worked out, so this cannot stop the save --
+  -- and a line saved without them is read like any older line, measured once on the first look.
+  local okFig, fig = pcall(lineStats.of, r.points, r.stage)
+  if okFig and fig then saved.corners, saved.gainM, saved.lossM = fig.corners, fig.gainM, fig.lossM
+  elseif not okFig then
+    log('W', 'earthRally', 'the recce line could not be measured: ' .. tostring(fig))
+  end
+  events.saveRecce(r.event.id, r.stage.id, saved)
   log('I', 'earthRally', string.format('recce saved: %s, %.0f m, %d points', r.stage.name, r.lengthM, #r.points))
   return true
 end

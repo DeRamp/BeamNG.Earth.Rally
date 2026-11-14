@@ -76,7 +76,9 @@ M.LATE_GAP_S = 10              -- late at the start: the next half-minute mark a
 M.LIAISON_MS = 10              -- the drive from the ATC to the start line timed at this speed (36 km/h) ...
 M.ROAD_FACTOR = 1.3            -- ... over the straight distance times this (the road winds) ...
 M.STOP_ALLOW_S = 20            -- ... plus this to stop on the line: a far ATC gets more than START_GAP_S
-M.MUTE_PAD_M = 30              -- no notes this far either side of a stretch with no road on the map
+M.MUTE_PAD_M = writer.MUTE_PAD_M   -- no notes this far either side of a stretch with no road on the map: the
+                               -- stage writer's own, so the corner count kept with a line (lineStats.lua) mutes
+                               -- the same stretches this run does
 M.TIDY_AFTER_S = 8             -- the stage's boards and co-driver taken away this long after it is done
 M.START_LINE_SHOW_M = 250      -- the start line drawn on the road while the car is this close to it
 M.NO_ATC_START_S = 12          -- without an ATC: the start this long after stopping on the line (the 10 s call fits)

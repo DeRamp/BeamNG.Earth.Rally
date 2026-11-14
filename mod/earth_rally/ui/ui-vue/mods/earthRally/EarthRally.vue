@@ -117,8 +117,11 @@
           <div class="er-tiles">
             <div class="er-card er-tile"><div class="er-v">{{ lenNum(stg.lengthM) }}<small>{{ units() }}</small></div><div class="er-l">Length</div></div>
             <div class="er-card er-tile"><div class="er-v">{{ dash(stg.corners) }}</div><div class="er-l">Corners</div></div>
-            <div class="er-card er-tile"><div class="er-v">{{ dash(stg.junctions) }}</div><div class="er-l">Junctions</div></div>
-            <div class="er-card er-tile"><div class="er-v">{{ dash(stg.bridges) }}</div><div class="er-l">{{ stg.bridges === 1 ? "Bridge" : "Bridges" }}</div></div>
+            <!-- Gain and Loss, from the stage's own line (menu.lua, events.lineFigures): the height it climbs and
+                 the height it gives back, each counted once a move has gone 2 m from the last one counted. They
+                 took the places of Junctions and Bridges, so the grid is the same four tracks it always was. -->
+            <div class="er-card er-tile"><div class="er-v">{{ riseNum(stg.gainM) }}<small>{{ riseUnit() }}</small></div><div class="er-l">Gain</div></div>
+            <div class="er-card er-tile"><div class="er-v">{{ riseNum(stg.lossM) }}<small>{{ riseUnit() }}</small></div><div class="er-l">Loss</div></div>
           </div>
           <div v-if="autoHere" class="er-card er-line-note">
             <span class="er-pill working" :style="{ '--er-done': autoPct }">{{ STATUS.working.label }} <span class="er-wn">{{ autoWindow }} / {{ auto.windows }}</span></span>
@@ -185,7 +188,7 @@ import { BngButton, ACCENTS } from "@/common/components/base"
 import EarthRallySettings from "./EarthRallySettings.vue"
 import {
   state, rally, stage, busyMsg, action as luaAction, refreshState, takeOpenAt, loadRally, loadStage, closeMenu, previewHud,
-  arr, units, len, lenNum, time, when, STATUS, AUTO_OUTCOME, RUN_WORDS,
+  arr, units, len, lenNum, riseNum, riseUnit, time, when, STATUS, AUTO_OUTCOME, RUN_WORDS,
 } from "./store.js"
 
 const view = ref("rallies")

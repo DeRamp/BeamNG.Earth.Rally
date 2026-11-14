@@ -261,8 +261,21 @@ do
       { id = 'c', name = 'Charlie', lengthM = 3000, line = line, controls = {} },
     } }
   events.list(true)
+  -- A line to be measured: 600 m north, a 90 degree right-hand corner of radius 40 m, 600 m east, climbing all the
+  -- way (0.04 m a metre, about 50 m in all) and never falling. One corner, a real climb, no drop.
+  local KY, KX = 111195, 75800           -- m a degree at 47 N, near enough for a test line
+  local function bent()
+    local pts, x, y, h = {}, 0, 0, math.pi / 2
+    local function add() pts[#pts + 1] = { 47.0 + y / KY, -123.0 + x / KX, 100 + #pts * 0.16 } end
+    add()
+    for _ = 1, 150 do x, y = x + math.cos(h) * 4, y + math.sin(h) * 4 add() end
+    for _ = 1, 16 do h = h - (math.pi / 2) / 16 x, y = x + math.cos(h) * 4, y + math.sin(h) * 4 add() end
+    for _ = 1, 150 do x, y = x + math.cos(h) * 4, y + math.sin(h) * 4 add() end
+    return pts
+  end
+
   -- Alpha: a matched line all on the map; Bravo: a matched line with a gap; Charlie: nothing
-  files['/earthRally/matched/ev__a.json'] = { points = { { 47, -123, 0 }, { 47.01, -123, 0 } }, mapKey = events.mapKey(line),
+  files['/earthRally/matched/ev__a.json'] = { points = bent(), mapKey = events.mapKey(line),
     junctions = { { 47.001, -123, 'turn' }, { 47.002, -123, 'fork', 'left' } }, bridges = { { 47.003, -123 } } }
   files['/earthRally/matched/ev__b.json'] = { points = { { 47, -123, 0 }, { 47.01, -123, 0 } }, gapM = 1200 }
   files['/earthRally/results/ev__a.json'] = { runs = {
@@ -277,15 +290,40 @@ do
     r.list[2].status == 'recce' and r.list[3].status == 'none' and r.list[1].best == 290 and r.list[2].best == nil,
     'a rally: SS numbers in map order, each stage\'s status and best')
   local s = menu.stage('ev', 'a', 'start')
-  T.check(s.ss == 1 and s.ssCount == 3 and s.junctions == 2 and s.bridges == 1 and s.corners == 41 and s.canDrive and
-    s.status == 'ready' and not s.atc and not s.stop, 'a stage: junctions and bridges from its matched line, corners from a run')
+  T.check(s.ss == 1 and s.ssCount == 3 and s.canDrive and s.status == 'ready' and not s.atc and not s.stop,
+    'a stage: its number, its line and its controls')
+  -- the four tiles are Length, Corners, Gain, Loss: Junctions and Bridges went in 1.3.1 (the landmark data stays,
+  -- it is what the pacenotes are made of -- only the two tiles are gone)
+  T.check(s.junctions == nil and s.bridges == nil, 'no junctions or bridges tile')
+  -- Corners comes off the line, which this stage has, and NOT out of the run that recorded cornersFound 41: that
+  -- was the 1.3.0 bug the other way round -- a stage with a line and no runs had nothing to show.
+  T.check(s.corners == 1, 'corners from the line: the one corner on it (' .. tostring(s.corners) .. ')')
+  T.near(s.gainM, 50, 2, 'the climb along it')
+  T.check(s.lossM == 0, 'and nothing given back (' .. tostring(s.lossM) .. ')')
   T.check(#s.runs == 3 and s.runs[1].timeS == 310 and s.runs[1].last and s.runs[1].text == '+10 s jump start' and
     s.runs[2].text == '+20 s 2 resets' and s.runs[3].text == 'clean', 'its runs, newest first, penalties in words')
+  -- The figures a line was saved with are the ones shown, never worked out again: the page asks for a stage every
+  -- two seconds while it is open, so what is kept with the line has to be what is read. Nothing but a stored
+  -- figure can make this line read 7 corners.
+  files['/earthRally/matched/ev__a.json'].corners = 7
+  files['/earthRally/matched/ev__a.json'].gainM = 11.1
+  files['/earthRally/matched/ev__a.json'].lossM = 22.2
+  events.forget()
+  local sKept = menu.stage('ev', 'a', 'start')
+  T.check(sKept.corners == 7 and sKept.gainM == 11.1 and sKept.lossM == 22.2,
+    'the figures kept with the line are the ones shown (' .. tostring(sKept.corners) .. ')')
+  files['/earthRally/matched/ev__a.json'].corners = nil
+  files['/earthRally/matched/ev__a.json'].gainM, files['/earthRally/matched/ev__a.json'].lossM = nil, nil
+  events.forget()
   local s2 = menu.stage('ev', 'b', 'ATC')
-  T.check(s2.status == 'recce' and s2.note:find('1.2 km') and s2.atc and s2.stop and s2.junctions == 0,
+  T.check(s2.status == 'recce' and s2.note:find('1.2 km') and s2.atc and s2.stop,
     'a stage with a gap: recce recommended')
+  -- a line of two points 1.1 km apart, both at height 0: a straight with no corner, and no height to read (every
+  -- point at one height is a line that was given none, not a flat road) -- so Gain and Loss are dashes
+  T.check(s2.corners == 0 and s2.gainM == nil and s2.lossM == nil, 'a straight line with no heights: 0 corners, no climb')
   local s3 = menu.stage('ev', 'c')
-  T.check(s3.status == 'none' and not s3.canDrive and s3.corners == nil and s3.junctions == nil, 'no line: no Drive stage')
+  T.check(s3.status == 'none' and not s3.canDrive and s3.corners == nil and s3.gainM == nil,
+    'no line: no Drive stage, and the one dash that means no line')
   T.check(menu.stage('ev', 'zzz') == nil and menu.rally('nope') == nil, 'unknown ids: nil')
 end
 

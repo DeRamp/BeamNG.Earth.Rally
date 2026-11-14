@@ -175,6 +175,42 @@ local function wrap(a)
   return a
 end
 
+M.RISE_THRESHOLD_M = 2      -- a height move counts once it has gone this far from the last one counted
+
+-- The height a line gains and loses (m, both positive), from the heights its own points carry.
+--
+-- Counted with a hysteresis: a move counts only once the height has gone `thresholdM` from the last height
+-- counted, and then the whole of it counts. Summing every step instead adds the height data's own wobble to the
+-- road's real rise -- a metre of shiver, a thousand points of it, reads as tens of metres of climb on ground that
+-- is flat. A threshold drops the small moves and leaves the big ones whole, where smoothing the heights first
+-- would shrink the real climbs along with the noise. 2 m is where the wobble ends and the road begins, measured
+-- over the user's own 116 lines: docs/mockups-1.3.1/stage-tiles.html, section 6, which also shows that the figure
+-- does not change when the same line is measured again at a different point spacing, so the line's own points are
+-- what this reads and there is nothing to resample first.
+--
+-- Returns nil when the line carries no height to measure: no z at all, or every z the same -- a road whose every
+-- point is at one height is not a flat road, it is a line that was given no heights (autoRecce.lua's fillHeights
+-- finds none, and the file is then written with one offset as every point's height). A stage that really is flat
+-- still moves by centimetres and reads 0, which is a different answer from "not known".
+function M.rise(pts, thresholdM)
+  local thr = thresholdM or M.RISE_THRESHOLD_M
+  local first, mark, gain, loss, varied = nil, nil, 0, 0, false
+  for i = 1, #pts do
+    local z = pts[i].z
+    if z then
+      if not mark then first, mark = z, z
+      else
+        if z ~= first then varied = true end
+        local d = z - mark
+        if d >= thr then gain, mark = gain + d, z
+        elseif d <= -thr then loss, mark = loss - d, z end
+      end
+    end
+  end
+  if not mark or not varied then return nil end
+  return gain, loss
+end
+
 -- Corners along a line sampled evenly every `step` m (M.resample): where the road turns tighter than
 -- opts.maxRadius (default 200 m) for at least opts.minAngleDeg (default 12 degrees) in all. The turn is measured per
 -- metre and smoothed over opts.smoothM (default 15 m), so the result does not depend on how the line was sampled.
