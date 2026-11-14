@@ -321,6 +321,11 @@ do
   T.check(#cor < #line / 2, 'and far fewer points than the line (' .. #cor .. ' from ' .. #line .. ')')
   T.near(#cor, 35, 2, 'about one point every 30 m along 1000 m')
 
+  -- Pairs, not { lat = , lon = }: the shape BeamNG.Earth's api.areaPlan documents ("points: { { lat, lon }, ... }")
+  -- and the shape a stage's own line already has, so the corridor crosses no boundary needing a conversion.
+  T.check(type(cor[1]) == 'table' and #cor[1] == 2 and cor[1].lat == nil,
+    'a corridor point is a { lat, lon } pair, as the call it feeds wants')
+
   -- the ends are the line's own, to the centimetre: a corridor that stopped short would leave the flying finish
   -- uncached, which is the one stretch a player would notice.
   --
@@ -330,17 +335,17 @@ do
   local diag = {}
   for i = 0, 100 do diag[#diag + 1] = { 45.0 + i * 0.00009, -120.0 + i * 0.00013 } end   -- ~1.4 km northeast
   local dcor = auto.corridor(diag, 30)
-  T.near(dcor[1].lat, diag[1][1], 1e-7, "the corridor starts at the line's own first point")
-  T.near(dcor[1].lon, diag[1][2], 1e-7, '... and its longitude')
-  T.near(dcor[#dcor].lat, diag[#diag][1], 1e-7, "and ends at the line's own last point")
-  T.near(dcor[#dcor].lon, diag[#diag][2], 1e-7, '... and its longitude')
+  T.near(dcor[1][1], diag[1][1], 1e-7, "the corridor starts at the line's own first point")
+  T.near(dcor[1][2], diag[1][2], 1e-7, '... and its longitude')
+  T.near(dcor[#dcor][1], diag[#diag][1], 1e-7, "and ends at the line's own last point")
+  T.near(dcor[#dcor][2], diag[#diag][2], 1e-7, '... and its longitude')
   T.check(#dcor < #diag, 'the diagonal line is decimated too (' .. #dcor .. ' from ' .. #diag .. ')')
 
   -- spacing: every gap is one step, bar the last, which is whatever was left over
   local fr = auto.frame(line[1][1], line[1][2])
   local worst, lastGap = 0, 0
   for i = 1, #cor - 1 do
-    local a, b = fr.xy(cor[i].lat, cor[i].lon), fr.xy(cor[i + 1].lat, cor[i + 1].lon)
+    local a, b = fr.xy(cor[i][1], cor[i][2]), fr.xy(cor[i + 1][1], cor[i + 1][2])
     local d = math.sqrt((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2)
     if i < #cor - 1 then worst = math.max(worst, math.abs(d - 30)) else lastGap = d end
   end
