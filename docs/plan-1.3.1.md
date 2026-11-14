@@ -226,6 +226,31 @@ the doing:
 - **The two line kinds will not agree**, since one is where a car drove and the other is where the road surface is.
   Worth measuring on a stage that has both before deciding whether that matters.
 
+**Settled 2026-11-14: the split is right, and the threshold is not eating anything.** `dalles-mtn-up` and
+`dalles-mtn-down` are the same 16 km of road in opposite directions, and the auto recce put them at:
+
+| | gain | loss |
+|---|---|---|
+| up | 545.0 | 219.4 |
+| down | 218.7 | 544.9 |
+
+Up's gain is Down's loss to **0.1 m** and Up's loss is Down's gain to **0.7 m**, on two independently matched
+lines. Gain and loss were also recomputed from the raw points of all nine matched lines by a separate
+implementation of `geo.rise` (`tmp/mirror.py`) and every stored figure agreed. Maryhill Up's **0 m loss is real** --
+a monotonic climb within the 2 m threshold, confirmed independently, not a swallowed descent. `recce.stop` stores
+the figures for a driven recce too (Founders: 37 corners, 2 m gain, 7.7 m loss, checked against the same
+recomputation).
+
+**What that does not settle is the absolute heights.** A systematic overstatement would mirror just as neatly, so
+the height-accuracy item stays open and must not be closed on the strength of the table above.
+
+**And the two line kinds still have not been compared, because no stage has both.** The only driven recce on this
+machine is Founders/Olmstead, which has no auto line (uncached) -- and it is flat, heights spanning 4.1 to 10.8 m
+over 5.7 km, so it would not answer the question even after a download. **The cheap way to answer it needs no
+download at all: drive a recce on a stage that already has an auto line and real relief** -- `starveout` (374.0 /
+80.2 over 12.9 km) or `dalles-mtn-up` (545.0 / 219.4 over 16.1 km) -- and compare the two lines over the same
+ground.
+
 **Mock-up first**, as any UI change: four tiles with two of them changed is a small drawing, but the wording and
 the units (m or ft, following the existing distance setting) are exactly what a mock-up settles cheaply.
 
