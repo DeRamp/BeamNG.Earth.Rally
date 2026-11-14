@@ -30,6 +30,12 @@ backbone is solid would mean building an editor for a thing that still changes u
 - **Upstream pull requests: yes, and show them first.** They go out as DeRamp from the existing fork
   (github.com/DeRamp/BeamNG.Earth), and the user reads the text before anything is sent.
 
+- **No 1.2.6** (the user, 2026-11-13). The strip fixes ride into 1.3.0 rather than going out on their own. The cost
+  is known and accepted: the public v1.2.5-alpha keeps the bug where switching the mod off part way through a stage
+  leaves BeamNG.Earth's status bar and connection banner suppressed for the rest of the session, which takes its
+  "server not running" message with it. 1.3.0 is gated on an upstream pull request in someone else's queue, so that
+  may be a while.
+
 ## The order, and why it is not the obvious one
 
 `docs/version-plans.md` had the small safe items first and the auto recce last. That is the wrong way round. The
