@@ -34,8 +34,10 @@ local facing = nil       -- after Go to start: turn the car along the stage once
 local scanIn = nil       -- seconds until the import folder is looked at (a file changed in it)
 local menuOpen = false   -- the menu page is the screen now (onUiChangedState)
 local openAt = nil       -- the page to show when the menu opens next: { view, eventId, stageId }
-local earthSeen = false  -- BeamNG.Earth's API has been there at least once (the version check runs again then:
-                         -- it loads after us as often as not, and its version is the half we cannot read early)
+local earthSeen = false  -- the BeamNG.Earth level has been loaded at least once since the mod loaded. The version
+                         -- check runs again then: that is where the game's rally engine can be looked at without
+                         -- dragging it in at the main menu, which is a cost every start for an answer wanted
+                         -- before a stage (versions.lua).
 local lastImport = nil   -- the last import: { at, lines = { { text, ok }... } }
 local autoRun = nil      -- the auto recce running, as the page names it: { eventId, stageId, stageName, ss }
 local autoLines = {}     -- how the last auto recce of a stage ended, by eventId .. '|' .. stageId:
@@ -986,9 +988,10 @@ function M.onUpdate(dtReal, dtSim)
     if scanIn <= 0 then scanIn = nil M.scanImports(false) end
   end
   earth.update()
-  -- BeamNG.Earth turned up: the version check again, now that there is a version to read. Once, and quiet unless
-  -- something changed, so this is not a per-frame cost (versions.check compares what it last said).
-  if not earthSeen and earth.apiVersion() then
+  -- In the BeamNG.Earth level: the version check again, now that the game's rally engine can be looked at without
+  -- dragging it in at the main menu (versions.lua says why). Once per level, and quiet unless something changed
+  -- since the last time, so this is not a per-frame cost.
+  if not earthSeen and earth.inWorld() then
     earthSeen = true
     pcall(versions.check, M.VERSION)
   end

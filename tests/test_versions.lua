@@ -177,13 +177,47 @@ end
 
 -- notes() is what the page shows: the texts, errors first
 do
+  local realEnv = versions.env
   versions.reset()
   versions.env = function() return env({ rally = { ok = false, why = 'the rally engine changed' }, game = '0.41.0.0' }) end
   versions.check('1.3.2-alpha')
+  versions.env = realEnv       -- (put back before the block below, which drives the real one)
   local n = versions.notes()
   T.check(#n == 2 and n[1]:find('rally engine') ~= nil and n[2]:find('0%.41') ~= nil,
     'notes(): the error first, the version warning after (' .. #n .. ')')
   T.check(type(n[1]) == 'string' and type(n[2]) == 'string', 'notes(): plain strings for the page')
+end
+
+------------------------------------------------------------------------------------------ env: what it asks, when
+
+-- The game caught this one within a second of starting, and it is worth a test of its own: looking at the game's
+-- rally engine LOADS `gameplay_rally` (68 ms), so the startup check must not do it at the main menu -- only once
+-- the BeamNG.Earth level is loaded. The first cut gated on BeamNG.Earth's API answering, which is true from the
+-- main menu on, and `onExtensionLoaded earthRally_main` went from about 2 ms to 70.
+do
+  local rallyLoads, inWorld = 0, false
+  extensions = { load = function(n) if n == 'gameplay_rally' then rallyLoads = rallyLoads + 1 end end }
+  beamngEarth_api = {
+    version = function() return 1, 9 end,
+    inWorld = function() return inWorld end,
+    has = function() return false end,
+    ready = function() return true end,
+  }
+
+  local e1 = versions.env('1.3.2-alpha')
+  T.check(e1.rally == nil, 'at the main menu: the rally engine is not looked at')
+  T.check(rallyLoads == 0, '... so nothing pulls it in (' .. rallyLoads .. ' load(s))')
+  T.check(e1.earth and e1.earth.minor == 9, "but BeamNG.Earth's own version is read there")
+  T.check(#versions.findings(e1) > 0, 'and its internals are judged (' .. #versions.findings(e1) .. ' finding(s))')
+
+  inWorld = true
+  local e2 = versions.env('1.3.2-alpha')
+  T.check(e2.rally ~= nil, 'in the BeamNG.Earth level: the rally engine IS looked at')
+  T.check(rallyLoads == 1, '... and that is where it is pulled in (' .. rallyLoads .. ' load(s))')
+  T.check(e2.rally.ok == false and tostring(e2.rally.why):find('rally engine') ~= nil,
+    "with the adapter's own answer (" .. tostring(e2.rally.why) .. ')')
+
+  beamngEarth_api, extensions = nil, nil
 end
 
 T.done('test_versions.lua')

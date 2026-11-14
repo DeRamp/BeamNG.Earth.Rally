@@ -73,6 +73,15 @@ function M.internals()
   return out
 end
 
+-- The BeamNG.Earth level is the one loaded (not the main menu, not another level). Its API is there from the main
+-- menu on, so "the API answers" is not the same question and must not be used for this one.
+function M.inWorld()
+  local a = api()
+  if not (a and type(a.inWorld) == 'function') then return false end
+  local ok, res = pcall(a.inWorld)
+  return ok and res == true
+end
+
 function M.ready() local a = api() return a ~= nil and a.ready() end
 function M.pose() local a = api() return a and a.pose() end
 function M.toGame(lat, lon, h) local a = api() if a then return a.toGame(lat, lon, h) end end

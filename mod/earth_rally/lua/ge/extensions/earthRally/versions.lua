@@ -155,13 +155,17 @@ local rallyA = require('earthRally/rallyAdapter')
 -- does not depend on main.lua (which requires it).
 function M.env(modVersion)
   local major, minor = earth.apiVersion()
-  -- The game's rally engine is only looked at once BeamNG.Earth is up, which means a level is loaded. Not
-  -- squeamishness: rallyAdapter.check() LOADS `gameplay_rally` if it is not loaded, and doing that from the main
-  -- menu would pull the game's rally engine in before there is a level for it, every start, for a check whose
-  -- answer is wanted before a stage rather than before the menu. The second pass (main.onUpdate, when
-  -- BeamNG.Earth turns up) is in the level and is the right place for it.
+  -- The game's rally engine is only looked at once the BeamNG.Earth LEVEL is loaded. Not squeamishness:
+  -- rallyAdapter.check() LOADS `gameplay_rally` if it is not loaded, and doing that at the main menu pulls the
+  -- game's rally engine in before there is a level for it, every start, for a check whose answer is wanted before
+  -- a stage rather than before the menu.
+  --
+  -- The first cut of this gated on BeamNG.Earth's API answering at all, which is wrong and the game said so
+  -- within a second of starting: the API is there from the main menu on, so the check still loaded the engine and
+  -- `onExtensionLoaded earthRally_main` went from about 2 ms to 70, which BeamNG itself flags as
+  -- "quite slow and should be optimized". `earth.inWorld()` is the question that was meant.
   local rally = nil
-  if major then
+  if earth.inWorld() then
     local rok, rwhy = rallyA.check()
     rally = { ok = rok and true or false, why = rwhy }
   end
