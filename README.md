@@ -209,7 +209,11 @@ The developer panel (Settings > Developer panel) lists what each run found out, 
   the way to 1.2.5, by which point its name said nothing and `main` had sat at the 1.2.1 release for days.)
 - Tests, no game needed: `pip install lupa`, then `python tests/run_tests.py` (the importer is also checked against
   `tools/import_kml.py` on the maps in `../Rally Docs/` when they are there).
-- **In-game self-test** (before a release; `tools/selftest.py`, the mod's `earthRally/selftest.lua`):
+- **In-game self-test** (`tools/selftest.py`, the mod's `earthRally/selftest.lua`) -- **unstable; not a gate on a
+  release.** It cannot check the co-driver yet, so it exits 1 on every run: read its checks, do not read its exit
+  code as a verdict (1.4.0 fixes it, with the co-driver work). The real check on a release is driving it yourself
+  and writing what you find into `docs/notes-<next version>.md`, which is where every fix in 1.2.3 to 1.2.5 came
+  from.
   - `python tools/selftest.py --check-install`: the installed mod against this repository (read-only, fine while the
     game runs): every file, the version, the stage layout's apps (the 1.2.1 fault: an old layout with no HUD app),
     a saved copy of the layout, two copies installed, the mod switched off, the version the game last loaded.

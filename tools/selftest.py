@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
-"""Earth Rally's automated in-game test: a real stage on BeamNG.Earth driven by the game's AI, with the mod checking
-itself as it goes (mod .../earthRally/selftest.lua), so a release is tested without a play-test.
+"""Earth Rally's automated in-game test: a real stage on BeamNG.Earth, with the mod checking itself as it goes
+(mod .../earthRally/selftest.lua).
+
+UNSTABLE -- do not gate a release on this. It cannot check the co-driver: the game decides whether to call a
+pacenote from the car's rigid-body velocity, and this walks the car along the line rather than driving it, so that
+one check fails and the whole run exits 1 every time. The other 22 checks are sound and the report is worth reading,
+but a red result here means "the co-driver check is still missing", not "something broke". Until that is fixed
+(1.4.0, with the co-driver work), the real check on a release is driving it yourself and writing what you find into
+docs/notes-<next version>.md.
 
     python tools/selftest.py --check-install          only check the installed mod against this repository (read-only:
                                                       the files, the version, the stage layout's apps); safe while the
@@ -293,7 +300,13 @@ class LogTail:
         return data[:cut].decode('utf-8', 'replace').splitlines()
 
 
+UNSTABLE_NOTE = (
+    'NOTE: the self-test is UNSTABLE. It cannot check the co-driver yet (1.4.0), so it exits 1 on every run.\n'
+    '      Read the checks below; do not take the exit code as a verdict on the build.')
+
+
 def run(args):
+    print(UNSTABLE_NOTE)
     user = Path(args.user_dir)
     exes = running_exes()
     if exes:
@@ -370,6 +383,7 @@ def run(args):
         return 1
     path, rep = found
     print_report(rep, path)
+    print(UNSTABLE_NOTE)
     return 0 if rep.get('ok') else 1
 
 

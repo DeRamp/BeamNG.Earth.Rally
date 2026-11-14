@@ -1,7 +1,11 @@
 -- earthRally/selftest: the in-game self-test (developer tool; no effect on play unless asked). It runs a real stage
--- end to end with nobody at the wheel and writes what it found to a report, so a release can be checked without a
--- play-test (1.2.2: the install script wrote an old stage layout over the mod's and no HUD app showed; only a human
--- noticed).
+-- end to end with nobody at the wheel and writes what it found to a report (1.2.2: the install script wrote an old
+-- stage layout over the mod's and no HUD app showed; only a human noticed).
+--
+-- UNSTABLE, and not a gate on a release. It cannot check the co-driver: the game decides whether to call a pacenote
+-- from the car's rigid-body velocity (its drivelineRoute reads getPlayerVehicle(0):getVelocityXYZ()), and the stage
+-- here is walked rather than driven, so no note is ever called and the run always fails on that one check. Everything
+-- else it checks is sound. Fixed in 1.4.0 with the co-driver work (docs/plan-1.3.0.md has the findings).
 --
 -- Started by:
 --   the request file /earthRally/selftest/request.json in the user folder (tools/selftest.py writes it before it starts
