@@ -152,8 +152,8 @@ tool and a stage matcher all want the same window and would each want a differen
 
 ## Validation
 
-Windows 11, Python 3.13. The suites below ran at `891a7ef9`, the head of this branch; the in-game run below was
-made at `dac0636f`, three commits earlier.
+Windows 11, Python 3.13. The in-game run and the suites below are at `891a7ef9`, the head of this branch; the
+one exception is the wider gate, which says its own commit where it appears.
 
 ### In a game
 
@@ -163,13 +163,18 @@ add-on asking for the stage it wanted:
 
 ```
 auto recce: maryhill-up, 3 window(s) of 1000 m
-auto recce: window 1 of 3: 548 new node(s)
-auto recce: window 2 of 3: 312 new node(s)
-auto recce: window 3 of 3: 208 new node(s)
-auto recce: maryhill-up matched, 4.1 km (map line 4.1 km), 0 m with no road, 2 junction(s), 3 window(s)
+auto recce: window 1 of 3: 547 new node(s)
+auto recce: window 2 of 3: 316 new node(s)
+auto recce: window 3 of 3: 209 new node(s)
+auto recce: maryhill-up matched, 4.1 km (map line 4.1 km), 0 m with no road in 0 stretch(es), 2 junction(s), 3 window(s)
 ```
 
-and from the server, at the same moment:
+Three windows, each centred where it was asked for, **1.25 s end to end, nothing downloaded**, and the add-on put a
+4.1 km rally stage on the roads with no stretch left unmatched: 4097.1 m of line against a 4106.2 m map line, never
+more than 0.7 m off the organisers' own line, over 473 road edges. The player's own `navgraph_<aid>_<serial>.json`
+sat untouched beside the request's files throughout, which is the claim this change most needed to make good on.
+
+The server's own lines were last captured at `dac0636f`, three commits back, over the same region:
 
 ```
 road graph: 1000 m at 45.70745,-120.79355 | 6 cell(s), 0 not read -> 548 node(s), 547 edge(s) | cached_only=True
@@ -177,20 +182,13 @@ road graph: 1000 m at 45.71384,-120.79496 | 9 cell(s), 0 not read -> 616 node(s)
 road graph: 1000 m at 45.72020,-120.80126 | 4 cell(s), 0 not read -> 560 node(s), 558 edge(s) | cached_only=True
 ```
 
-Three windows, each centred where it was asked for, **2.5 s end to end, nothing downloaded**, and the add-on put a
-4.1 km rally stage on the roads with no stretch left unmatched. A 16 km stage came out at 28 junctions, also with no
-gap. The player's own `navgraph_<aid>_<serial>.json` sat untouched beside the request's files throughout, which is
-the claim this change most needed to make good on.
+**The per-window counts moved between the two runs** -- 548 / 312 / 208 then, 547 / 316 / 209 now -- and that is the
+change working rather than drift: the cells around a window are read from disk at `background` now instead of being
+fetched, so a halo cell that is not cached is simply absent, and a road that crossed the window edge is cut where
+the data stops rather than where the road does. Same stage, same ground, same total, a few nodes either way per
+window. Nothing was downloaded in either run.
 
-That run was made at `dac0636f`, before the two reads above were closed. It was over a cached region, so nothing
-was downloaded then either; what has changed under it since is that the window's elevation tiles are read in the
-thread that answers the request rather than in the DEM's pool, that a tile which is not cached is read from its
-coarser cached parent, and that the cells around the window go at `background`. The first two were checked against
-that same region outside the game, on the real cache rather than a fixture: all 42 z16 tiles and 16 z15 parents of
-a 1000 m window there are cached, the lane samples them with no network at all and gives the same heights as the
-unrestricted read; with the z16 tiles taken out and only their parents left it reads the parents, 0.02 m from the
-real heights on average and 0.28 m at worst; with nothing cached it raises rather than answering sea level. None
-of it has been re-timed in a game, so take the 2.5 s above as the figure for `dac0636f`.
+A 16 km stage came out at 28 junctions with no gap, at `dac0636f`; it has not been re-run since.
 
 ### The suites
 
