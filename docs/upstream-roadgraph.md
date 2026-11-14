@@ -146,12 +146,17 @@ Three windows, each centred where it was asked for, **2.5 s end to end, nothing 
 gap. The player's own `navgraph_<aid>_<serial>.json` sat untouched beside the request's files throughout, which is
 the claim this change most needed to make good on.
 
-**Four bugs were found this way and are fixed in the commits above** — the answer's shape, the cached-only read, the
-frame the window was centred in, and the point being converted before the pool rather than beside the build. Every
-one of them passed both unit suites before it was found. That is said plainly because it is the honest state of this
-branch: the unit tests are good at each side on its own and were blind to the join, and a test that drives the mod
-to the server and back is being written now. **It is not in this pull request yet**; if you would rather wait for it
-before reviewing, say so and I will add it to this branch.
+Three things in this branch's own new code were wrong until that run found them, and are fixed in the commits
+above: the answer handed back a file path where the caller wanted the graph, the cached-only read went through
+`layer_unkept` (which skips the tag joins roads need, so a window of present cells built no nodes), and the
+request's point was converted to the anchor frame before going to the pool rather than beside the build. **Nothing
+on `dev` was at fault in any of them** — `road_graph_data`, `Connection.road_graph` and `_onRoadGraph` are all new
+here.
+
+Worth saying because it bears on how much this branch can be trusted: each of the three passed the unit tests on
+both sides before the game found it. The suites are good at each side on its own and were blind to the join between
+them. So a test that drives the mod to the server and back is being written; **it is not in this pull request**, and
+if you would rather have it before reviewing, say so and it goes on this branch.
 
 ### The suites
 
