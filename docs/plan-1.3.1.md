@@ -113,6 +113,49 @@ Say them on the page rather than letting a player find them:
 - A stage can be somewhere with no road data at all, and no amount of downloading fixes that.
 - The auto recce still never downloads **on its own**; this version only adds a way to say yes.
 
+## Also in 1.3.1: the stage page's four tiles (the user, 2026-11-13)
+
+> "it dosent tell you how many corners there are after you recce a stage. it should drop bridges and junctions, and
+> instead give you elevation gain/loss"
+
+The tiles today are **Length · Corners · Junctions · Bridges**. They become **Length · Corners · Climb · Drop** (the
+wording is the mock-up's to settle).
+
+### Corners is a bug, and the cause is known
+
+`corners` is not read from the stage's line at all. `menu.lua:124-130` walks the stage's past **runs** and takes
+`r.checks.cornersFound` from the first one that has it -- a figure the rally engine works out while building a run.
+So a stage you have recced but never driven has no runs, no `cornersFound`, and the tile shows a dash. It only ever
+fills in after you have driven the thing, which is the one moment you no longer need to be told.
+
+It is knowable from the line alone: the corner finding is the rally engine's own, run against the driveline when a
+stage is built (`rallyAdapter`), and the same pass could run over a line when it is saved -- at the end of a recce,
+and at the end of an auto recce -- and be kept with it. Worth checking whether that pass needs a loaded world or
+only the points; if it needs the world, the fallback is to compute corners from the line's own geometry, which is
+cheaper but will not agree exactly with what the co-driver calls, and a figure that disagrees with the notes is
+worse than no figure.
+
+### Junctions and bridges go
+
+Bridges first, because it is already decided: an in-game auto recce cannot find them (BeamNG.Earth's road graph
+carries no bridge flag), so the tile reads 0 on every stage this version can produce and would be a permanent lie.
+Junctions goes with it as the user's call -- it is a number that means little to a driver on its own.
+
+### Climb and drop
+
+Summed from the line's own heights: every rise added, every fall added, reported separately. Both lines carry them
+-- a recce's are the car's positions, an auto recce's are the road graph's drivable surface. Two things to settle in
+the doing:
+
+- **Noise.** Summing every point of a 4 m-spaced line adds up GPS jitter and surface wobble into hundreds of false
+  metres. It needs a threshold, and the threshold needs choosing against real lines rather than picked -- the 116
+  stages in the backup are the sample.
+- **The two line kinds will not agree**, since one is where a car drove and the other is where the road surface is.
+  Worth measuring on a stage that has both before deciding whether that matters.
+
+**Mock-up first**, as any UI change: four tiles with two of them changed is a small drawing, but the wording and
+the units (m or ft, following the existing distance setting) are exactly what a mock-up settles cheaply.
+
 ## What 1.3.0 taught, and what this version must not repeat
 
 The auto recce was broken four separate times, and every one was in the gap between the two codebases -- the answer

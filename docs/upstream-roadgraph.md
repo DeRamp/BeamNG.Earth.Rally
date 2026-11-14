@@ -37,16 +37,28 @@ This exposes that one parameter, cached-only, behind a capability flag.
 * **`navgraph.build` is untouched.** `centre` and `window` are already its parameters, and a request's radius is
   passed as `window`. No field, no id scheme and no output format changes, so an add-on reading a requested graph
   reads the same shape the session graph already has.
+* **The answer carries the graph, not the name of a file.** `_onRoadGraph` reads and decodes it, so a callback
+  gets `nodes`, `edges`, `signals`, `rules`, `lines` and `mph`, with `path` beside them for an add-on that would
+  rather read the file itself. `api.places` answers with its rows the same way; an add-on has no business knowing
+  the layout of the session folder; and because only the last two graphs of an anchor are kept, a caller that held
+  the path rather than the tables could find the file gone. A graph that is built but will not read back is an
+  error with `complete` false, rather than an answer that looks empty.
 * **A `road_graph` request**, alongside `places`: `{type: "road_graph", id, lat, lon, radius, cachedOnly}` ->
-  `road_graph_result {id, path, anchorId, serial, complete, error}`. `lat, lon` are converted to the active anchor's
-  frame with the frame's own `geodetic_to_enu` — the inverse of the conversion `build_navgraph` already does on its
-  first lines to name the country. `radius` is clamped to `ROAD_GRAPH_RADIUS_MAX_M` (2000 m, against the session's
+  `road_graph_result {id, nodes, edges, …}`. **The point travels as `lat, lon` and is converted inside
+  `road_graph_data`, in the frame the build itself uses** — not by the handler. That matters: the anchor can be
+  re-centred while a request waits for the pool, and coordinates worked out before that are then read in a frame
+  that has gone. Found in a game: every window of a request landed about 19 km from the point asked for, the same
+  offset each time, and because cells over there happened to be cached it answered `complete` with no roads in it. `radius` is clamped to `ROAD_GRAPH_RADIUS_MAX_M` (2000 m, against the session's
   own `WINDOW_M` of 1100: a graph's cost grows with the square of its window) and defaults to `WINDOW_M`. Anything
   that cannot be served answers with a readable `error` rather than throwing: bad coordinates, no map data, a server
   started without roads (`self.s.traffic`, fixed at construction), no anchor committed yet.
-* **`cachedOnly` reads the window's layers only where they are already on disk,** through `MapData.layer_unkept` as
-  1.8's `cachedPlaces` does, so a wide read neither fetches nor pushes the road tiles' own roads layers out of
-  `MEM_MB`. **That rule covers every layer the graph reads, not only the roads.** `furniture.signals_for`,
+* **`cachedOnly` reads the window's layers only where they are already on disk,** through `load_cells` at
+  `kind="background"` — the same call the session's own graph uses, so a layer arrives with the same decoding, tag
+  joins and neighbour discovery, and a cell that is not there raises rather than being fetched. (An earlier draft
+  used `MapData.layer_unkept`, which exists for the API's cachedOnly *places* read. Places do not need those joins;
+  roads do, since drivability and road class come from them. In a game that built **0 nodes** from a window whose
+  cells were all present — intermittently, because `layer_unkept` answers from `MEM_MB` when the player's own path
+  has just filled it.) **That rule covers every layer the graph reads, not only the roads.** `furniture.signals_for`,
   `secrossings.read` and `blockworker._de_routes` each read their cells through `cell(kind="demand")`, which
   downloads at the highest priority there is; a cached-only build takes the `infrastructure` and `road_routes`
   layers from disk too (`mapped_signals` / `secrossings.nodes` over what is there), so "nothing is downloaded" holds
@@ -105,67 +117,70 @@ tool and a stage matcher all want the same window and would each want a differen
 
 ## Validation
 
-Windows 11, Python 3.13, this branch at `7e14180`.
+Windows 11, Python 3.13, this branch at `dac0636f`.
 
-**Lua — `python -I tools/run_lua_tests.py`, the whole suite:**
+### In a game
 
-```
-test_api.lua: LuaJIT 2.1.1774896198 (offline/stubbed)
-test_api: 126 passed, 0 failed
-...
-Lua modules: 119 passed, 0 failed
-```
-
-`test_api` is 126 checks against 106 on `dev`. The 20 new ones cover: the request sent cached-only with its radius,
-`opts` omitted (no radius sent, so the app's default), one answer a request and nothing after it, another request's
-answer ignored, every result field defended against a wrong type (`path = 7`, `complete = 'yes'`, `error = 42` all
-come out nil / false), the app's reason surfaced, bad coordinates / no callback / not connected refused, the timeout
-heard exactly once with a failing callback contained, and a road graph and a places request in flight together each
-timing out on its own wait.
-
-**Python — `python -I tools/run_tests.py <the 60 modules of tools/quality_gate.py> test_places_api test_navgraph
-test_road_graph_api test_roads test_mapdata_singleflight test_addons --par 4 --timeout 900`:** 66 modules,
-`57 OK, 9 not OK`.
+This is the part that matters, and it is what the first four commits of this branch were spent on. BeamNG.drive
+0.40.5 with this branch's mod and server, a real cached region (Maryhill, Washington), driven by a third-party
+add-on asking for the stage it wanted:
 
 ```
-== test_road_graph_api        OK        0.8s  16 tests
-== test_protocol_agreement    OK       94.3s  32 tests
-== test_places_api            OK        1.0s  26 tests
-== test_navgraph              OK        1.0s  52 tests
-== test_roads                 OK       15.0s  129 tests
-== test_mapdata_singleflight  OK        0.5s  8 tests
-== test_protocol              OK        0.1s  5 tests
-done: 57 OK, 9 not OK: test_roadcorners (FAIL), test_world_cache (FAIL), test_worldbundle (FAIL),
-test_germany (FAIL), test_cache (FAIL), test_roadgeo (FAIL), test_plancache (FAIL), test_netfetch (FAIL),
-test_bake_formats (FAIL)
+auto recce: maryhill-up, 3 window(s) of 1000 m
+auto recce: window 1 of 3: 548 new node(s)
+auto recce: window 2 of 3: 312 new node(s)
+auto recce: window 3 of 3: 208 new node(s)
+auto recce: maryhill-up matched, 4.1 km (map line 4.1 km), 0 m with no road, 2 junction(s), 3 window(s)
 ```
 
-**The nine failures are this machine's, and were measured as such rather than assumed.** The checkout's
-`server/earthfast.pyd` is version 290 while `fast.MIN_VERSION` on `dev` is 295 — `fast.NativeMissing: world bundle
-needs the server's native module (earthfast) version 295 or newer, version 290 was` — and there is no Rust toolchain
-here to run `tools/build_native.py`. With this branch's changes stashed, in the same working tree with the same
-stale binary and `HEAD` at `36df9058` (`origin/dev`), the same nine modules fail with the same test names and
-nothing else:
+and from the server, at the same moment:
 
 ```
-done: 0 OK, 9 not OK: test_roadgeo (FAIL), test_cache (FAIL), test_netfetch (FAIL), test_roadcorners (FAIL),
-test_bake_formats (FAIL), test_worldbundle (FAIL), test_germany (FAIL), test_plancache (FAIL),
-test_world_cache (FAIL)
+road graph: 1000 m at 45.70745,-120.79355 | 6 cell(s), 0 not read -> 548 node(s), 547 edge(s) | cached_only=True
+road graph: 1000 m at 45.71384,-120.79496 | 9 cell(s), 0 not read -> 616 node(s), 612 edge(s) | cached_only=True
+road graph: 1000 m at 45.72020,-120.80126 | 4 cell(s), 0 not read -> 560 node(s), 558 edge(s) | cached_only=True
 ```
 
-CI builds the native module before the gate, so these should pass there.
+Three windows, each centred where it was asked for, **2.5 s end to end, nothing downloaded**, and the add-on put a
+4.1 km rally stage on the roads with no stretch left unmatched. A 16 km stage came out at 28 junctions, also with no
+gap. The player's own `navgraph_<aid>_<serial>.json` sat untouched beside the request's files throughout, which is
+the claim this change most needed to make good on.
+
+**Four bugs were found this way and are fixed in the commits above** — the answer's shape, the cached-only read, the
+frame the window was centred in, and the point being converted before the pool rather than beside the build. Every
+one of them passed both unit suites before it was found. That is said plainly because it is the honest state of this
+branch: the unit tests are good at each side on its own and were blind to the join, and a test that drives the mod
+to the server and back is being written now. **It is not in this pull request yet**; if you would rather wait for it
+before reviewing, say so and I will add it to this branch.
+
+### The suites
+
+**Lua — `python -I tools/run_lua_tests.py`:** `Lua modules: 119 passed, 0 failed`. `test_api` is 130 checks against
+106 on `dev`, covering the request as it goes out, one answer a request, another request's answer ignored, every
+result field defended against a wrong type, the decoded graph and its other fields, a graph file that will not read
+back, the app's reason surfaced, bad coordinates / no callback / not connected refused, and the timeout heard once
+with a failing callback contained.
+
+**Python — `python -I tools/run_tests.py <the 60 modules of tools/quality_gate.py> test_road_graph_api test_navgraph
+test_places_api test_protocol_agreement test_roads test_mapdata_singleflight test_addons --par 4 --timeout 900`:**
+`57 OK, 9 not OK`, with `test_road_graph_api` 17 tests, `test_protocol_agreement` 32, `test_places_api` 26,
+`test_navgraph` 52, `test_roads` 129 — all OK.
+
+**The nine failures are this machine's, measured rather than assumed.** `server/earthfast.pyd` here is version 290
+while `fast.MIN_VERSION` is 295, and there is no Rust toolchain to rebuild it. With this branch's changes stashed,
+same tree, same stale binary, `HEAD` at `origin/dev`, the same nine modules fail with the same names and nothing
+else. CI builds the native module before the gate.
 
 `git diff --check`: clean.
 
-### What this run does not cover
+### One thing this does not answer, deliberately
 
-No in-game or live-server run: there is no BeamNG.drive install, no cargo and no cached map region on the machine
-this was written on. So `road_graph_data`'s cached-only path is exercised against a `MapData` stand-in whose `has`,
-`layer_unkept` and `cell` are all recorded (which is how "no cell is fetched for any layer of the window" is
-asserted), over real `mapgeom.Features` road lines rather than a real session's cells, and nothing here measures a
-real window. The two numbers that would finish the review — a 2000 m window's build time and node count over a real
-city, and a request made while the player's own graph is rebuilding, to watch the live file survive in a running
-session rather than in a temporary directory — want a machine with the app and a downloaded region.
+A road graph reads only what is on disk and fetches nothing, so an add-on over ground the player has never visited
+gets few roads and `complete: false`. That is the right answer for *this* call — it must never outrun the world's
+own downloads or your rate limits with your sources — but it does leave the question of how an add-on is meant to
+get those cells. The answer is a second, separate request: explicit points on `area_plan` / `area_add` (which
+already take `(lats, lons, half)` for a route, just not from an add-on) and a modding-API call over them. It is
+planned and not written, and deliberately not bundled here so that this one can be reviewed on its own.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
