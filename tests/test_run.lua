@@ -1802,6 +1802,11 @@ do
   local evs = { format = 1, id = 'seq', name = 'Sequence Rally', stages = {
     { id = 'near', name = 'Near', lengthM = 3000, line = line },
     { id = 'away', name = 'Away', lengthM = 3000, line = far },
+    -- a stage each for the blocks that need to be ASKED: a Not now is remembered for the session, so a stage
+    -- already declined is never asked again -- which is the point of it, and makes one stage unusable twice
+    { id = 'n2', name = 'Near Two', lengthM = 3000, line = line },
+    { id = 'n3', name = 'Near Three', lengthM = 3000, line = line },
+    { id = 'n4', name = 'Near Four', lengthM = 3000, line = line },
   } }
   files['/earthRally/events/seq.json'] = evs
   events.list(true)
@@ -1813,7 +1818,13 @@ do
   beamngEarth_api.has = function(n)
     return n == 'transform' or n == 'rebase' or n == 'gpsRoute' or n == 'roadGraph' or n == 'areaRoute'
   end
-  beamngEarth_api.roadGraph = function(_, _, _, cb) cb({ nodes = {}, edges = {}, complete = false }) return true end
+  local calls = 0
+  local function graphCalls() return calls end
+  beamngEarth_api.roadGraph = function(_, _, _, cb)
+    calls = calls + 1
+    cb({ nodes = {}, edges = {}, complete = false })
+    return true
+  end
   beamngEarth_api.areaPlan = function(pts, opts, cb)
     area.plans = area.plans + 1
     area.planPts, area.planOpts = pts, opts
@@ -1859,23 +1870,34 @@ do
   T.check(area.planOpts.fast == nil and area.planOpts.mode == nil, 'and never fast, which would pause the game')
 
   -- the player says no: the stage's own refusal is what they are told, not silence
+  local hadCalls = graphCalls()
   local no = main.uiAction('autoRecceSkip')
   T.check(no.ok, 'Not now is taken')
   T.check(area.adds == 0, 'with nothing downloaded')
-  -- Declining is NOT an ending: the stage is still tried with what is on disk, and its own refusal is what the
-  -- player is told. The estimate's `missing` counts a corridor wider than the road graph reads, so a stage that
-  -- would have matched can be offered a download it does not need -- which is only harmless if No still tries.
-  local after = main.uiStage('seq', 'near')
-  T.check(after and after.autoLine and tostring(after.autoLine.text):find('no map data'),
-    'the stage was still tried, and its own reason is what is reported (' ..
-    tostring(after and after.autoLine and after.autoLine.text ~= nil) .. ')')
+  -- **Not now STOPS** (the user, 2026-11-14: "when I click no to download, it should stop auto recce. instead it
+  -- teliports me there and still runs recce"). Nothing moves and nothing is matched -- an earlier cut carried on
+  -- to the teleport and the match, which is the behaviour this replaces.
   T.check(main.uiState().auto == nil, 'and the sequence is over')
+  T.check(graphCalls() == hadCalls, 'no window was asked for after No (' .. graphCalls() .. ')')
+  local after = main.uiStage('seq', 'near')
+  T.check(after and after.autoLine and tostring(after.autoLine.text):find('nothing downloaded'),
+    'the player is told nothing was downloaded and it stopped (' ..
+    tostring(after and after.autoLine and after.autoLine.text) .. ')')
+  T.check(after.autoLine.text:find('again'), 'and that pressing again will try without it')
   T.check(main.uiAction('reset', 'seq', 'near').ok, 'and the page is not left busy afterwards')
+
+  -- the second press is the "try it anyway": no question, straight to the stage and the match
+  local plansWas = area.plans
+  local again = main.uiAction('autoRecce', 'seq', 'near')
+  T.check(area.plans == plansWas, 'a stage already declined is not priced again (' .. area.plans .. ')')
+  T.check(graphCalls() > hadCalls, 'it went straight to matching (' .. graphCalls() .. ' window call(s))')
+  T.check(main.uiState().auto == nil, 'and finished, with the stage own reason reported')
+  T.check(not again.ok or true, 'however it ended (' .. tostring(again.message) .. ')')
 
   -- ------------------------------------------------------------ the player says yes
   area.state = 'running'
-  main.uiAction('autoRecce', 'seq', 'near')
-  T.check(main.uiState().auto.phase == 'asking', 'asked again on a fresh press')
+  main.uiAction('autoRecce', 'seq', 'n2')
+  T.check(main.uiState().auto and main.uiState().auto.phase == 'asking', 'a stage not yet declined is asked')
   local yes = main.uiAction('autoRecceDownload')
   T.check(yes.ok and area.adds == 1, 'Download starts one download (' .. area.adds .. ')')
   T.check(area.lastName and area.lastName:find('Earth Rally'),
@@ -1906,33 +1928,38 @@ do
   T.check(main.uiState().auto.phase == 'asking', 'the question comes first (' ..
     tostring(main.uiState().auto.phase) .. ')')
   T.near(car.lat, wasLat, 1e-9, 'and the car has NOT been moved yet')
-  -- answering sends it on its way: far, so it goes there before asking for a window
+  -- No on a far stage must not move them either: that was the whole complaint
   main.uiAction('autoRecceSkip')
-  T.check(main.uiState().auto and main.uiState().auto.phase == 'going', 'then it goes to the stage (' ..
-    tostring(main.uiState().auto and main.uiState().auto.phase) .. ')')
+  T.check(main.uiState().auto == nil, 'No stops it')
+  T.near(car.lat, wasLat, 1e-9, 'and the car was never moved')
+
+  -- the second press, having taken No as read, does go there
+  local b2 = main.uiAction('autoRecce', 'seq', 'away')
+  T.check(b2.ok and main.uiState().auto and main.uiState().auto.phase == 'going',
+    'pressing again goes to the stage (' .. tostring(main.uiState().auto and main.uiState().auto.phase) .. ')')
   T.near(car.lat, far[1][1], 0.01, 'and the car really was moved there')
   main.uiAction('autoRecceStop')
   T.check(main.uiState().auto == nil, 'Stop ends the sequence mid-journey')
 
   -- ------------------------------------------------------------ a second press while one runs is refused
   car.lat, car.lon = line[1][1], line[1][2]
-  main.uiAction('autoRecce', 'seq', 'near')
-  local second = main.uiAction('autoRecce', 'seq', 'near')
+  main.uiAction('autoRecce', 'seq', 'n3')
+  local second = main.uiAction('autoRecce', 'seq', 'n3')
   T.check(not second.ok and second.message:find('under way'),
     'a second auto recce while one waits on the player: refused (' .. tostring(second.message) .. ')')
-  T.check(not main.uiAction('drive', 'seq', 'near').ok, 'and no run either')
+  T.check(not main.uiAction('drive', 'seq', 'n3').ok, 'and no run either')
   main.uiAction('autoRecceSkip')
 
   -- ------------------------------------------------------------ an area the app will not take
   area.addOk = false
-  main.uiAction('autoRecce', 'seq', 'near')
+  main.uiAction('autoRecce', 'seq', 'n4')
   local bad = main.uiAction('autoRecceDownload')
   T.check(bad.ok, 'Download is taken even when the app refuses the area')
   T.check(main.uiState().auto == nil, 'and the sequence ends rather than hanging')
   -- Through autoLines, which is how an async ending reaches the page: `message` is the developer panel's own
   -- string and the Vue never sees it. The two refusals that matter -- the cache share full, all ten slots taken --
   -- would otherwise be written where nobody looks.
-  local line9 = main.uiStage('seq', 'near')
+  local line9 = main.uiStage('seq', 'n4')
   T.check(line9 and line9.autoLine and tostring(line9.autoLine.text):find('saved areas are full'),
     'the app own reason reaches the stage page, because only the player can act on it (' ..
     tostring(line9 and line9.autoLine and line9.autoLine.text) .. ')')

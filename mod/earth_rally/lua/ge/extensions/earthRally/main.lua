@@ -382,6 +382,7 @@ M.AREA_WAIT_S = 1800         -- waiting for a download; it is gated to 40% duty 
 M.GOING, M.ASKING, M.DOWNLOADING = 'going', 'asking', 'downloading'
 
 local autoSeq = nil   -- { ev, stage, ss, phase, t, ready, plan, areaId, downloaded, why, how }
+local autoNoDl = {}   -- stages the player said Not now to, this session: autoKey -> true
 
 local autoSeqStep     -- (declared here: autoDone drives the sequence on, and is defined above it)
 
@@ -509,10 +510,21 @@ autoSeqStep = function(what, arg)
 
   elseif what == 'answer' then
     if arg ~= true then
-      -- Declining is not an ending. The stage may match from what is on disk, and if it cannot the match will say
-      -- so in its own words -- which is a better answer than one made up here before anything was tried.
-      log('I', logTag, 'auto recce: the player declined the download; carrying on with what is on disk')
-      goThenMatch()
+      -- **Not now stops.** (The user, 2026-11-14: "when I click no to download, it should stop auto recce.
+      -- instead it teliports me there and still runs recce".) An earlier cut of this carried on to the teleport
+      -- and the match, on the reasoning that the estimate over-asks -- `missing` counts a corridor dilated by two
+      -- map cells, wider than the road graph reads -- so declining ought not to cost the chance of a match. That
+      -- reasoning was about the feature; being flung across the world after saying no is about the player, and
+      -- the player is right. No means no: nothing moves and nothing is matched.
+      --
+      -- The over-asking is answered a better way: the decline is remembered for this stage, so pressing Auto
+      -- recce again goes straight to the stage and matches with whatever is already on disk, with no question.
+      -- That is said in as many words below, because a button that does something different the second time has
+      -- to tell you so.
+      autoNoDl[autoKey(sq.ev.id, sq.stage.id)] = true
+      log('I', logTag, 'auto recce: the player declined the download; stopping')
+      autoSeqEnd(string.format('%s: nothing downloaded, and the auto recce stopped. Press Auto recce again to ' ..
+        'try it with the map data you already have.', sq.stage.name), autoRecce.NODATA)
       return true
     end
     local pts = autoRecce.corridor(sq.stage.line)
@@ -550,6 +562,7 @@ autoSeqStep = function(what, arg)
       note = string.format('The download finished with %d item(s) nothing could fetch. %s',
         sq.unavailable, tostring(sq.areaMsg or 'Resume that area to try those again.'))
     end
+    if arg == autoRecce.DONE then autoNoDl[autoKey(sq.ev.id, sq.stage.id)] = nil end
     if not note then
       autoSeqEnd(nil)
       return false              -- nothing to add: autoDone reports the stage's own ending, as 1.3.0 does
@@ -676,7 +689,10 @@ doAction = function(what, eventId, stageId, fromPanel)
     -- The estimate first, because it needs no anchor: `areaPlan` takes lat/lon on the server and knows nothing of
     -- the player's frame, so the ground can be priced from where the player is standing. That is what lets the
     -- question be asked before they are teleported across the world.
-    if earth.hasAreaRoute() then
+    --
+    -- Unless the player already said Not now to this stage: then the second press is their "try it anyway", and
+    -- asking again would be the button refusing to take an answer it has already been given.
+    if earth.hasAreaRoute() and not autoNoDl[autoKey(ev.id, stage.id)] then
       local pts = autoRecce.corridor(stage.line)
       if pts then
         local ok, why = earth.areaPlan(pts, function(r) autoSeqStep('planned', r) end)
@@ -1048,7 +1064,7 @@ function M.onClientEndMission()
   -- running. It stops the way a recce does, and writes nothing.
   -- autoSeq as well: a sequence between its legs has no window in flight, so cancelling the auto recce alone
   -- would leave it behind and the page busy for ever (the guard in doAction refuses everything while one runs)
-  autoSeq = nil
+  autoSeq, autoNoDl = nil, {}
   if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(runner.abort, true)
@@ -1077,7 +1093,7 @@ function M.onModDeactivated()
   -- running. It stops the way a recce does, and writes nothing.
   -- autoSeq as well: a sequence between its legs has no window in flight, so cancelling the auto recce alone
   -- would leave it behind and the page busy for ever (the guard in doAction refuses everything while one runs)
-  autoSeq = nil
+  autoSeq, autoNoDl = nil, {}
   if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(runner.abort, true)
@@ -1099,7 +1115,7 @@ function M.onExtensionUnloaded()
   -- running. It stops the way a recce does, and writes nothing.
   -- autoSeq as well: a sequence between its legs has no window in flight, so cancelling the auto recce alone
   -- would leave it behind and the page busy for ever (the guard in doAction refuses everything while one runs)
-  autoSeq = nil
+  autoSeq, autoNoDl = nil, {}
   if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(runner.abort, true)
