@@ -30,6 +30,12 @@ backbone is solid would mean building an editor for a thing that still changes u
 - **Upstream pull requests: yes, and show them first.** They go out as DeRamp from the existing fork
   (github.com/DeRamp/BeamNG.Earth), and the user reads the text before anything is sent.
 
+- **No 1.2.6** (the user, 2026-11-13). The strip fixes ride into 1.3.0 rather than going out on their own. The cost
+  is known and accepted: the public v1.2.5-alpha keeps the bug where switching the mod off part way through a stage
+  leaves BeamNG.Earth's status bar and connection banner suppressed for the rest of the session, which takes its
+  "server not running" message with it. 1.3.0 is gated on an upstream pull request in someone else's queue, so that
+  may be a while.
+
 ## The order, and why it is not the obvious one
 
 `docs/version-plans.md` had the small safe items first and the auto recce last. That is the wrong way round. The
@@ -78,7 +84,14 @@ the recce this version exists to remove.
 The hoped-for way round it does not exist either: 1.3.0's corridor pre-cache (`server/areas.py`) has no navgraph
 phase at all -- `grep -c navgraph server/areas.py` is **0**. Its modes are `data` and `world` (`areas.py:186`), which
 fetch cells, DEM, imagery and road geotile content. None of that produces a graph anywhere along the corridor, so
-"match while the pre-cache runs" has nothing to match against. Teleport-hopping the player along the stage, or
+"match while the pre-cache runs" has nothing to match against.
+
+It does, though, put the **cells** along the corridor on disk, and that turns out to matter more than it looks:
+`phase_steps("data", ...)` fetches `area_layers()` over the route's corridor tiles, and that is
+`mapdata.LAYERS + ("building_parts", "places")` -- in which `roads` is a plain vector layer, not one of the
+`OPTIONAL_LAYERS` built only on request (`mapdata.py:131-137`). So the pre-cache downloads exactly the road cells a
+cached-only road-graph read needs. That is why step 2 below is the pre-loading and step 3 is the auto recce, and not
+the other way round. Teleport-hopping the player along the stage, or
 deleting their car so the free camera drives the streaming focus, both work on paper and both stream the entire world
 along the corridor to harvest a few thousand graph nodes. Neither is acceptable.
 
@@ -98,31 +111,66 @@ and window as parameters (`navgraph.py:359`) -- upstream runs it every 400 m reg
 asking for an auto recce, and it keeps the matching, our bugfixes and the organisers' route-book data inside Earth Rally.
 
 *One claim from the spike that does not hold, checked before acting on it:* it reported that a partly matched line
-could reach the stage runner today, because `lineValid` (`events.lua:56`) only tests for two points and nothing in
-the mod reads a matched line's `gaps`. The premise is right and the conclusion is wrong -- `auto_recce.py` never
+could reach the stage runner today, because `lineValid` (`events.lua:56`) only tests for two points. (Its other
+premise, that nothing in the mod reads a matched line's gaps, is itself wrong: `menu.lua:28` reads `gapM` for the
+stage's status wording.) The conclusion is wrong too -- `auto_recce.py` never
 writes a partial line. A stretch with no road is filled with the organisers' own line, eased in and out over
 `BLEND_M` so there is no kink, and each of those points is flagged so no notes are called there
 (`auto_recce.py:483-503, 541-545`). The line always spans the whole stage and `gaps` is metadata. It remains a fair
 warning for any *incremental* design: do not write the file until coverage is complete.
 
-### 2. The auto recce (the backbone proper, and the large one)
-
-In the order in "Auto recce for every player" below: the companion file made from `tools/auto_recce.py`, tested
-first against the dev tree's `--run-addon`, then against the packaged app; the status file; the stage page's auto
-recce state (**mock-up first**); a `local.json` entry for testing; the registry entry by pull request last.
-
-Done when a map dropped into the import folder on a machine with no Python recces itself, with the stage page
-showing progress while it happens.
-
-### 3. Stage pre-loading, with how much is loaded on screen (21) (medium)
+### 2. Stage pre-loading, with how much is loaded on screen (21) (medium)
 
 BeamNG.Earth's area pre-cache along the stage corridor before the start, so a stage does not begin into a world that
 is still arriving. **Mock-up of the loading display first.**
+
+Moved in front of the auto recce, because it is the auto recce's prerequisite and not only a comfort of its own. A
+road-graph read is cached-only -- nothing is downloaded for it -- so on ground the player has never driven there are
+no cells to read and the honest answer is "nothing written". The pre-cache is what puts those cells on disk (see the
+spike above). Without it, "a map dropped in drives" would really mean "drives once you have been there", which is
+not the promise.
 
 This one has already shown its teeth: in 1.2 the self-test started a stage mid-stream and the car was off the line
 280 m in, and the ATC's boards were set out from the organisers' pin because the road map had not arrived. The
 settle gate in `selftest.lua` is a workaround for a real problem that this step fixes properly, for players too --
 so when it lands, that gate should be revisited rather than left in.
+
+### 3. The auto recce (the backbone proper, and the large one)
+
+**Not a companion add-on.** That shape was planned, reviewed and dropped: it inherits defects in another project's
+process management that we cannot fix, it would gate our bugfixes on a volunteer editing a registry in another
+repository, and it would have forced this release's conventions to change to suit a distribution channel. The auto
+recce runs **in this mod's own Lua**, on one window of BeamNG.Earth's road graph at a time, read through
+`api.roadGraph` -- the upstream call asked for above.
+
+Built and tested offline on the branch `auto-recce` (`mod/.../earthRally/autoRecce.lua`, `tests/test_autorecce.lua`,
+12 of 12 test files): the matching core ported from `tools/auto_recce.py`, window planning along the corridor,
+accumulation in lat/lon so a rebase cannot stale it, stitching on the graph's own node names (stable across windows
+and anchors), and the file written only once coverage is complete. Gated on `api.has('roadGraph')`, so with an older
+BeamNG.Earth it is simply unavailable and nothing changes.
+
+What is left before it can ship:
+
+- `api.roadGraph` has to land upstream. Until it does, the branch is unreachable code and everything past the
+  BeamNG.Earth boundary is tested against a stand-in only.
+- **Window planning costs more than first thought.** A window is only trustworthy `CORRIDOR_M` inside its own edge,
+  or a line gets matched against roads merely clipped off at the boundary -- so the step is `radius - CORRIDOR_M`,
+  not `2 x radius`. At a 1000 m radius a 12 km stage is ~18 windows, not 6; at 2000 m, ~8. Worth measuring before
+  anyone is promised a duration.
+- The stage page's auto recce state (**mock-up first**), and the button that starts one. Nothing calls `start()`
+  yet, deliberately.
+- Measured on a real stage against the 116 files `tools/auto_recce.py` already produced: snap rate, detour
+  rejections, junction kinds, and whether the graph's heights land where a driven recce's do.
+- **`bridges` is given up, decided (the user, 2026-11-13: "its ok to loose bridge").** The graph carries no bridge
+  flag on any node or edge, and it is not recoverable from the heights -- a cutting looks the same. So an in-game
+  auto recce writes `bridges = {}` and the `overBridge` call is simply not made on those stages. It degrades
+  quietly: `events.landmarks` returns the junctions alone, `stageWriter` places what it is given, and the stage
+  page's count shows no bridges. The 116 stages `tools/auto_recce.py` has already done keep theirs, so the same
+  rally can have bridge calls on one stage and not another -- worth a line in the release notes rather than a fix.
+  If it is ever wanted back it needs a source of its own, not a cleverer reading of the graph.
+
+Done when a map dropped into the import folder on a machine with no Python recces itself, with the stage page
+showing progress while it happens.
 
 ### 4. The import smalls (4, 3), and the late-start rule (small, and genuinely small)
 

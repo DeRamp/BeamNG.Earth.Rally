@@ -24,8 +24,10 @@ The full order and the reasoning are in docs/plan-1.3.0.md. In short, and not in
 0. Answer the auto recce's three unknowns with a throwaway spike, building nothing. They are the only real unknowns in
    this version, and if one fails the whole shape of it changes -- better to know in an afternoon than at the end.
 1. Version checks at startup (23): small, and it protects everything after.
-2. The auto recce add-on (1): the backbone, and the large one. Stage page mock-up first.
-3. Stage pre-loading with how much is loaded on screen (21); mock-up first. Revisit the self-test's settle gate when
+2. Stage pre-loading with how much is loaded on screen (21); mock-up first. Before the auto recce, not after: a
+   road-graph read is cached-only, and this is what puts the corridor's cells on disk for it.
+3. The auto recce (1): the backbone, and the large one, in this mod's own Lua on api.roadGraph -- not a companion
+   add-on. Stage page mock-up first. Revisit the self-test's settle gate when
    it lands -- that gate is a workaround for the problem this step fixes properly.
 4. Folder-based import (4), the automatic ATC (3), and dropping the late-start penalty: contained, offline tests,
    and the easiest to drop if the auto recce needs the time.
