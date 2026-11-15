@@ -3,9 +3,11 @@
 Drive real rally stages on the real roads of [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth), timed,
 with BeamNG.drive's own co-driver calling pacenotes worked out from the road.
 
-**v1.6.0-alpha · BeamNG.drive 0.40.5 · BeamNG.Earth modding API 1.6+ · auto recce: [DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)**
-[Download](https://github.com/DeRamp/BeamNG.Earth.Rally/releases) · [Changelog](CHANGELOG.md) ·
-[Player guide](docs/guide.md) · [Report a bug](https://github.com/DeRamp/BeamNG.Earth.Rally/issues)
+**v1.6.0 · BeamNG.drive 0.40.5 · BeamNG.Earth modding API 1.6+ · auto recce: [DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)**
+[Download](https://github.com/DeRamp/BeamNG.Earth.Rally/releases/latest) · [Wiki](https://github.com/DeRamp/BeamNG.Earth.Rally/wiki) ·
+[Changelog](CHANGELOG.md) · [Player guide](docs/guide.md) · [Report a bug](https://github.com/DeRamp/BeamNG.Earth.Rally/issues)
+
+![On a stage: the stage clock, progress and the co-driver's pacenote cards](docs/media/hero-on-stage.jpg)
 
 ## What it does
 
@@ -33,16 +35,17 @@ Details: [player guide](docs/guide.md#the-auto-recce-and-beamngearth).
 
 * Delete the old Earth Rally zip first. Two copies both load.
 * Your rallies, lines and times are kept. They live in `…\current\earthRally\`, not in the zip.
+* 1.6 is the supported release: updates from here are bug fixes.
 
 ## Quick start
 
-1. In the menu, **Open import folder** and drop in a rally's map.
+1. In the menu, **Open folder** and drop in a rally's map.
 2. Pick a stage and press **Auto recce**, or **Recce** to drive it once.
 3. **Drive stage**.
 
 ## Known issues
 
-* Auto recce is hidden on a stock BeamNG.Earth (needs API 1.9).
+* Auto recce is greyed out on a stock BeamNG.Earth (needs API 1.9).
 * Where the map has no road, the organisers' line is used and no notes are called there.
 * A rally pack imported from a `.zip` is untested in game. Folders work.
 * Very broad hilltops are not called as crests.
@@ -60,6 +63,7 @@ Menu will not open? See [the player guide](docs/guide.md#the-menu-will-not-open)
 
 ## Docs
 
+* [Wiki](https://github.com/DeRamp/BeamNG.Earth.Rally/wiki): screenshots and short how-tos
 * [Player guide](docs/guide.md): stages, controls, leaderboards, making your own map
 * [Pacenotes](docs/pacenotes-1.5.0.md): every call and the figures behind it
 * [Rally pack format](docs/rally-file.md)

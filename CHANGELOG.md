@@ -3,6 +3,21 @@
 Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/writing-standard.md). Downloads:
 [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
 
+## 1.6.0: the first supported release (unreleased)
+
+Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)
+(official 1.6+ works, without the auto recce).
+
+The same mod as 1.6.0-alpha, now the first supported release. Updates to 1.6 are bug fixes only.
+
+### Changed
+* Version is `1.6.0`, no longer alpha. Delete `earth_rally-1.6.0-alpha.zip` before adding the new zip.
+* New [wiki](https://github.com/DeRamp/BeamNG.Earth.Rally/wiki) with screenshots and short how-tos.
+
+### Known issues
+* Dressing comes from **Auto recce** only. Stages recced before 1.6.0 get direction boards until recced again.
+* Props can still land on a road the game's map doesn't have, such as a driveway it is missing.
+
 ## 1.6.0-alpha: on the stage (2026-11-15)
 
 Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)
