@@ -96,22 +96,19 @@ its figures in docs/pacenotes-1.5.0.md.
 | ✔ | Bridges on lines matched in the game: `tools/auto_recce.py --bridges-only`, kept by a later recce | built |
 | → | Not reached: co-driver settings (call timing, detail, voice) (26), and the self-test hearing the co-driver (carried from 1.2). Where they go is for the user to say | |
 
-## 1.6.0: on the stage
+## 1.6.0: on the stage (released 2026-11-15)
 
-The stage looks and feels like an event. Moved ahead of the co-driver and of making and sharing stages (the user,
-2026-11-14); it was 1.6.0, then 1.4.0 until the rally files took that number, then 1.5.0 until the co-driver was
-released first (2026-11-14).
+The stage looks like an event: course tape, direction boards, junction marshals, radio and medical points and
+spectator areas, all from the game's own rally props, from the auto recce's junctions and the organisers' map points.
+Driven by the user on Overmountain; findings and fixes in docs/notes-1.6.0.md, the design in
+docs/plan-1.6.0-stage-dressing.md.
 
-| Item | Size |
-|---|---|
-| Course tape across side roads not taken (5) | M |
-| Junction direction signs (6) | S |
-| Ghost car and replays (27) | M |
-| Atmosphere: spectators, marshals, radio points (29) | M |
-| Stage sketches and height profiles (15) | S |
-| Stages wider than ~26 km (8) | L |
-| Stage pre-loading *before the start*: the corridor loaded while you wait, a loaded % on screen, start any time (21). The on-demand half shipped in 1.3.1; this is the half that runs as you sit at the control. Moved here from 1.3.3 (the user, 2026-11-14) | M |
-| No penalty for a late start, just a new minute, as a real rally does. Also takes a permanently-zero row off the results card. Moved here from 1.3.3 (the user, 2026-11-14) | S |
+| | Item | Size |
+|---|---|---|
+| ✔ | Course tape across side roads not taken (5) | built |
+| ✔ | Junction direction signs (6) | built |
+| ✔ | Atmosphere: spectators, marshals, radio points (29), from the organisers' map first, placed by rule otherwise | built |
+| → | Not reached, for the user to place: ghost car and replays (27), stage sketches and height profiles (15), stages wider than ~26 km (8), stage pre-loading before the start (21), no penalty for a late start | |
 
 ## 1.7.0: make and share stages
 

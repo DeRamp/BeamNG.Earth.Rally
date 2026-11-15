@@ -3,6 +3,30 @@
 Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/writing-standard.md). Downloads:
 [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
 
+## 1.6.0-alpha: on the stage (2026-11-15)
+
+Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)
+(official 1.6+ works, without the auto recce).
+
+Stages are dressed like a real event, from the game's own rally props.
+
+### New
+* **Course tape** across every side road the stage doesn't take, reaching past both edges.
+* **Direction boards** before junction turns and forks.
+* **Junction marshals** behind the tape, on the closed road furthest from a car that misses the turn.
+* **Radio and medical points** with warning boards, and **spectator areas** at hairpins and big turns.
+* Points marked on the organisers' map are placed where the map puts them ([map tags](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/rally-file.md)).
+* Where a rally's map marks none of a kind, radio points, marshals and spectators are placed for you.
+* Each stage's page shows whether its points come from the map, are placed at random, or are none.
+
+### Changed
+* Rallies already imported are read once more on first start, to pick up their map points. Times and recces stay.
+* Points right by each other merge into one; props are moved off the road where it is wider than expected.
+
+### Known issues
+* Dressing comes from **Auto recce** only. Stages recced before 1.6.0 get direction boards until recced again.
+* Props can still land on a road the game's map doesn't have, such as a driveway it is missing.
+
 ## 1.5.2-alpha: the time control stays (2026-11-14)
 
 Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)
