@@ -303,10 +303,10 @@ M.JUMP_MIN_V_MS = 15
 M.SIGHT_EYE_M = 1.1
 M.SIGHT_TARGET_M = 0.6   -- hidden by this much (the object height of a road's stopping sight distance), not the
                          -- last few centimetres of its surface
--- (the two figures, on the user's 26 lines matched in the game then (28 now), before the review fixes, crest calls / km, and against the game's own stages
+-- (the two figures, on the 26 lines the user had matched in the game then, before the review fixes, crest calls / km, and against the game's own stages
 --  found / agreeing: 0.3 m and any grade 1.45, 59 / 48 %; 0.6 m and any grade 0.96, 46 / 50 %; 0.6 m and 2 %
 --  0.84, 42 / 49 %; 0.8 m and 2 % 0.63, 36 / 49 %. The build of the second drive: 1.5 / km. With the reviews'
---  fixes -- back in view, the grade where it is hidden, the descent rule -- on 28 lines: 0.78, 41 / 49 %)
+--  fixes -- back in view, the grade where it is hidden, the descent rule -- on 28 lines: 0.78, 40 / 48 %)
 M.SIGHT_S = 2.0
 M.SIGHT_BIG_S = 1.0
 M.SIGHT_ON_GRADE = 0.02  -- over the top: the road from the summit that hides it to there climbs no more than this
@@ -517,20 +517,22 @@ function M.heights(pts, step, v)
   end
   -- the crests, from the sightline: the road where the car needs to see it hidden behind a rise
   -- (not the rim of a dip called on its own within OPPOSITE_M, RIM_RATIO times as sharp as the crest at its
-  --  sharpest near the summit: the dip's call says it -- marked `rimOf` that dip, and the writer leaves the crest
-  --  out only where the dip is said; a dip not called, the crest is. A hollow the road comes back out of in view is
+  --  sharpest near the summit: the dip's call says it -- `rimOf` lists those dips, and the writer leaves the crest
+  --  out only where one of them is said; a dip not called, the crest is. A hollow the road comes back out of in view is
   --  no crest at all, M.blind. Nor a jump's summit, within EVENT_M: called as the jump)
   local ej = max(1, floor(M.BLIND_JOIN_M / step + 0.5))
   for _, sc in ipairs(M.blind(z, step, v, clean)) do
-    local near, rimOf, sharp = false, nil, 0
+    local near, rimOf, sharp = false, {}, 0
     for j = max(1, sc.i - ej), min(n, sc.i + ej) do if dg[j] < sharp then sharp = dg[j] end end
     for _, ev in ipairs(events) do
       if ev.kind == 'jump' and abs(ev.i - sc.i) <= e then near = true break end
-      if ev.kind == 'dip' and ev.alone and abs(ev.i - sc.i) <= eo and ev.dg >= -sharp * M.RIM_RATIO then rimOf = ev end
+      if ev.kind == 'dip' and ev.alone and abs(ev.i - sc.i) <= eo and ev.dg >= -sharp * M.RIM_RATIO then
+        rimOf[#rimOf + 1] = ev
+      end
     end
     if not near then
       events[#events + 1] = { i = sc.i, kind = 'crest', size = sc.size, alone = true, dg = dg[sc.i], sight = sc.sight,
-                              rimOf = rimOf }
+                              rimOf = #rimOf > 0 and rimOf or nil }
     end
   end
   table.sort(events, function(a, b) return a.i < b.i end)

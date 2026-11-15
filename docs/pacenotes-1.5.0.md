@@ -62,7 +62,7 @@ Done for the user's stages on 2026-11-14: bridges on otr-2024-final shadow buck,
 olympus kuhnle. Only a peak of the
 grade change is an event (a jump or a dip; a crest is the sight's, above); a dip's two rims are not crests, nor are they when the dip itself gave way to a stronger
 crest beside it. A blind crest gives way to a dip within 60 m only when the dip is called on its own and 1.3 times
-as sharp, and is said (not on a bridge, not muted, in the voice); a jump takes the place of a blind crest within 40 m. A jump has to be a big crest as well: before that gate most lifts over 1.4 g were at the speed
+as sharp, and one of them is said (not on a bridge, not muted, in the voice) -- in a corner's shape and on a fork too; a jump takes the place of a blind crest within 40 m. A jump has to be a big crest as well: before that gate most lifts over 1.4 g were at the speed
 model's top speed, where a few centimetres of elevation data decide it.
 
 **Speed model** (`pacenotes.lua`): 8 m/s² sideways, 3 m/s² gained, 7 m/s² braking, 40 m/s (144 km/h) top, from a
@@ -85,13 +85,13 @@ the mod's choice, which could change).
   are followed across as the game's road tools follow them (centripetal Catmull-Rom; `--straight`: straight lines
   between their nodes, as before), their heights by a monotone cubic through the nodes -- not as the game does, which
   takes them off the terrain under each point. Corners 88 % / 97 %; hairpins 86 % / 66 %; square 50 % / 67 %; crests
-  41 % / 49 % (from the sight alone; 65 % / 44 % with the grade's crests and the sight's at 0.3 m, the build of the
+  40 % / 48 % (from the sight alone; 65 % / 44 % with the grade's crests and the sight's at 0.3 m, the build of the
   second drive; 46 % / 43 % from the grade alone); opens 40 % / 41 %; tightens 18 % / 43 %; cautions 19 % / 21 % (a care on every corner: 12 %). The drivelines have a node only every 14-40 m, so a sharp hump between two is
   not in them: the jump and dip rows are a floor, and say little (the game calls 34 jumps, we 2). Hills, which that
   spacing does show: 2 of our 30 where the game has one of its 18.
 - `python tools/pacenote_survey.py <earthRally folder>`: rates per km over the user's matched stages, a line saved
   under two names counted once (93 stages, 1,299 km): 6.13 notes / km, 4.74 corners / km (long sweepers among
-  them), cautions on 6.9 % of corners (the game's own stages: 8.1 % of corner notes), crests 0.88 / km in all
+  them), cautions on 6.8 % of corners (the game's own stages: 8.1 % of corner notes), crests 0.86 / km in all
   (shapes included; 1.6 / km in the build of the second drive, 1 / km from the grade alone), jumps 0.03 / km (3 big ones in all), dips 0.12 / km, hairpins 0.14 / km, square 0.10 / km, up / down
   0.11 / km. On the 28 lines the game matched (295 km): crest calls 0.78 / km (the
   second drive's build, d13c1f0: 1.5, "too many ... crests the driver can see right over"; the grade alone: 0.51;
