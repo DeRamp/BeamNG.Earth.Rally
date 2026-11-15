@@ -95,6 +95,8 @@ for(const t of tests){const o=document.createElement('option');o.value=o.textCon
 if(tests.includes('quick'))fTest.value='quick';
 const caps=rows.map((r,i)=>({i,name:r.suite+' / '+r.capture}));
 for(const c of caps.slice().reverse()){const o=document.createElement('option');o.value=c.i;o.textContent=c.name;fCap.appendChild(o)}
+// (opens on the latest suite's worst capture by p99: where the frames are lost)
+if(rows.length){const lastS=rows[rows.length-1].suite;let wi=-1;rows.forEach((r,i)=>{if(r.suite===lastS&&(wi<0||(r.p99||0)>(rows[wi].p99||0)))wi=i});if(wi>=0)fCap.value=wi}
 function suites(){const s=[];for(const r of rows)if(!s.includes(r.suite))s.push(r.suite);return s}
 
 function trend(){
@@ -130,8 +132,9 @@ function latest(){
 }
 
 function ab(){
- const box=$('#ab');const cs=(D.comparisons||[]).filter(c=>c.test===fTest.value||fTest.value==='');
- const all=(D.comparisons||[]);const use=cs.length?cs:all;
+ // (every comparison of the latest suite, then any for the chosen test from earlier suites)
+ const box=$('#ab');const all=(D.comparisons||[]);const ss=suites();const lastS=ss[ss.length-1];
+ const use=all.filter(c=>c.suite===lastS||c.test===fTest.value);
  if(!use.length){box.innerHTML='<div class="empty">No A/B pairs yet.</div>';return}
  const V={faster:'faster',slower:'slower',nochange:'no change (pairs disagree or inside spread)',single:'one pair only: indicative'};
  let h='<table><tr><th class="l">Suite</th><th class="l">Test</th><th class="l">Switch</th><th>Base → value</th><th>p99 base</th><th>p99</th><th>Δ p99 (median)</th><th>Δ range over pairs</th><th>Base spread</th><th>Pairs</th><th class="l">Verdict</th></tr>';
@@ -155,7 +158,7 @@ function hooks(){
  const box=$('#hooks');const r=rows[+fCap.value];if(!r||!r.hooks){box.innerHTML='<div class="empty">No capture.</div>';return}
  const e=Object.entries(r.hooks).sort((a,b)=>(b[1].max||0)-(a[1].max||0));
  let h='<table><tr><th class="l">Hook</th><th>max ms</th><th>ms / frame</th></tr>';for(const [k,v] of e)h+=`<tr><td class="l">${k}</td><td>${f2(v.max)}</td><td>${f2(v.perFrame)}</td></tr>`;
- box.innerHTML=h+`</table><p class="sub" style="margin:8px 0 0">GE Lua garbage, whole game ${f2(r.gcKBs)} KB/s · statics ${r.counts&&r.counts.statics} · road nodes ${r.counts&&r.counts.nodes} · props ${r.counts&&r.counts.props}</p>`;
+ box.innerHTML=h+`</table><p class="sub" style="margin:8px 0 0">GE Lua garbage, whole game ${f2(r.gcKBs)} KB/s · statics ${(r.counts&&r.counts.statics)??'–'} · road nodes ${(r.counts&&r.counts.nodes)??'–'} · props ${(r.counts&&r.counts.props)??'–'}</p>`;
 }
 
 function trace(){
