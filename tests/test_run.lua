@@ -1111,6 +1111,145 @@ do
     runner.current().checks.atcSetDown == 'driven there', 'driven to the ATC: left where it is')
   runner.abort(true)
 
+  -- landed ON the ATC point (where the auto recce's teleport puts the car): set down 40 m before the board, never
+  -- taken for "driven there" -- the other half of the auto recce landing at the ATC rather than the start
+  car.lat, car.lon, car.speed = alat, alon, 0
+  runner.start(ev7, ev7.stages[1])
+  frames(80)
+  local lx, ly = carXY()
+  T.check(runner.current().state == 'toAtc' and runner.current().checks.atcSetDown ~= 'driven there'
+    and math.abs(ly - (atcY - 40)) < 2,
+    'landed on the ATC: set down 40 m before it (' .. tostring(runner.current().checks.atcSetDown) ..
+    string.format(', %.1f m', ly - atcY) .. ')')
+  runner.abort(true)
+
+  -- parked on the road between the ATC and a far start (60 m past the board, 540 m short of the line): NOT on the
+  -- stage, so the player's spot is kept -- the guard below must not move people off approach roads
+  car.lat, car.lon, car.speed = toGeo(ax0, ay0 + 60)
+  car.speed = 0
+  local kept = { car.lat, car.lon }
+  runner.start(ev7, ev7.stages[1])
+  frames(80)
+  T.check(runner.current().state == 'toAtc' and runner.current().checks.atcSetDown == 'driven there'
+    and car.lat == kept[1] and car.lon == kept[2],
+    'off the stage, short of the start: kept where it was parked (' .. tostring(runner.current().checks.atcSetDown) .. ')')
+  runner.abort(true)
+
+  -- ON the stage, an ATC 20 m before the start (8 m off the road), the car behind the line or into the stage: inside
+  -- NO_SET_DOWN_M of the ATC, and at +30 m FARTHER from the start than the ATC is -- the case a straight-line "past"
+  -- test let through. Go to start, a stopped Recce or a near Auto recce leave cars here; never "driven there".
+  local _, startY = at(full[11][1], full[11][2])
+  local cx0, cy0 = toGame(full[11][1] - 20 / 111195, full[11][2])
+  local clat, clon = toGeo(cx0 + 8, cy0)
+  local ev9 = { format = 1, id = 'test9', name = 'Test Rally 9', stages = { {
+    id = 'close', name = 'Close', lengthM = 3000, radiusM = 1200, centre = event.stages[1].centre,
+    controls = { start = event.stages[1].controls.start, ff = event.stages[1].controls.ff, atc = { lat = clat, lon = clon } },
+    line = event.stages[1].line } } }
+  files['/earthRally/events/test9.json'] = ev9
+  files['/earthRally/matched/test9__close.json'] = { format = 1, points = recFrom }
+  local sx0, sy0 = toGame(full[11][1], full[11][2])
+  for _, intoM in ipairs({ -4, 30, 90 }) do
+    car.lat, car.lon = toGeo(sx0, sy0 + intoM)
+    car.speed = 0
+    runner.start(ev9, ev9.stages[1])
+    frames(80)
+    local qx, qy = carXY()
+    T.check(runner.current().state == 'toAtc' and runner.current().checks.atcSetDown ~= 'driven there'
+      and qy < startY - 15,
+      string.format('on the stage %+d m from the start: set down before the ATC, not left past it (%s, %.1f m)',
+        intoM, tostring(runner.current().checks.atcSetDown), qy - startY))
+    T.check(not runner.current().missedAtc, string.format('and %+d m: the time control is not counted missed', intoM))
+    runner.abort(true)
+  end
+  -- parked SHORT of an ATC that close to the start (the board 20 m before the line, the car 25 m before the board,
+  -- before the line's first point and so more than 8 m off it): not yet at it, so the player's spot is kept
+  car.lat, car.lon = toGeo(sx0, sy0 - 45)
+  car.speed = 0
+  local short = { car.lat, car.lon }
+  runner.start(ev9, ev9.stages[1])
+  frames(80)
+  T.check(runner.current().state == 'toAtc' and runner.current().checks.atcSetDown == 'driven there'
+    and car.lat == short[1] and car.lon == short[2],
+    'short of a close ATC: kept where it was parked (' .. tostring(runner.current().checks.atcSetDown) .. ')')
+  runner.abort(true)
+
+  -- ...and where the ATC is ON the line: the start 100 m further on, so 30 m of line runs before it, the ATC 8 m
+  -- before the start on the road and a car parked 20 m short of the board, on the line. Not past it: kept.
+  local s2lat = full[11][1] + 100 / 111195
+  local ev10 = { format = 1, id = 'test10', name = 'Test Rally 10', stages = { {
+    id = 'onl', name = 'On Line', lengthM = 3000, radiusM = 1200, centre = event.stages[1].centre,
+    controls = { start = { lat = s2lat, lon = full[11][2] }, ff = event.stages[1].controls.ff,
+      atc = { lat = s2lat - 8 / 111195, lon = full[11][2] } },
+    line = event.stages[1].line } } }
+  files['/earthRally/events/test10.json'] = ev10
+  files['/earthRally/matched/test10__onl.json'] = { format = 1, points = recFrom }
+  local s2x, s2y = toGame(s2lat, full[11][2])
+  car.lat, car.lon = toGeo(s2x, s2y - 28)
+  car.speed = 0
+  local short2 = { car.lat, car.lon }
+  runner.start(ev10, ev10.stages[1])
+  frames(80)
+  T.check(runner.current().state == 'toAtc' and runner.current().checks.atcSetDown == 'driven there'
+    and car.lat == short2[1] and car.lon == short2[2],
+    'short of an ATC on the line: kept where it was parked (' .. tostring(runner.current().checks.atcSetDown) .. ')')
+  runner.abort(true)
+  -- and 10 m into the stage, past that ATC's zone (18 m from the board, so it would be kept without the guard):
+  -- set down before it
+  car.lat, car.lon = toGeo(s2x, s2y + 10)
+  car.speed = 0
+  runner.start(ev10, ev10.stages[1])
+  frames(80)
+  T.check(runner.current().state == 'toAtc' and runner.current().checks.atcSetDown ~= 'driven there',
+    'into the stage past an ATC on the line: set down (' .. tostring(runner.current().checks.atcSetDown) .. ')')
+  runner.abort(true)
+
+  -- an ATC 6 m before the start and 11 m off the line (inside CONTROL_RADIUS_M of it): its zone would end past the
+  -- start line, so the limit is capped at the start zone. A car 6 m into the stage, ~16 m from the board: set down.
+  local ev11 = { format = 1, id = 'test11', name = 'Test Rally 11', stages = { {
+    id = 'tight', name = 'Tight', lengthM = 3000, radiusM = 1200, centre = event.stages[1].centre,
+    controls = { start = { lat = s2lat, lon = full[11][2] }, ff = event.stages[1].controls.ff,
+      atc = (function() local la, lo = toGeo(s2x + 11, s2y - 6) return { lat = la, lon = lo } end)() },
+    line = event.stages[1].line } } }
+  files['/earthRally/events/test11.json'] = ev11
+  files['/earthRally/matched/test11__tight.json'] = { format = 1, points = recFrom }
+  car.lat, car.lon = toGeo(s2x, s2y + 6)
+  car.speed = 0
+  runner.start(ev11, ev11.stages[1])
+  frames(80)
+  T.check(runner.current().state == 'toAtc' and runner.current().checks.atcSetDown ~= 'driven there',
+    'an ATC under 12 m before the start: a car just into the stage is set down (' ..
+    tostring(runner.current().checks.atcSetDown) .. ')')
+  T.check(not runner.current().missedAtc, 'and not counted missed')
+  runner.abort(true)
+
+  -- runner.faceAtc, the auto recce's landing: from the raw ATC point (off the road) to the road 40 m before it
+  car.lat, car.lon, car.speed = alat, alon, 0
+  local fok, fhow = runner.faceAtc(ev7.stages[1])
+  local fx, fy = carXY()
+  T.check(fok and math.abs(fx) < 0.5 and math.abs(fy - (atcY - 40)) < 2,
+    'faceAtc: on the road 40 m before the ATC (' .. tostring(fhow) .. string.format(', %.1f, %.1f', fx, fy - atcY) .. ')')
+  T.check(runner.faceAtc(event.stages[1]) == false, 'faceAtc: a stage with no ATC of its own is left alone')
+  -- no road found (the road map still the last place's): the car LEFT on the raw point, not put 40 m back across a
+  -- field where Run stage would keep it as "driven there"
+  do
+    local propsM = require('earthRally/props')
+    local hadRoad = propsM.roadAt
+    propsM.roadAt = function() return nil end
+    car.lat, car.lon, car.speed = alat, alon, 0
+    local nok, nhow = runner.faceAtc(ev7.stages[1])
+    propsM.roadAt = hadRoad
+    T.check(not nok and car.lat == alat and car.lon == alon,
+      'faceAtc with no road: the car left on the ATC point (' .. tostring(nhow) .. ')')
+  end
+  car.lat, car.lon, car.speed = alat, alon, 0
+  runner.faceAtc(ev7.stages[1])
+  -- and Run stage from there keeps the spot: before the board, so "driven there"
+  runner.start(ev7, ev7.stages[1])
+  frames(80)
+  T.check(runner.current().state == 'toAtc' and runner.current().checks.atcSetDown == 'driven there',
+    'Run stage after faceAtc: the car kept where faceAtc put it (' .. tostring(runner.current().checks.atcSetDown) .. ')')
+  runner.abort(true)
+
   -- Route to start: to the ATC when the stage has its own, else to the start
   local la, lo, what = runner.arrivalPoint(ev7.stages[1])
   T.check(what == 'ATC' and la == alat and lo == alon, 'Route to start: to the stage\'s ATC (' .. tostring(what) .. ')')
@@ -2004,6 +2143,11 @@ do
   local evs = { format = 1, id = 'seq', name = 'Sequence Rally', stages = {
     { id = 'near', name = 'Near', lengthM = 3000, line = line },
     { id = 'away', name = 'Away', lengthM = 3000, line = far },
+    -- far, with an ATC of its own ~100 m before the start -- inside NO_SET_DOWN_M (150), the band where landing at
+    -- the start left Run stage taking the car for "driven there": the auto recce must land at the ATC instead
+    { id = 'awayAtc', name = 'Away ATC', lengthM = 3000, line = far, controls = {
+      start = { lat = far[1][1], lon = far[1][2] }, atc = { lat = far[1][1] - 0.0009, lon = far[1][2] } } },
+    { id = 'awayNoAtc', name = 'Away No ATC', lengthM = 3000, line = far },
     -- a stage each for the blocks that need to be ASKED: a Not now is remembered for the session, so a stage
     -- already declined is never asked again -- which is the point of it, and makes one stage unusable twice
     { id = 'n2', name = 'Near Two', lengthM = 3000, line = line },
@@ -2157,6 +2301,47 @@ do
   T.near(car.lat, far[1][1], 0.01, 'the car really was moved there')
   main.uiAction('autoRecceStop')
   T.check(main.uiState().auto == nil, 'Stop ends the sequence mid-journey')
+
+  -- ------------------------------------------------------------ a far stage WITH an ATC lands at the ATC
+  -- "when you press auto recce, it teliports you to the stage start, this means when you press run stage, you
+  -- unintentinaly skip the ATC" (the user, 2026-11-14). Landing at the start left the car within NO_SET_DOWN_M of
+  -- a near ATC, so Run stage kept it there and the first thing it did was drive past the time control.
+  car.lat, car.lon = line[1][1], line[1][2]
+  local faced, hadFace = 0, runner.faceStage
+  local atced, hadAtc = 0, runner.faceAtc
+  runner.faceStage = function() faced = faced + 1 return true, 'stub' end
+  runner.faceAtc = function() atced = atced + 1 return true, 'stub' end
+  area.state = 'running'
+  T.check(main.uiAction('autoRecce', 'seq', 'awayAtc').ok, 'a far stage with an ATC: the auto recce starts')
+  main.uiAction('autoRecceDownload')
+  area.state = 'done'
+  tick(4)
+  T.check(main.uiState().auto and main.uiState().auto.phase == 'going', 'it goes there (' ..
+    tostring(main.uiState().auto and main.uiState().auto.phase) .. ')')
+  T.near(car.lat, far[1][1] - 0.0009, 1e-6, 'to the ATC, not the start line')
+  T.near(car.lon, far[1][2], 1e-6, 'to the ATC (lon)')
+  local alat, alon, akind = runner.arrivalPoint(evs.stages[3])
+  T.check(akind == 'ATC' and math.abs(alat - car.lat) < 1e-9 and math.abs(alon - car.lon) < 1e-9,
+    'the same point Run stage arrives at (' .. tostring(akind) .. ')')
+  tick(runner.TELEPORT_SETTLE_S + 4)
+  T.check(main.uiState().auto == nil or main.uiState().auto.phase ~= 'going',
+    'the landing has settled and the match begun (' .. tostring(main.uiState().auto and main.uiState().auto.phase) .. ')')
+  T.check(faced == 0, 'and the car is NOT then moved behind the start line (faceStage called ' .. faced .. 'x)')
+  T.check(atced == 1, 'it is set down on the road before the ATC instead (faceAtc called ' .. atced .. 'x)')
+  main.uiAction('autoRecceStop')
+  -- the control: the same far stage WITHOUT an ATC still lands at the start and is turned along the stage
+  car.lat, car.lon = line[1][1], line[1][2]
+  area.state = 'running'
+  main.uiAction('autoRecce', 'seq', 'awayNoAtc')
+  main.uiAction('autoRecceDownload')
+  area.state = 'done'
+  tick(4)
+  T.near(car.lat, far[1][1], 1e-6, 'no ATC: lands at the start')
+  tick(runner.TELEPORT_SETTLE_S + 4)
+  T.check(faced == 1 and atced == 1, 'and is turned along the stage there (faceStage ' .. faced .. 'x, faceAtc ' ..
+    atced .. 'x)')
+  runner.faceStage, runner.faceAtc = hadFace, hadAtc
+  main.uiAction('autoRecceStop')
 
   -- ------------------------------------------------------------ a second press while one runs is refused
   car.lat, car.lon = line[1][1], line[1][2]

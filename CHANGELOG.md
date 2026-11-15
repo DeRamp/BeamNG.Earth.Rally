@@ -3,6 +3,18 @@
 Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/writing-standard.md). Downloads:
 [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
 
+## 1.5.2-alpha: the time control stays (2026-11-14)
+
+Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)
+(official 1.6+ works, without the auto recce).
+
+**Run stage** no longer skips the arrival time control.
+
+### Fixed
+* **Auto recce** takes you to the stage's time control, set on the road before its board, not to the start line.
+* **Run stage** after **Auto recce**, **Go to start** or a stopped **Recce** no longer counts the time control missed.
+* A car standing on the stage is moved back before the time control; a car parked short of it keeps its spot.
+
 ## 1.5.1-alpha: the menus clear (2026-11-14)
 
 Works with BeamNG.drive 0.40.5 · BeamNG.Earth modding API 1.6+ (1.9 for the auto recce).

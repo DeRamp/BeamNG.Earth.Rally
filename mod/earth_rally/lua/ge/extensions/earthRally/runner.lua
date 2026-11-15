@@ -806,6 +806,31 @@ local function toStartLine(veh, backM)
   return backM, la and { lat = la, lon = lo } or nil, how
 end
 
+-- The car set down CAR_BEFORE_ATC_M before the ATC at game point `a`, on the road it is on (the road map's road
+-- beside it, best aligned with the way on to the start point `sp`, walked back along its bends), facing along it;
+-- never the organisers' point itself, which can be metres off the road. `pz` is a height to look for the ground near.
+-- Returns the spot ({ x, y, z, dx, dy, road }) without moving anything.
+local function spotBeforeAtc(a, sp, pz)
+  local spot = M.roadSpot(a.x, a.y, { x = sp.x - a.x, y = sp.y - a.y }, -M.CAR_BEFORE_ATC_M, sp)
+  local z, hit = groundNear(spot.x, spot.y, spot.z or pz)
+  -- (a road from the place before the teleport, its road map not yet rebuilt here: its height is not the ground's)
+  if spot.road and hit == false then
+    spot = M.roadSpot(a.x, a.y, { x = sp.x - a.x, y = sp.y - a.y }, 0, sp)
+    spot.road = false
+    z = groundNear(a.x, a.y, pz)
+    spot.x, spot.y = a.x - spot.dx * M.CAR_BEFORE_ATC_M, a.y - spot.dy * M.CAR_BEFORE_ATC_M
+  end
+  spot.z = z + 1.0
+  return spot
+end
+
+-- The car put on that spot. Returns how ('on the road map' / 'no road on the map there').
+local function setDownBeforeAtc(veh, a, sp, pz)
+  local spot = spotBeforeAtc(a, sp, pz)
+  M.placeCar(veh, spot, { x = spot.dx, y = spot.dy, z = 0 })
+  return spot.road and 'on the road map' or 'no road on the map there'
+end
+
 local function stepPlace()
   local p, veh = carPos()
   if not veh then fail('no car') return end
@@ -817,23 +842,35 @@ local function stepPlace()
     -- off the road
     local _, sp = aheadDir(run.line, run.cum, run.startM)
     local d2a = p and ((p.x - a.x) ^ 2 + (p.y - a.y) ^ 2)
-    local near = p and not run.teleported and d2a <= M.NO_SET_DOWN_M ^ 2 and d2a > M.DRIVEN_THERE_MIN_M ^ 2
+    -- On the stage: within START_ZONE_OFF_M of the run's line anywhere along it (the line keeps at most
+    -- LINE_BEFORE_START_M before the start, so that is from its first point on). Never "driven there", however near
+    -- the board: a car there has gone by the ATC, and leaving it made the run's first act a missed time control
+    -- (the user, 2026-11-14: Auto recce, Go to start or a stopped Recce left the car behind the start line, an ATC
+    -- under NO_SET_DOWN_M before it, and Run stage skipped the ATC). Read along the road, so a hairpin after the
+    -- start is still on the stage. Wider than stepToAtc's own missed-ATC test (from START_ZONE_BEFORE_M before the
+    -- start, within 100 m of it): a car anywhere on the stage is past the ATC. The cost: a stage that shares its
+    -- approach road, or loops back past its ATC, has a car parked on that shared road set down before the board.
+    -- Not a straight-line "nearer the start than the ATC" test: that one let a car 30 m into a stage with an ATC
+    -- 20 m before it through, and moved players parked on approach roads from the start's side.
+    -- Where the ATC itself is ON the line (under 30 m before the start), only from past its zone: a car parked short
+    -- of the board there is the player's, and is kept. Never later than the start zone (START_ZONE_BEFORE_M before
+    -- the line), where stepToAtc counts the miss: an ATC under 12 m before the start would otherwise push it past
+    -- cars on the line. An ATC before the line's first point reads as that point (along 0) and adds nothing; one
+    -- more than CONTROL_RADIUS_M off the line adds nothing either.
+    local _, _, along, off = geo.locate(run.line, run.cum, p)
+    local from = 0
+    local _, _, atcAlong, atcOff = geo.locate(run.line, run.cum, a)
+    if atcAlong > 0 and atcOff <= M.CONTROL_RADIUS_M then
+      from = math.min(atcAlong + M.CONTROL_RADIUS_M, run.startM - M.START_ZONE_BEFORE_M)
+    end
+    local past = along >= from and off <= M.START_ZONE_OFF_M
+    local near = p and not run.teleported and not past and d2a <= M.NO_SET_DOWN_M ^ 2
+      and d2a > M.DRIVEN_THERE_MIN_M ^ 2
     if near then
       -- (driven here, e.g. by Route to start: left where it is)
       run.checks.atcSetDown = 'driven there'
     else
-      local spot = M.roadSpot(a.x, a.y, { x = sp.x - a.x, y = sp.y - a.y }, -M.CAR_BEFORE_ATC_M, sp)
-      local z, hit = groundNear(spot.x, spot.y, spot.z or p.z)
-      -- (a road from the place before the teleport, its road map not yet rebuilt here: its height is not the ground's)
-      if spot.road and hit == false then
-        spot = M.roadSpot(a.x, a.y, { x = sp.x - a.x, y = sp.y - a.y }, 0, sp)
-        spot.road = false
-        z = groundNear(a.x, a.y, p.z)
-        spot.x, spot.y = a.x - spot.dx * M.CAR_BEFORE_ATC_M, a.y - spot.dy * M.CAR_BEFORE_ATC_M
-      end
-      spot.z = z + 1.0
-      M.placeCar(veh, spot, { x = spot.dx, y = spot.dy, z = 0 })
-      run.checks.atcSetDown = spot.road and 'on the road map' or 'no road on the map there'
+      run.checks.atcSetDown = setDownBeforeAtc(veh, a, sp, p.z)
     end
     setState('toAtc')
     say('Drive to the time control and stop at its red board.', 6, 'info', run.stage.name)
@@ -1520,6 +1557,27 @@ function M.faceStage(stage, eventId)
   end
   -- 3. no road known here: where it stands, turned along the stage
   return M.placeCar(veh, { x = p.x, y = p.y, z = p.z + 0.3 }, { x = dir.x, y = dir.y, z = 0 }), 'turned only'
+end
+
+-- After a teleport to a stage's ATC (the auto recce's landing: runner.arrivalPoint): the car set down 40 m before the
+-- board on the road, facing it, as Run stage would put it -- not left on the organisers' raw point, which can be off
+-- the road in the bush, for the whole match. Returns true and how once done; false when the stage has no ATC of its
+-- own, there is no car, or no road is found there. With no road (the road map can still be the last place's just
+-- after a teleport) the car is LEFT on the raw point: inside DRIVEN_THERE_MIN_M of it, so Run stage sets it down
+-- later on a road map that has caught up. Put 40 m back across a field instead, it would be kept there as "driven
+-- there".
+function M.faceAtc(stage)
+  local p, veh = carPos()
+  if not (p and veh and stage.line and #stage.line >= 1) then return false end
+  local lat, lon, kind = M.arrivalPoint(stage)
+  if kind ~= 'ATC' then return false end
+  local s = stage.controls and stage.controls.start or { lat = stage.line[1][1], lon = stage.line[1][2] }
+  local a, sp = ctlGame({ lat = lat, lon = lon }), ctlGame(s)
+  if not (a and sp) then return false end
+  local spot = spotBeforeAtc(a, sp, p.z)
+  if not spot.road then return false, 'no road on the map there' end
+  M.placeCar(veh, spot, { x = spot.dx, y = spot.dy, z = 0 })
+  return true, 'on the road map'
 end
 
 -- A reset by the player (the game's trackVehReset hook, from main.lua: once a press of reset, recover or the radial
