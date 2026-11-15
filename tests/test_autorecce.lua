@@ -587,6 +587,16 @@ do
   T.check(files[path .. '.part'] == nil, 'and no part file is left behind')
   T.check(events.matched('test-event', 'test-stage') ~= nil, 'events.matched sees it with no Reload')
   FS.renameFile = nil
+  -- bridges added by tools/auto_recce.py --bridges-only are kept when the game's recce (which cannot see them)
+  -- matches the stage again
+  local m = events.matched('test-event', 'test-stage')
+  m.bridges = { { 1.0, 2.0, 1.0, 2.001 } }
+  m.bridgesSource = 'test'
+  events.saveMatched('test-event', 'test-stage', m)
+  local again = run(EVENT, stage)
+  local kept = matchedFile()
+  T.check(again.ok == true and kept and type(kept.bridges) == 'table' and #kept.bridges == 1 and
+          kept.bridgesSource == 'test', 'a second auto recce keeps the bridges added to the line before')
 end
 
 ------------------------------------------------------------------------------------------ 10: answered twice

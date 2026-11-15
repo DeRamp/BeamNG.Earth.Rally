@@ -105,6 +105,14 @@ end
 -- updated with it, or the menu and the runner would go on seeing no matched line until the next Reload.
 function M.saveMatched(eventId, stageId, matched)
   local path = M.MATCHED_DIR .. key(eventId, stageId)
+  -- (the bridges added to the line matched before -- tools/auto_recce.py --bridges-only, from BeamNG.Earth's level
+  --  ranges -- are kept when the game's recce, which cannot see bridges, matches it again: as lat / lon they hold
+  --  the new line too)
+  local okOld, old = pcall(M.matched, eventId, stageId)
+  if type(matched) == 'table' and type(matched.bridges) == 'table' and #matched.bridges == 0 and okOld and
+     type(old) == 'table' and type(old.bridges) == 'table' and #old.bridges > 0 then
+    matched.bridges, matched.bridgesSource = old.bridges, old.bridgesSource or 'kept from the line matched before'
+  end
   -- (through a temporary file where the game's file system can rename one, so a matched line is replaced whole: a
   -- write interrupted part way through would otherwise leave a shorter line that still passes lineValid. Where it
   -- cannot, the single jsonWriteFile below is the write.)

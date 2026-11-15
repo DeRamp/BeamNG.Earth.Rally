@@ -122,6 +122,61 @@ M.TWISTY_R = 60          -- m, at least, each corner's tightest (a four or faste
 M.TWISTY_DEG = 60        -- degrees, at most, each
 
 local function mild(c) return c.minRadius >= M.TWISTY_R and c.angleDeg <= M.TWISTY_DEG end
+------------------------------------------------------------------------------------------ long sweepers
+
+-- A long sweeping bend too open for geo.corners (which keeps a radius of maxRadius, 200 m, or less): a run of one
+-- direction gentler than that but tighter than SWEEP_R, over SWEEP_MIN_M or more and SWEEP_DEG or more in all, on
+-- curvature smoothed over SWEEP_SMOOTH_M (geo.curvature's turn, k at that smoothing), with gaps of SWEEP_GAP_M joined.
+-- Only where no corner was found: a sweeper is a note of its own, never laid over a corner. The game measures its
+-- number and length as for any corner ("six long"). (The user, 2026-11-14: the long sweeper at the start of
+-- otr24 shadow buck -- 45 degrees over 500 m at 300 to 900 m radius -- was not in the notes.)
+M.SWEEP_R = 1000
+M.SWEEP_DEG = 30
+M.SWEEP_MIN_M = 100
+M.SWEEP_GAP_M = 30
+M.SWEEP_SMOOTH_M = 40
+
+-- turn, k: geo.curvature at SWEEP_SMOOTH_M; corners: geo.corners' list. Returns the corners and the sweepers in one
+-- list in order (a sweeper: { i0, i1, dir, angleDeg, minRadius, sweeper = true }).
+function M.sweepers(turn, k, step, corners)
+  local n = #k
+  local covered = {}
+  for _, c in ipairs(corners) do for i = c.i0, c.i1 do covered[i] = true end end
+  local kMin, gapN = 1 / M.SWEEP_R, max(1, floor(M.SWEEP_GAP_M / step + 0.5))
+  local runs, i = {}, 1
+  while i <= n do
+    if abs(k[i]) >= kMin then
+      local sign = k[i] > 0 and 1 or -1
+      local j = i
+      while j + 1 <= n and k[j + 1] * sign >= kMin do j = j + 1 end
+      local last = runs[#runs]
+      if last and last.sign == sign and i - last.i1 <= gapN then last.i1 = j
+      else runs[#runs + 1] = { i0 = i, i1 = j, sign = sign } end
+      i = j + 1
+    else
+      i = i + 1
+    end
+  end
+  local out = {}
+  for _, c in ipairs(corners) do out[#out + 1] = c end
+  for _, r in ipairs(runs) do
+    if (r.i1 - r.i0) * step >= M.SWEEP_MIN_M then
+      local angle, kMax, hit = 0, 0, false
+      for j = r.i0, r.i1 do
+        angle = angle + turn[j]
+        if abs(k[j]) > kMax then kMax = abs(k[j]) end
+        if covered[j] then hit = true end
+      end
+      if not hit and abs(math.deg(angle)) >= M.SWEEP_DEG then
+        out[#out + 1] = { i0 = r.i0, i1 = r.i1, dir = r.sign > 0 and 'left' or 'right', angleDeg = abs(math.deg(angle)),
+                          minRadius = kMax > 0 and 1 / kMax or huge, sweeper = true }
+      end
+    end
+  end
+  table.sort(out, function(a, b) return a.i0 < b.i0 end)
+  return out
+end
+
 local function tightish(c)
   return c.minRadius <= M.CHICANE_R and c.angleDeg >= M.CHICANE_DEG[1] and c.angleDeg <= M.CHICANE_DEG[2]
 end
@@ -241,6 +296,18 @@ M.JUMP_CREST_DG = 0.14   -- a jump is a crest this big at least ...
 M.BIG_JUMP_LIFT = 2.4
 M.BIG_JUMP_DG = 0.22     -- ... a big one this big, and BIG_JUMP_LIFT
 M.JUMP_MIN_V_MS = 15
+-- Blind crests (M.blind): from an eye SIGHT_EYE_M over the road, the road SIGHT_TARGET_M over its surface is hidden
+-- behind the road between within SIGHT_LOOK_M; blind where that sight is shorter than SIGHT_S seconds at the
+-- modelled speed (and SIGHT_MAX_M), big under SIGHT_BIG_S. The crest is the summit that hides it (the highest point
+-- over the sightline), one per BLIND_EVENT_M, and none that close to a crest the grade change found.
+M.SIGHT_EYE_M = 1.1
+M.SIGHT_TARGET_M = 0.3
+M.SIGHT_LOOK_M = 300
+M.SIGHT_S = 2.0
+M.SIGHT_BIG_S = 1.0
+M.SIGHT_MAX_M = 150
+M.SIGHT_MIN_V_MS = 12    -- slower than this, a hidden road ahead is no surprise
+M.BLIND_EVENT_M = 100    -- one blind crest per this far (the point that hides the road moves over a long top)
 M.HILL_GRADE = 0.08      -- "up" / "down": at least this steep ...
 M.HILL_M = 100           -- ... for at least this far
 M.G = 9.81
@@ -262,6 +329,51 @@ local function heightsOf(pts)
     sm[i] = s / (b - a + 1)
   end
   return sm, zs
+end
+
+-- The blind crests over heights z (smoothed, every `step` m) at speeds v: { { i (the summit), size = 'big' | nil,
+-- sight (m: the shortest sight it leaves) }... }, worst first and one per BLIND_EVENT_M. clean(i): the heights round i
+-- are a road's (heights' BAD_GRADE test); nil: all are.
+function M.blind(z, step, v, clean)
+  local n = #z
+  local look = max(1, floor(M.SIGHT_LOOK_M / step))
+  local hits = {}
+  for i = 1, n - 1 do
+    local vi = v[i] or 0
+    if vi >= M.SIGHT_MIN_V_MS then
+      local need = min(M.SIGHT_MAX_M, vi * M.SIGHT_S)
+      local eye = z[i] + M.SIGHT_EYE_M
+      local maxS, arg = -huge, nil
+      for j = i + 1, min(n, i + look) do
+        local d = (j - i) * step
+        if d > need then break end
+        -- (the road at j hidden behind the highest of the road between, as seen from the eye)
+        if arg and (z[j] + M.SIGHT_TARGET_M - eye) / d < maxS then
+          local t = d / vi
+          if not hits[arg] or t < hits[arg].t then hits[arg] = { t = t, sight = d } end
+          break
+        end
+        local s = (z[j] - eye) / d
+        if s > maxS then maxS, arg = s, j end
+      end
+    end
+  end
+  local list = {}
+  for i, h in pairs(hits) do
+    if not clean or clean(i) then list[#list + 1] = { i = i, t = h.t, sight = h.sight } end
+  end
+  table.sort(list, function(a, b)
+    if a.t ~= b.t then return a.t < b.t end
+    return a.i < b.i
+  end)
+  local e = max(1, floor(M.BLIND_EVENT_M / step + 0.5))
+  local out = {}
+  for _, h in ipairs(list) do
+    local ok = true
+    for _, o in ipairs(out) do if abs(o.i - h.i) <= e then ok = false break end end
+    if ok then out[#out + 1] = { i = h.i, size = h.t < M.SIGHT_BIG_S and 'big' or nil, sight = h.sight } end
+  end
+  return out
 end
 
 -- pts: the stage's samples (with z), v: M.speeds over them. Returns
@@ -349,6 +461,25 @@ function M.heights(pts, step, v)
                               alone = d >= M.ALONE_DIP_DG, dg = d }
     end
   end
+  -- blind crests, from the sightline: the road ahead hidden behind a rise sooner than the car needs to see it (a
+  -- long crest, a grade easing off at the top of a climb, that the grade change over 20 m is too short to see)
+  -- (not the rim of a hollow, which hides the hollow's bottom: that is a dip, called as one or given way to a
+  --  stronger crest -- any hollow's peak within OPPOSITE_M, taken or not)
+  local eb = max(1, floor(M.BLIND_EVENT_M / step + 0.5))
+  for _, sc in ipairs(M.blind(z, step, v, clean)) do
+    local near = false
+    for _, ev in ipairs(events) do
+      if ev.kind ~= 'dip' and abs(ev.i - sc.i) <= eb then near = true break end
+    end
+    for _, ci in ipairs(cands) do
+      if near then break end
+      if dg[ci] > 0 and abs(ci - sc.i) <= eo then near = true end
+    end
+    if not near then
+      events[#events + 1] = { i = sc.i, kind = 'crest', size = sc.size, alone = true, dg = dg[sc.i], sight = sc.sight }
+    end
+  end
+  table.sort(events, function(a, b) return a.i < b.i end)
   local hills, i = {}, 1
   local need = floor(M.HILL_M / step + 0.5)
   while i <= n do

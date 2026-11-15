@@ -80,7 +80,10 @@ function M.stageCorners(line, cum, o)
     return false
   end
   local corners = {}
-  for _, c in ipairs(geo.corners(stagePts, M.NOTE_STEP_M, o.corners)) do
+  -- (and the long sweepers geo.corners leaves out: pacenotes.sweepers)
+  local found = geo.corners(stagePts, M.NOTE_STEP_M, o.corners)
+  local sTurn, sK = geo.curvature(stagePts, M.NOTE_STEP_M, pacenotes.SWEEP_SMOOTH_M)
+  for _, c in ipairs(pacenotes.sweepers(sTurn, sK, M.NOTE_STEP_M, found)) do
     if c.i0 > clear and c.i1 < #stagePts and not muted(c.i0) and not muted(c.i1) then corners[#corners + 1] = c end
   end
   -- (a chicane, or a twisty run of fast corners, is one note: one entry here, so the count is still one per note)

@@ -261,6 +261,20 @@ do
     { 'straight', 400 } }), { startM = 0, finishM = 1e9, quatFn = qf, speaks = { finish = true } }))
   T.check(has(ttc, '1:caution1,4:corner$'), 'a fast tightening corner, a voice with no shapes: a care (' ..
     show(ttc) .. ')')
+  -- the user's test drive (2026-11-14): a long crest the grade change over 20 m is too short to see is blind, so
+  -- called (from the sightline); and a long sweeper too open for a corner is one
+  local longCrest = notes(build(road({ { 'straight', 1500 } }, hump(750, 240, 6))))
+  local nCrest = 0
+  for _, n in ipairs(longCrest) do for _ in n:gmatch('rest') do nCrest = nCrest + 1 end end
+  T.check(nCrest == 1, 'a 6 m crest over 240 m, flat out: one crest (' .. show(longCrest) .. ')')
+  local gentle = notes(build(road({ { 'straight', 1500 } }, hump(750, 600, 3))))
+  T.check(not has(gentle, 'rest'), 'a 3 m rise over 600 m: not blind, no crest (' .. show(gentle) .. ')')
+  local sweep = build(road({ { 'straight', 400 }, { 'arc', 500, 50 }, { 'straight', 400 } }))
+  local sw = notes(sweep)
+  T.check(has(sw, '4:corner') and sweep.corners == 1, 'a 50 degree sweeper at 500 m radius: a corner (' ..
+    show(sw) .. ')')
+  local wobble = build(road({ { 'straight', 400 }, { 'arc', 900, 10 }, { 'straight', 400 } }))
+  T.check(wobble.corners == 0, 'a 10 degree bend at 900 m: no corner (' .. show(notes(wobble)) .. ')')
   -- a casual voice says no corner shape: a crest inside a corner is "over crest" after it, not a silent shape
   local casualSet = { finish = true, crest = true, overJump = true, overCrest = true, intoCrest = true,
                       bigCrest = true, smallCrest = true, brakeOverCrest = true, keepLeftOverCrest = true,
