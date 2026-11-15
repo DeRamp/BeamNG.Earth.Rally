@@ -322,6 +322,15 @@ do
   T.check(sp.you.perRound[1].pos == 1 and sp.you.points == 25 and ann.points == 25 and ann.perRound[1].pos == 1 and
     bob.points == 20, 'you 1st: 25; Ann still 1st among the crews (25), Bob 2nd (20)')
 
+  -- ranked over part of the rally (a stage off the official distance left out, the rest over 75%): your cell says so
+  T.check(sp.you.perRound[1].partial == nil, 'ranked over the whole rally: no partial mark')
+  local pev = { stages = { { id = 's', name = 'S', lengthM = 10000 }, { id = 't', name = 'T', lengthM = 1000 } } }
+  local pb = { passes = { { ss = 'SS1', stage = 's', km = 10, field = { crew(100, 'Ann'), crew(102, 'Bob') } },
+    { ss = 'SS2', stage = 't', km = 1, field = { crew(40, 'Ann'), crew(41, 'Bob') } } } }
+  local spp = B.standings({}, { { event = pev, board = pb, bestByStage = { s = 99, t = 60 }, lineMByStage = { t = 2000 } } })
+  T.check(spp.you and spp.you.perRound[1].pos == 1 and spp.you.perRound[1].partial == true and
+    spp.rows[1].perRound[1].partial == nil, "ranked over the stages that match: your cell marked partial, the crews' not")
+
   -- topRows: the top N and you, the one home of that list
   local list = {}
   for i = 1, 12 do list[i] = { pos = i, name = 'C' .. i, totalS = 100 + i, gapS = i - 1 } end

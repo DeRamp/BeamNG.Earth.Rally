@@ -37,7 +37,7 @@
         <template v-for="(row, i) in rows" :key="i">
           <div class="er-trow" :class="{ me: row.you }" :style="cols">
             <span class="er-pos">{{ row.pos }}</span><span class="er-clip">{{ row.name }}</span>
-            <span v-for="(p, k) in arr(row.perRound)" :key="k" class="er-rp" :class="{ w: p.pos === 1, x: !p.pos }">{{ cell(p) }}</span>
+            <span v-for="(p, k) in arr(row.perRound)" :key="k" class="er-rp" :class="{ w: p.pos === 1 && !p.partial, x: !p.pos }">{{ cell(p) }}</span>
             <span class="er-pts">{{ row.points }}</span>
           </div>
         </template>
@@ -45,7 +45,7 @@
           <div class="er-trow er-gap" :style="cols"><span>⋮</span></div>
           <div class="er-trow me" :style="cols">
             <span class="er-pos">{{ you.pos }}</span><span>{{ you.name }}</span>
-            <span v-for="(p, k) in arr(you.perRound)" :key="k" class="er-rp" :class="{ w: p.pos === 1, x: !p.pos }">{{ cell(p) }}</span>
+            <span v-for="(p, k) in arr(you.perRound)" :key="k" class="er-rp" :class="{ w: p.pos === 1 && !p.partial, x: !p.pos }">{{ cell(p) }}</span>
             <span class="er-pts">{{ you.points }}</span>
           </div>
         </template>
@@ -63,6 +63,7 @@
         </div>
         <div v-if="pointsLine" class="er-foot-note er-pad">{{ pointsLine }}</div>
         <div v-if="nrLine" class="er-foot-note er-pad">{{ nrLine }}</div>
+        <div v-if="anyPartial" class="er-foot-note er-pad">* your place over the stages that match; crews' points are from the full rally.</div>
       </div>
     </div>
   </section>
@@ -83,8 +84,10 @@ const you = computed(() => st.value.you || null)
 const rows = computed(() => arr(st.value.rows))
 const rounds = computed(() => arr(st.value.rounds))
 const cols = computed(() => ({ gridTemplateColumns: `70px minmax(0, 1fr) repeat(${rounds.value.length}, 52px) 90px` }))
-// a round's cell: its points, "–" when not placed, "NR" for yours in a round not ranked
-const cell = p => (p.pos ? p.points : p.notRanked ? "NR" : "–")
+// a round's cell: its points ("25*" for yours from a ranking over part of the rally), "–" when not placed, "NR" for
+// yours in a round not ranked
+const cell = p => (p.pos ? (p.partial ? `${p.points}*` : p.points) : p.notRanked ? "NR" : "–")
+const anyPartial = computed(() => !!(you.value && arr(you.value.perRound).some(p => p.pos && p.partial)))
 // "R4 is not ranked: too few of its stages match the official distance, so you can't score there."
 const nrLine = computed(() => {
   const nr = rounds.value.filter(r => r.notRanked).map(r => `R${r.round}`)

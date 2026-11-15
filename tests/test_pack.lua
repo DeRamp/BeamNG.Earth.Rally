@@ -626,6 +626,38 @@ do
     'the kept rally is not overwritten: the new pack is same-name-2 (' .. tostring(kb and (kb.eventId or kb.why)) .. ')')
 end
 
+-- review round 3: a round that could not be read this time is retired (it is not in the season now, whatever id it
+-- was given); an event file another pack has written under a round's old id is never marked
+do
+  local P = IMP .. 'Retire/'
+  files[P .. 'a.kml'] = kml('RA', { { 'Ra Lane', 67.0, -17.0, 20 } })
+  files[P .. 'b.kml'] = kml('RB', { { 'Rb Lane', 67.1, -17.0, 20 } })
+  files[P .. 'c.kml'] = kml('RC', { { 'Rc Lane', 67.2, -17.0, 20 } })
+  files[P .. 'season.json'] = J({ format = 1, name = 'Ret Cup', rounds = {
+    { round = 1, name = 'Alpha', map = 'a.kml' }, { round = 2, name = 'Bravo', map = 'b.kml' },
+    { round = 3, name = 'Charlie', map = 'c.kml' } } })
+  imp.scan()
+  T.check(files['/earthRally/events/ret-cup-bravo.json'] and files['/earthRally/events/ret-cup-charlie.json'],
+    'retire: imported')
+  -- Bravo's map now has no line (its id is given, its rally cannot be made); Charlie taken out, and its event file
+  -- meanwhile written by another pack
+  files[P .. 'b.kml'] = kml('RB', {})
+  files['/earthRally/events/ret-cup-charlie.json'].pack = { file = 'Other Pack' }
+  files[P .. 'season.json'] = J({ format = 1, name = 'Ret Cup', rounds = {
+    { round = 1, name = 'Alpha', map = 'a.kml' }, { round = 2, name = 'Bravo', map = 'b.kml' } } })
+  imp.scan()
+  local sea = files['/earthRally/seasons/ret-cup.json']
+  local b, c = files['/earthRally/events/ret-cup-bravo.json'], files['/earthRally/events/ret-cup-charlie.json']
+  T.check(sea and #sea.rounds == 1 and b and type(b.retired) == 'table',
+    'a round given its id but not made this time: not in the season, retired')
+  T.check(c and c.retired == nil, "an event file another pack wrote under an old round's id: not marked retired")
+  T.check(files['/earthRally/events/ret-cup-alpha.json'].retired == nil, 'a round still in the season: not retired')
+  -- Bravo put right: written afresh, not retired
+  files[P .. 'b.kml'] = kml('RB', { { 'Rb Lane', 67.1, -17.0, 20 } })
+  imp.scan()
+  T.check(files['/earthRally/events/ret-cup-bravo.json'].retired == nil, 'put right: no longer retired')
+end
+
 -- Windows' Thumbs.db and desktop.ini are not part of a pack
 do
   T.check(pack._ignored('Thumbs.db') and pack._ignored('THUMBS.DB') and pack._ignored('Desktop.ini') and

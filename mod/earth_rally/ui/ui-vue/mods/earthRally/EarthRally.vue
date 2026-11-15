@@ -102,12 +102,15 @@
                    the column reads as one question. Deliberately NOT gated on st.autoOk: it removes files and asks
                    BeamNG.Earth for nothing, so a player on a stock BeamNG.Earth still has their way back from a
                    recce they are unhappy with -- gating it the way Auto recce is gated would lock out exactly the
-                   players with no auto recce to fall back on. A driven recce is confirmed on the stage page, where
-                   there is room to say what is lost; the row opens it rather than deleting from under them. -->
-              <BngButton v-else-if="s.line === 'matched'" :accent="ACCENTS.outlined" :disabled="busy" @click.stop="action('reset', rly.id, s.id)">Reset</BngButton>
+                   players with no auto recce to fall back on. A driven recce, or any line with times on it (they
+                   stop being placed), is confirmed on the stage page, where there is room to say what is lost; the
+                   row opens it rather than deleting from under them. -->
+              <BngButton v-else-if="s.line === 'matched' && !s.best" :accent="ACCENTS.outlined" :disabled="busy" @click.stop="action('reset', rly.id, s.id)">Reset</BngButton>
               <BngButton v-else-if="s.line" :accent="ACCENTS.outlined" @click.stop="askReset(rly.id, s.id)">Reset</BngButton>
             </span>
-            <span class="er-r er-mono" :class="{ 'er-none': !s.best }">{{ s.best ? time(s.best) : "–" }}</span>
+            <!-- Old line: it has times, none on the line it runs on now (menu.lua, oldLine): not placed, not driven -->
+            <span v-if="s.oldLine" class="er-r er-none" :title="time(s.best)">Old line</span>
+            <span v-else class="er-r er-mono" :class="{ 'er-none': !s.best }">{{ s.best ? time(s.best) : "–" }}</span>
             <!-- Place: the better of your placings over the stage's passes, against the real field -->
             <span v-if="rly.hasBoard" class="er-plc"><template v-if="s.place">{{ ord(s.place.pos) }}<small>of {{ s.place.of }}</small></template><span v-else class="er-none">–</span></span>
             <span class="er-go">›</span>
@@ -169,23 +172,34 @@
                  button is already absent and Reset is simply its v-else-if: the row keeps four buttons, never
                  five. A matched line goes at once (1.25 s to make again); a driven recce asks first, because it
                  cost the stage, driven, and cannot be got back. -->
-            <BngButton v-else-if="stg.line === 'matched'" :accent="ACCENTS.outlined" :disabled="busy" @click="action('reset', stg.eventId, stg.id)">Reset</BngButton>
-            <BngButton v-else-if="stg.line && !confirmReset" :accent="ACCENTS.outlined" @click="confirmReset = true">Reset</BngButton>
-            <BngButton :accent="ACCENTS.secondary" :disabled="busy" @click="action('recce', stg.eventId, stg.id)">Recce</BngButton>
+            <BngButton v-else-if="stg.line === 'matched' && !stg.best" :accent="ACCENTS.outlined" :disabled="busy" @click="action('reset', stg.eventId, stg.id)">Reset</BngButton>
+            <BngButton v-else-if="stg.line && !confirmReset" :accent="ACCENTS.outlined" @click="confirmRecce = false; confirmReset = true">Reset</BngButton>
+            <BngButton :accent="ACCENTS.secondary" :disabled="busy" @click="recce">Recce</BngButton>
           </div>
-          <!-- The confirm, for a driven recce only. Confirming the cheap case as well would be worse than not
-               confirming at all: it teaches clicking through, and the once it mattered that habit would carry. -->
-          <div v-if="confirmReset && stg.line && stg.line !== 'matched'" class="er-card er-confirm">
+          <!-- The confirm: for a driven recce, and for a matched line with times on it (they stop being placed).
+               A matched line with no times is not confirmed: confirming the cheap case would teach clicking
+               through, and the once it mattered that habit would carry. -->
+          <div v-if="confirmReset && stg.line" class="er-card er-confirm">
             <div>
-              <b>Remove the recce you drove?</b><br>
+              <b>{{ stg.line === "matched" ? "Remove the matched line?" : "Remove the recce you drove?" }}</b><br>
               <!-- It does NOT promise the auto recce will manage one here: whether the map has roads for this
                    stage on this computer is only known by asking for them, and a confirm that guessed would be
                    worse than one that does not say. -->
-              <span>This cannot be undone. Afterwards you can run the auto recce, or drive the recce again.</span>
+              <span v-if="stg.line === 'matched'">Afterwards you can run the auto recce again, or drive the recce.</span>
+              <span v-else>This cannot be undone. Afterwards you can run the auto recce, or drive the recce again.</span>
+              <template v-if="stg.best"><br><span>{{ PLACED_WARN }}</span></template>
             </div>
             <div class="er-confirm-row">
               <BngButton :accent="ACCENTS.outlined" @click="confirmReset = false">Keep it</BngButton>
-              <BngButton :accent="ACCENTS.main" :disabled="busy" @click="confirmReset = false; action('reset', stg.eventId, stg.id)">Remove the recce</BngButton>
+              <BngButton :accent="ACCENTS.main" :disabled="busy" @click="confirmReset = false; action('reset', stg.eventId, stg.id)">{{ stg.line === "matched" ? "Remove the line" : "Remove the recce" }}</BngButton>
+            </div>
+          </div>
+          <!-- A new recce over a line with times on it: said once before it starts (the new line replaces this one) -->
+          <div v-if="confirmRecce && stg.line && stg.best" class="er-card er-confirm">
+            <div><b>Drive a new recce?</b><br><span>{{ PLACED_WARN }}</span></div>
+            <div class="er-confirm-row">
+              <BngButton :accent="ACCENTS.outlined" @click="confirmRecce = false">Not now</BngButton>
+              <BngButton :accent="ACCENTS.main" :disabled="busy" @click="confirmRecce = false; action('recce', stg.eventId, stg.id)">Recce</BngButton>
             </div>
           </div>
           <!-- beside the row, never a tooltip: a disabled BngButton takes no pointer events and can never show one -->
@@ -445,10 +459,19 @@ function openRally(id, redirect = true) {
 // it must not survive leaving the page: a confirm still up when another stage is opened would sit over a line it
 // was never asked about.
 const confirmReset = ref(false)
+// A new recce over a line that has times on it asks first, as Reset does: those times stop being placed.
+const confirmRecce = ref(false)
+const PLACED_WARN = "If the new line runs differently, your times here stop counting on the leaderboards (they stay in Your runs)."
+function recce() {
+  const s = stg.value
+  if (s && s.line && s.best) { confirmReset.value = false; confirmRecce.value = true }
+  else if (s) action("recce", s.eventId, s.id)
+}
 
 function openStage(eventId, stageId) {
   sel.value = { ...sel.value, eventId, stageId, pass: null }
   confirmReset.value = false
+  confirmRecce.value = false
   loadStage(eventId, stageId)
   go("stage")
 }
@@ -458,8 +481,8 @@ function choosePass(ss) {
   loadStage(sel.value.eventId, sel.value.stageId, ss)
 }
 
-// Reset pressed on a list row whose line was driven: open the stage and put the confirm up there, rather than
-// deleting from under the player in a row that has no room to say what is lost.
+// Reset pressed on a list row whose line was driven, or that has times: open the stage and put the confirm up
+// there, rather than deleting from under the player in a row that has no room to say what is lost.
 function askReset(eventId, stageId) {
   openStage(eventId, stageId)
   confirmReset.value = true

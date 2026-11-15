@@ -583,7 +583,7 @@ local function adopt(gone, match)
   for _, name in ipairs(names) do
     local e = gone[name]
     if not e.adopted and match(e) then
-      e.adopted = true
+      e.adopted, e.packName = true, name
       return e
     end
   end
@@ -593,7 +593,7 @@ end
 ------------------------------------------------------------------------------------------ the folder
 
 -- (a season's rounds made, its file written. ids: importPack's { adopt(match) -> a gone pack's entry, taken(id) ->
--- whether an event file of that id is another pack's })
+-- whether an event file of that id is another pack's, mine(file) -> whether an event file's pack.file is this pack })
 local function importSeason(src, m, index, entry, ids, fp, out)
   local d = m.data
   if type(d.name) ~= 'string' or d.name == '' then return nil, m.file .. ' has no name' end
@@ -727,18 +727,21 @@ local function importSeason(src, m, index, entry, ids, fp, out)
       if FS:fileExists(f) then pcall(FS.removeFile, FS, f) end
     end
   end
-  -- the rallies the season had at its last import that it no longer has (a round taken out, or every round's id
-  -- changed with the season's): retired, so Home does not show them as rallies of their own. The event file and
-  -- the times driven on it stay; a round put back under its id is written afresh, not retired.
+  -- the rallies the season had at its last import that it no longer has (a round taken out, one that could not be
+  -- read this time, or every round's id changed with the season's): retired, so Home does not show them as rallies
+  -- of their own. The event file and the times driven on it stay; a round put back under its id is written afresh,
+  -- not retired. Only this pack's own files (or those of the pack it was found to be under its old name): an event
+  -- file another pack or a loose map has written since is theirs, and left alone.
   local now, retired = {}, {}
   for _, id in ipairs(season.rounds) do now[id] = true end
   for _, old in ipairs({ entry or false, prev or false }) do
     for _, id in ipairs(old and old.eventIds or {}) do
-      if not now[id] and not used[id] and not retired[id] then
+      if not now[id] and not retired[id] then
         retired[id] = true
         local f = importer.EVENTS_DIR .. id .. '.json'
         local okR, ev = pcall(function() return FS:fileExists(f) and jsonReadFile(f) or nil end)
-        if okR and type(ev) == 'table' and type(ev.retired) ~= 'table' then
+        if okR and type(ev) == 'table' and type(ev.retired) ~= 'table' and type(ev.pack) == 'table' and
+          ids.mine(ev.pack.file) then
           ev.retired = { season = sid, date = os.date('!%Y-%m-%dT%H:%M:%SZ') }
           jsonWriteFile(f, ev, true)
         end
@@ -780,7 +783,11 @@ local function importPack(p, index, force, gone)
     if o == false or o == p.name then return false end
     return not (hasId(entry, id) or (adopted and hasId(adopted, id)))
   end
-  local ids = { adopt = adoptOne, taken = ownedElsewhere }
+  -- (whether an event file written by this pack name is this pack's: its own, or the adopted pack's old name)
+  local function mine(file)
+    return file ~= nil and (file == p.name or (adopted ~= nil and file == adopted.packName))
+  end
+  local ids = { adopt = adoptOne, taken = ownedElsewhere, mine = mine }
   local fp, st = nil, nil
   if p.kind == 'zip' then
     -- (size and time first: hashing a zip of images byte by byte in Lua is what makes a start slow)

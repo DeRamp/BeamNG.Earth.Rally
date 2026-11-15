@@ -54,11 +54,12 @@ const crewsText = computed(() => {
   return `${n} ${n === 1 ? "crew" : "crews"}`
 })
 // (stages here are passes, as the results count them: a stage run twice is two)
-// "Ranked over 14 of 16 stages (271 of 279 km)." / "Not ranked: only 6 of 20 stages match the stages as run (a recce
-// may fix this)." -- the user's words, 2026-11-14
+// "Ranked over 14 of 16 stages (271 of 279 km)." / "Not ranked: the stages that match cover only 180 of 279 km (75%
+// needed)." / "Not ranked: no stage here matches the official distance." -- the user's words, 2026-11-14
 const mismatchLine = computed(() => {
   const r = props.r
-  if (r.notRanked) return `Not ranked: only ${r.comparable} of ${r.counted} stages match the stages as run (a recce may fix this).`
+  if (r.notRanked && !r.comparable) return "Not ranked: no stage here matches the official distance."
+  if (r.notRanked) return `Not ranked: the stages that match cover only ${Math.round(r.kmCovered)} of ${Math.round(r.kmTotal)} km (75% needed).`
   if (r.partial) return `Ranked over ${r.comparable} of ${r.counted} stages (${Math.round(r.kmCovered)} of ${Math.round(r.kmTotal)} km).`
   return ""
 })

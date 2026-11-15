@@ -238,14 +238,49 @@ do
     math.abs(info.lengthM - 7000) < 5, 'stageLineInfo: the line\'s kind, identity and start-to-finish length')
 
   -- a time driven on another line: in Your runs, not on the boards; a time with no line recorded: placed
-  local old = run(50)
-  old.lineKey = 'recce:2:0:0:0:0:0:0'
-  local same = run(79)
-  same.lineKey = info.key
+  T.check(info.start and info.finish and math.abs(info.start[1] - 47.0) < 1e-5 and
+    math.abs(info.finish[1] - (47.0 + 7000 / 111195)) < 1e-5, "stageLineInfo: the start and the finish on the line")
+  local function onLine(t, lineM, a, b) local x = run(t) x.lineKey, x.lineM, x.lineStart, x.lineFinish = 'k', lineM, a, b return x end
+  local old = onLine(50, 9000, { 47.0, -123.0 }, { 47.0 + 9000 / 111195, -123.0 })
+  local same = onLine(79, 7000, info.start, info.finish)
+  local deltaStage = menu.findEvent('mm').stages[1]
   files['/earthRally/results/mm__delta.json'] = { runs = { run(150), old, same } }
   events.forget()
-  T.check(events.best('mm', 'delta') == 50 and events.bestPlaceable('mm', 'delta', menu.findEvent('mm').stages[1]) == 79,
+  T.check(events.best('mm', 'delta') == 50 and events.bestPlaceable('mm', 'delta', deltaStage) == 79,
     'best: every time; bestPlaceable: the times on the line the stage runs on now, and those with none recorded')
+  -- the same road matched again, every point a metre over (and one more point): its times are still placed
+  local kx = 111195 * math.cos(math.rad(47))
+  files['/earthRally/matched/mm__delta.json'] = { format = 1, points = { { 47.0, -123.0 + 1 / kx, 0 },
+    { 47.0 + 2000 / 111195, -123.0 + 1 / kx, 0 }, { 47.0 + 3500 / 111195, -123.0 + 1 / kx, 0 },
+    { 47.0 + 7000 / 111195, -123.0 + 1 / kx, 0 } } }
+  events.forget()
+  T.check(events.bestPlaceable('mm', 'delta', deltaStage) == 79 and events.stageLineInfo('mm', 'delta', deltaStage).key ~= info.key,
+    'the same road matched again a metre over: another key, the same line by tolerance; its times placed')
+  -- a recce of another route between the same two ends, 5% longer: not the line those times were driven on
+  local east = math.sqrt(3675 ^ 2 - 3500 ^ 2) / kx
+  files['/earthRally/recce/mm__delta.json'] = { points = { { 47.0, -123.0, 0 },
+    { 47.0 + 3500 / 111195, -123.0 + east, 0 }, { 47.0 + 7000 / 111195, -123.0, 0 } } }
+  events.forget()
+  local ri = events.stageLineInfo('mm', 'delta', deltaStage)
+  T.check(ri.kind == 'recce' and math.abs(ri.lengthM - 7350) < 5 and events.bestPlaceable('mm', 'delta', deltaStage) == 150,
+    'a recce of another route, the same ends, 5% longer: the times on the old line not placed (' .. ri.lengthM .. ')')
+  T.check(events.onLine(onLine(1, 7350 + 29, info.start, info.finish), ri) and
+    not events.onLine(onLine(1, 7350 + 80, info.start, info.finish), ri) and
+    not events.onLine(onLine(1, 7350, { 47.0 + 30 / 111195, -123.0 }, info.finish), ri) and
+    not events.onLine(onLine(1, 7350, info.start, info.finish), nil) and events.onLine(run(1), nil),
+    'onLine: within 1% (30 m at least) and both ends within 25 m; nothing recorded: on any line')
+  files['/earthRally/recce/mm__delta.json'] = nil
+  -- a run saved and read back (JSON): still placed
+  files['/earthRally/results/mm__delta.json'] = { runs = { run(150), old } }
+  events.forget()
+  events.addResult('mm', 'delta', onLine(78, 7000, info.start, info.finish))
+  files['/earthRally/results/mm__delta.json'] = T.jsonDecode(T.jsonEncode(files['/earthRally/results/mm__delta.json']))
+  events.forget()
+  T.check(events.bestPlaceable('mm', 'delta', deltaStage) == 78, 'a time saved and read back from JSON: placed')
+  files['/earthRally/matched/mm__delta.json'] = { format = 1, points = { { 47.0, -123.0, 0 },
+    { 47.0 + 3500 / 111195, -123.0, 0 }, { 47.0 + 7000 / 111195, -123.0, 0 } } }
+  files['/earthRally/results/mm__delta.json'] = { runs = { run(150), old, same } }
+  events.forget()
   s = menu.stage('mm', 'delta', 'start')
   T.check(s.best == 50 and s.board.bestS == 79 and s.board.you.timeS == 79 and s.board.oldLine == nil,
     "stage page: Your runs' BEST is every time; the board places the best on this line")
@@ -256,6 +291,22 @@ do
   T.check(s.best == 50 and s.board.bestS == nil and s.board.you == nil and s.board.reason == 'noTime' and
     s.board.oldLine, 'only times on an earlier line: none placed, and the board says so')
   T.check(menu.rally('mm').results.complete == false, 'and the rally result waits for a time on this line')
+
+  -- the HUD's next stage and SS count (runner.lua): the itinerary's running order and counted passes; the map's
+  -- order with none, a stage never run skipped
+  local it = { id = 'it', stages = { stage('a', 'A', 1), stage('x', 'X', 1), stage('y', 'Y', 1), stage('b', 'B', 1),
+    stage('c', 'C', 1), stage('d', 'D', 1) }, itinerary = {
+    { ss = 'SS1', stage = 'c' }, { ss = 'SS2', stage = 'a' }, { ss = 'SS3', stage = 'c' },
+    { ss = 'SS4', stage = 'd', cancelled = true }, { ss = 'SS5', stage = 'b' } } }
+  local function nx(id) local s, i = menu.nextStage(it, id) return s and (s.id .. i) or 'none' end
+  T.check(menu.passCount(it) == 4 and nx('c') == 'a1' and nx('a') == 'c5' and nx('d') == 'b4' and nx('b') == 'none',
+    "nextStage: the next counted pass in running order after the stage's first (" .. nx('c') .. ' ' .. nx('a') .. ' ' ..
+    nx('d') .. ' ' .. nx('b') .. ')')
+  T.check(nx('x') == 'b4' and menu.ssLabel(it, 'x') == nil, 'a stage never run: the next in map order that is run')
+  local oe = menu.findEvent('old')
+  local o2, oi = menu.nextStage(oe, 'o1')
+  T.check(menu.passCount(oe) == nil and o2 and o2.id == 'o2' and oi == 2 and menu.nextStage(oe, 'o2') == nil,
+    "no itinerary: map order, no pass count (the runner counts the map's stages, as before)")
 
   -- a round its season no longer lists, retired by the import: not a card on Home
   files['/earthRally/events/retired.json'] = { format = 1, id = 'retired', name = 'Retired Rally',

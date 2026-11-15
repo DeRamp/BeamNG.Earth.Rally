@@ -84,7 +84,10 @@ penalties) is ignored. Rules are **not** read from it: they come from the manife
 The itinerary is the running order. A row whose `stage` names no line in the map is an import warning and is left
 out. With no event file (or no SS row that matches), the stages run once each in map order, SS1, SS2..., each its
 line's length. A map line the itinerary never runs is a stage with no passes: the menu shows it as "Not run", with
-no SS number.
+no SS number. In a run, the HUD's SS count is the itinerary's counted passes (not cancelled), and its next stage is
+the stage of the next counted pass after this stage's first (a pass of the same stage skipped); with no itinerary,
+or for a stage it never runs, the map's stage count and the next map stage it runs. The stock rally apps get one
+SS (a stage run twice, its first pass) or, for a stage never run, its name.
 
 ### Results file (`results`)
 
@@ -169,13 +172,16 @@ them.
 - `earthRally/events/<rallyId>.json`: as today (format 1), plus `season` `{ id, name, round }` when it came from a
   season, `dates`, `place`, `itinerary` `[{ ss, stage, run, km, cancelled, day, powerStage }]`, `rules`, `media`
   `{ cover, logo, photo }`, `boards` (a boards file name, or missing), and `pack` `{ file, fingerprint }`. A round
-  its season no longer lists (taken out, or its id changed) is kept with `retired` `{ season, date }`: not shown on
-  the Rallies page, its times kept; put back under its id, it is written afresh.
+  its season no longer lists (taken out, one that could not be read this time, or its id changed) is kept with
+  `retired` `{ season, date }`: not shown on the Rallies page, its times kept; put back under its id, it is written
+  afresh. Only the pack's own event files are marked (those it wrote, or the pack it was found to be under its old
+  name): one another pack or a loose map has written under that id is left alone.
 - `earthRally/seasons/<seasonId>.json`: `{ format: 1, id, name, championship, rounds: [rallyId...], standings }`.
   When a season's id changes, the file under the old id is removed.
 - `earthRally/results/<rallyId>__<stageId>.json`: each finished run also records the line it was driven on:
-  `line` (`recce` / `matched`), `lineKey` (that line in short: kind, point count, first, middle and last points)
-  and `lineM` (start to flying finish on it, as timed). Times saved before that have none.
+  `line` (`recce` / `matched`), `lineM` (start to flying finish on it, as timed), `lineStart` and `lineFinish`
+  (`[lat, lon]` of the start and the flying finish on it), and `lineKey` (that line in short: kind, point count,
+  first, middle and last points; a record only, not compared). Times saved before that have none.
 - `earthRally/boards/<rallyId>.json`: the results, trimmed: `{ format: 1, fingerprint, passes: [{ ss, stage, run,
   km, cancelled, field: [[seconds, driver, car, class, championship, notional]...] }] }`, fastest first. Removed
   when the pack no longer names results.
@@ -194,29 +200,40 @@ them.
 - **On the rally page**, a stage run twice shows once, and its Place is the better of your placings on its passes
   (the user, 2026-11-14). The leaderboard on the stage page has a toggle between passes.
 - **The stage you drive against the stage as run** (the user, 2026-11-14): a stage's length is measured on the line
-  you are timed on, start to flying finish: the recce or the matched line, whichever the stage runs on (a control
-  more than 200 m off that line is taken as its end; start and finish less than 100 m apart along it, the whole
-  line). With no such line, the map's: start to flying finish when both controls are on it, else the whole line.
+  you are timed on, start to flying finish, as the runner times it: the recce or the matched line, whichever the
+  stage runs on (a control more than 200 m off that line is taken as its end; the line is carried on 300 m past its
+  end, and a control within 60 m of that is where it is, so a recce stopping short of the flying finish measures to
+  it; start and finish less than 100 m apart, the whole line). With no such line, the map's: start to flying finish
+  when both controls are on it, else the whole line.
   More than 5% off a pass's `km` is a line mismatch: that pass's field is shown but you are not placed in it ("Your
   line is 12.0 km start to finish; the official distance is 10.5 km").
 - **Which of your times count**: each time records the line it was driven on. Only your best on the line the stage
-  runs on now is placed on leaderboards and counted in rally results; a time driven on another line (a recce driven
-  again, a stage matched again, a reset) still shows in your runs and their best. A time saved before times recorded
-  their line is taken as driven on the current one.
+  runs on now is placed on leaderboards and counted in rally results. A time is on the current line when its
+  `lineM` is within 1% (30 m at least) of the current line's start to flying finish, and its `lineStart` and
+  `lineFinish` are each within 25 m of the current line's: the same road matched again or recced again keeps its
+  times; another route between the same ends, or a stage with no line since a reset, does not. A time on another
+  line still shows in your runs and their best; the rally page's row says "Old line" when a stage has times but
+  none on its line now. A time saved before times recorded their line is taken as driven on the current one. Reset,
+  and a new recce over a line, warn first when the stage has times: "Your times on this stage won't be placed after
+  this (they stay in Your runs)."
+- **"Driven"** (a season's round cards, the Rallies page's progress, a rally's banner and its Results chips) counts
+  the stages with a time that is placed: on the line the stage runs on now.
 - **Your rally result** is over the comparable passes: the counted ones (not cancelled) whose stage is not a line
   mismatch. When you have a time on every stage with a comparable pass, your total is the sum of your best time on
   each, once per comparable pass. A real crew's total is the sum of its times over the same passes (notional
   included: they are the official times); a crew missing any of them is not ranked. The result is **ranked** when
   the comparable passes cover at least 75% of the rally's counted km ("Ranked over 14 of 16 stages (271 of 279
   km)." when some are left out, naming the ones that don't match the official distance). Below that it is shown but
-  **not ranked**: no place, and no points for you ("Not ranked: only 6 of 20 stages match the
-  stages as run (a recce may fix this).").
+  **not ranked**: no place, and no points for you ("Not ranked: the stages that match cover only 180 of 279 km (75%
+  needed)."; with none at all, "Not ranked: no stage here matches the official distance.").
 - **Season standings**: the real crews' standings never depend on your map or your lines. In every round with
   results, each crew (only those of `standings.championship`) gets `points[position]` by its real ranking over all
   the counted passes (the full rally, notional included), whether or not you are ranked. You get
   `points[position]` by your place in the comparable-stage ranking (your total against the crews' totals over the
   same comparable passes, among that championship's crews), set beside theirs without moving any crew: the crews
-  below you do not drop a place for points. In a round that is not ranked (under 75% of its km) you score nothing
-  ("NR") and the crews score as usual. Crews are one entry across rounds by driver name (trimmed, case folded). Ties
+  below you do not drop a place for points. In a round ranked over part of the rally your cell is marked ("25*",
+  never in a winner's colour) with one footnote: "* your place over the stages that match; crews' points are from
+  the full rally." In a round that is not ranked (under 75% of its km) you score nothing ("NR") and the crews score
+  as usual. Crews are one entry across rounds by driver name (trimmed, case folded). Ties
   on points: more wins, then more second places, and so on. A round with no results scores nothing, and is still
   listed.

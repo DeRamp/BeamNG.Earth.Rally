@@ -9,7 +9,7 @@
 --   board   earthRally/boards/<rallyId>.json: passes [{ ss, stage, run, km, cancelled, field = [[seconds, driver,
 --           car, class, championship, notional]...] }], fastest first (re-sorted here all the same)
 --   season  earthRally/seasons/<seasonId>.json: standings { championship, points, best }
---   bestByStage  { [stageId] = your best seconds } (events.best for each stage)
+--   bestByStage  { [stageId] = your best seconds } (events.bestPlaceable for each stage: on its line now)
 --
 -- Readings taken where the spec is open:
 --   * A board pass names its stage by `stage`. It is taken to belong to an event stage when it equals the stage's
@@ -98,7 +98,7 @@ function M.stageLengthM(stage)
   return type(stage.lengthM) == 'number' and stage.lengthM or nil
 end
 
--- Is a map length (m) more than 5% off a pass's km?
+-- Is a stage length (m: on the line you are timed on, or the map's) more than 5% off a pass's km?
 function M.isMismatch(lineM, km)
   return type(lineM) == 'number' and type(km) == 'number' and km > 0 and
     math.abs(lineM / 1000 - km) / km > M.LINE_MISMATCH
@@ -210,7 +210,8 @@ function M.topRows(list, top) return menuRows(list, top or M.TOP) end
 
 -- board: the rally's board (nil: none). stage: the stage id, or the event's stage table { id, name } (the name lets
 -- a pass that names its stage by the line's name be found). opts: { pass = a pass's ss (default the first counted
--- one), bestS = your best time, lineM = the map's length of the stage in metres (default M.stageLengthM(stage)),
+-- one), bestS = your best time, lineM = the stage's length in metres start to flying finish on the line you are
+-- timed on (menu.lua: events.drivenLengthM on the recce or matched line; default M.stageLengthM(stage), the map's),
 -- name = your row's name, top = 10 }.
 --
 -- Returns { passes = [{ ss, run, km, cancelled }], pass = the chosen ss, km, field = crews on it, fastestS,
@@ -326,7 +327,8 @@ local function crewTotals(passes)
   return crews
 end
 
--- (the length a stage is checked by: the driven line's, from the caller, else the map's)
+-- (the length a stage is checked by, start to flying finish: on the recce or matched line, from the caller, else the
+-- map's)
 local function lengthOf(stage, opts)
   local l = stage and type(opts.lineMByStage) == 'table' and opts.lineMByStage[stage.id] or nil
   if type(l) == 'number' then return l end
@@ -343,8 +345,9 @@ end
 --   missing = [stageId...] (comparable stages still to drive, in running order),
 --   ranked = [{ pos, name, car, class, championship, totalS, gapS, you }] (crews with a time on every comparable
 --   pass, and you when complete and ranked), you = placing or nil, noBoard, lineMismatch = [stageId...] (counted
---   stages whose length is more than 5% off the pass's km), notRanked = true when the comparable passes cover less
---   than M.RANK_MIN_SHARE of the counted km: your total stands, but it is not placed and scores you nothing,
+--   stages whose length, on the line you are timed on or else the map's, is more than 5% off the pass's km),
+--   notRanked = true when the comparable passes cover less than M.RANK_MIN_SHARE of the counted km: your total
+--   stands, but it is not placed and scores you nothing,
 --   field = [{ pos, key, name, championship, totalS }] (the crews' real ranking over every counted pass, without
 --   you: their standings points come from it) }
 function M.rallyResult(event, board, bestByStage, opts)
@@ -445,7 +448,8 @@ M.standingsRules = standingsRules
 -- over the same passes), set beside theirs without moving any crew a place. A round not ranked (its comparable
 -- passes under M.RANK_MIN_SHARE of its km) scores you nothing; the crews score in it as usual.
 -- Returns { rules = { championship, points, best }, rounds = [{ id, name, noBoard, notRanked, scored = crews
---   placed }], rows = [{ pos, name, points, perRound = [{ pos, points } | { noBoard = true, points = 0 } |
+--   placed }], rows = [{ pos, name, points, perRound = [{ pos, points, partial = true | nil (yours, ranked over the
+--   comparable passes only) } | { noBoard = true, points = 0 } |
 --   { notRanked = true, points = 0 } (yours, in a round not ranked) | { points = 0 }], wins, you }],
 --   you = your row (also when it is not in rows; nil only with no rally result anywhere), entries = all rows' count }
 function M.standings(season, rounds, opts)
@@ -505,7 +509,7 @@ function M.standings(season, rounds, opts)
             end
           end
           local e = entry(YOUKEY, mine.name, true)
-          e.perRound[ri] = { pos = p, points = rules.points[p] or 0 }
+          e.perRound[ri] = { pos = p, points = rules.points[p] or 0, partial = res.partial or nil }
           e.finishes[#e.finishes + 1] = p
           info.scored = info.scored + 1
         end

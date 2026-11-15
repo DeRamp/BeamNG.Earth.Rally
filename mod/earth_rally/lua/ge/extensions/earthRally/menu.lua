@@ -65,11 +65,13 @@ function M.penaltyText(r)
 end
 
 -- A rally's card on the Rallies page.
+-- driven: the stages with a time that can be placed (events.bestPlaceable: on the line the stage runs on now), the
+-- one meaning of "driven" on every page.
 function M.rallyCard(e, report)
   local km, driven = 0, 0
   for _, s in ipairs(e.stages or {}) do
     km = km + (s.lengthM or 0)
-    if events.best(e.id, s.id) then driven = driven + 1 end
+    if events.bestPlaceable(e.id, s.id, s) then driven = driven + 1 end
   end
   local src = e.source and e.source.file or e.file
   return { id = e.id, name = e.name, file = basename(src), stages = #(e.stages or {}), lengthM = km, driven = driven,
@@ -114,8 +116,10 @@ function M.rallyBase(eventId, reports, autoRecce)
     -- `line` is st.kind ('recce' | 'matched' | nil), the same field the stage page already gets. The row needs
     -- it for Reset: a driven recce cannot be made again and is confirmed before it goes, a matched line is 1.25 s
     -- of work and is not. Without it the row would have to treat both alike, and the cheap case is the common one.
+    -- (oldLine: it has times, none of them on the line it runs on now: the row says "Old line")
+    local best = events.best(e.id, s.id)
     out.list[i] = { id = s.id, ss = i, name = s.name, lengthM = s.lengthM, status = st.status, line = st.kind,
-      best = events.best(e.id, s.id) }
+      best = best, oldLine = (best ~= nil and events.bestPlaceable(e.id, s.id, s) == nil) or nil }
   end
   return out
 end
@@ -249,7 +253,7 @@ local function bestsOf(e)
     by[s.id] = b
     lineM[s.id] = info and info.lengthM or nil
     deps[#deps + 1] = b or false
-    deps[#deps + 1] = info and info.key or false
+    deps[#deps + 1] = info and info.lengthM or false
   end
   return by, deps, lineM
 end
@@ -289,6 +293,53 @@ function M.ssLabel(e, stageId)
   local l = {}
   for _, p in ipairs(by[stageId] or {}) do l[#l + 1] = p.ss end
   return #l > 0 and table.concat(l, ' · ') or nil
+end
+
+-- (the itinerary's passes that name a stage of the map, in running order: { { stage, index (map order), cancelled
+-- }... }; empty with no itinerary)
+local function runningOrder(e)
+  local out, idx = {}, {}
+  for i, s in ipairs(e.stages or {}) do idx[s.id] = i end
+  for _, it in ipairs(type(e.itinerary) == 'table' and e.itinerary or {}) do
+    local s = type(it) == 'table' and boards.stageOf(e, { stage = it.stage, stageId = it.stageId }) or nil
+    if s and it.ss ~= nil then out[#out + 1] = { stage = s, index = idx[s.id], cancelled = it.cancelled == true } end
+  end
+  return out
+end
+
+-- How many SS the rally runs: its itinerary's counted passes (not cancelled), or nil with no itinerary (the map's
+-- stages are its SS then).
+function M.passCount(e)
+  if type(e) ~= 'table' then return nil end
+  local order = runningOrder(e)
+  if #order == 0 then return nil end
+  local n = 0
+  for _, p in ipairs(order) do if not p.cancelled then n = n + 1 end end
+  return n
+end
+
+-- The stage to drive after this one, and its place in the map's order: the stage of the next counted pass after
+-- this stage's first pass in the itinerary's running order (a pass of this same stage skipped); with no itinerary,
+-- or for a stage the itinerary never runs, the next stage in map order that the itinerary does run. nil at the end.
+function M.nextStage(e, stageId)
+  if type(e) ~= 'table' then return nil end
+  local order = runningOrder(e)
+  local at = nil
+  for k, p in ipairs(order) do if p.stage.id == stageId then at = k break end end
+  if at then
+    for k = at + 1, #order do
+      local p = order[k]
+      if not p.cancelled and p.stage.id ~= stageId then return p.stage, p.index end
+    end
+    return nil
+  end
+  local _, _, notRun = passesOf(e)
+  local after = false
+  for i, s in ipairs(e.stages or {}) do
+    if after and s.id ~= stageId and not notRun[s.id] then return s, i end
+    if s.id == stageId then after = true end
+  end
+  return nil
 end
 
 -- Your place on a stage: the better of your placings over its passes (the user, 2026-11-14), each from that pass's
@@ -541,7 +592,7 @@ function M.seasonCard(s)
       rallies = rallies + 1
       for _, st in ipairs(e.stages or {}) do
         stages = stages + 1
-        if events.best(e.id, st.id) then driven = driven + 1 end
+        if events.bestPlaceable(e.id, st.id, st) then driven = driven + 1 end
       end
       if #covers < 8 then
         local m = mediaOf(e)
@@ -590,8 +641,9 @@ end
 -- A season's page, or nil:
 --   { id, name, championship, dates, rallies, finished (rounds with your rally result),
 --     rounds = { { id, round, name, dates, place, stages, driven, media, complete, you = { pos, of } | nil,
---       notRanked = true | nil (too few stages match the official distance: you are not placed and score nothing; the crews score as usual), points } },
---     standings = { rows = top 10 { pos, name, points, wins, you, perRound = { { pos, points } | { points = 0 } |
+--       notRanked = true | nil (too few stages match the official distance: you are not placed and score nothing; the crews score as usual),
+--       partial = true | nil (you are ranked over the stages that match, not all of them), points } },
+--     standings = { rows = top 10 { pos, name, points, wins, you, perRound = { { pos, points, partial } | { points = 0 } |
 --       { noBoard = true, points = 0 } | { notRanked = true, points = 0 } } }, you = your row | nil,
 --       youShown (you among rows), entries, points = the scale, best = only the best N count | nil,
 --       rounds = { { round, name, notRanked } } },
@@ -610,13 +662,14 @@ function M.season(seasonId)
     labels[ri] = { round = round, name = e.name, notRanked = sr and sr.notRanked or nil }
     if rd.found then
       local driven = 0
-      for _, st in ipairs(e.stages or {}) do if events.best(e.id, st.id) then driven = driven + 1 end end
+      for _, st in ipairs(e.stages or {}) do if rd.bestByStage[st.id] then driven = driven + 1 end end
       local res = sd.results[ri]
       local pr = you and you.perRound and you.perRound[ri]
       local r = { id = e.id, round = round, name = e.name, dates = datesOf(e.dates), place = e.place,
         stages = #(e.stages or {}), driven = driven, media = mediaOf(e), complete = (res and res.complete) == true,
         you = res and res.you and { pos = res.you.pos, of = res.you.of } or nil,
-        notRanked = res and res.notRanked or nil, points = pr and pr.pos and pr.points or nil }
+        notRanked = res and res.notRanked or nil, partial = (res and res.partial and not res.notRanked) or nil,
+        points = pr and pr.pos and pr.points or nil }
       out.rounds[#out.rounds + 1] = r
       if r.complete then
         out.finished = out.finished + 1
