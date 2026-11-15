@@ -83,13 +83,48 @@ local function first(s, pfx, tag)
   return b[1] and text(b[1]) or nil
 end
 
+-- (the folder path each Placemark sits in, in the order blocks() finds them: { 'Outer', 'Inner' }... -- a folder's
+-- name its first <name> before anything nested in it)
+local function folderPaths(s, pfx)
+  local ev = {}
+  local p = pfx:gsub('[%-%.%+%[%]%(%)%$%^%%%?%*]', '%%%0')
+  local function each(pat, kind)
+    local pos = 1
+    while true do
+      local a, b = s:find(pat, pos)
+      if not a then break end
+      ev[#ev + 1] = { a, kind, b }
+      pos = b + 1
+    end
+  end
+  each('<' .. p .. 'Folder[%s>]', 'open')
+  each('</' .. p .. 'Folder>', 'close')
+  each('<' .. p .. 'Placemark[%s>]', 'pm')
+  table.sort(ev, function(x, y) return x[1] < y[1] end)
+  local stack, out = {}, {}
+  for i, e in ipairs(ev) do
+    if e[2] == 'open' then
+      local stop = ev[i + 1] and ev[i + 1][1] or #s + 1
+      stack[#stack + 1] = first(s:sub(e[3] + 1, stop - 1), pfx, 'name') or ''
+    elseif e[2] == 'close' then
+      stack[#stack] = nil
+    else
+      local path = {}
+      for k, v in ipairs(stack) do path[k] = v end
+      out[#out + 1] = path
+    end
+  end
+  return out
+end
+
 local function readKml(s)
   local pfx = s:match('<([%w_]*:?)Placemark[%s>]') or ''
   local lines, points = {}, {}
   -- the rally's name: the document's own, before any folder or placemark
   local head = s:sub(1, (s:find('<' .. pfx .. 'Folder', 1, true) or s:find('<' .. pfx .. 'Placemark', 1, true) or #s + 1) - 1)
   local docName = first(head, pfx, 'name')
-  for _, pm in ipairs(blocks(s, pfx, 'Placemark')) do
+  local paths = folderPaths(s, pfx)
+  for n, pm in ipairs(blocks(s, pfx, 'Placemark')) do
     local name = first(pm, pfx, 'name') or ''
     local pieces = {}
     for _, ls in ipairs(blocks(pm, pfx, 'LineString')) do
@@ -101,7 +136,12 @@ local function readKml(s)
     else
       local pt = blocks(pm, pfx, 'Point')[1]
       local c = pt and coords(first(pt, pfx, 'coordinates'))
-      if c and c[1] then points[#points + 1] = { name = name, lat = c[1][1], lon = c[1][2] } end
+      if c and c[1] then
+        -- (with what the map says of it besides its name -- its folders, style and description -- for the marks:
+        -- M.markKinds)
+        points[#points + 1] = { name = name, lat = c[1][1], lon = c[1][2], folders = paths[n] or {},
+                                style = first(pm, pfx, 'styleUrl'), description = first(pm, pfx, 'description') }
+      end
     end
   end
   return { lines = lines, points = points, name = docName ~= '' and docName or nil }
@@ -149,7 +189,8 @@ local function readGpx(s)
   return { lines = lines, points = points, name = docName }
 end
 
--- A map file's text: { lines = { { name, pieces = { { {lat, lon}... }... } }... }, points = { { name, lat, lon }... },
+-- A map file's text: { lines = { { name, pieces = { { {lat, lon}... }... } }... }, points = { { name, lat, lon,
+-- folders = { folder names, outermost first }, style (its styleUrl), description }... } (a GPX's: name, lat, lon),
 -- name (the document's, or nil) }. kind: 'kml' or 'gpx'.
 function M.parse(s, kind)
   if kind == 'gpx' then return readGpx(s) end
@@ -252,6 +293,60 @@ local function pointRole(name)
   return nil
 end
 M._pointRole = pointRole
+
+------------------------------------------------------------------------------------------ the organisers' points
+
+-- The kinds of point the stage dressing puts out where the map has them (docs/plan-1.5.0-stage-dressing.md, 3), in
+-- the order a point's kinds are listed.
+M.MARK_KINDS = { 'radio', 'medical', 'spectator', 'marshal' }
+M.MARK_NEAR_M = 100          -- a point this near a stage's line is on that stage; farther (a hospital) it is not
+local KIND_RANK = {}
+for i, k in ipairs(M.MARK_KINDS) do KIND_RANK[k] = i end
+
+local function anyWord(ws, set) for _, w in ipairs(ws) do if set[w] then return true end end return false end
+local MEDICAL_WORDS = { medical = true, ambulance = true, ambulances = true, miv = true, doctor = true,
+                        doctors = true }
+local SPECTATOR_WORDS = { spectator = true, spectators = true }
+local RADIO_WORDS = { radio = true, radios = true }
+local MARSHAL_WORDS = { marshal = true, marshals = true }
+local NOT_SPECTATOR_WORDS = { prohibited = true, restricted = true, closed = true, forbidden = true }
+
+-- What kinds of organisers' point a map point is: a list in M.MARK_KINDS' order, empty for none. pt: { name, folders,
+-- style, description } as parse gives them.
+--   A style "#pt-<kinds>" (the rally-pack converter writes exactly this: "#pt-radio-spectator") says so and nothing
+--   else is read. Otherwise, from the organisers' own words:
+--   radio      "radio" in its folders / style / name / description, or a name tagged "R3"
+--   medical    "medical", "ambulance", "MIV", "doctor" in any of them ("Fire and Ambulance" too)
+--   spectator  "spectator(s)" in any of them, unless they say the area is prohibited / restricted / closed
+--   marshal    a folder or style with "marshal" in it, a name with "marshal" in it, a name tagged "MP 9", a style
+--              with "police" in it
+-- The control rules (ROLE_WORDS / OTHER_WORDS) are not touched: a control stays a control, and this is read beside it.
+function M.markKinds(pt)
+  local style = type(pt.style) == 'string' and pt.style or ''
+  local tagged = style:lower():match('^#?pt%-(.+)$')
+  local is = {}
+  if tagged then
+    for k in tagged:gmatch('[a-z]+') do is[k] = true end
+  else
+    local name = pt.name or ''
+    local folders = table.concat(type(pt.folders) == 'table' and pt.folders or {}, ' / ')
+    local desc = type(pt.description) == 'string' and pt.description or ''
+    local all = words(table.concat({ folders, style, name, desc }, ' \n '))
+    local nameWs = words(name)
+    local fl, sl = folders:lower(), style:lower()
+    is.radio = anyWord(all, RADIO_WORDS) or sl:find('radio', 1, true) ~= nil
+    if not is.radio then for _, w in ipairs(nameWs) do if w:match('^r%d+$') then is.radio = true break end end end
+    is.medical = anyWord(all, MEDICAL_WORDS)
+    is.spectator = anyWord(all, SPECTATOR_WORDS) and not anyWord(all, NOT_SPECTATOR_WORDS)
+    -- (a name's "marshal" a word of its own: "Marshall Road" is not one)
+    is.marshal = fl:find('marshal', 1, true) ~= nil or sl:find('marshal', 1, true) ~= nil
+      or anyWord(nameWs, MARSHAL_WORDS) or sl:find('police', 1, true) ~= nil
+      or name:find('%f[%w][Mm][Pp]%s*%d+') ~= nil
+  end
+  local out = {}
+  for _, k in ipairs(M.MARK_KINDS) do if is[k] then out[#out + 1] = k end end
+  return out
+end
 
 local function same(a, b)
   if #a ~= #b then return false end
@@ -447,6 +542,12 @@ function M.build(parsed, eventId, eventName, sourceFile)
   local names = {}
   for i, l in ipairs(parsed.lines) do names[i] = l.name end
   local controls, unmatched = matchControls(names, parsed.points)
+  -- (the organisers' points, each with its kinds, and where it is)
+  local markPts = {}
+  for _, p in ipairs(parsed.points) do
+    local kinds = M.markKinds(p)
+    if #kinds > 0 then markPts[#markPts + 1] = { p = p, kinds = kinds, xy = fr.xy(p.lat, p.lon) } end
+  end
 
   local stages, used = {}, {}
   for idx, l in ipairs(parsed.lines) do
@@ -477,6 +578,21 @@ function M.build(parsed, eventId, eventName, sourceFile)
         warn[#warn + 1] = string.format('its %s control is %.0f m from the line', role == 'ff' and 'flying finish' or role, off)
       end
     end
+    -- the organisers' points on it (within MARK_NEAR_M of its line), one entry per kind, in order along it
+    local marks = {}
+    for _, mp in ipairs(markPts) do
+      local along, off = project(line, mp.xy)
+      if off <= M.MARK_NEAR_M then
+        for _, kind in ipairs(mp.kinds) do
+          marks[#marks + 1] = { kind = kind, name = mp.p.name, lat = round(mp.p.lat, 7), lon = round(mp.p.lon, 7),
+                                distM = round(along, 1), offLineM = round(off, 1) }
+        end
+      end
+    end
+    table.sort(marks, function(a, b)
+      if a.distM ~= b.distM then return a.distM < b.distM end
+      return (KIND_RANK[a.kind] or 9) < (KIND_RANK[b.kind] or 9)
+    end)
     local circle = enclosingCircle(line)
     local cLat, cLon = fr.latlon(circle[1][1], circle[1][2])
     local sid = M.slug(l.name)
@@ -499,7 +615,7 @@ function M.build(parsed, eventId, eventName, sourceFile)
     stages[#stages + 1] = {
       id = sid, name = l.name, lengthM = round(total, 1),
       centre = { lat = round(cLat, 7), lon = round(cLon, 7) }, radiusM = round(circle[2], 1),
-      pieces = #pieces, gapsM = gapsOut, controls = outCtl, line = ll,
+      pieces = #pieces, gapsM = gapsOut, controls = outCtl, line = ll, marks = #marks > 0 and marks or nil,
     }
     local roles = {}
     for _, r in ipairs({ 'atc', 'start', 'ff', 'stop' }) do if outCtl[r] then roles[#roles + 1] = r end end
@@ -568,7 +684,10 @@ M.readKmz = readKmz
 -- three identical "Main Route Book" rows are already on this machine. When this number does not match the one the
 -- index was written with, the next scan re-imports everything, which keeps each event's id (so its recces, matched
 -- lines and times still belong to it) and only rewrites the event files.
-M.NAME_RULES = 2
+--   2  the rally's name from the document or the file (1.3.2)
+--   3  the organisers' points kept on each stage as `marks` (1.5.0): the rallies already here gain them
+-- (A stage's line is read as before, so its matched line and recces still fit it: events.mapKey.)
+M.NAME_RULES = 3
 
 local function readIndex()
   local ok, r = pcall(jsonReadFile, M.INDEX)

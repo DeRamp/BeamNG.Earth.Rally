@@ -254,12 +254,14 @@ do
   local input = { line = S, startM = 0, finishM = 20000, junctions = js, corners = corners }
   local sites = D.plan(input)
   local radios = ofKind(sites, 'radio')
-  T.check(#radios == 3, 'auto: a radio point every 5 km of 20 (' .. #radios .. ')')
-  local okR = true
-  for k, r in ipairs(radios) do
-    if math.abs(r.along - k * 5000) > 150 or r.along > 19000 or r.source ~= 'rule' then okR = false end
+  T.check(#radios >= 3 and #radios <= 4, 'auto: a radio point every 4-6 km of 20 (' .. #radios .. ')')
+  local okR, prevR = true, 0
+  for _, r in ipairs(radios) do
+    local gap = r.along - prevR
+    if gap < 4000 - 300 or gap > 6000 + 300 or r.along > 19000 or r.source ~= 'rule' then okR = false end
+    prevR = r.along
   end
-  T.check(okR, 'auto: radio near 5 / 10 / 15 km, none in the last 1 km')
+  T.check(okR, 'auto: radio 4-6 km apart (give or take moving clear of a junction), none in the last 1 km')
   local clearR = true
   for _, r in ipairs(radios) do
     for _, j in ipairs(js) do if j.along >= r.along - 40 and j.along <= r.along + 54 then clearR = false end end
@@ -273,7 +275,7 @@ do
   end
   T.check(okS, 'auto: spectators at most one per 4 km, none in the first 500 m (' .. #sp .. ')')
   local ms = ofKind(sites, 'marshal')
-  local okM = #ms >= 12
+  local okM = #ms >= 8
   table.sort(ms, function(a, b) return a.along < b.along end)
   for i = 2, #ms do if ms[i].along - ms[i - 1].along < 1000 then okM = false end end
   T.check(okM, 'auto: junction marshals at most one per km (' .. #ms .. ')')
@@ -322,14 +324,19 @@ do
     js[#js + 1] = { along = s, x = 0, y = s, kind = 'turn', inDeg = 0, outDeg = 90, sides = { { deg = 0 }, { deg = 270 } } }
   end
   local all = D.plan({ line = line, startM = 0, finishM = 12000, junctions = js })
-  T.check(#ofKind(all, 'radio') == 2 and #ofKind(all, 'spectators') == 1,
-    'whole stage: radio points and a spectator area (' .. #ofKind(all, 'radio') .. ', ' .. #ofKind(all, 'spectators') .. ')')
-  T.check(#ofKind(all, 'marshal') == 2 and ofKind(all, 'marshal')[1].along == 1000 and ofKind(all, 'marshal')[2].along == 3000,
-    'whole stage: marshals at 1 km and 3 km, none at 1.5 km')
+  local nR = #ofKind(all, 'radio')
+  T.check(nR >= 1 and nR <= 2 and #ofKind(all, 'spectators') == 1,
+    'whole stage: radio points and a spectator area (' .. nR .. ', ' .. #ofKind(all, 'spectators') .. ')')
+  local wm = ofKind(all, 'marshal')
+  local okW = #wm <= 2
+  for i = 2, #wm do if wm[i].along - wm[i - 1].along < 1000 then okW = false end end
+  T.check(okW, 'whole stage: marshals at junction turns, never two within 1 km (1 km and 1.5 km not both)')
   -- (the options gone: passing them changes nothing)
   local o = D.plan({ line = line, startM = 0, finishM = 12000, junctions = { js[2] }, only = { tape = true },
     existingMarshals = { 1000 } })
-  T.check(#ofKind(o, 'marshal') == 1 and #ofKind(o, 'radio') == 2, 'only / existingMarshals: no longer read by plan')
+  local o2 = D.plan({ line = line, startM = 0, finishM = 12000, junctions = { js[2] } })
+  T.check(#ofKind(o, 'marshal') == #ofKind(o2, 'marshal') and #ofKind(o, 'radio') == #ofKind(o2, 'radio'),
+    'only / existingMarshals: no longer read by plan')
 end
 
 ------------------------------------------------------------------------------------------ 1.5.0's review
@@ -590,6 +597,115 @@ do
   end
   T.check(sp and (flagged.bale or 0) > 0 and (flagged.specTape or 0) > 0 and (flagged.fence or 0) > 0 and wrong == 0,
     'spectators: bales, tape and fence flagged offRoad, nothing else (' .. wrong .. ')')
+end
+
+------------------------------------------------------------------------------------------ 1.5.0: the organisers' points
+-- The map's points first, per kind; the kinds it is silent about filled by chance, the chance seeded from the stage
+-- (runner passes "<event>/<stage>"): the same stage dresses the same every run, two stages differ, all within bounds.
+do
+  -- the PRNG: its own, the same numbers for the same seed and stream, others for another
+  local a, b, c = D.rng('ev/ss1', 'radio'), D.rng('ev/ss1', 'radio'), D.rng('ev/ss2', 'radio')
+  local same, diff, inRange = true, false, true
+  for _ = 1, 50 do
+    local x, y, z = a(), b(), c()
+    if x ~= y then same = false end
+    if x ~= z then diff = true end
+    if x < 0 or x >= 1 then inRange = false end
+  end
+  T.check(same and diff and inRange, 'rng: the same seed the same numbers, another seed others, in [0, 1)')
+  math.randomseed(1)
+  local r1 = D.rng('x', 'y')()
+  math.randomseed(99)
+  T.check(D.rng('x', 'y')() == r1, 'rng: not math.random\'s shared state')
+
+  local function straight(km)
+    local S = {}
+    for k = 0, km * 10 do S[#S + 1] = V(0, k * 100) end
+    return S
+  end
+  local S = straight(30)
+  local js, corners = {}, {}
+  for s = 250, 29750, 250 do
+    js[#js + 1] = { along = s, x = 0, y = s, kind = 'turn', inDeg = 0, outDeg = 90,
+                    sides = { { deg = 0, halfW = 3 }, { deg = 270, halfW = 3 } } }
+  end
+  for s = 100, 29500, 700 do
+    corners[#corners + 1] = { from = s, to = s + 40, dir = 'right', angleDeg = 160, minRadius = 12 }
+  end
+  local function plan(seed, marks)
+    return D.plan({ line = S, startM = 0, finishM = 30000, junctions = js, corners = corners, seed = seed,
+                    marks = marks })
+  end
+  local function key(sites, kind)
+    local out = {}
+    for _, s in ipairs(ofKind(sites, kind)) do out[#out + 1] = string.format('%.0f', s.along) end
+    return table.concat(out, ',')
+  end
+  local p1, p1b, p2 = plan('rally/ss1'), plan('rally/ss1'), plan('rally/ss2')
+  local det = true
+  for _, kind in ipairs({ 'radio', 'spectators', 'marshal' }) do if key(p1, kind) ~= key(p1b, kind) then det = false end end
+  T.check(det, 'random fill: the same stage dresses the same every run')
+  local differs = 0
+  for _, kind in ipairs({ 'radio', 'spectators', 'marshal' }) do if key(p1, kind) ~= key(p2, kind) then differs = differs + 1 end end
+  T.check(differs == 3, 'random fill: another stage, other radio / spectator / marshal places (' .. differs .. ' of 3)')
+
+  -- within bounds, over many stages
+  local okR, okS, okM, okMed, spread = true, true, true, true, {}
+  for n = 1, 40 do
+    local p = plan('rally/ss' .. n)
+    local prev = 0
+    for _, r in ipairs(ofKind(p, 'radio')) do
+      local gap = r.along - prev
+      if gap < 4000 - 300 or gap > 6000 + 300 or r.along > 29000 or r.source ~= 'rule' then okR = false end
+      prev = r.along
+    end
+    if 30000 - 1000 - prev > 6000 + 300 then okR = false end      -- (no 6 km left without one)
+    spread[string.format('%.0f', ofKind(p, 'radio')[1] and ofKind(p, 'radio')[1].along or -1)] = true
+    local sp = ofKind(p, 'spectators')
+    if #sp == 0 then okS = false end
+    for i, s in ipairs(sp) do
+      if s.along < 500 then okS = false end
+      for k = i + 1, #sp do if math.abs(sp[k].along - s.along) < 4000 then okS = false end end
+    end
+    local ms = ofKind(p, 'marshal')
+    table.sort(ms, function(x, y) return x.along < y.along end)
+    if #ms == 0 then okM = false end
+    for i = 2, #ms do if ms[i].along - ms[i - 1].along < 1000 then okM = false end end
+    if #ofKind(p, 'medical') > 0 then okMed = false end
+  end
+  local nSpread = 0
+  for _ in pairs(spread) do nSpread = nSpread + 1 end
+  T.check(okR, 'random fill: radio every 4-6 km, none in the last 1 km, over 40 stages')
+  T.check(nSpread >= 10, 'random fill: the first radio point not always in one place (' .. nSpread .. ' places)')
+  T.check(okS, 'random fill: spectators at most one per 4 km, none in the first 500 m, over 40 stages')
+  T.check(okM, 'random fill: junction marshals never two within 1 km, over 40 stages')
+  T.check(okMed, 'random fill: never a medical point made up')
+
+  -- the map's points per kind: a kind it marks is the map's alone, the others still by chance (and the same chance)
+  local withMap = plan('rally/ss1', { { kind = 'spectator', along = 12000, offLineM = 30, name = 'Spec 1' } })
+  T.check(#ofKind(withMap, 'spectators') == 1 and ofKind(withMap, 'spectators')[1].source == 'map',
+    'map spectators: the map\'s only, none by chance')
+  T.check(key(withMap, 'radio') == key(p1, 'radio') and key(withMap, 'marshal') == key(p1, 'marshal'),
+    'map spectators: radio and marshals still by chance, the same as without it')
+  local onlyMarshal = plan('rally/ss1', { { kind = 'marshal', along = 5000 } })
+  local om = ofKind(onlyMarshal, 'marshal')
+  T.check(#om == 1 and om[1].source == 'map' and key(onlyMarshal, 'spectators') == key(p1, 'spectators'),
+    'map marshal: the map\'s only, spectators unchanged')
+
+  -- "Gulf - Radio, Spectator": both kinds at one point -- a radio post and a spectator area there; a medical point
+  -- 30 m on shares the radio post
+  local gulf = plan('rally/ss1', {
+    { kind = 'radio', along = 9000, offLineM = -20, name = 'Gulf - Radio, Spectator' },
+    { kind = 'spectator', along = 9000, offLineM = -20, name = 'Gulf - Radio, Spectator' },
+    { kind = 'medical', along = 9030, offLineM = 5, name = 'MIV 2' } })
+  local gr, gs = ofKind(gulf, 'radio'), ofKind(gulf, 'spectators')
+  T.check(#gr == 1 and gr[1].along == 9000 and gr[1].shared and #find(gr[1].objects, 'medical') == 1,
+    'map radio + medical within 50 m: one shared post, the map\'s only radio')
+  T.check(#gs == 1 and gs[1].along == 9000 and gs[1].source == 'map' and gs[1].name == 'Gulf - Radio, Spectator',
+    'map spectator at the same point: its area there')
+  local tp = gs[1] and find(gs[1].objects, 'specTape')[1]
+  T.check(tp and tp.x < 0, 'map spectator left of the line (offLineM < 0): its tape on the left (' .. tostring(tp and tp.x) .. ')')
+  T.check(#ofKind(gulf, 'medical') == 0, 'map medical sharing the radio post: no post of its own')
 end
 
 T.done('test_dressing')

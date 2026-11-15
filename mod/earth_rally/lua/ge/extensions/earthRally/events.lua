@@ -251,6 +251,38 @@ function M.landmarks(eventId, stageId, stage)
   return out
 end
 
+-- The organisers' points on a stage (importer.build's `marks`: { { kind, name, lat, lon, distM, offLineM }... }, one
+-- entry per kind) as they are stored; an empty list for a stage the map marks none on (or an event or stage not
+-- here). stage: the stage's table, if the caller has it (else found by its ids).
+function M.marks(eventId, stageId, stage)
+  if not stage then
+    for _, e in ipairs(M.list()) do
+      if e.id == eventId then
+        for _, s in ipairs(e.stages or {}) do if s.id == stageId then stage = s break end end
+        break
+      end
+    end
+  end
+  local out = {}
+  for _, m in ipairs(stage and type(stage.marks) == 'table' and stage.marks or {}) do
+    if type(m) == 'table' and type(m.kind) == 'string' and type(m.lat) == 'number' and type(m.lon) == 'number' then
+      out[#out + 1] = m
+    end
+  end
+  return out
+end
+
+-- For the stage page: how many of each kind of organisers' point the map marks on a stage --
+-- { radio = n, medical = n, spectator = n, marshal = n } (a kind it marks none of 0: the dressing fills it in, all but
+-- medical, by chance).
+function M.stageMarks(eventId, stageId, stage)
+  local n = { radio = 0, medical = 0, spectator = 0, marshal = 0 }
+  for _, m in ipairs(M.marks(eventId, stageId, stage)) do
+    if n[m.kind] then n[m.kind] = n[m.kind] + 1 end
+  end
+  return n
+end
+
 -- The junctions along a stage with their roads, for the stage dressing (course tape, direction boards): from the
 -- matched line, as junctions.lua reads its entries -- { { lat, lon, kind, side, inDeg, outDeg, sides }... }, the
 -- last three nil in a format 1 file, which kept no roads (an Auto recce run again writes them). nil without a

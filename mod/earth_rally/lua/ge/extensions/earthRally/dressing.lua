@@ -67,8 +67,11 @@ M.MARSHAL_SIDE = 1.5      -- ... this far off that road's centre
 M.MARSHAL_OVERRUN_DEG = 45
 M.LOOK_M = 15             -- the way in / out of a junction: the line this far either side of it
 
--- the automatic fill (the mock-up's section 7)
-M.RADIO_EVERY_M = 5000    -- a radio point every ~5 km ...
+-- the automatic fill (the mock-up's section 7), for each kind the stage's map marks none of. By chance within these
+-- bounds (the user, 2026-11-15: "if they don't have them, you can randomize them"), the chance seeded from the stage
+-- (input.seed: runner passes "<event id>/<stage id>"), so a stage dresses the same on every run and two stages differ.
+M.RADIO_EVERY_M = 5000    -- a radio point every ~5 km: each the next RADIO_GAP_MIN_M .. RADIO_GAP_MAX_M on ...
+M.RADIO_GAP_MIN_M, M.RADIO_GAP_MAX_M = 4000, 6000
 M.RADIO_NOT_LAST_M = 1000 -- ... none in the last 1 km before the finish
 M.RADIO_CLEAR_M = 40      -- (an automatic one moved along until its post is this clear of a junction)
 M.SPEC_EVERY_M = 4000     -- spectator areas at most one per ~4 km ...
@@ -79,8 +82,8 @@ M.SPEC_MIN_TURN = 60      -- a junction turn counts this sharp
 M.SPEC_LEAD_M = 28        -- the spectators' tape runs this far up each leg of the corner (the mock-up's hairpin) ...
 M.SPEC_SPAN_MAX_M = 120   -- ... along at most this much road in all
 M.SPEC_POINT_M = 20       -- a spectator point from the map: tape this far either side of it
-M.MARSHAL_EVERY_M = 1000  -- junction marshals at most one per ~1 km
-M.MARSHAL_NEAR_M = 150    -- none where the map has a marshal this near
+M.MARSHAL_EVERY_M = 1000  -- junction marshals at most one per ~1 km ...
+M.MARSHAL_SHARE = 0.7     -- ... at about this share of the eligible turns, which ones by chance
 M.MARSHAL_AT_JUNCTION_M = 40  -- a marshal from the map this near a turn stands behind its tape
 
 -- each site's object budget (props.lua holds every site to its own DRESS_MAX_OBJS as well)
@@ -555,6 +558,38 @@ end
 
 ------------------------------------------------------------------------------------------ the plan
 
+-- A small seeded random number generator of its own (not math.random's one shared state): a seed (a string or a
+-- number) and a stream name give the same numbers every time. Park-Miller (multiplier 48271, modulus 2^31 - 1), its
+-- state from a djb2 hash of "<seed>|<stream>", stirred a few times so seeds alike do not start alike. rng() a number
+-- in [0, 1); rng(a, b) one in [a, b).
+local PM_M = 2147483647
+function M.rng(seed, stream)
+  local s = tostring(seed or '') .. '|' .. tostring(stream or '')
+  local h = 5381
+  for i = 1, #s do h = (h * 33 + s:byte(i)) % PM_M end
+  if h == 0 then h = 1 end
+  local function nxt() h = (h * 48271) % PM_M return h end
+  for _ = 1, 8 do nxt() end
+  return function(a, b)
+    local u = (nxt() - 1) / (PM_M - 1)
+    if a then return a + (b - a) * u end
+    return u
+  end
+end
+
+-- (a copy of list in an order by chance: Fisher-Yates with rnd)
+local function shuffled(list, rnd)
+  local out = {}
+  for i, v in ipairs(list) do out[i] = v end
+  for i = #out, 2, -1 do
+    local j = math.floor(rnd() * i) + 1
+    if j > i then j = i end
+    out[i], out[j] = out[j], out[i]
+  end
+  return out
+end
+M._shuffled = shuffled
+
 local function capped(objs, kind)
   local b = M.BUDGET[kind] or 16
   if #objs <= b then return objs end
@@ -571,7 +606,8 @@ end
 --   corners = (stageWriter.stageCorners' list: { i0, i1, dir, angleDeg, minRadius }, its indices samples every
 --     cornerStepM (default 5, stageWriter.NOTE_STEP_M) from cornerStartM (default startM); or corners carrying their
 --     own `from` / `to` along the line),
---   halfWidth (default 3) }
+--   halfWidth (default 3),
+--   seed (the automatic fill's chance: the same seed, the same dressing; default '') }
 function M.plan(input)
   local line = input.line
   if not line or #line < 2 then return {} end
@@ -670,22 +706,30 @@ function M.plan(input)
       end
     end
   else
-    -- (none within MARSHAL_EVERY_M of another, taken in order along the stage: "MARSHAL_EVERY_M on from the last one")
-    local standing = {}
+    -- (by chance: about MARSHAL_SHARE of the turns that can have one, taken in an order by chance, none within
+    -- MARSHAL_EVERY_M of another)
+    local rnd = M.rng(input.seed, 'marshal')
+    local eligible = {}
     for _, r in ipairs(solved) do
       if r.kind == 'turn' and #r.tapes > 0 then
-        local ok = true
-        for _, a in ipairs(standing) do if abs(r.along - a) < M.MARSHAL_EVERY_M then ok = false break end end
-        local jm = ok and junctionMarshal(r)
-        if jm then
-          add('marshal', 'rule', r.along, r.along, r.along, jm)
-          standing[#standing + 1] = r.along
-        end
+        local jm = junctionMarshal(r)
+        -- (the draw made for every eligible turn, kept or not, so one turn's luck does not move the others')
+        local lucky = rnd() < M.MARSHAL_SHARE
+        if jm and lucky then eligible[#eligible + 1] = { r = r, jm = jm } end
+      end
+    end
+    local standing = {}
+    for _, e in ipairs(shuffled(eligible, rnd)) do
+      local ok = true
+      for _, a in ipairs(standing) do if abs(e.r.along - a) < M.MARSHAL_EVERY_M then ok = false break end end
+      if ok then
+        add('marshal', 'rule', e.r.along, e.r.along, e.r.along, e.jm)
+        standing[#standing + 1] = e.r.along
       end
     end
   end
 
-  -- radio points: the map's, else every RADIO_EVERY_M (none in the last RADIO_NOT_LAST_M), each moved along until
+  -- radio points: the map's, else every ~RADIO_EVERY_M (none in the last RADIO_NOT_LAST_M), each moved along until
   -- its post is clear of the junctions
   local radios = {}
   if #marks.radio > 0 then
@@ -699,7 +743,9 @@ function M.plan(input)
       end
       return true
     end
-    local s = startM + M.RADIO_EVERY_M
+    -- (each the next RADIO_GAP_MIN_M .. RADIO_GAP_MAX_M on from the last, by chance)
+    local rnd = M.rng(input.seed, 'radio')
+    local s = startM + rnd(M.RADIO_GAP_MIN_M, M.RADIO_GAP_MAX_M)
     while s <= finishM - M.RADIO_NOT_LAST_M do
       local at = s
       for k = 0, 12 do
@@ -707,7 +753,7 @@ function M.plan(input)
         if cand <= finishM - M.RADIO_NOT_LAST_M and clearOfJunctions(cand) then at = cand break end
       end
       radios[#radios + 1] = { along = at, source = 'rule' }
-      s = s + M.RADIO_EVERY_M
+      s = at + rnd(M.RADIO_GAP_MIN_M, M.RADIO_GAP_MAX_M)
     end
   end
   -- medical points: only the map's; one within SHARE_M of a radio point shares its post
@@ -728,8 +774,8 @@ function M.plan(input)
     if r.medical then sites[#sites].shared = true end
   end
 
-  -- spectator areas: the map's, else at most one per SPEC_EVERY_M at the stage's tightest hairpins and biggest
-  -- junction turns, none in the first SPEC_NOT_FIRST_M
+  -- spectator areas: the map's, else at most one per SPEC_EVERY_M at the stage's hairpins and big junction turns
+  -- (picked by chance among them), none in the first SPEC_NOT_FIRST_M
   local cStep = input.cornerStepM or 5
   local cStart = input.cornerStartM or startM
   local corners = {}
@@ -769,13 +815,14 @@ function M.plan(input)
                             side = r.turnDeg > 0 and -1 or 1, score = abs(r.turnDeg), radius = huge }
       end
     end
+    -- (which of them by chance: the qualifying corners in an order by chance, each kept unless one already kept is
+    -- within SPEC_EVERY_M; sorted along the stage first, so the chance alone decides)
     table.sort(cand, function(a, b)
-      if a.score ~= b.score then return a.score > b.score end
-      if a.radius ~= b.radius then return a.radius < b.radius end
-      return a.apex < b.apex
+      if a.apex ~= b.apex then return a.apex < b.apex end
+      return a.score > b.score
     end)
     local kept = {}
-    for _, c in ipairs(cand) do
+    for _, c in ipairs(shuffled(cand, M.rng(input.seed, 'spectator'))) do
       local ok = c.apex >= startM + M.SPEC_NOT_FIRST_M and c.apex <= finishM
       for _, k in ipairs(kept) do if abs(k.apex - c.apex) < M.SPEC_EVERY_M then ok = false end end
       if ok then kept[#kept + 1] = c end

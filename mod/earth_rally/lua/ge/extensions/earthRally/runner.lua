@@ -649,6 +649,32 @@ end
 -- points and spectator areas still go up (they need only the line and its corners). The log says why the junctions
 -- have no tape -- and an old (format 1) auto recce line says so on screen too, once as the stage is set out: re-run
 -- Auto recce (review round 2).
+-- The organisers' points (events.marks: { kind, name, lat, lon }...) placed on a line in game coordinates -- the one
+-- driven, a matched line or a recce, not the map's -- for dressing.plan: { { kind, name, along, offLineM }... } with
+-- offLineM signed, + right of the driving direction, - left. Each located on its own (they need not be in order);
+-- one more than MARKS_OFF_LINE_M off the line dropped. toGame(lat, lon, z) -> x, y.
+M.MARKS_OFF_LINE_M = 100
+local function marksOnLine(line, cum, marks, toGame)
+  local out = {}
+  if not line or #line < 2 then return out end
+  for _, m in ipairs(marks or {}) do
+    local x, y = toGame(m.lat, m.lon, 0)
+    if x then
+      local i, t, s, off = geo.locate(line, cum, { x = x, y = y })
+      if off <= M.MARKS_OFF_LINE_M then
+        local a, b = line[i], line[i + 1]
+        local dx, dy = b.x - a.x, b.y - a.y
+        local fx, fy = a.x + dx * t, a.y + dy * t
+        -- (the right of the way (dx, dy) is (dy, -dx))
+        local side = (x - fx) * dy - (y - fy) * dx
+        out[#out + 1] = { kind = m.kind, name = m.name, along = s, offLineM = side < 0 and -off or off }
+      end
+    end
+  end
+  return out
+end
+M._marksOnLine = marksOnLine
+
 local function setupDressing()
   if not M.DRESSING then
     run.checks.dressing = 'off (runner.DRESSING)'
@@ -694,12 +720,17 @@ local function setupDressing()
     log('I', logTag, string.format('stage dressing: %d of the file\'s %d junction(s) did not place on the driven line',
       #fromFile - #js, #fromFile))
   end
-  -- (the organisers' points: 1.4.0 step 3, none yet)
-  local marks = {}
+  -- the organisers' points the map marks on this stage, on the line actually driven
+  local stored = events.marks(run.event.id, run.stage.id, run.stage)
+  local marks = marksOnLine(run.line, run.cum, stored, earth.toGame)
+  if #stored > 0 then
+    log('I', logTag, string.format('stage dressing: %d of the map\'s %d point(s) on the driven line', #marks, #stored))
+  end
   -- (the corners on run.line itself, from the start: not stageWriter.build's, whose line may have a lead-in added)
   local corners = writer.stageCorners(run.line, run.cum, { startM = run.startM, finishM = run.finishM, mute = run.mute })
   local sites = dressing.plan({ line = run.line, cum = run.cum, startM = run.startM, finishM = run.finishM,
-    junctions = js, marks = marks, corners = corners, cornerStartM = run.startM, cornerStepM = writer.NOTE_STEP_M })
+    junctions = js, marks = marks, corners = corners, cornerStartM = run.startM, cornerStepM = writer.NOTE_STEP_M,
+    seed = tostring(run.event.id) .. '/' .. tostring(run.stage.id) })
   local n = props.setDressing(sites, earth.toGeo)
   run.checks.dressing = string.format('%d site(s), %d junction(s) from the file (%d with side roads)', n, #js,
     withSides)

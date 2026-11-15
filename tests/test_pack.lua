@@ -670,6 +670,31 @@ do
   T.check(find(r, 'Thumby') and find(r, 'Thumby').ok, 'a folder holding one folder and Thumbs.db: its pack read')
 end
 
+------------------------------------------------------------------------------------------ 1.5.0: the organisers' points
+-- A pack's maps go through the same reader: the converter's "#pt-<kinds>" points, in each stage's Folder, become
+-- the stage's marks in the written event.
+do
+  local lat0, lon0 = 67.0, -17.0
+  local function pt(name, style, alongM, eastM)
+    return string.format('<Placemark><name>%s</name><styleUrl>%s</styleUrl><Point><coordinates>%.7f,%.7f,0'
+      .. '</coordinates></Point></Placemark>', name, style,
+      lon0 + eastM / (111195 * math.cos(math.rad(lat0))), lat0 + alongM / 111195)
+  end
+  files[IMP .. 'Marked/rally.json'] = J({ format = 1, name = 'Marked Rally', map = 'm.kml' })
+  files[IMP .. 'Marked/m.kml'] = '<?xml version="1.0"?><kml><Document><name>Marked</name><Folder><name>SS1 Fjord</name>'
+    .. '<Placemark><name>SS1 Fjord</name><LineString><coordinates>' .. northLine(lat0, lon0, 30)
+    .. '</coordinates></LineString></Placemark>'
+    .. pt('Radio 1', '#pt-radio', 300, 5) .. pt('Hairpin', '#pt-spectator-marshal', 800, -10)
+    .. pt('Caution', '#pt-caution', 900, 0) .. '</Folder></Document></kml>'
+  local r = imp.scan()
+  local d = find(r, 'Marked')
+  local ev = d and d.ok and files['/earthRally/events/marked-rally.json']
+  local got = {}
+  for _, m in ipairs(ev and ev.stages[1].marks or {}) do got[#got + 1] = m.kind .. ':' .. m.name end
+  T.check(table.concat(got, ' | ') == 'radio:Radio 1 | spectator:Hairpin | marshal:Hairpin',
+    'a pack\'s map: its #pt- points the stage\'s marks (' .. table.concat(got, ' | ') .. ')')
+end
+
 ------------------------------------------------------------------------------------------ the real ARA pack
 
 local ARA = 'C:/Users/Station/Documents/Claude/Rally Files/ARA Nationals 2026'

@@ -1410,6 +1410,45 @@ do
     'a fault setting the dressing out: the stage still starts, its checks say so (' .. tostring(rF.checks.dressing) .. ')')
   runner.abort(true)
 
+  -- 1.5.0: the organisers' points (the stage's marks) handed to dressing.plan on the line driven, each with its
+  -- distance along it and a signed offset (+ right of the way the stage goes, - left), one far off dropped; and the
+  -- random fill's seed, the event and the stage
+  do
+    local D = require('earthRally/dressing')
+    local plainPlan, seen = D.plan, nil
+    D.plan = function(input) seen = input return plainPlan(input) end
+    local evM = evWith('dressMarks', 'dressA')
+    local function off(i, ex, ny)
+      local x, y = toGame(full[i][1], full[i][2])
+      local lat, lon = toGeo(x + ex, y + ny)
+      return lat, lon
+    end
+    local la1, lo1 = off(501, 8, 0)        -- going north: 8 m east, on the right
+    local la2, lo2 = off(1501, 0, 6)       -- going east (after the bend): 6 m north, on the left
+    local la3, lo3 = off(2001, 0, -236)    -- 236 m south: not on the stage
+    evM.stages[1].marks = {
+      { kind = 'medical', name = 'MIV 2', lat = la2, lon = lo2 },       -- (not in order: each located on its own)
+      { kind = 'radio', name = 'Radio 1', lat = la1, lon = lo1 },
+      { kind = 'spectator', name = 'Far', lat = la3, lon = lo3 } }
+    local rM = toTheLine(evM)
+    D.plan = plainPlan
+    local mk = seen and seen.marks or {}
+    local byKind = {}
+    for _, m in ipairs(mk) do byKind[m.kind] = m end
+    local r1, m2 = byKind.radio, byKind.medical
+    T.check(#mk == 2 and byKind.spectator == nil, 'marks: two on the driven line, the one 236 m off dropped (' .. #mk .. ')')
+    T.check(r1 and math.abs(r1.offLineM - 8) < 1.5 and math.abs((r1.along - rM.startM) - 490) < 15,
+      'marks: the radio point 490 m on, 8 m right (+) (' .. tostring(r1 and r1.offLineM) .. ', ' ..
+      tostring(r1 and (r1.along - rM.startM)) .. ')')
+    T.check(m2 and math.abs(m2.offLineM + 6) < 1.5 and m2.along > r1.along and m2.name == 'MIV 2',
+      'marks: the medical point after the bend, 6 m left (-) (' .. tostring(m2 and m2.offLineM) .. ')')
+    T.check(seen and seen.seed == 'dressMarks/hill', 'the random fill seeded from the event and the stage (' ..
+      tostring(seen and seen.seed) .. ')')
+    T.check(runner._marksOnLine ~= nil and #runner._marksOnLine({ { x = 0, y = 0 } }, { 0 }, mk, toGame) == 0,
+      'marksOnLine: no line, no marks')
+    runner.abort(true)
+  end
+
   -- the showcase from the console: one of each shape ahead of the car, the log naming them, cleared again
   local D = require('earthRally/dressing')
   veh.getDirectionVector = function() return vec3(0, 1, 0) end

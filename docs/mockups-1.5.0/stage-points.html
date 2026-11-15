@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Rally stage points</title>
+<!-- Mock-up for 1.5.0 (not built): on a stage's page, which of the organisers' four kinds of point the stage's map
+     marks. The user, 2026-11-15: "add indicators on each stage's page that let me know if they have these or not"
+     -- these being the points the 1.5.0 stage dressing uses (docs/plan-1.5.0-stage-dressing.md; the dressing
+     itself is drawn in docs/mockups-1.5.0/stage.html).
+
+     THE THREE STATES, per kind, per stage
+       FROM THE MAP  the organisers' map marks n of this kind on the stage: the dressing puts them there.
+       RANDOM        the map marks none: the dressing places them itself, seeded per stage, so the same places
+                     every time. Radio points, marshal posts and spectator areas only.
+       NONE          medical points with none on the map: the dressing never invents one.
+     Each state is an icon AND a word ("4 on the map" with a pin, "Random" with a die, "None" with a slashed
+     circle), plus a dashed edge on Random and a darker card on None, so nothing rests on colour alone.
+
+     WHAT IT DRAWS
+       1. the whole stage page at 1920x1080, an Overmountain stage that marks radio and marshals (now / proposed)
+       2. the left column for three cases: radio + marshals; nothing marked (OTR); everything marked
+       3. the three states side by side, with the words each one uses
+       4. a tiny version in the rally's stage list -- drawn, and not recommended (see there)
+
+     WHAT IT WOULD CHANGE (nothing here is built)
+       - menu.lua, M.stageBase (~line 155, the returned table): one new field,
+           marks = events.stageMarks(e.id, s.id)   -- { radio = n, medical = n, spectator = n, marshal = n }
+         M.stage() passes it through unchanged. Nothing else in menu.lua moves.
+       - events.lua: the new events.stageMarks(eventId, stageId), counting the points the 1.5.0 importer files
+         under the stage (the same ones dressing.lua reads as source = 'map'), so the page and the dressing can
+         never disagree.
+       - EarthRally.vue, the stage section (~line 151): a new <div class="er-pts"> straight after
+         <div class="er-tiles">, four .er-card.er-pt cells (Radio, Medical, Marshals, Spectators), each one state
+         worked out in the Vue from the count: n > 0 -> map; n == 0 -> random, except medical -> none. Under it
+         one .er-pts-help line, built by a computed that names only the kinds that are Random / None. v-if on
+         stg.marks, so a stage without the field (an older build's data) draws exactly as today.
+       - EarthRally.vue <style>, beside .er-tiles / .er-tile (~line 707): .er-pts (the tiles' own 4-track grid,
+         16px gap, so the four cells sit under the four tiles), .er-pt, .er-pv, .er-pts-help. Reproduced below.
+         Four small inline SVG icons go in the template (no image files).
+       - The stage list (.er-srow): NO change proposed. Section 4 says why.
+       - store.js, the HUD, the dressing: no change.
+
+     MEASURED
+       .er-content is padding 28px 64px, so 1792px; .er-stage-page is 1.25fr 1fr with a 28px gap, so the left
+       column is 980px and a tile (and a point cell) is (980 - 48) / 4 = 233px. A cell's content: 16px padding
+       each side, a 28px icon and its 12px gap, leaving 161px; the widest value, "12 on the map" (22px mono 700 +
+       17px 600), is about 125px. The added block is 66px of cells + 10px + one 22px help line, ~108px with its
+       margins; the left column of shot 1 still ends ~150px above the info bar.
+
+     Names: Gulf of Tennessee Start to Newport SS and Maryhill Up are the user's own stages, with the lengths,
+     corners and climb/drop the 1.3.1 mock-up computed for them. The counts on the Overmountain stages are
+     illustrative (Overmountain marks ~30 radio and 64 marshal points over the rally, not split per stage here),
+     and the third stage is made up: no single stage in the set is known to mark all four. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700;800&family=Overpass+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* ---------------------------------------------------------------- the game's own values */
+:root {
+  --fnt: "Noto Sans", system-ui, sans-serif;
+  --mono: "Overpass Mono", ui-monospace, monospace;
+  /* EarthRally.vue .er-page */
+  --er-orange: #f26b1d; --er-orange-500: #c75b1e; --er-muted: #b8bcc6; --er-dim: #8a909a; --er-blue: #1f8fff;
+  /* the game's colours (ui-vue/src/styles/modules/_colors.scss), for the BngButton stand-ins */
+  --orange-500: oklch(61.95% 0.1801 43.40); --tbg-700: oklch(38.57% 0.0507 243.31); --cg-600: oklch(50.63% 0.0185 266.15);
+  --off-white: #f0f0f0;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0d0f12; color: var(--off-white); font-family: var(--fnt); }
+
+/* ---------------------------------------------------------------- the mock-up's own chrome */
+.mock-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 16px; background: #1a1d22; border-bottom: 1px solid #2a2e35; position: sticky; top: 0; z-index: 10; }
+.mock-bar b { margin-right: 8px; font-weight: 600; }
+.mock-bar a { color: var(--er-muted); font-size: 13px; text-decoration: none; border-bottom: 1px solid #3a3f48; }
+.mock-bar .tg { margin-left: auto; display: flex; gap: 2px; background: #0d0f12; border-radius: 4px; padding: 3px; }
+.mock-bar .tg button { font: 600 13px var(--fnt); color: var(--er-muted); background: none; border: 0; padding: 5px 14px; border-radius: 3px; cursor: pointer; }
+.mock-bar .tg button.on { background: var(--er-orange-500); color: #fff; }
+.sec { padding: 26px 16px 8px; }
+.sec h2 { margin: 0 0 6px; font-size: 20px; font-weight: 700; }
+.cap { margin: 0 0 14px; max-width: 1150px; color: var(--er-muted); font-size: 14px; line-height: 1.6; }
+.cap b { color: var(--off-white); }
+.cap code { color: #ffc69b; font-family: var(--mono); font-size: 13px; }
+.rule { height: 1px; background: #23272e; border: 0; margin: 26px 16px 0; }
+.bg {
+  background:
+    radial-gradient(ellipse at 70% 20%, rgba(80, 110, 90, 0.35), transparent 60%),
+    radial-gradient(ellipse at 20% 80%, rgba(120, 90, 60, 0.30), transparent 55%),
+    linear-gradient(180deg, #2b3a40 0%, #1d2622 55%, #17140f 100%);
+}
+.shot { overflow-x: auto; border-radius: 6px; box-shadow: 0 0 0 1px #2a2e35; }
+.shot-in { width: 1032px; padding: 22px 26px;   /* 980px of column inside the padding */ background: rgba(10, 12, 16, 0.72); font-size: 16px; }
+.shot-in.wide { width: 1848px; }
+.mk-lbl { padding: 0 0 6px; font-size: 13px; color: var(--er-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+.mk-new { box-shadow: inset 0 0 0 1px rgba(31, 143, 255, 0.55); }
+.grid3 { display: flex; flex-direction: column; gap: 18px; }
+/* the toggle: one attribute on <body>, two narrow classes; nothing else in this file touches display */
+body[data-v="now"] .p-only { display: none; }
+body[data-v="prop"] .n-only { display: none; }
+
+/* the 1920x1080 screen, scaled to the window's width (1:1 in a 1920+ window) */
+.screen-box { position: relative; width: 100%; max-width: 1920px; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 6px; box-shadow: 0 0 0 1px #2a2e35; }
+.screen { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
+
+/* ---------------------------------------------------------------- EarthRally.vue, reproduced */
+.er-page { position: absolute; inset: 0; display: flex; flex-direction: column; color: var(--off-white); font-family: var(--fnt); font-size: 16px; background: rgba(10, 12, 16, 0.72); }
+.er-topbar { height: 84px; flex-shrink: 0; display: flex; align-items: center; gap: 20px; padding: 0 64px; background: linear-gradient(180deg, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.35)); }
+.er-back { display: flex; align-items: center; gap: 10px; padding: 8px 16px 8px 10px; border-radius: 0.25rem; background: rgba(0, 0, 0, 0.4); color: var(--er-muted); font-size: 18px; }
+.er-title { font-size: 30px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.er-accent { color: var(--er-orange); }
+.er-crumbs { font-size: 18px; color: var(--er-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.er-crumbs span + span::before { content: "›"; margin: 0 10px; color: #6f7480; }
+.er-crumbs span:last-child { color: #fff; }
+.er-right { margin-left: auto; display: flex; gap: 12px; }
+.er-content { flex: 1; padding: 28px 64px 24px; overflow: hidden; }
+.er-infobar { height: 48px; flex-shrink: 0; display: flex; align-items: center; gap: 28px; padding: 0 64px; background: rgba(0, 0, 0, 0.6); color: var(--er-muted); }
+.er-k { font-family: var(--mono); font-size: 13px; padding: 1px 7px; margin-right: 6px; border: 1px solid #6f7480; border-radius: 3px; color: #fff; }
+.er-card { background: rgba(0, 0, 0, 0.6); border-radius: 0.5rem; }
+.er-muted { color: var(--er-muted); }
+.er-dim { color: var(--er-dim); font-size: 15px; }
+.er-small { font-size: 14px; margin-top: 12px; }
+.er-mono { font-family: var(--mono); }
+.er-stage-page { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+.er-rcol { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.er-stage-ss { font-family: var(--mono); font-size: 20px; color: var(--er-orange); font-weight: 700; letter-spacing: 0.05em; }
+.er-stage-name { font-size: 52px; font-weight: 700; line-height: 1.1; }
+.er-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 26px 0; }
+.er-tile { padding: 18px 20px; }
+.er-tile .er-v { font-family: var(--mono); font-size: 40px; font-weight: 700; line-height: 1.1; }
+.er-tile .er-v small { font-size: 18px; margin-left: 4px; color: var(--er-muted); }
+.er-l { font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--er-muted); }
+.er-line-note { display: flex; align-items: center; gap: 14px; padding: 14px 18px; font-size: 17px; }
+.er-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; padding: 3px 12px; border-radius: 999px; white-space: nowrap; }
+.er-pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.er-pill.ready { background: rgba(40, 140, 80, 0.55); color: #d9ffe6; }
+.er-actions { display: flex; gap: 14px; margin-top: 24px; flex-wrap: wrap; }
+.er-act-help { margin-top: 16px; font-size: 15px; line-height: 1.7; color: var(--er-muted); }
+.er-runs { padding: 22px 26px; }
+.er-runs h3 { margin: 0 0 12px; font-size: 20px; }
+/* BngButton stand-in: 18px 600, 0.25rem, the three accents */
+.btn { display: inline-flex; align-items: center; font: 600 18px var(--fnt); color: #fff; border-radius: .25rem; padding: 10px 20px; background: var(--tbg-700); white-space: nowrap; }
+.btn.main { background: var(--orange-500); }
+.btn.out { background: transparent; box-shadow: inset 0 0 0 1px var(--cg-600); color: var(--er-muted); }
+.btn.sm { font-size: 15px; line-height: 20px; padding: 4px 12px; }
+/* the stage list row, as .er-srow has it (with srowCols' 100px SS track) */
+.er-stages { padding: 8px 0; }
+.er-srow { display: grid; grid-template-columns: 100px minmax(0, 1fr) 130px 260px 210px 150px 30px; align-items: center; height: 58px; padding: 0 28px; font-size: 20px; border-left: 4px solid transparent; }
+.er-srow + .er-srow { border-top: 1px solid rgba(255, 255, 255, 0.06); }
+.er-srow.er-hdr { height: 40px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--er-muted); }
+.er-srow .er-ss { font-family: var(--mono); font-weight: 700; color: var(--er-muted); font-size: 18px; }
+.er-srow .er-r { text-align: right; }
+.er-srow .er-st { padding-left: 30px; }
+.er-srow .er-none { color: #6f7480; }
+.er-srow .er-go { color: var(--er-dim); text-align: right; }
+.er-srow .er-act { padding-left: 24px; }
+.er-clip { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+/* ---------------------------------------------------------------- NEW: the stage's points (proposed) */
+/* The tiles' own grid, so each cell sits under a tile. Its -10px top margin collapses with .er-tiles' 26px
+   bottom one to a 16px gap -- the gap between the tiles themselves -- so the eight read as one block. */
+.er-pts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: -10px 0 10px; }
+.er-pt { display: flex; align-items: center; gap: 12px; padding: 12px 16px; min-width: 0; }
+.er-pt .er-pi { width: 28px; height: 28px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.er-pv { display: flex; align-items: center; gap: 6px; font-size: 17px; font-weight: 600; white-space: nowrap; }
+.er-pv b { font: 700 22px var(--mono); line-height: 1; }
+.er-pv .er-ps { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.er-pv .er-ps .f { fill: currentColor; stroke: none; }
+.er-pt.map { color: #fff; }
+.er-pt.rnd { color: var(--er-muted); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22); border: 1px dashed rgba(255, 255, 255, 0.28); padding: 11px 15px; background: rgba(0, 0, 0, 0.45); }
+.er-pt.rnd .er-pv { color: #dfe3ea; }
+.er-pt.none { color: #6f7480; background: rgba(0, 0, 0, 0.35); }
+.er-pt.none .er-l { color: #6f7480; }
+.er-pts-help { margin: 0 0 22px; font-size: 15px; line-height: 1.5; color: var(--er-muted); }
+.er-pts-help b { color: #fff; }
+
+/* the tiny list version (section 4, not recommended) */
+.mini { display: inline-flex; gap: 10px; margin-left: 16px; vertical-align: -3px; }
+.mini span { display: inline-flex; align-items: center; gap: 2px; font: 700 13px var(--mono); }
+.mini svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.mini .map { color: #fff; } .mini .rnd { color: var(--er-dim); } .mini .none { color: #4d525b; }
+</style>
+</head>
+<body data-v="prop">
+
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-radio" viewBox="0 0 24 24"><rect x="7" y="8" width="10" height="14" rx="2"/><path d="M9.5 8V2"/><path d="M10 13h4M10 16.5h4"/></symbol>
+  <symbol id="i-medical" viewBox="0 0 24 24"><path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z"/></symbol>
+  <symbol id="i-marshal" viewBox="0 0 24 24"><path d="M5 22V3"/><path d="M5 4h13l-3 4.5 3 4.5H5"/></symbol>
+  <symbol id="i-spect" viewBox="0 0 24 24"><circle cx="8" cy="8" r="3"/><circle cx="16.5" cy="9" r="2.5"/><path d="M2.5 20c0-3.6 2.5-6 5.5-6s5.5 2.4 5.5 6"/><path d="M14.5 14.3c.6-.2 1.3-.3 2-.3 2.6 0 5 2 5 5.5"/></symbol>
+  <symbol id="s-map" viewBox="0 0 24 24"><path d="M12 22s7-6.6 7-12a7 7 0 0 0-14 0c0 5.4 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+  <symbol id="s-dice" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/><circle class="f" cx="8.5" cy="8.5" r="1.6"/><circle class="f" cx="15.5" cy="15.5" r="1.6"/><circle class="f" cx="15.5" cy="8.5" r="1.6"/><circle class="f" cx="8.5" cy="15.5" r="1.6"/><circle class="f" cx="12" cy="12" r="1.6"/></symbol>
+  <symbol id="s-none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M6 18L18 6"/></symbol>
+</svg>
+
+<div class="mock-bar">
+  <b>Earth Rally 1.5.0 &mdash; the stage's points</b>
+  <a href="#screen">the stage page</a>
+  <a href="#cases">three stages</a>
+  <a href="#states">the three states</a>
+  <a href="#list">in the stage list?</a>
+  <div class="tg"><button data-v="now">Now (1.4.0)</button><button data-v="prop" class="on">Proposed (1.5.0)</button></div>
+</div>
+
+<!-- ======================================================= 1 ======================================================= -->
+<section class="sec" id="screen">
+  <h2>1 &middot; the stage page at 1920&times;1080</h2>
+  <p class="cap">An Overmountain stage whose map marks radio points and marshal posts, and nothing else.
+    <b>Proposed</b> adds one row of four cells straight under the tiles, on the tiles' own grid, and one line
+    saying what the non-map ones mean. Everything else on the page is where it is today. Use the toggle (top right)
+    to compare.</p>
+  <div class="screen-box bg" id="box"><div class="screen" id="screen1">
+    <div class="er-page">
+      <div class="er-topbar">
+        <div class="er-back"><span>‹</span> <span>Back</span></div>
+        <div class="er-title"><span class="er-accent">Earth</span> Rally</div>
+        <div class="er-crumbs"><span>Rallies</span><span>Overmountain Rally 2026</span><span>Gulf of Tennessee Start to Newport SS</span></div>
+        <div class="er-right"><span class="btn out">Settings</span></div>
+      </div>
+      <div class="er-content">
+        <section class="er-stage-page">
+          <div>
+            <div class="er-stage-ss">SS7 &middot; OVERMOUNTAIN RALLY 2026</div>
+            <div class="er-stage-name">Gulf of Tennessee Start to Newport SS</div>
+            <div class="er-muted">Start line and flying finish</div>
+            <div class="er-tiles">
+              <div class="er-card er-tile"><div class="er-v">48.9<small>km</small></div><div class="er-l">Length</div></div>
+              <div class="er-card er-tile"><div class="er-v">166</div><div class="er-l">Corners</div></div>
+              <div class="er-card er-tile"><div class="er-v">390<small>m</small></div><div class="er-l">Gain</div></div>
+              <div class="er-card er-tile"><div class="er-v">910<small>m</small></div><div class="er-l">Loss</div></div>
+            </div>
+            <div class="p-only" data-case="a"></div>
+            <div class="er-card er-line-note"><span class="er-pill ready">Ready</span><span>Notes from the map's own roads.</span></div>
+            <div class="er-actions">
+              <span class="btn main">Drive stage</span><span class="btn">Route to start</span><span class="btn out">Reset</span><span class="btn">Recce</span>
+            </div>
+            <div class="er-act-help">
+              <b>Drive stage</b>: takes you to the start, then through the stage as in a real rally.<br>
+              <b>Route to start</b>: the way there on the GPS, arrows on the road. No teleport.<br>
+              <b>Reset</b>: removes this stage's line, so you can make it again -- with the auto recce or by driving a recce. Your times are kept.<br>
+              <b>Recce</b>: drive the stage once at your own pace; the line you drive gives the notes.
+            </div>
+          </div>
+          <div class="er-rcol">
+            <div class="er-card er-runs">
+              <h3>Your runs</h3>
+              <div class="er-muted">No runs yet.</div>
+              <div class="er-muted er-small">Times include penalties.</div>
+            </div>
+          </div>
+        </section>
+      </div>
+      <div class="er-infobar">
+        <span><span class="er-k">Esc</span>Back to the game</span>
+        <span><span class="er-k">Ctrl+Alt+K</span>Open / close Earth Rally</span>
+      </div>
+    </div>
+  </div></div>
+</section>
+
+<hr class="rule">
+
+<!-- ======================================================= 2 ======================================================= -->
+<section class="sec" id="cases">
+  <h2>2 &middot; three stages</h2>
+  <p class="cap">The page's left column at true size (980px). The help line only ever names the kinds that are
+    <b>Random</b> or <b>None</b> on that stage; on a stage whose map marks all four it says just that, in one short sentence.</p>
+  <div class="grid3">
+    <div>
+      <div class="mk-lbl">a &middot; the map marks radio and marshals (Overmountain; counts illustrative)</div>
+      <div class="shot bg"><div class="shot-in" data-stage="a"></div></div>
+    </div>
+    <div>
+      <div class="mk-lbl">b &middot; the map marks nothing (OTR 2024 Final, like LSPR, OFR, SnoDrift)</div>
+      <div class="shot bg"><div class="shot-in" data-stage="b"></div></div>
+    </div>
+    <div>
+      <div class="mk-lbl">c &middot; the map marks all four (made-up stage)</div>
+      <div class="shot bg"><div class="shot-in" data-stage="c"></div></div>
+    </div>
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- ======================================================= 3 ======================================================= -->
+<section class="sec" id="states">
+  <h2>3 &middot; the three states</h2>
+  <p class="cap">One cell each. Told apart three ways, none of them colour: the small icon (pin / die / slashed
+    circle), the word, and the cell itself (solid / dashed edge / darker and flat). The count is only ever shown for
+    points from the map: the API gives no count for random ones, and &ldquo;about 9&rdquo; would be a guess.</p>
+  <div class="shot bg"><div class="shot-in">
+    <div class="er-pts" style="margin:0 0 14px">
+      <div class="er-card er-pt map"><svg class="er-pi"><use href="#i-radio"/></svg><div><div class="er-l">Radio</div><div class="er-pv"><svg class="er-ps"><use href="#s-map"/></svg><b>4</b>on the map</div></div></div>
+      <div class="er-card er-pt rnd"><svg class="er-pi"><use href="#i-radio"/></svg><div><div class="er-l">Radio</div><div class="er-pv"><svg class="er-ps"><use href="#s-dice"/></svg>Random</div></div></div>
+      <div class="er-card er-pt none"><svg class="er-pi"><use href="#i-medical"/></svg><div><div class="er-l">Medical</div><div class="er-pv"><svg class="er-ps"><use href="#s-none"/></svg>None</div></div></div>
+      <div></div>
+    </div>
+    <div class="er-pts-help" style="margin:0">
+      <b>On the map</b>: the organisers marked these on the stage, and they stand where the real ones stood.<br>
+      <b>Random</b>: this rally's map doesn't mark them, so they're placed for you &mdash; the same places every time you drive this stage.<br>
+      <b>None</b>: medical points only ever go where the organisers put one, and this map has none on the stage.
+    </div>
+  </div></div>
+</section>
+
+<hr class="rule">
+
+<!-- ======================================================= 4 ======================================================= -->
+<section class="sec" id="list">
+  <h2>4 &middot; in the stage list? (drawn, not recommended)</h2>
+  <p class="cap">It <b>fits</b>: in the Name cell after the name, four 18px icons with a count are about 170px,
+    and the Name cell is about 856px at 1920 against a longest real name of about 460px. But it is
+    <b>not recommended</b>: the icons cannot carry words in a 58px row, so a player has to learn that bright =
+    map, grey = random, dark = none &mdash; exactly the colour-only reading the page avoids &mdash; and it would
+    sit on every row of every rally, while the list's job is &ldquo;can I drive this&rdquo;. Every row would look
+    the same on most rallies (7 of 9 mark little or nothing). The stage page is where it belongs.</p>
+  <div class="shot bg"><div class="shot-in wide">
+    <div class="er-card er-stages">
+      <div class="er-srow er-hdr"><span>Stage</span><span>Name</span><span class="er-r">Length</span><span class="er-st">Status</span><span></span><span class="er-r">Best</span><span></span></div>
+      <div class="er-srow"><span class="er-ss">SS6</span><span class="er-clip">Newport to Del Rio<span class="mini" data-m="3,0,9,0"></span></span><span class="er-r er-mono">22.4 km</span><span class="er-st"><span class="er-pill ready">Ready</span></span><span class="er-act"><span class="btn out sm">Reset</span></span><span class="er-r er-mono er-none">–</span><span class="er-go">›</span></div>
+      <div class="er-srow"><span class="er-ss">SS7</span><span class="er-clip">Gulf of Tennessee Start to Newport SS<span class="mini" data-m="4,0,7,0"></span></span><span class="er-r er-mono">48.9 km</span><span class="er-st"><span class="er-pill ready">Ready</span></span><span class="er-act"><span class="btn out sm">Reset</span></span><span class="er-r er-mono er-none">–</span><span class="er-go">›</span></div>
+      <div class="er-srow"><span class="er-ss">SS8</span><span class="er-clip">Hartford Climb<span class="mini" data-m="2,1,8,3"></span></span><span class="er-r er-mono">12.7 km</span><span class="er-st"><span class="er-pill ready">Ready</span></span><span class="er-act"><span class="btn out sm">Reset</span></span><span class="er-r er-mono er-none">–</span><span class="er-go">›</span></div>
+    </div>
+  </div></div>
+  <p class="cap" style="margin-top:10px">(SS6 and SS8 are made-up rows for the comparison.)</p>
+</section>
+
+<script>
+// The four kinds, in the order the cells go; menu.lua's keys. Medical is the one the dressing never invents.
+const KINDS = [
+  { key: "radio", label: "Radio", icon: "i-radio", words: "radio points" },
+  { key: "medical", label: "Medical", icon: "i-medical", words: "medical points" },
+  { key: "marshal", label: "Marshals", icon: "i-marshal", words: "marshal posts" },
+  { key: "spectator", label: "Spectators", icon: "i-spect", words: "spectator areas" },
+];
+// What the Vue would do with stg.marks: n > 0 -> map; 0 -> random, except medical -> none.
+const state = (k, n) => (n > 0 ? "map" : k === "medical" ? "none" : "rnd");
+const list = a => (a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " or " + a[a.length - 1]);
+
+function cell(k, n) {
+  const s = state(k.key, n);
+  const v = s === "map" ? `<svg class="er-ps"><use href="#s-map"/></svg><b>${n}</b>on the map`
+    : s === "rnd" ? `<svg class="er-ps"><use href="#s-dice"/></svg>Random`
+    : `<svg class="er-ps"><use href="#s-none"/></svg>None`;
+  return `<div class="er-card er-pt ${s}"><svg class="er-pi"><use href="#${k.icon}"/></svg><div><div class="er-l">${k.label}</div><div class="er-pv">${v}</div></div></div>`;
+}
+// the one help line: names only what is Random / None here
+function help(m) {
+  const rnd = KINDS.filter(k => state(k.key, m[k.key]) === "rnd").map(k => k.words);
+  const none = state("medical", m.medical) === "none";
+  if (!rnd.length && !none) return `All four are where the organisers put them.`;
+  const out = [];
+  if (rnd.length) out.push(`<b>Random</b>: this rally's map doesn't mark ${list(rnd)}, so they're placed for you &mdash; the same places every time.`);
+  if (none) out.push(`<b>None</b>: medical points only go where the organisers mark one.`);
+  return out.join(" ");
+}
+function pts(m) { return `<div class="er-pts">${KINDS.map(k => cell(k, m[k.key])).join("")}</div><div class="er-pts-help">${help(m)}</div>`; }
+
+const STAGES = {
+  a: { ss: "SS7 &middot; OVERMOUNTAIN RALLY 2026", name: "Gulf of Tennessee Start to Newport SS", ctl: "Start line and flying finish",
+       t: ["48.9<small>km</small>", "166", "390<small>m</small>", "910<small>m</small>"], m: { radio: 4, medical: 0, spectator: 0, marshal: 7 } },
+  b: { ss: "SS4 &middot; OTR 2024 FINAL", name: "Maryhill Up", ctl: "Time control before the start &middot; stop control after the flying finish",
+       t: ["4.1<small>km</small>", "31", "190<small>m</small>", "0<small>m</small>"], m: { radio: 0, medical: 0, spectator: 0, marshal: 0 } },
+  c: { ss: "SS8 &middot; OVERMOUNTAIN RALLY 2026", name: "Hartford Climb", ctl: "Start line and flying finish",
+       t: ["12.7<small>km</small>", "58", "520<small>m</small>", "140<small>m</small>"], m: { radio: 2, medical: 1, spectator: 3, marshal: 8 } },
+};
+const LBL = ["Length", "Corners", "Gain", "Loss"];
+document.querySelectorAll("[data-stage]").forEach(el => {
+  const s = STAGES[el.dataset.stage];
+  el.innerHTML = `<div class="er-stage-ss">${s.ss}</div><div class="er-stage-name">${s.name}</div><div class="er-muted">${s.ctl}</div>
+    <div class="er-tiles">${s.t.map((v, i) => `<div class="er-card er-tile"><div class="er-v">${v}</div><div class="er-l">${LBL[i]}</div></div>`).join("")}</div>
+    <div class="p-only">${pts(s.m)}</div>
+    <div class="er-card er-line-note"><span class="er-pill ready">Ready</span><span>Notes from the map's own roads.</span></div>`;
+});
+document.querySelector('[data-case="a"]').innerHTML = pts(STAGES.a.m);
+
+// the list's tiny version: icon + count from the map, grey icon for random, dark struck icon for none
+document.querySelectorAll(".mini").forEach(el => {
+  const n = el.dataset.m.split(",").map(Number);
+  el.innerHTML = KINDS.map((k, i) => {
+    const s = state(k.key, n[i]);
+    return `<span class="${s}"><svg><use href="#${s === "none" ? "s-none" : k.icon}"/></svg>${s === "map" ? n[i] : ""}</span>`;
+  }).join("");
+});
+
+// now / proposed
+document.querySelectorAll(".tg button").forEach(b => b.addEventListener("click", () => {
+  document.body.dataset.v = b.dataset.v;
+  document.querySelectorAll(".tg button").forEach(x => x.classList.toggle("on", x === b));
+}));
+// scale the 1920x1080 screen to the box
+const fit = () => { const w = document.getElementById("box").clientWidth; document.getElementById("screen1").style.transform = `scale(${Math.min(1, w / 1920)})`; };
+addEventListener("resize", fit); fit();
+</script>
+</body>
+</html>

@@ -235,4 +235,119 @@ do
   T.check(not imp.genericName('Dalles Mountain'), 'genericName: a real name is not generic')
 end
 
+------------------------------------------------------------------------------------------ 1.5.0: the organisers' points
+-- Each point classified radio / medical / spectator / marshal from the pack converter's "#pt-<kinds>" style, else
+-- from the organisers' folders, style, name and description; one within 100 m of a stage's line kept on it as marks.
+local function marksKml()
+  local lat0, lon0 = 47.3, -123.2
+  local function at(alongM, eastM)
+    return string.format('%.7f,%.7f,0', lon0 + eastM / (111195 * math.cos(math.rad(lat0))), lat0 + alongM / 111195)
+  end
+  local function pm(name, alongM, eastM, extra)
+    return '<Placemark><name>' .. name .. '</name>' .. (extra or '') .. '<Point><coordinates>' .. at(alongM, eastM) ..
+      '</coordinates></Point></Placemark>\n'
+  end
+  return [[<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Marks Rally</name>
+<Style id="icon-police"><IconStyle/></Style>
+<Folder><name>SS1 Ridge</name>
+<Placemark><name>SS1 Ridge</name><LineString><coordinates>]] .. northLine(lat0, lon0, 41) .. [[</coordinates></LineString></Placemark>
+]] .. pm('Start - Ridge', 0, 0) .. pm('Point 3', 400, 6, '<styleUrl>#pt-radio-spectator</styleUrl>')
+    .. pm('Caution !!!', 500, 2, '<styleUrl>#pt-caution</styleUrl>')
+    .. pm('Radio 9 (from the words, but the style says)', 600, 3, '<styleUrl>#pt-medical</styleUrl>') .. [[
+</Folder>
+<Folder><name>Organisers</name><Folder><name>Marshals</name>
+]] .. pm('2000', 900, -8) .. pm('2010', 950, 150) .. [[
+</Folder>
+<Folder><name>Points</name>
+]] .. pm('Gulf - Radio, Spectator', 1200, -12) .. pm('Fire and Ambulance', 1300, 9) .. pm('R3', 1400, 4)
+    .. pm('MP 9', 1500, -3) .. pm('Junction', 1550, 2, '<styleUrl>#icon-police</styleUrl>')
+    .. pm('Spectators prohibited', 1600, 5) .. pm('Marshall Road', 1650, 5)
+    .. pm('Point A', 1700, 6, '<description><![CDATA[Doctor on site]]></description>') .. [[
+</Folder>
+<Folder><name>Medical</name>
+]] .. pm('County Hospital', 1000, 236) .. [[
+</Folder></Folder>
+</Document></kml>]]
+end
+
+do
+  local p = imp.parse(marksKml(), 'kml')
+  local byName = {}
+  for _, pt in ipairs(p.points) do byName[pt.name] = pt end
+  T.check(byName['2000'] and byName['2000'].folders[1] == 'Organisers' and byName['2000'].folders[2] == 'Marshals',
+    'readKml: a point keeps its folder path')
+  T.check(byName['Point 3'].style == '#pt-radio-spectator' and byName['Point A'].description == 'Doctor on site',
+    'readKml: and its style and description')
+  T.check(byName['Start - Ridge'].folders[1] == 'SS1 Ridge', 'readKml: a point in a stage\'s folder: that folder')
+  local function kinds(name) return table.concat(imp.markKinds(byName[name]), ',') end
+  T.check(kinds('Point 3') == 'radio,spectator', 'pack style #pt-radio-spectator: radio and spectator')
+  T.check(kinds('Caution !!!') == '', 'pack style #pt-caution: not a dressing point')
+  T.check(kinds('Radio 9 (from the words, but the style says)') == 'medical', 'a #pt- style is trusted over the words')
+  T.check(kinds('2000') == 'marshal', 'a point named "2000" in a Marshals folder: a marshal')
+  T.check(kinds('Gulf - Radio, Spectator') == 'radio,spectator', '"Gulf - Radio, Spectator": both')
+  T.check(kinds('Fire and Ambulance') == 'medical', '"Fire and Ambulance": medical')
+  T.check(kinds('R3') == 'radio', '"R3": radio')
+  T.check(kinds('MP 9') == 'marshal', '"MP 9": a marshal')
+  T.check(kinds('Junction') == 'marshal', 'a police style: a marshal')
+  T.check(kinds('Spectators prohibited') == '', 'a prohibited spectator area: not a spectator point')
+  T.check(kinds('Marshall Road') == '', '"Marshall Road": not a marshal')
+  T.check(kinds('Point A') == 'medical', 'a doctor in the description: medical')
+  T.check(kinds('County Hospital') == 'medical', 'a hospital in the Medical folder: medical (but far off)')
+  T.check(kinds('Start - Ridge') == '', 'a control is not a mark')
+
+  local ev = imp.build(p, 'marks', 'Marks Rally', 'marks.kml')
+  local st = ev.stages[1]
+  T.check(st.controls.start ~= nil, 'the control rules unchanged: its start still a control')
+  local got = {}
+  for _, m in ipairs(st.marks or {}) do got[#got + 1] = m.kind .. ':' .. m.name end
+  local list = table.concat(got, ' | ')
+  local want = 'radio:Point 3 | spectator:Point 3 | medical:Radio 9 (from the words, but the style says) | ' ..
+    'marshal:2000 | radio:Gulf - Radio, Spectator | spectator:Gulf - Radio, Spectator | medical:Fire and Ambulance | ' ..
+    'radio:R3 | marshal:MP 9 | marshal:Junction | medical:Point A'
+  T.check(list == want, 'marks on the stage, one entry per kind, in order along it (' .. list .. ')')
+  local hosp, far = false, false
+  for _, m in ipairs(st.marks or {}) do
+    if m.name == 'County Hospital' then hosp = true end
+    if m.name == '2010' then far = true end
+  end
+  T.check(not hosp and not far, 'a hospital 236 m off and a marshal 150 m off: dropped')
+  local m1 = st.marks and st.marks[1]
+  T.check(m1 and m1.lat and m1.lon and math.abs(m1.distM - 400) < 2 and math.abs(m1.offLineM - 6) < 1,
+    'a mark carries lat, lon, its distance along and off the line')
+  local none = imp.build(imp.parse(kml, 'kml'), 'test', 'x', 'x.kml')
+  T.check(none.stages[1].marks == nil, 'a stage its map marks nothing on: no marks')
+end
+
+-- The rule bump: rallies imported under the rules before (NAME_RULES 2) are read again once, keeping their ids, and
+-- gain their marks without the player doing anything.
+do
+  for f in pairs(files) do if f:find('/earthRally/', 1, true) == 1 then files[f] = nil end end
+  files['/earthRally/import/Marks.kml'] = marksKml()
+  T.check(#imp.scan() == 1, 'a map with marks imported')
+  local id = files['/earthRally/importIndex.json'].files['Marks.kml'].eventId
+  -- as 1.4.0 left it: the same bytes, an event without marks, the index of the rules before
+  local evPath = '/earthRally/events/' .. id .. '.json'
+  for _, s in ipairs(files[evPath].stages) do s.marks = nil end
+  files['/earthRally/importIndex.json'].names = 2
+  local rr = imp.scan()
+  T.check(#rr == 1 and rr[1].ok and rr[1].eventId == id, 'the rules moved on: the map read again')
+  T.check(files[evPath].stages[1].marks and #files[evPath].stages[1].marks == 11
+    and files['/earthRally/importIndex.json'].files['Marks.kml'].eventId == id,
+    'the rules moved on (3): the unchanged map read again, its rally gains its marks under the same id')
+  T.check(#imp.scan() == 0, 'and not again')
+end
+
+-- events.stageMarks: the counts for the stage page
+do
+  local events = require('earthRally/events')
+  local p = imp.parse(marksKml(), 'kml')
+  local ev = imp.build(p, 'marks', 'Marks Rally', 'marks.kml')
+  local n = events.stageMarks('marks', ev.stages[1].id, ev.stages[1])
+  T.check(n.radio == 3 and n.medical == 3 and n.spectator == 2 and n.marshal == 3,
+    string.format('stageMarks: radio %d, medical %d, spectator %d, marshal %d', n.radio, n.medical, n.spectator, n.marshal))
+  local z = events.stageMarks('marks', 'nope', { id = 'nope' })
+  T.check(z.radio == 0 and z.medical == 0 and z.spectator == 0 and z.marshal == 0, 'stageMarks: none marked, all 0')
+end
+
 T.done('test_import')
