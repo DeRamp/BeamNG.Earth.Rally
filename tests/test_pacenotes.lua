@@ -1,0 +1,488 @@
+-- pacenotes.lua and the notes stageWriter.build makes of it: every call on a road drawn to have it, and none on a
+-- road drawn not to.
+local T = dofile(TESTS .. '/testlib.lua')
+local geo = require('earthRally/geo')
+local pn = require('earthRally/pacenotes')
+local writer = require('earthRally/stageWriter')
+
+-- A road from pieces, a point every metre: { 'straight', m } | { 'arc', radius, degrees (+ left) } |
+-- { 'arcs', { { radius, degrees }... } } (one corner whose radius changes), with z = height(s) along it.
+local function road(pieces, height)
+  local pts, x, y, h, s = {}, 0, 0, math.pi / 2, 0
+  height = height or function() return 0 end
+  local function put() pts[#pts + 1] = { x = x, y = y, z = height(s) } end
+  local function go(turn)
+    h = h + turn
+    x, y, s = x + math.cos(h), y + math.sin(h), s + 1
+    put()
+  end
+  put()
+  for _, p in ipairs(pieces) do
+    if p[1] == 'straight' then
+      for _ = 1, p[2] do go(0) end
+    else
+      local parts = p[1] == 'arc' and { { p[2], p[3] } } or p[2]
+      for _, a in ipairs(parts) do
+        local len = math.floor(math.abs(math.rad(a[2])) * a[1] + 0.5)
+        for _ = 1, len do go(math.rad(a[2]) / len) end
+      end
+    end
+  end
+  return pts
+end
+
+local qf = function() return 0, 0, 0, 1 end
+local function build(line, landmarks)
+  local cum = geo.cumulative(line)
+  return writer.build(line, { startM = 0, finishM = cum[#cum], quatFn = qf, landmarks = landmarks })
+end
+-- each note as "slot:type" pieces, the corner with its descriptor / shape: "1:caution2,4:corner/hairpin,5:finish"
+local function notes(built)
+  local out = {}
+  for _, p in ipairs(built.notebook.pacenotes) do
+    local it, parts = p.structured.items, {}
+    for k = 1, 6 do
+      local x = it[tostring(k)]
+      if x.type then
+        local w = x.type
+        if x.type == 'caution' then w = 'caution' .. x.level end
+        if x.type == 'corner' then
+          w = 'corner' .. (x.descriptor and ('/' .. x.descriptor) or '') .. (x.shape and ('/' .. x.shape) or '')
+        end
+        parts[#parts + 1] = k .. ':' .. w
+      end
+    end
+    out[#out + 1] = table.concat(parts, ',')
+  end
+  return out
+end
+local function has(list, pattern)
+  for _, s in ipairs(list) do if s:find(pattern) then return true end end
+  return false
+end
+local function show(list) return table.concat(list, ' | ') end
+
+------------------------------------------------------------------------------------------ the speed model
+do
+  local k = {}
+  for i = 1, 200 do k[i] = 0 end
+  for i = 120, 130 do k[i] = 1 / 20 end
+  local v = pn.speeds(k, 5)
+  T.check(v[1] == 0, 'a stage starts from standing')
+  T.near(v[125], math.sqrt(pn.A_LAT_MS2 * 20), 1e-6, 'through a corner: as fast as the grip allows')
+  T.check(v[100] > v[118] and v[118] > v[125], 'braking before it')
+  T.check(v[60] <= pn.V_MAX_MS and v[60] > 30, 'flat out on the straight before it (' .. v[60] .. ')')
+end
+
+------------------------------------------------------------------------------------------ descriptors
+do
+  local hp = notes(build(road({ { 'straight', 300 }, { 'arc', 10, 180 }, { 'straight', 300 } })))
+  T.check(has(hp, '4:corner/hairpin') or has(hp, '4:corner/tightHairpin'), 'a 180 of 10 m: a hairpin (' .. show(hp) .. ')')
+  local op = notes(build(road({ { 'straight', 300 }, { 'arc', 24, -170 }, { 'straight', 300 } })))
+  T.check(has(op, '4:corner') and not has(op, 'airpin'), 'a 170 of 24 m: no hairpin, the game numbers it and gives ' ..
+    'its length (' .. show(op) .. ')')
+  local sq = notes(build(road({ { 'straight', 300 }, { 'arc', 9, 90 }, { 'straight', 300 } })))
+  T.check(has(sq, '4:corner/square'), 'a 90 of 9 m: square (' .. show(sq) .. ')')
+  local plain = notes(build(road({ { 'straight', 300 }, { 'arc', 60, 90 }, { 'straight', 300 } })))
+  T.check(has(plain, '4:corner') and not has(plain, '4:corner/'), 'a 90 of 60 m: a plain corner, the game numbers it (' ..
+    show(plain) .. ')')
+end
+
+------------------------------------------------------------------------------------------ shapes
+do
+  local tl = notes(build(road({ { 'straight', 300 }, { 'arcs', { { 90, 50 }, { 30, 50 } } }, { 'straight', 300 } })))
+  T.check(has(tl, '4:corner/tightens'), 'radius 90 then 30: tightens (' .. show(tl) .. ')')
+  local op = notes(build(road({ { 'straight', 300 }, { 'arcs', { { 30, -50 }, { 90, -50 } } }, { 'straight', 300 } })))
+  T.check(has(op, '4:corner/opens'), 'radius 30 then 90: opens (' .. show(op) .. ')')
+  local built = build(road({ { 'straight', 300 }, { 'arcs', { { 90, 50 }, { 30, 50 } } }, { 'straight', 300 } }))
+  local mt
+  for _, p in ipairs(built.notebook.pacenotes) do
+    local c = p.structured.items['4']
+    if c.type == 'corner' and c.shape then mt = c.measurementType end
+  end
+  T.check(mt == nil, 'a corner that tightens is measured in one piece, as the game\'s own stages do (' ..
+    tostring(mt) .. ')')
+  local even = notes(build(road({ { 'straight', 300 }, { 'arc', 50, 100 }, { 'straight', 300 } })))
+  T.check(not has(even, '4:corner/'), 'one radius all the way: no shape (' .. show(even) .. ')')
+end
+
+------------------------------------------------------------------------------------------ chicanes and twisty runs
+do
+  local ch = build(road({ { 'straight', 300 }, { 'arc', 20, 60 }, { 'straight', 5 }, { 'arc', 20, -60 },
+                          { 'straight', 300 } }))
+  local cn = notes(ch)
+  T.check(has(cn, '^2:chicaneLeftEntry$'), 'a left then a right, tight and close: "chicane left entry", one note (' ..
+    show(cn) .. ')')
+  T.check(ch.corners == 1, 'a chicane counts as one corner note (' .. ch.corners .. ')')
+  local sw = {}
+  sw[#sw + 1] = { 'straight', 300 }
+  for k = 1, 6 do
+    sw[#sw + 1] = { 'arc', 90, (k % 2 == 0) and 35 or -35 }
+    sw[#sw + 1] = { 'straight', 15 }
+  end
+  sw[#sw + 1] = { 'straight', 300 }
+  local tw = build(road(sw))
+  local tn = notes(tw)
+  T.check(tn[1] == '4:corner,5:twisty' and tw.corners == 6, 'six fast flicks: "twisty" on the first, every one still ' ..
+    'called (' .. show(tn) .. ')')
+  local twCasual = notes(writer.build(road(sw), { startM = 0, finishM = 1e9, quatFn = qf, speaks = { finish = true } }))
+  T.check(twCasual[1] == '4:corner' and #twCasual == 7, 'a voice with no "twisty": the corners all the same (' ..
+    show(twCasual) .. ')')
+  local apart = notes(build(road({ { 'straight', 300 }, { 'arc', 20, 60 }, { 'straight', 120 }, { 'arc', 20, -60 },
+                                   { 'straight', 300 } })))
+  T.check(not has(apart, 'chicane'), 'the same two corners 120 m apart: two corners (' .. show(apart) .. ')')
+end
+
+------------------------------------------------------------------------------------------ cautions
+do
+  local fast = notes(build(road({ { 'straight', 1000 }, { 'arc', 12, 90 }, { 'straight', 300 } })))
+  T.check(has(fast, '1:caution[23]'), 'a 12 m right angle after a kilometre flat out: caution (' .. show(fast) .. ')')
+  local slow = notes(build(road({ { 'straight', 300 }, { 'arc', 15, 120 }, { 'straight', 40 }, { 'arc', 15, -120 },
+                                  { 'straight', 300 } })))
+  local second = slow[#slow - 1]
+  T.check(not second:find('caution'), 'a slow corner straight after another slow one: no caution (' .. show(slow) .. ')')
+end
+
+------------------------------------------------------------------------------------------ the height profile
+-- (a hump: up h over len/2 and down again, a smooth bump centred at s0)
+local function hump(s0, len, h)
+  return function(s)
+    local d = math.abs(s - s0)
+    if d >= len / 2 then return 0 end
+    return h * (0.5 + 0.5 * math.cos(math.pi * d / (len / 2)))
+  end
+end
+do
+  local cr = notes(build(road({ { 'straight', 1200 } }, hump(600, 100, 4))))
+  T.check(has(cr, '^2:crest$') or has(cr, '^2:bigCrest$'), 'a 4 m hump over 100 m on a straight: a crest (' ..
+    show(cr) .. ')')
+  local jp = notes(build(road({ { 'straight', 1200 } }, hump(600, 30, 2))))
+  T.check(has(jp, '^2:jump$') or has(jp, '^2:bigJump$'), 'a 2 m hump over 30 m, flat out: a jump (' .. show(jp) .. ')')
+  local slowJ = notes(build(road({ { 'straight', 300 }, { 'arc', 10, 180 }, { 'straight', 20 } , { 'arc', 10, -180 },
+                                   { 'straight', 400 } }, hump(400, 30, 0.6))))
+  T.check(not has(slowJ, 'ump'), 'a low hump between two hairpins, slow: no jump (' .. show(slowJ) .. ')')
+  local dp = notes(build(road({ { 'straight', 1200 } }, function(s) return -hump(600, 80, 4)(s) end)))
+  T.check(has(dp, '^2:dip$') or has(dp, '^2:badDip$'), 'a 4 m hollow over 80 m: a dip (' .. show(dp) .. ')')
+  local flat = notes(build(road({ { 'straight', 1200 } })))
+  T.check(show(flat) == '2:finish', 'a flat straight: the finish only (' .. show(flat) .. ')')
+  local none = road({ { 'straight', 1200 } }, hump(600, 30, 2))
+  for _, p in ipairs(none) do p.z = nil end
+  T.check(show(notes(build(none))) == '2:finish', 'a line with no heights: nothing read off them')
+  -- a crest in a corner is its shape; one just before it comes before the corner
+  local oc = notes(build(road({ { 'straight', 500 }, { 'arc', 60, 90 }, { 'straight', 500 } }, hump(547, 60, 2))))
+  T.check(has(oc, '4:corner/overCrest'), 'a crest in the middle of a corner: "over crest" (' .. show(oc) .. ')')
+  local bc = notes(build(road({ { 'straight', 500 }, { 'arc', 60, 90 }, { 'straight', 500 } }, hump(470, 50, 1.5))))
+  T.check(has(bc, '2:crest,4:corner') or has(bc, '2:smallCrest,4:corner') or has(bc, '2:bigCrest,4:corner') or
+          has(bc, '2:brakeOverCrest'),
+    'a crest just before a corner: called before it (' .. show(bc) .. ')')
+  -- up and down: a long steep hill after a corner
+  local hill = notes(build(road({ { 'straight', 400 }, { 'arc', 60, 60 }, { 'straight', 600 } }, function(s)
+    return s > 470 and (s - 470) * 0.12 or 0 end)))
+  T.check(has(hill, '5:up') or has(hill, '6:up'), 'a 12 % climb starting after a corner: "up" (' .. show(hill) .. ')')
+end
+
+------------------------------------------------------------------------------------------ the slots
+do
+  -- more calls before a corner than its two slots: the jump and the crest beat the side road
+  local line = road({ { 'straight', 600 }, { 'arc', 60, 90 }, { 'straight', 500 } }, hump(565, 30, 2))
+  local cum = geo.cumulative(line)
+  local b = build(line, { { s = 578, type = 'atJunction' }, { s = 586, type = 'pastJunction' } })
+  local ns = notes(b)
+  local hit
+  for _, s in ipairs(ns) do if s:find('4:corner') then hit = s end end
+  T.check(hit and (hit:find('jump') or hit:find('Jump')) and not hit:find('pastJunction'),
+    'a jump, a turning and a side road before a corner: the jump and the turning are called, the side road is not (' ..
+    tostring(hit) .. ')')
+  local n2 = 0
+  for _ in (hit or ''):gmatch('[23]:') do n2 = n2 + 1 end
+  T.check(n2 <= 2, 'at most two calls before the corner')
+  -- the finish on the last corner when it is close; no "to stop" (the co-driver is off past the finish)
+  local fin = build(road({ { 'straight', 400 }, { 'arc', 60, 90 }, { 'straight', 80 } }))
+  local fn = notes(fin)
+  T.check(fn[#fn]:find('4:corner') and fn[#fn]:find('finish') and not show(fn):find('toStop'),
+    'a corner just before the finish: "... over finish", and nothing after it (' .. show(fn) .. ')')
+  -- (a keep call inside that corner goes before it, and the finish still goes on the corner: the note ending last)
+  local fk = notes(build(road({ { 'straight', 400 }, { 'arc', 60, 120 }, { 'straight', 60 } }),
+                         { { s = 440, type = 'keepLeft' } }))
+  T.check(#fk == 1 and fk[1]:find('2:keepLeft') and fk[1]:find('4:corner') and fk[1]:find('finish'),
+    'a fork inside the last corner: "keep left", the corner, "over finish", one note (' .. show(fk) .. ')')
+  -- keep left on a crest
+  local kc = notes(build(road({ { 'straight', 1200 } }, hump(600, 100, 4)), { { s = 600, type = 'keepLeft' } }))
+  T.check(has(kc, '^2:keepLeftOverCrest$'), 'a fork on a crest: "keep left over crest", one call (' .. show(kc) .. ')')
+  -- narrows: a landmark like a junction
+  local nr = notes(build(road({ { 'straight', 1200 } }), { { s = 600, type = 'narrows' } }))
+  T.check(has(nr, '^5:narrows$'), 'a narrowing on a straight: a note of its own (' .. show(nr) .. ')')
+  -- the reviews' cases (2026-11-14)
+  -- a hollow is a dip, and its two rims are not crests
+  local hollow = notes(build(road({ { 'straight', 1200 } }, function(x) return -hump(600, 80, 4)(x) end)))
+  T.check(not has(hollow, 'rest'), 'a 4 m hollow: no crests at its rims (' .. show(hollow) .. ')')
+  -- heights no road has (a 6 m step in 5 m): nothing read there
+  local cliff = notes(build(road({ { 'straight', 1200 } }, function(x) return x > 600 and -6 or 0 end)))
+  T.check(show(cliff) == '2:finish', 'a 6 m step in the heights: no jump, no crest, no dip (' .. show(cliff) .. ')')
+  -- a crest inside a chicane is "over crest", not "into crest"
+  local cc = notes(build(road({ { 'straight', 300 }, { 'arc', 20, 60 }, { 'straight', 5 }, { 'arc', 20, -60 },
+                               { 'straight', 300 } }, hump(326, 40, 1.5))))
+  T.check(not has(cc, 'intoCrest'), 'a crest in a chicane: not "into crest" (' .. show(cc) .. ')')
+  -- one jump call per note, however many humps it has
+  local two = notes(build(road({ { 'straight', 600 }, { 'arc', 60, 60 }, { 'straight', 500 } },
+    function(x) return hump(570, 30, 2)(x) + hump(675, 30, 2)(x) end)))
+  local dup = false
+  for _, n in ipairs(two) do
+    local c = 0
+    for _ in n:gmatch('[Jj]ump') do c = c + 1 end
+    if c > 1 then dup = true end
+  end
+  T.check(not dup, 'a jump before a corner and one after it: one jump call on the note (' .. show(two) .. ')')
+  -- a voice that cannot say a call: left out, and a note with nothing to say not written
+  local casual = { finish = true, crest = true, overJump = true }
+  local dc = notes(writer.build(road({ { 'straight', 1200 } }, function(x) return -hump(600, 60, 4)(x) end),
+                                { startM = 0, finishM = 1200, quatFn = qf, speaks = casual }))
+  T.check(show(dc) == '2:finish', 'a dip, for a voice with no "dip": no note at all (' .. show(dc) .. ')')
+  -- a stage that starts on a climb still says "up" after its first corner
+  local climb = notes(build(road({ { 'straight', 100 }, { 'arc', 60, 60 }, { 'straight', 600 } }, function(x)
+    return x * 0.12 end)))
+  T.check(has(climb, 'up'), 'a stage that starts on a 12 % climb: "up" after the corner (' .. show(climb) .. ')')
+  -- the second reviews' cases (2026-11-14)
+  -- a hump at a bridge is the valley under it: no jump, the bridge called
+  local br = notes(build(road({ { 'straight', 1200 } }, hump(600, 30, 2)), { { s = 610, type = 'overBridge' } }))
+  T.check(has(br, 'overBridge') and not has(br, '[Jj]ump') and not has(br, 'rest'),
+    'a hump at a bridge: "over bridge", no jump or crest (' .. show(br) .. ')')
+  -- ... the whole of a long bridge, start to far end
+  local lb = notes(build(road({ { 'straight', 1400 } }, hump(800, 30, 2)),
+    { { s = 600, sEnd = 900, type = 'overBridge' } }))
+  T.check(has(lb, 'overBridge') and not has(lb, '[Jj]ump'), 'a hump 200 m into a 300 m bridge: no jump (' ..
+    show(lb) .. ')')
+  -- ... nor inside a corner: not its shape, not its caution
+  local brc = notes(build(road({ { 'straight', 600 }, { 'arcs', { { 120, 40 }, { 60, 50 } } }, { 'straight', 400 } },
+    hump(690, 40, 1.5)), { { s = 690, type = 'overBridge' } }))
+  T.check(has(brc, '4:corner/tightens,') and not has(brc, 'Crest') and not has(brc, 'caution2'),
+    'a hump at a bridge inside a tightening corner: "tightens", no crest, no caution (' .. show(brc) .. ')')
+  -- a corner that tightens, for a voice that cannot say "tightens", on a fast approach: a care
+  local ttc = notes(writer.build(road({ { 'straight', 500 }, { 'arcs', { { 120, 40 }, { 60, 50 } } },
+    { 'straight', 400 } }), { startM = 0, finishM = 1e9, quatFn = qf, speaks = { finish = true } }))
+  T.check(has(ttc, '1:caution1,4:corner$'), 'a fast tightening corner, a voice with no shapes: a care (' ..
+    show(ttc) .. ')')
+  -- the user's test drive (2026-11-14): a long crest the grade change over 20 m is too short to see is blind, so
+  -- called (from the sightline); and a long sweeper too open for a corner is one
+  local longCrest = notes(build(road({ { 'straight', 1500 } }, hump(750, 240, 6))))
+  local nCrest = 0
+  for _, n in ipairs(longCrest) do for _ in n:gmatch('rest') do nCrest = nCrest + 1 end end
+  T.check(nCrest == 1, 'a 6 m crest over 240 m, flat out: one crest (' .. show(longCrest) .. ')')
+  local gentle = notes(build(road({ { 'straight', 1500 } }, hump(750, 600, 3))))
+  T.check(not has(gentle, 'rest'), 'a 3 m rise over 600 m: not blind, no crest (' .. show(gentle) .. ')')
+  local sweep = build(road({ { 'straight', 400 }, { 'arc', 500, 50 }, { 'straight', 400 } }))
+  local sw = notes(sweep)
+  T.check(has(sw, '4:corner') and sweep.corners == 1, 'a 50 degree sweeper at 500 m radius: a corner (' ..
+    show(sw) .. ')')
+  local wobble = build(road({ { 'straight', 400 }, { 'arc', 900, 10 }, { 'straight', 400 } }))
+  T.check(wobble.corners == 0, 'a 10 degree bend at 900 m: no corner (' .. show(notes(wobble)) .. ')')
+  -- (the second review of it: one call for one long top; a crest too weak for a call of its own is called once it
+  --  is blind; a sweeper is not the corner before for the next one's caution)
+  local function summit(g, s0, len)
+    return function(s)
+      if s < s0 then return g * s end
+      local d = math.min(s - s0, len)
+      local z = g * s0 + g * d - g / len * d * d
+      return z - g * math.max(0, s - s0 - len)
+    end
+  end
+  local top = notes(build(road({ { 'straight', 1600 } }, summit(0.15, 650, 150))))
+  local nTop = 0
+  for _, n in ipairs(top) do for _ in n:gmatch('rest') do nTop = nTop + 1 end end
+  T.check(nTop == 1, '+15 % to -15 % over a 150 m top: one crest (' .. show(top) .. ')')
+  -- (the second drive: crests from the sight, not the grade -- a steep climb easing off, or a descent getting
+  --  steeper, that the driver sees right over, is none)
+  local function ease(g1, g2, s0, len)
+    return function(s)
+      if s < s0 then return g1 * s end
+      local d = math.min(s - s0, len)
+      return g1 * s0 + g1 * d + (g2 - g1) / (2 * len) * d * d + g2 * math.max(0, s - s0 - len)
+    end
+  end
+  local easing = notes(build(road({ { 'straight', 1600 } }, ease(0.14, 0.06, 700, 60))))
+  T.check(not has(easing, 'rest'), 'a 14 % climb easing to 6 % over 60 m, the road still in sight: no crest (' ..
+    show(easing) .. ')')
+  -- (the review of it: the same climb easing off with heights a little rough is still none; a hollow the road
+  --  comes back out of in view is none; a blind top with a dip after it too weak to call is still a crest)
+  local seed = 12345
+  local function rough(f)
+    local nz = {}
+    return function(s)
+      local k = math.floor(s)
+      if not nz[k] then seed = (seed * 1103515245 + 12345) % 2147483648; nz[k] = (seed / 2147483648 - 0.5) * 0.4 end
+      return f(s) + nz[k]
+    end
+  end
+  local roughEase = notes(build(road({ { 'straight', 1600 } }, rough(ease(0.12, 0.03, 700, 30)))))
+  T.check(not has(roughEase, 'rest'), 'a 12 % climb easing to 3 %, heights rough by 0.2 m: no crest (' ..
+    show(roughEase) .. ')')
+  local hollow = notes(build(road({ { 'straight', 1600 } }, hump(800, 40, -1.5))))
+  T.check(not has(hollow, 'rest'), 'a 1.5 m hollow in a level road: no crest at its rim (' .. show(hollow) .. ')')
+  local s2, h2 = summit(0.12, 650, 100), hump(735, 40, -2.5)
+  local topDip = notes(build(road({ { 'straight', 1600 } }, function(s) return s2(s) + h2(s) end)))
+  T.check(has(topDip, 'rest') or has(topDip, 'ump'), 'a blind top with a dip after it: still called (' ..
+    show(topDip) .. ')')
+  local steep30 = notes(build(road({ { 'straight', 1600 } }, ease(-0.06, -0.14, 700, 30))))
+  T.check(not has(steep30, 'rest'), 'a descent from 6 % to 14 % over 30 m, the road below in sight: no crest (' ..
+    show(steep30) .. ')')
+  local brow = notes(build(road({ { 'straight', 1600 } }, ease(0, -0.12, 700, 30))))
+  T.check(has(brow, '2:down') or has(brow, 'bigCrest'),
+    'a level road dropping away to 12 % over 30 m: called, "down" (the third drive) or a big crest (' ..
+    show(brow) .. ')')
+  -- (the review of those: a sharp drop-off on a descent is still a crest; a rounded top levelling out where the road
+  --  is hidden is one too)
+  local drop = notes(build(road({ { 'straight', 1600 } }, ease(-0.05, -0.17, 700, 30))))
+  T.check(has(drop, 'rest') or has(drop, 'ump'), 'a descent from 5 % dropping to 17 % over 30 m: called (' ..
+    show(drop) .. ')')
+  local plateau = notes(build(road({ { 'straight', 1600 } }, ease(0.2, -0.02, 700, 50))))
+  T.check(has(plateau, 'rest') or has(plateau, 'ump'), 'a 20 % climb rounding over to level: called (' ..
+    show(plateau) .. ')')
+  -- (the third drive: a downhill from flat road is "down", not a crest -- on a straight and in a corner -- and a
+  --  voice with no "down" hears the crest; a climb over the top into the same descent is still a crest)
+  local flatDown = build(road({ { 'straight', 1600 } }, ease(0, -0.10, 700, 40)))
+  local fd = notes(flatDown)
+  T.check(has(fd, 'down') and not has(fd, 'rest'), 'flat road into a 10 % downhill: "down", no crest (' ..
+    show(fd) .. ')')
+  local fdc = notes(build(road({ { 'straight', 600 }, { 'arc', 150, 40 }, { 'straight', 1000 } },
+    ease(0, -0.10, 700, 40))))
+  T.check(has(fdc, 'down') and not has(fdc, 'rest'), 'flat road into a downhill in a corner: "down", no crest (' ..
+    show(fdc) .. ')')
+  local fdLine = road({ { 'straight', 1600 } }, ease(0, -0.10, 700, 40))
+  local fdCas = notes(writer.build(fdLine, { startM = 0, finishM = 1e9, quatFn = qf, speaks = { finish = true, crest = true, smallCrest = true, bigCrest = true, overCrest = true, intoCrest = true } }))
+  T.check(not has(fdCas, 'down') and has(fdCas, 'rest'), 'the same, a voice with no "down": the crest (' ..
+    show(fdCas) .. ')')
+  -- (its review: a corner that tightens over such a top keeps the caution it had over a crest, and says the
+  --  descent once)
+  local tdLine = road({ { 'straight', 650 }, { 'curve', { { 120, 25 }, { 40, 45 } } }, { 'straight', 900 } },
+    ease(0, -0.10, 690, 40))
+  local tdc = notes(build(tdLine))
+  local nDown = 0
+  for _, n in ipairs(tdc) do for _ in n:gmatch('[Dd]own') do nDown = nDown + 1 end end
+  T.check(not has(tdc, 'rest') and nDown == 1, 'a corner tightening over the top of a downhill from flat: "down" ' ..
+    'once, no crest (' .. show(tdc) .. ')')
+  T.check(has(tdc, 'caution[23]') and has(tdc, 'tightens'), 'and a caution as over a crest (' .. show(tdc) .. ')')
+  local upDown = notes(build(road({ { 'straight', 1600 } }, ease(0.10, -0.10, 700, 80))))
+  T.check(has(upDown, 'rest') or has(upDown, 'ump'), 'a 10 % climb over the top into a 10 % downhill: a crest (' ..
+    show(upDown) .. ')')
+  local steeper = notes(build(road({ { 'straight', 1600 } }, ease(-0.04, -0.10, 700, 60))))
+  T.check(not has(steeper, 'rest'), 'a descent from 4 % to 10 % over 60 m, the road still in sight: no crest (' ..
+    show(steeper) .. ')')
+  local s1, h1 = summit(0.10, 700, 200), hump(800, 40, 0.5)
+  local weak = notes(build(road({ { 'straight', 2000 } }, function(s) return s1(s) + h1(s) end)))
+  T.check(has(weak, 'rest'), 'a blind top with a small bump on it: a crest (' .. show(weak) .. ')')
+  local afterSw = notes(build(road({ { 'straight', 600 }, { 'arc', 400, -40 }, { 'straight', 60 }, { 'arc', 15, 90 },
+                                    { 'straight', 400 } })))
+  T.check(has(afterSw, '^1:caution2,4:corner/square'), 'a square after a sweeper: its caution as after a straight (' ..
+    show(afterSw) .. ')')
+  -- a casual voice says no corner shape: a crest inside a corner is "over crest" after it, not a silent shape
+  local casualSet = { finish = true, crest = true, overJump = true, overCrest = true, intoCrest = true,
+                      bigCrest = true, smallCrest = true, brakeOverCrest = true, keepLeftOverCrest = true,
+                      keepRightOverCrest = true, jump = true, bigJump = true, chicaneLeftEntry = true,
+                      chicaneRightEntry = true, ['descriptor:hairpin'] = true }
+  local ocLine = road({ { 'straight', 500 }, { 'arc', 60, 90 }, { 'straight', 500 } }, hump(547, 60, 2))
+  local occ = notes(writer.build(ocLine, { startM = 0, finishM = 1e9, quatFn = qf, speaks = casualSet }))
+  T.check(has(occ, '4:corner,5:overCrest') and not has(occ, 'corner/'),
+    'a crest inside a corner, casual voice: "over crest" after the corner, no shape (' .. show(occ) .. ')')
+  -- a dip given way to a stronger crest leaves no crest at its far rim
+  do
+    local function bump(s0, len, h) return hump(s0, len, h) end
+    local A, B = bump(600, 40, 3), bump(645, 50, 2)
+    local pts, vv = {}, {}
+    for i = 1, 240 do local s = (i - 1) * 5 pts[i] = { x = 0, y = s, z = A(s) - B(s) } vv[i] = 20 end
+    local ev = pn.heights(pts, 5, vv)
+    local rim = false
+    for _, e in ipairs(ev) do if e.kind == 'crest' and (e.i - 1) * 5 > 640 then rim = true end end
+    T.check(#ev == 1 and not rim, 'a crest, a weaker hollow just after it: the crest alone, not the hollow\'s rim (' ..
+      #ev .. ' events)')
+  end
+  -- (the review of the sight's crests: a blind top with a dip after it too weak to be called on its own, at 25 m/s:
+  --  the crest is not given way to that dip, or nothing would be said)
+  do
+    local g, s0, len = 0.12, 650, 100
+    local B = hump(735, 40, -2.5)
+    local pts, vv = {}, {}
+    for i = 1, 320 do
+      local s = (i - 1) * 5
+      local d = math.min(math.max(0, s - s0), len)
+      local z = (s < s0 and g * s or g * s0 + g * d - g / len * d * d - g * math.max(0, s - s0 - len)) + B(s)
+      pts[i] = { x = 0, y = s, z = z }
+      vv[i] = 25
+    end
+    local ev, crest, loneDip = pn.heights(pts, 5, vv), false, false
+    for _, e in ipairs(ev) do
+      if e.kind == 'crest' then crest = true end
+      if e.kind == 'dip' and e.alone then loneDip = true end
+    end
+    T.check(crest or loneDip, 'a blind top, a dip too weak to call after it: the crest kept (' .. #ev .. ' events)')
+  end
+  -- a sharp hump a road can have (3.5 m over 30 m, 37 % at its steepest) is a jump, not bad heights
+  local kick = notes(build(road({ { 'straight', 1200 } }, hump(600, 30, 3.5))))
+  T.check(has(kick, '[Jj]ump'), 'a 3.5 m hump over 30 m, flat out: a jump (' .. show(kick) .. ')')
+  -- a fork on a second crest inside a corner that says its own crest: "keep left", one crest call on the note
+  local kk = notes(build(road({ { 'straight', 500 }, { 'arc', 90, 150 }, { 'straight', 400 } },
+    function(x) return hump(540, 50, 2)(x) + hump(620, 50, 2)(x) end), { { s = 620, type = 'keepLeft' } }))
+  local crests = 0
+  for _, n in ipairs(kk) do if n:find('4:corner') then for _ in n:gmatch('Crest') do crests = crests + 1 end end end
+  T.check(has(kk, '2:keepLeft,') and crests == 1,
+    'a fork on a crest in a corner over a crest: "keep left", "over crest" once (' .. show(kk) .. ')')
+  -- a voice with no chicane call hears the chicane's two corners
+  local chLine = road({ { 'straight', 300 }, { 'arc', 20, 60 }, { 'straight', 5 }, { 'arc', 20, -60 },
+                        { 'straight', 300 } })
+  local chNo = writer.build(chLine, { startM = 0, finishM = 1e9, quatFn = qf, speaks = { finish = true } })
+  local cn2 = notes(chNo)
+  local corners2 = 0
+  for _, n in ipairs(cn2) do if n:find('4:corner') then corners2 = corners2 + 1 end end
+  T.check(corners2 == 2 and not has(cn2, 'chicane'), 'a chicane, a voice with no chicane call: two corners (' ..
+    show(cn2) .. ')')
+  -- a corner that only tightens, on a fast approach: its shape says it, no caution for that alone
+  local tt = notes(build(road({ { 'straight', 500 }, { 'arcs', { { 120, 40 }, { 60, 50 } } }, { 'straight', 400 } })))
+  T.check(has(tt, 'tightens') and not has(tt, 'caution'), 'a fast corner that tightens: "tightens", no caution (' ..
+    show(tt) .. ')')
+  -- rallyAdapter.speaks: the style's modifiers, aliases, shapes and descriptors; and the voice settings untouched
+  do
+    local ra = require('earthRally/rallyAdapter')
+    local seenOpts
+    package.loaded[ra.VOICEPACK] = { resolveEffectiveEntry = function(_, _, o)
+      seenOpts = o
+      return 'x', { compositorStyle = 'english/casualtest' }, {} end }
+    package.loaded[ra.STYLES .. 'english/casualtest'] = { componentTypes = {
+      corner = { descriptors = { hairpin = {} }, descriptorAliases = { tightHairpin = 'hairpin' } },
+      modifiers = { crest = {} }, modifierAliases = { overCrest = 'crest' } } }
+    local sp, style = ra.speaks()
+    T.check(style == 'english/casualtest' and sp.crest and sp.overCrest and sp['descriptor:tightHairpin'] and
+            not sp['shape:overCrest'], 'speaks: modifiers, aliases and descriptors; no shape for a style with none')
+    T.check(seenOpts and seenOpts.writeSettings == false, 'speaks: the voice pack asked not to write settings')
+    package.loaded[ra.STYLES .. 'english/shapetest'] = { componentTypes = {
+      corner = { shapes = { overCrest = {} } }, modifiers = {} } }
+    package.loaded[ra.VOICEPACK] = { resolveEffectiveEntry = function()
+      return 'x', { compositorStyle = 'english/shapetest' }, {} end }
+    local sp2 = ra.speaks()
+    T.check(sp2 and sp2['shape:overCrest'], 'speaks: a style\'s corner shapes')
+    package.loaded[ra.VOICEPACK] = nil
+  end
+  -- every call written is one the game's english style knows
+  local mods = {
+    crest = 1, bigCrest = 1, smallCrest = 1, intoCrest = 1, jump = 1, bigJump = 1, overJump = 1, dip = 1, badDip = 1,
+    throughDip = 1, up = 1, down = 1, brakeOverCrest = 1, keepLeft = 1, keepRight = 1, keepLeftOverCrest = 1,
+    keepRightOverCrest = 1, atJunction = 1, pastJunction = 1, overBridge = 1, narrows = 1, finish = 1,
+    chicaneLeftEntry = 1, chicaneRightEntry = 1, twisty = 1,
+  }
+  local shapes = { opens = 1, tightens = 1, opensAndTightens = 1, overCrest = 1, opensOverCrest = 1,
+                   tightensOverCrest = 1, tightensDown = 1 }
+  local descs = { hairpin = 1, openHairpin = 1, tightHairpin = 1, square = 1 }
+  local known = true
+  for _, built in ipairs({ b, fin, tw }) do
+    for _, p in ipairs(built.notebook.pacenotes) do
+      for k = 1, 6 do
+        local x = p.structured.items[tostring(k)]
+        if x.type and x.type ~= 'caution' and x.type ~= 'corner' and not mods[x.type] then known = false end
+        if x.type == 'corner' and ((x.shape and not shapes[x.shape]) or (x.descriptor and not descs[x.descriptor])) then
+          known = false
+        end
+      end
+    end
+  end
+  T.check(known, 'only the game\'s own calls')
+end
+
+T.done('test_pacenotes')

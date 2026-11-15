@@ -54,7 +54,7 @@ that said nothing when the two projects under it moved on. Release notes in docs
 | ✔ | Version checks at startup, a clear message when BeamNG or BeamNG.Earth changed (23) | built |
 | ✔ | Naming a rally from its map file (4): three of the twelve rallies here came in as "Main Route Book". Written on this roadmap as "maps that group stages in folders import properly" -- the folders were never the problem, the name was | built |
 | ✔ | "Quick start on the line" dropped from Settings (the user, 2026-11-14): it did the thing the no-ATC start was fixed to stop doing, kept as an option, and the sharing of one code path between the two is most of why that bug existed | built |
-| → | The three it did not reach: the automatic ATC **dropped**, pre-loading and the late-start penalty moved to **on the stage** (then 1.6.0, now 1.5.0) (the user, 2026-11-14) | |
+| → | The three it did not reach: the automatic ATC **dropped**, pre-loading and the late-start penalty moved to **on the stage** (now 1.6.0) (the user, 2026-11-14) | |
 
 ## 1.4.0: rally files (released 2026-11-14)
 
@@ -71,10 +71,24 @@ docs/release-1.4.0.md; the format in docs/rally-file.md.
 | ✔ | A rally total and its place; season standings from each rally's finishing order (the first part of 28) | built |
 | ✔ | The pause menu's tab down to one **Rally menu** button; the Settings page's HUD preview button gone | built |
 
-## 1.5.0: on the stage
+## 1.5.0: the co-driver (released 2026-11-14)
+
+Pacenotes worth trusting, from the line and its heights. Built on its own branch alongside on the stage and
+released first, so on the stage moved up to 1.6.0 (as the rally files did for 1.4.0). It was 1.6.0, 1.5.0 and
+1.4.0 before that. Driven by the user four times on the way; release notes in docs/release-1.5.0.md, every call and
+its figures in docs/pacenotes-1.5.0.md.
+
+| | Item | Size |
+|---|---|---|
+| ✔ | Pacenote generator overhaul (2): hairpin / square, tightens / opens, chicane, twisty, long sweepers, cautions, crests from the driver's sight, "down" at a downhill's top, jumps, dips, hills, narrows, over finish; every call fitted to what the player's co-driver voice can say | built |
+| ✔ | Bridges on lines matched in the game: `tools/auto_recce.py --bridges-only`, kept by a later recce | built |
+| → | Not reached: co-driver settings (call timing, detail, voice) (26), and the self-test hearing the co-driver (carried from 1.2). Where they go is for the user to say | |
+
+## 1.6.0: on the stage
 
 The stage looks and feels like an event. Moved ahead of the co-driver and of making and sharing stages (the user,
-2026-11-14); it was 1.6.0, then 1.4.0 until the rally files took that number.
+2026-11-14); it was 1.6.0, then 1.4.0 until the rally files took that number, then 1.5.0 until the co-driver was
+released first (2026-11-14).
 
 | Item | Size |
 |---|---|
@@ -86,17 +100,6 @@ The stage looks and feels like an event. Moved ahead of the co-driver and of mak
 | Stages wider than ~26 km (8) | L |
 | Stage pre-loading *before the start*: the corridor loaded while you wait, a loaded % on screen, start any time (21). The on-demand half shipped in 1.3.1; this is the half that runs as you sit at the control. Moved here from 1.3.3 (the user, 2026-11-14) | M |
 | No penalty for a late start, just a new minute, as a real rally does. Also takes a permanently-zero row off the results card. Moved here from 1.3.3 (the user, 2026-11-14) | S |
-
-## 1.6.0: the co-driver
-
-Pacenotes worth trusting. Was 1.4.0 until on the stage moved ahead of it, then 1.5.0 until the rally files
-came in as 1.4.0 (the user, 2026-11-14).
-
-| Item | Size |
-|---|---|
-| Pacenote generator overhaul: crests, jumps, cautions from the height profile (2) | L |
-| Co-driver settings: call timing, detail, voice (26) | M |
-| The self-test hears the co-driver (carried from 1.2): a tracker of our own through setVehicleTracker, so a stage walked by the test calls its notes | S |
 
 ## 1.7.0: make and share stages
 
@@ -159,7 +162,7 @@ Decided against, with the reason, so they are not proposed again.
 
 - 1.3.0 first because it removes the biggest barrier: before it, every stage needed a recce driven. (The slow
   start seen on SnoDrift was to be fixed by pre-loading and an automatic ATC; the ATC has since been dropped and
-  pre-loading moved to on the stage (now 1.5.0), and 1.3.2's no-ATC start fixed the part of it that hurt.)
+  pre-loading moved to on the stage (now 1.6.0), and 1.3.2's no-ATC start fixed the part of it that hurt.)
 - 1.3.2 before the co-driver (the user, 2026-11-14): contained items, every one something a player meets in their
   first stage -- against the pacenote generator's rewrite, the largest thing left before the rally file.
 - **There is no 1.3.3** (the user, 2026-11-14). It was drafted to carry what 1.3.2 did not reach, and then
@@ -168,14 +171,16 @@ Decided against, with the reason, so they are not proposed again.
 - 1.4.0 (rally files) released ahead of on the stage (the user, 2026-11-14): it was built alongside it on a branch
   of its own and finished first. The menus and the leaderboards are the parts of the rally file a player sees, and
   1.7.0's writing half builds on the same format.
-- 1.5.0 (on the stage) before the co-driver and the rally file (the user, 2026-11-14; it was 1.6.0). Course tape and
+- 1.5.0 (the co-driver) released ahead of on the stage (the user, 2026-11-14): built alongside it on a branch of
+  its own and finished first, as the rally files were. Its height reading and sight crests are what on the stage's
+  height profiles and sketches can draw on.
+- 1.6.0 (on the stage) before the rally file (the user, 2026-11-14; it was 1.6.0, then 1.4.0 and 1.5.0). Course tape and
   junction signs stand on the junction data 1.3.0's auto recce already finds, so the heart of it needs nothing from
   later versions. It was first placed after the rally file because it was said to build on that too; in its new
   place, anything here that would have lived in the file (a ghost's run, most likely) has to be kept on this
-  machine per stage until 1.7.0 can carry it -- to settle when 1.5.0 is planned.
-- 1.6.0 is the pacenote overhaul on its own (split from 1.3.0, the user, 2026-11-13; it was 1.4.0): large, and best
-  tested on the matched lines 1.3.0 gives everyone, which 1.3.1 made reachable on ground nobody has driven. The
-  height profile 1.5.0 draws for stage sketches is the same data its crests and jumps are read from.
+  machine per stage until 1.7.0 can carry it -- to settle when 1.6.0 is planned.
+- The co-driver was the pacenote overhaul on its own (split from 1.3.0, the user, 2026-11-13): large, and best
+  tested on the matched lines 1.3.0 gives everyone, which 1.3.1 made reachable on ground nobody has driven.
 - 1.7.0's rally file is the base for the editor, setup mode, leaderboards, the starter pack and full rallies, so it
   comes before them.
 - On the stage before the full rally (the user, 2026-11-13), and now before everything after 1.3 (2026-11-14).

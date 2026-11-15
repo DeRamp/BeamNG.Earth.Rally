@@ -21,7 +21,7 @@ local versions = require('earthRally/versions')
 
 local M = {}
 local logTag = 'earthRally'
-M.VERSION = '1.4.0-alpha'
+M.VERSION = '1.5.0-alpha'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_HZ = 30                  -- the HUD's streams this often while something moves on it
 M.STREAM_IDLE_HZ = 2              -- ... and this often once the run is over
@@ -114,7 +114,10 @@ local function checksText(c)
   add('Rally engine', c.rallyEngine or '-')
   if c.atc then add('Time control', c.atc) end
   if c.stopControl then add('Stop control', c.stopControl) end
-  add('Corners found / notes loaded', tostring(c.cornersFound or '-') .. ' / ' .. tostring(c.notesLoaded or '-'))
+  add('Corners found / notes written / loaded', tostring(c.cornersFound or '-') .. ' / ' ..
+    tostring(c.notesWritten or '-') .. ' / ' .. tostring(c.notesLoaded or '-'))
+  if c.calls and c.calls ~= '' then add('Calls', c.calls) end
+  if c.voiceStyle then add('Co-driver style', c.voiceStyle) end
   add('Notes called', c.notesCalled)
   add('Origin moved to the stage centre', c.originMoved or '-')
   add('World shifts during the run', c.shifts .. (c.shifts > 0 and

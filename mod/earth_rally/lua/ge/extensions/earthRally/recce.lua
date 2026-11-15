@@ -196,7 +196,8 @@ function M.stop(keep, force)
   -- has just been driven is never lost because a figure could not be worked out, so this cannot stop the save --
   -- and a line saved without them is read like any older line, measured once on the first look.
   local okFig, fig = pcall(lineStats.of, r.points, r.stage)
-  if okFig and fig then saved.corners, saved.gainM, saved.lossM = fig.corners, fig.gainM, fig.lossM
+  if okFig and fig then
+    saved.corners, saved.gainM, saved.lossM, saved.figures = fig.corners, fig.gainM, fig.lossM, fig.figures
   elseif not okFig then
     log('W', 'earthRally', 'the recce line could not be measured: ' .. tostring(fig))
   end

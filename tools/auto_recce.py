@@ -14,6 +14,7 @@ Needs BeamNG.Earth's source (a clone of github.com/TecnaGamer/BeamNG.Earth) and 
 
     <beamng.earth>/.venv/Scripts/python.exe tools/auto_recce.py --earth <beamng.earth> --event olympus26
     ... --event otr24 --stage maryhill-up            (one stage)
+    ... --event otr-2024-final --bridges-only        (the bridges added to lines the game matched, nothing else)
 
 A developer tool for now: the plan is to move this into BeamNG.Earth's server as an API call, so players need nothing.
 """
@@ -592,6 +593,29 @@ def match_stage(np, md, mapcells, dem, stage, roadsmod=None):
     }
 
 
+def bridges_on(np, md, mapcells, roadsmod, m):
+    """The bridges along a line already matched (m: its file's JSON, from the game's own auto recce or this tool), as
+    this tool writes them: [[lat, lon, lat, lon]...], each from where the line goes onto a deck to where it leaves it.
+    The game's recce cannot see bridges (its road graph has no bridge flag: autoRecce.lua BRIDGES_NOT_AVAILABLE), so
+    a line it matched has none until this adds them (--bridges-only)."""
+    pts = m.get('points') or []
+    if len(pts) < 3:
+        return []
+    frame = Frame(pts[0][0], pts[0][1])
+    xy = [frame.xy(p[0], p[1]) for p in pts]
+    roads = Roads(np, md, mapcells, frame, xy, roadsmod)
+    along = [0.0]
+    for a, b in zip(xy, xy[1:]):
+        along.append(along[-1] + math.dist(a, b))
+    flags = [1 if len(p) > 3 and p[3] == 1 else 0 for p in pts]
+    _, bridges = landmarks(np, roads, xy, along, flags)
+
+    def ll(s):
+        k = min(range(len(along)), key=lambda j: abs(along[j] - s))
+        return [round(pts[k][0], 7), round(pts[k][1], 7)]
+    return [ll(a) + ll(b) for a, b in bridges]
+
+
 def map_key(line):
     """The stage's map line in short, as the mod's events.mapKey: a matched line from another version of the map is
     not used."""
@@ -607,6 +631,9 @@ def main():
     ap.add_argument('--user-dir', default=user_dir())
     ap.add_argument('--cache-dir', default=os.path.expanduser('~/.cache/beamng-earth'),
                     help="BeamNG.Earth's download cache (its default)")
+    ap.add_argument('--bridges-only', action='store_true',
+                    help='add the bridges to lines already matched (the game\'s own recce cannot see them); the '
+                         'line itself is kept, and the file as it was saved once as <file>.bak')
     args = ap.parse_args()
     sys.path.insert(0, os.path.join(args.earth, 'server'))
     import logging
@@ -621,12 +648,37 @@ def main():
     # gives it `<cache>/dem` (earthd.py). Passing the root made it look for tiles that were never there and fetch
     # every one again -- 0 of 14,376 already-downloaded tiles seen on this machine (measured, 2026-11-13).
     dem = demmod.Dem(os.path.join(args.cache_dir, 'dem'))
-    with open(os.path.join(args.user_dir, 'earthRally', 'events', args.event + '.json'), encoding='utf-8') as f:
-        event = json.load(f)
     out_dir = os.path.join(args.user_dir, 'earthRally', 'matched')
     os.makedirs(out_dir, exist_ok=True)
+    if args.bridges_only:
+        # (the matched files by their names, <event id>__<stage id>.json: no event file needed, whose name need not be
+        #  the event's id)
+        names = sorted(f for f in os.listdir(out_dir) if f.startswith(args.event + '__') and f.endswith('.json'))
+        event = {'id': args.event, 'stages': [{'id': f[len(args.event) + 2:-5]} for f in names]}
+    else:
+        with open(os.path.join(args.user_dir, 'earthRally', 'events', args.event + '.json'), encoding='utf-8') as f:
+            event = json.load(f)
     for stage in event['stages']:
         if args.stage and stage['id'] != args.stage:
+            continue
+        if args.bridges_only:
+            path = os.path.join(out_dir, f"{event['id']}__{stage['id']}.json")
+            if not os.path.isfile(path):
+                print(f"{stage['id']:<45} not matched yet: nothing to add bridges to")
+                continue
+            with open(path, encoding='utf-8') as f:
+                m = json.load(f)
+            bak = path + '.bak'
+            if not os.path.exists(bak):
+                with open(bak, 'w', encoding='utf-8') as f:
+                    json.dump(m, f)
+            m['bridges'] = bridges_on(np, md, mapcells, roadsmod, m)
+            m['bridgesSource'] = "BeamNG.Earth's level ranges (tools/auto_recce.py --bridges-only)"
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(m, f)
+            print(f"{stage['id']:<45} {len(m['bridges'])} bridge(s) "
+                  + ', '.join('%.0f m long' % (math.dist(Frame(b[0], b[1]).xy(b[0], b[1]),
+                                                         Frame(b[0], b[1]).xy(b[2], b[3]))) for b in m['bridges']))
             continue
         m = match_stage(np, md, mapcells, dem, stage, roadsmod)
         if not m:

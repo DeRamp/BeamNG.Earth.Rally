@@ -538,12 +538,26 @@ local function stepBuild()
     end
     local at = junctions.placeInOrder(run.line, run.cum, pts, M.LANDMARK_OFF_M)
     for k, lm in ipairs(list) do
-      if at[k] then lms[#lms + 1] = { s = at[k].along, type = lm.type } end
+      if at[k] then
+        local item = { s = at[k].along, type = lm.type }
+        -- (a bridge's far end: the stretch whose heights are the valley's; on the line after its start)
+        local ex, ey = nil, nil
+        if lm.endLat and lm.endLon then ex, ey = earth.toGame(lm.endLat, lm.endLon, 0) end
+        if ex then
+          local _, _, s2, off2 = geo.locate(run.line, run.cum, { x = ex, y = ey })
+          if s2 and off2 and off2 <= M.LANDMARK_OFF_M and s2 > item.s then item.sEnd = s2 end
+        end
+        lms[#lms + 1] = item
+      end
     end
   end
   table.sort(lms, function(a, b) return a.s < b.s end)
+  -- (only the calls the player's voice can say: rallyAdapter.speaks)
+  local okS, speaks, style = pcall(rallyA.speaks)
+  if not okS then speaks, style = nil, nil end
+  run.checks.voiceStyle = style or 'not known (every call written)'
   local okB, built = pcall(writer.build, run.line, { startM = run.startM, finishM = run.finishM, name = run.stage.name,
-    mute = mute, landmarks = lms,
+    mute = mute, landmarks = lms, speaks = speaks,
     quatFn = function(x, y, z) local q = quatFromDir(vec3(x, y, z), vec3(0, 0, 1)) return q.x, q.y, q.z, q.w end })
   if not okB then fail('could not build the stage: ' .. tostring(built)) return end
   writer.write(run.dir, built)
@@ -552,7 +566,14 @@ local function stepBuild()
   rallyA.notesOn(false)        -- (no calls on the way to the start: on at GO)
   run.checks.rallyEngine = ok and 'loaded' or ('failed: ' .. tostring(why))
   run.checks.cornersFound = built.corners
+  run.checks.notesWritten = built.notes
   run.checks.junctionsBridges = built.landmarks
+  -- (what the notes call, as one line for the developer panel and the results file: "crest 12, hairpin 3, ...")
+  local names = {}
+  for t in pairs(built.calls or {}) do if t ~= 'corner' then names[#names + 1] = t end end
+  table.sort(names)
+  for i, t in ipairs(names) do names[i] = t .. ' ' .. built.calls[t] end
+  run.checks.calls = table.concat(names, ', ')
   if not ok then
     log('E', logTag, 'rally engine: ' .. tostring(why) .. ' (the run goes on without a co-driver)')
   else

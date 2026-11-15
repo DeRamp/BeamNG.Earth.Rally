@@ -12,7 +12,8 @@
 --
 --   Ported, at the same constants, so the two produce comparable lines: resample, the waypoint snap, the A* between
 --   consecutive snaps, the detour test, the gap stretches kept on the organisers' line and eased in and out over
---   BLEND_M, the junction landmarks (branch / angle), and the output file's every key.
+--   BLEND_M, the junction landmarks (branch / angle), and the output file's every key -- and one key more, `narrows`
+--   (M.narrows), which the Python cannot write: it has no road widths.
 --
 --   Not ported, and not needed: the Python's whole road-graph build. It read the map cells itself, merged vertices
 --   within MERGE_M, cut roads into PIECE_M pieces and bridged dead ends within BRIDGE_M / BRIDGE_ON_LINE_M, all to
@@ -128,7 +129,7 @@ end
 function M.resample(pts, step)
   local n = #pts
   if n == 0 then return {}, {} end
-  local out = { { x = pts[1].x, y = pts[1].y, z = pts[1].z } }
+  local out = { { x = pts[1].x, y = pts[1].y, z = pts[1].z, w = pts[1].w } }
   local along = { 0 }
   local acc, carry = 0.0, 0.0
   for i = 1, n - 1 do
@@ -138,7 +139,8 @@ function M.resample(pts, step)
     while pos <= seg do
       local t = pos / seg
       out[#out + 1] = { x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t,
-                        z = (a.z and b.z) and (a.z + (b.z - a.z) * t) or nil }
+                        z = (a.z and b.z) and (a.z + (b.z - a.z) * t) or nil,
+                        w = (a.w and b.w) and (a.w + (b.w - a.w) * t) or nil }
       along[#along + 1] = acc + pos
       pos = pos + step
     end
@@ -148,7 +150,7 @@ function M.resample(pts, step)
   -- (the line's own end always: dropping it when near the last point cut matched lines up to a quarter step short
   -- of the flying finish -- tools/auto_recce.py's own note, review 2026-11-12)
   if dist(out[#out], pts[n]) > 0.5 then
-    out[#out + 1] = { x = pts[n].x, y = pts[n].y, z = pts[n].z }
+    out[#out + 1] = { x = pts[n].x, y = pts[n].y, z = pts[n].z, w = pts[n].w }
     along[#along + 1] = acc
   end
   return out, along
@@ -292,7 +294,7 @@ function M.build(graph, kml, fr)
     local lat, lon, alt = n.lat, n.lon, n.alt
     if lat ~= nil then
       local p = fr.xy(lat, lon)
-      g.xy[name] = { x = p.x, y = p.y, z = alt }
+      g.xy[name] = { x = p.x, y = p.y, z = alt, w = tonumber(n.radius) }
       g.near[name] = polyDist(p, kml)
       g.half[name] = (type(n.radius) == 'number' and n.radius > 0) and n.radius or nil
       g.nbr[name] = {}
@@ -352,15 +354,16 @@ function M.snap(g, p, direction)
   local a, b = g.xy[g.ea[bi]], g.xy[g.eb[bi]]
   return { a = g.ea[bi], b = g.eb[bi], t = bt,
            x = a.x + (b.x - a.x) * bt, y = a.y + (b.y - a.y) * bt,
-           z = (a.z and b.z) and (a.z + (b.z - a.z) * bt) or a.z or b.z }
+           z = (a.z and b.z) and (a.z + (b.z - a.z) * bt) or a.z or b.z,
+           w = (a.w and b.w) and (a.w + (b.w - a.w) * bt) or a.w or b.w }
 end
 
 -- Cheapest way from snap s to snap g (A*): the polyline (with heights) and its length, or nil.
 -- tools/auto_recce.py's Roads.route, including its two virtual nodes at the snap points.
 function M.route(gr, s, t)
   if (s.a == t.a and s.b == t.b) or (s.a == t.b and s.b == t.a) then
-    local p0 = { x = s.x, y = s.y, z = s.z }
-    local p1 = { x = t.x, y = t.y, z = t.z }
+    local p0 = { x = s.x, y = s.y, z = s.z, w = s.w }
+    local p1 = { x = t.x, y = t.y, z = t.z, w = t.w }
     return { p0, p1 }, dist(p0, p1)
   end
   local START, GOAL = '\1start', '\1goal'
@@ -425,12 +428,12 @@ function M.route(gr, s, t)
     n = came[n]
     if n ~= START then path[#path + 1] = n end
   end
-  local pts = { { x = s.x, y = s.y, z = s.z } }
+  local pts = { { x = s.x, y = s.y, z = s.z, w = s.w } }
   for i = #path, 1, -1 do
     local q = gr.xy[path[i]]
-    pts[#pts + 1] = { x = q.x, y = q.y, z = q.z }
+    pts[#pts + 1] = { x = q.x, y = q.y, z = q.z, w = q.w }
   end
-  pts[#pts + 1] = { x = t.x, y = t.y, z = t.z }
+  pts[#pts + 1] = { x = t.x, y = t.y, z = t.z, w = t.w }
   local total = 0
   for i = 1, #pts - 1 do total = total + dist(pts[i], pts[i + 1]) end
   return pts, total
@@ -535,6 +538,43 @@ local function fillHeights(pts)
   end
 end
 
+-- Where the road gets narrower along the matched line (res, every OUT_STEP_M, each sample's half width `w` off the
+-- road graph's node radius; flags: 1 on a stretch with no road): the distances along it, at most one per
+-- NARROW_GAP_M. A narrowing is the road's half width over the NARROW_AFTER_M ahead at most NARROW_RATIO of what it
+-- was over the NARROW_BEFORE_M behind, and at least NARROW_DROP_M less -- in practice a two-lane road becoming one
+-- lane, which is what the map's widths can tell (they come from its lane counts, not from a measured verge).
+M.NARROW_BEFORE_M = 200.0
+M.NARROW_AFTER_M = 100.0
+M.NARROW_RATIO = 0.7
+M.NARROW_DROP_M = 1.0
+M.NARROW_GAP_M = 300.0
+function M.narrows(res, resAlong, flags)
+  local n = #res
+  local nb, na = floor(M.NARROW_BEFORE_M / M.OUT_STEP_M + 0.5), floor(M.NARROW_AFTER_M / M.OUT_STEP_M + 0.5)
+  local function mean(a, b)
+    if a < 1 or b > n then return nil end
+    local s = 0
+    for k = a, b do
+      if res[k].w == nil or (flags and flags[k] == 1) then return nil end
+      s = s + res[k].w
+    end
+    return s / (b - a + 1)
+  end
+  local out, last = {}, -huge
+  for k = nb + 1, n - na do
+    if resAlong[k] - last >= M.NARROW_GAP_M then
+      local before, after = mean(k - nb, k - 1), mean(k, k + na - 1)
+      -- (and the road narrow at k itself: the mean ahead dips before the road does)
+      if before and after and after <= before * M.NARROW_RATIO and before - after >= M.NARROW_DROP_M
+         and res[k].w <= before * M.NARROW_RATIO then
+        out[#out + 1] = resAlong[k]
+        last = resAlong[k]
+      end
+    end
+  end
+  return out
+end
+
 -- Match a stage's map line onto an accumulated road graph. Pure: no game, no files.
 --   stage: the event's stage ({ id, line = { { lat, lon }... } })
 --   graph: { nodes = { [name] = { lat, lon, alt, radius } }, edges = { { a, b } | { inNode =, outNode = } ... } }
@@ -581,7 +621,7 @@ function M.match(stage, graph, info)
   local function add(pts)
     for _, p in ipairs(pts) do
       if #out == 0 or dist(out[#out], p) > 0.05 then
-        out[#out + 1] = { x = p.x, y = p.y, z = p.z }
+        out[#out + 1] = { x = p.x, y = p.y, z = p.z, w = p.w }
       end
     end
   end
@@ -668,6 +708,7 @@ function M.match(stage, graph, info)
     latLon[k] = { la, lo }
   end
   local juncs = M.junctions(gr, res, resAlong, flags)
+  local narrows = M.narrows(res, resAlong, flags)
 
   -- (a landmark's place on the matched line, as lat / lon: the mod finds it on whichever line the stage runs on)
   local function ll(s)
@@ -705,6 +746,11 @@ function M.match(stage, graph, info)
     local la, lo = ll(j.along)
     juncOut[k] = junctions.encode(j, la, lo)     -- [lat, lon, kind, side, inDeg, outDeg, [[sideDeg, halfW]...], half]
   end
+  local narrowOut = {}
+  for k, s in ipairs(narrows) do
+    local la, lo = ll(s)
+    narrowOut[k] = { la, lo }
+  end
 
   -- (format 2: the junctions keep their roads -- junctions.lua. events.lua reads format 1 files as before.)
   return {
@@ -716,6 +762,7 @@ function M.match(stage, graph, info)
     lengthM = round(total, 1),
     mapLineM = round(kmlCum, 1),
     corners = fig.corners,
+    figures = fig.figures,
     gainM = fig.gainM,
     lossM = fig.lossM,
     gaps = gapsOut,
@@ -730,6 +777,9 @@ function M.match(stage, graph, info)
     seconds = round(M.clock() - t0, 1),
     junctions = juncOut,
     bridges = {},                      -- M.BRIDGES_NOT_AVAILABLE: not "no bridges on this stage"
+    -- (where the road gets narrower, as lat / lon, a key tools/auto_recce.py does not write: it has no widths.
+    --  events.landmarks reads it as the "narrows" call; a file without it just has none)
+    narrows = narrowOut,
     points = points,
   }
 end
@@ -952,8 +1002,9 @@ local function onWindow(myGen, token, i, r)
         if x ~= nil then
           local lat, lon, alt = earth.toGeo(x, y, z or 0)
           if lat ~= nil then
-            -- (radius is the road's half width: the junctions keep it for their side roads, which the course
-            --  tape is cut to (junctions.lua). The Python tool has no width at all, and writes 0, "not known")
+            -- (radius is the road's half width: M.narrows reads it off the matched line for the "narrows" call, and the
+            --  junctions keep it for their side roads, which the course tape is cut to (junctions.lua). The Python
+            --  tool has no width at all, and writes 0, "not known")
             j.graph.nodes[name] = { lat = lat, lon = lon, alt = alt, radius = radius }
             added = added + 1
           end
