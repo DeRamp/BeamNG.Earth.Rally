@@ -364,3 +364,5 @@ that road's tape all the same, `MARSHAL_OVERRUN_BEHIND` (2 x `MARSHAL_BEHIND`, 1
 the overrun) and the one-per-junction `used` dedup are unchanged. Two older tests moved their marks clear of the wider
 window (60 m -> 70 m before a turn; the roadside mark on the 300 m-junction stage 2250 -> 2200). Tests: `test_dressing`
 (a straight, a fork, a turn's overrun, a mark 50 m off).
+
+Fixed (lite review): the window back to 40 m, measured on the ground from the mark's point to the junction's (a second mark dropped only when it too is within it; the 60 m-before-a-turn test restored); in the overrun `MARSHAL_BEHIND` back and `MARSHAL_OVERRUN_SIDE` 4 m past the edge; at a straight or fork `MARSHAL_SIDE` past the closed road's edge, away from the way out.

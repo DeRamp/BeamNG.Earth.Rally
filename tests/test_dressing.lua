@@ -395,7 +395,8 @@ end
 
 -- 1.6.0's note 11: a map marshal by any taped junction stands behind its tape -- at a straight or a fork the closed
 -- road furthest from the way out; at a turn whose only closed road is the overrun, behind that road's tape all the same,
--- further back and off it to the side away from the way out (the rule's marshals: still none there, above)
+-- MARSHAL_BEHIND back and MARSHAL_OVERRUN_SIDE past its edge away from the way out (the rule's marshals: still none
+-- there, above); at a straight or fork MARSHAL_SIDE past the closed road's edge (lite review)
 do
   local mark = { { kind = 'marshal', along = 300, offLineM = 8 } }
   local St = { V(0, -300), V(0, 300) }
@@ -403,7 +404,8 @@ do
     junctions = { { along = 300, x = 0, y = 0, kind = 'straight', inDeg = 0, outDeg = 0,
                     sides = { { deg = 315 }, { deg = 250 } } } } }), 'marshal')
   local t = st[1] and find(st[1].objects, 'table')[1]
-  T.check(#st == 1 and st[1].along == 300 and t and len(t.x, t.y) > 10 and math.abs(bearing(t.x, t.y) - 250) < 10,
+  T.check(#st == 1 and st[1].along == 300 and t and len(t.x, t.y) > 10 and math.abs(bearing(t.x, t.y) - 250) < 25 and
+    distTo({ V(0, 0), V(-60 * math.sin(math.rad(70)), -60 * math.cos(math.rad(70))) }, t.x, t.y) - 3 > 1,
     'map marshal at a straight: behind the tape of the side road furthest from the way out (' ..
     tostring(t and bearing(t.x, t.y)) .. ')')
 
@@ -415,20 +417,24 @@ do
     junctions = { { along = 92, x = 0, y = 0, kind = 'fork', side = 'left',
                     sides = { { deg = bearing(rx, ry), halfW = 3 } } } } }), 'marshal')
   local f = fk[1] and find(fk[1].objects, 'table')[1]
-  T.check(#fk == 1 and f and math.abs(bearing(f.x, f.y) - bearing(rx, ry)) < 10 and distTo(Sf, f.x, f.y) - 3 > 1,
+  local Sc = { V(0, 0), V(rx * 60, ry * 60) }
+  T.check(#fk == 1 and f and math.abs(bearing(f.x, f.y) - bearing(rx, ry)) < 20 and distTo(Sf, f.x, f.y) - 3 > 1,
     'map marshal at a fork: behind the closed branch\'s tape, off the kept road')
+  T.check(f and distTo(Sc, f.x, f.y) - 3 > 1,
+    'map marshal at a fork: clear of the closed branch\'s surface too (' .. tostring(f and distTo(Sc, f.x, f.y)) .. ')')
 
   local Sr = { V(0, -300), V(0, 0), V(300, 0) }
   local ov = ofKind(D.plan({ line = Sr, startM = 0, finishM = 600, marks = mark,
     junctions = { { along = 300, x = 0, y = 0, kind = 'turn', inDeg = 0, outDeg = 90, sides = { { deg = 0 } } } } }),
     'marshal')
   local o = ov[1] and find(ov[1].objects, 'table')[1]
-  T.check(#ov == 1 and ov[1].along == 300 and o and math.abs(o.x + (3 + D.MARSHAL_SIDE)) < 1e-6 and
-    math.abs(o.y - (D.TAPE_IN + D.MARSHAL_OVERRUN_BEHIND)) < 1e-6,
-    'map marshal at a turn, the only closed road the overrun: behind its tape 10 m, off it away from the way out (' ..
+  T.check(#ov == 1 and ov[1].along == 300 and o and math.abs(o.x + (3 + D.MARSHAL_OVERRUN_SIDE)) < 1e-6 and
+    math.abs(o.y - (D.TAPE_IN + D.MARSHAL_BEHIND)) < 1e-6,
+    'map marshal at a turn, the only closed road the overrun: behind its tape 5 m, 4 m past its edge away from the ' ..
+    'way out (' ..
     tostring(o and o.x) .. ', ' .. tostring(o and o.y) .. ')')
-  T.check(D.MARSHAL_AT_JUNCTION_M == 60 and D.MARSHAL_OVERRUN_BEHIND == 2 * D.MARSHAL_BEHIND,
-    'map marshals: 60 m from a junction; 2 x MARSHAL_BEHIND back in the overrun')
+  T.check(D.MARSHAL_AT_JUNCTION_M == 40 and D.MARSHAL_OVERRUN_SIDE == 4,
+    'map marshals: 40 m from a junction on the ground; 4 m past the edge in the overrun')
 end
 
 -- The stage road's half width at a junction (the file's eighth entry): the tape cleared and
@@ -917,14 +923,10 @@ do
   -- until now merged into the first, by the road, and the turn left with none -- are a roadside post and the turn's
   local turn = { { along = 2100, x = 0, y = 2100, kind = 'turn', inDeg = 0, outDeg = 90,
                    sides = { { deg = 0, halfW = 3 }, { deg = 270, halfW = 3 } } } }
-  local mt = ofKind(plan({ mar(2030), mar(2110) }, { junctions = turn }), 'marshal')
-  T.check(#mt == 2 and mt[1].along == 2030 and mt[2].along == 2100,
-    'a roadside marshal 70 m before a turn\'s: both stand, the turn\'s behind its tape (' .. #mt .. ')')
-  -- (1.6.0's note 11: a map marshal 50 m from a junction -- past the 40 m it had -- behind its tape)
-  local m50 = ofKind(plan({ mar(2050) }, { junctions = turn }), 'marshal')
-  local t50 = m50[1] and find(m50[1].objects, 'table')[1]
-  T.check(#m50 == 1 and m50[1].along == 2100 and t50 and t50.x < -10 and t50.eo == nil,
-    'a map marshal 50 m from a junction: behind its tape (' .. #m50 .. ')')
+  local mt = ofKind(plan({ mar(2040), mar(2110) }, { junctions = turn }), 'marshal')
+  local mt1 = mt[1] and find(mt[1].objects, 'table')[1]
+  T.check(#mt == 2 and mt[1].along == 2040 and mt[2].along == 2100 and mt1 and mt1.eo ~= nil,
+    'a roadside marshal 60 m before a turn\'s: both stand, one by the road, the turn\'s behind its tape (' .. #mt .. ')')
   local m2t = ofKind(plan({ mar(2090), mar(2110) }, { junctions = turn }), 'marshal')
   T.check(#m2t == 1 and m2t[1].along == 2100, 'two map marshals by one turn: its one marshal (' .. #m2t .. ')')
 

@@ -67,9 +67,9 @@ M.BALE_CLEAR = 0.7        -- ... and left out where that is less than this clear
 M.MARSHAL_BEHIND = 5      -- a junction marshal stands on the closed road this far behind its tape ...
 M.MARSHAL_SIDE = 1.5      -- ... this far off that road's centre
 -- (a marshal from the map at a turn whose only closed road is in the overrun: behind that road's tape all the same,
--- this far behind it and off the road to the side away from the stage's way out -- the road's half width and
--- MARSHAL_SIDE from its centre; 1.6.0's note 11)
-M.MARSHAL_OVERRUN_BEHIND = 2 * M.MARSHAL_BEHIND
+-- MARSHAL_BEHIND behind it and this far past the road's edge, on the side away from the stage's way out -- clear of
+-- the overrun path; 1.6.0's note 11, lite review)
+M.MARSHAL_OVERRUN_SIDE = 4
 -- ... and none at all where that road is within this of the way in: the stage turns off a through road and the only
 -- closed road is straight on, where a car that overshoots goes (the user: marshals never where an overshooting car
 -- goes)
@@ -94,8 +94,8 @@ M.SPEC_SPAN_MAX_M = 120   -- ... along at most this much road in all
 M.SPEC_POINT_M = 20       -- a spectator point from the map: tape this far either side of it
 M.MARSHAL_EVERY_M = 1000  -- junction marshals at every turn that can have one, but at most one per ~1 km
 M.MARKS_SPAN_PAD_M = 100  -- the map's points kept from this far before the start to this far past the finish
-M.MARSHAL_AT_JUNCTION_M = 60  -- a marshal from the map this near a taped junction (turn, straight or fork) stands
-                              -- behind its tape (1.6.0's note 11: until then 40 m, and turns only)
+M.MARSHAL_AT_JUNCTION_M = 40  -- a marshal from the map this near a taped junction (turn, straight or fork) on the
+                              -- ground (its point to the junction's) stands behind its tape (1.6.0's note 11)
 -- Points right by each other merged before anything is placed (the user, 2026-11-15: "if two points are right by each
 -- other please merge them, this applies to all things"): points of one kind this close along the line (spectators
 -- and marshals: on one side) are one -- spectators one area over their combined span, a radio, medical or marshal
@@ -390,9 +390,10 @@ end
 -- A junction marshal's table, chair and flag: on the closed road furthest from where a car that misses the turn would
 -- go (the one least in line with the way in), MARSHAL_BEHIND m behind its tape, MARSHAL_SIDE off its centre, facing
 -- back to the junction (the user, 2026-11-14). At a straight or a fork (a map marshal's: 1.6.0's note 11) the overrun
--- is the stage road itself: the closed road furthest from the way out. fromMap: at a turn whose only closed road is in
--- the overrun, behind that road's tape all the same, MARSHAL_OVERRUN_BEHIND back and off the road to the side away from
--- the way out (the rule's marshals: none there).
+-- is the stage road itself: the closed road furthest from the way out, the marshal MARSHAL_SIDE past its edge on the
+-- side away from the way out. fromMap: at a turn whose only closed road is in the overrun, behind that road's tape all
+-- the same, MARSHAL_BEHIND back and MARSHAL_OVERRUN_SIDE past its edge on the side away from the way out (the rule's
+-- marshals: none there).
 local function junctionMarshal(r, fromMap)
   if #r.tapes == 0 then return nil end
   local turn = r.kind == 'turn'
@@ -404,11 +405,12 @@ local function junctionMarshal(r, fromMap)
   end
   local rx, ry = rightOf(tp.dx, tp.dy)
   local d, side = tp.s + M.MARSHAL_BEHIND, M.MARSHAL_SIDE
+  local away = rx * r.toutx + ry * r.touty > 0 and -1 or 1   -- (the side of the closed road away from the way out)
+  if not turn then side = away * (tp.halfW + M.MARSHAL_SIDE) end
   -- (even the least in line is in the overrun: no rule marshal at this junction)
   if turn and tp.dx * wx + tp.dy * wy > math.cos(math.rad(M.MARSHAL_OVERRUN_DEG)) then
     if not fromMap then return nil end
-    d, side = tp.s + M.MARSHAL_OVERRUN_BEHIND, tp.halfW + M.MARSHAL_SIDE
-    if rx * r.toutx + ry * r.touty > 0 then side = -side end
+    side = away * (tp.halfW + M.MARSHAL_OVERRUN_SIDE)
   end
   local cx, cy = r.jx + tp.dx * d + rx * side, r.jy + tp.dy * d + ry * side
   local tx, ty = -tp.dx, -tp.dy
@@ -938,10 +940,14 @@ function M.plan(input)
   -- marshals: from the map where it marks any on the stage (merged within MERGE_M on one side; behind a taped
   -- junction's tape when near one, else by the road -- and none by the road within MARSHAL_NEAR_POST_M of a radio /
   -- medical post); else at junction turns, at most one per MARSHAL_EVERY_M
-  local function tapedNear(along, within)
+  -- (the nearest taped junction within that of the mark's point on the ground: so a second mark is the same junction's
+  -- only when it too is within the window of it)
+  local function tapedNear(m, within)
+    local mx, my = posOfMark(m)
     local best, bd = nil, within
     for _, r in ipairs(solved) do
-      if #r.tapes > 0 and abs(r.along - along) <= bd then best, bd = r, abs(r.along - along) end
+      local d = sqrt((mx - r.jx) ^ 2 + (my - r.jy) ^ 2)
+      if #r.tapes > 0 and d <= bd then best, bd = r, d end
     end
     return best
   end
@@ -951,11 +957,11 @@ function M.plan(input)
     -- first, so a turn's mark could be merged into a roadside one before it, or the other way round)
     local used, roadside = {}, {}
     for _, m in ipairs(marks.marshal) do
-      local r = tapedNear(m.along, M.MARSHAL_AT_JUNCTION_M)
+      local r = tapedNear(m, M.MARSHAL_AT_JUNCTION_M)
       if r and used[r] then
         -- (that junction's marshal stands already: this mark is the same one)
       else
-        -- (a turn whose only closed road is in the overrun: still behind that road's tape, further back, to the side)
+        -- (a turn whose only closed road is in the overrun: still behind that road's tape, well to its side)
         local jm = r and junctionMarshal(r, true)
         if jm then
           used[r] = true
