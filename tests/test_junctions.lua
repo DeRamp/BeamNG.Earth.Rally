@@ -1,7 +1,8 @@
--- The junctions along a stage (earthRally/junctions) with their side roads: the bearings, the one rule judged on
--- the game's live road map (a stand-in for map.getMap().nodes) for roads running every way, the matched file's
--- format 1 and format 2 entries read back through events.lua, the file and the live map merged, and the auto
--- recce's road-graph finder agreeing with the live one on the same roads. No BeamNG.
+-- The junctions along a stage (earthRally/junctions) with their side roads: the bearings, the one rule (M.branch,
+-- M.judge) judged through the auto recce's road-graph finder (autoRecce.junctions) on roads running every way, the
+-- matched file's format 1 and format 2 entries read back through events.lua, and a file's junctions placed in order
+-- on the line. (The live road map's finder and its merge with the file were dropped in 1.4.0, the user, 2026-11-14.)
+-- No BeamNG.
 local T = dofile(TESTS .. '/testlib.lua')
 
 local files = {}
@@ -118,6 +119,25 @@ local function hasSide(j, b, eps)
   return nil
 end
 
+-- The junctions the auto recce finds on a scene's road map (made a road graph in lat / lon: BeamNG.Earth's frame is
+-- east / north, so the game's x, y and the auto recce's stage frame are the same directions), along the line.
+local function found(nodes, ln)
+  local fr = auto.frame(47.0, -123.0)
+  local graph = { nodes = {}, edges = {} }
+  for name, n in pairs(nodes) do
+    local la, lo = fr.latlon(n.pos.x, n.pos.y)
+    graph.nodes[name] = { lat = la, lon = lo, alt = 50, radius = n.radius }
+    for o in pairs(n.links) do if name < o then graph.edges[#graph.edges + 1] = { name, o } end end
+  end
+  local kml = {}
+  for i, p in ipairs(ln) do kml[i] = { x = p.x, y = p.y } end
+  local gr = auto.build(graph, kml, fr)
+  local res, resAlong = auto.resample(kml, auto.OUT_STEP_M)
+  local flags = {}
+  for k = 1, #res do flags[k] = 0 end
+  return auto.junctions(gr, res, resAlong, flags)
+end
+
 ------------------------------------------------------------------------------------------ 2: the rule, every way
 
 local bad = { cross = 0, fork = 0, straight = 0, tee = 0 }
@@ -126,7 +146,7 @@ for rot = 0, 315, 45 do
   -- a crossroads, the stage turning right: in heading north, out heading east; straight on and left are side roads
   do
     local nodes, ln = scene(rot, 0, 90, { { 0, 120, 3.0 }, { 270, 120, 2.5 } })
-    local js = J.live(nodes, ln)
+    local js = found(nodes, ln)
     local j = js[1]
     local ok = #js == 1 and j.kind == 'turn' and j.side == '' and angDiff(j.inDeg, rot) < 1 and
       angDiff(j.outDeg, 90 + rot) < 1 and #j.sides == 2 and hasSide(j, rot) and hasSide(j, 270 + rot)
@@ -134,8 +154,6 @@ for rot = 0, 315, 45 do
       table.concat(sideDegs(j), ' ')) end
     if rot == 0 then
       T.near(j and j.along or 0, 200, 0.5, 'the crossroads 200 m along')
-      T.check(j and j.node == 'J' and math.abs(j.x - J0.x) < 1e-9 and math.abs(j.y - J0.y) < 1e-9,
-        'at the junction node, in game coordinates')
       T.near(hasSide(j, 0) and hasSide(j, 0).halfW or 0, 3.0, 1e-9, 'straight on: its half width from the node radius')
       T.near(hasSide(j, 270) and hasSide(j, 270).halfW or 0, 2.5, 1e-9, 'left: its own half width')
     end
@@ -143,14 +161,14 @@ for rot = 0, 315, 45 do
   -- a fork, keep left: in north, out at 350, the other road at 15
   do
     local nodes, ln = scene(rot, 0, 350, { { 15, 120, 3.0 } })
-    local j = J.live(nodes, ln)[1]
+    local j = found(nodes, ln)[1]
     local ok = j and j.kind == 'fork' and j.side == 'left' and #j.sides == 1 and hasSide(j, 15 + rot)
     if not ok then bad.fork = bad.fork + 1 print('fork' .. tag, j and j.kind, j and j.side) end
   end
   -- straight on past a side road to the west
   do
     local nodes, ln = scene(rot, 0, 0, { { 270, 100, 2.0 } })
-    local j = J.live(nodes, ln)[1]
+    local j = found(nodes, ln)[1]
     local ok = j and j.kind == 'straight' and j.side == '' and #j.sides == 1 and hasSide(j, 270 + rot) and
       angDiff(j.inDeg, rot) < 1 and angDiff(j.outDeg, rot) < 1
     if not ok then bad.straight = bad.straight + 1 print('straight' .. tag, j and j.kind) end
@@ -158,7 +176,7 @@ for rot = 0, 315, 45 do
   -- a T-junction, the stage turning left: the road it comes in on ends there; right is the one side road
   do
     local nodes, ln = scene(rot, 0, 270, { { 90, 150, 3.0 } })
-    local j = J.live(nodes, ln)[1]
+    local j = found(nodes, ln)[1]
     local ok = j and j.kind == 'turn' and #j.sides == 1 and hasSide(j, 90 + rot) and angDiff(j.outDeg, 270 + rot) < 1
     if not ok then bad.tee = bad.tee + 1 print('tee' .. tag, j and j.kind) end
   end
@@ -171,7 +189,7 @@ T.check(bad.tee == 0, 'a T-junction turn left, the one side road right, every wa
 -- the mirror: keep right
 do
   local nodes, ln = scene(0, 0, 10, { { 345, 120, 3.0 } })
-  local j = J.live(nodes, ln)[1]
+  local j = found(nodes, ln)[1]
   T.check(j and j.kind == 'fork' and j.side == 'right', 'a fork, keep right (' .. tostring(j and j.side) .. ')')
 end
 
@@ -180,22 +198,12 @@ end
 do
   -- a 30 m stub (a driveway): no junction at all
   local nodes, ln = scene(0, 0, 0, { { 90, 30, 2.0 } })
-  T.check(#J.live(nodes, ln) == 0, 'a side road under 40 m is no junction')
+  T.check(#found(nodes, ln) == 0, 'a side road under 40 m is no junction')
   -- a stub and a real side road: only the real one is a side road
   nodes, ln = scene(0, 0, 0, { { 90, 30, 2.0 }, { 270, 100, 2.0 } })
-  local j = J.live(nodes, ln)[1]
+  local j = found(nodes, ln)[1]
   T.check(j and #j.sides == 1 and hasSide(j, 270), 'with a real side road too: the stub is left out (' ..
     table.concat(sideDegs(j), ' ') .. ')')
-  -- a stretch that does not reach the junction: nothing
-  nodes, ln = scene(0, 0, 90, { { 0, 120, 3.0 } })
-  T.check(#J.live(nodes, ln, 0, 150) == 0 and #J.live(nodes, ln, 250, 400) == 0,
-    'a stretch of the line short of the junction, or past it, finds none')
-  T.check(#J.live(nodes, ln, 150, 250) == 1, 'the stretch round it finds it')
-  -- the line on a stretch with no road (a matched line's gap): no junction called there
-  for _, p in ipairs(ln) do
-    if math.abs(p.x - J0.x) < 20 and math.abs(p.y - J0.y) < 20 then p.gap = true end
-  end
-  T.check(#J.live(nodes, ln) == 0, 'none on a stretch of the line with no road')
   -- the line 3 m off the junction node: not on it
   nodes = newMap()
   node(nodes, 'J', J0.x, J0.y, 4.0)
@@ -203,12 +211,7 @@ do
   road(nodes, 'b', 'J', 0, 250, 4.0)
   road(nodes, 'c', 'J', 270, 100, 4.0)
   ln = line({ x = J0.x + 3, y = J0.y - 200 }, { { 0, 400 } })
-  T.check(#J.live(nodes, ln) == 0, 'a node 3 m off the line is not on it')
-  -- links written on one end only (a one-way road) still make the junction
-  nodes, ln = scene(0, 0, 0, { { 270, 100, 2.0 } }, { oneWay = true })
-  T.check(#J.live(nodes, ln) == 1, 'a side road linked one way only still counts')
-  -- nothing to read
-  T.check(#J.live(nil, ln) == 0 and #J.live({}, ln) == 0, 'no road map: none')
+  T.check(#found(nodes, ln) == 0, 'a node 3 m off the line is not on it')
 end
 
 -- two junctions 10 m apart along the stage: one (JUNCTION_GAP_M)
@@ -220,7 +223,7 @@ do
   road(nodes, 'y', 'm310', 90, 100, 3.0)
   road(nodes, 'z', 'm400', 90, 100, 3.0)
   local ln = line({ x = J0.x, y = J0.y - 300 }, { { 0, 600 } })
-  local js = J.live(nodes, ln)
+  local js = found(nodes, ln)
   T.check(#js == 2, 'side roads 10 m apart are one junction, one 90 m on another (' .. #js .. ')')
   T.near(js[1] and js[1].along or 0, 300, 0.5, 'the first where the first side road leaves')
   T.near(js[2] and js[2].along or 0, 400, 0.5, 'the second 100 m on')
@@ -279,80 +282,12 @@ do
   T.check(events.junctions('ev', 'nothere') == nil, 'no matched line: none')
 end
 
------------------------------------------------------------------------------------------- 5: merged
-
-do
-  local sA = { { deg = 0, halfW = 3 } }
-  local sB = { { deg = 270, halfW = 2 } }
-  local file = {
-    { along = 100, kind = 'turn', side = '', inDeg = 0, outDeg = 90, sides = sA },   -- format 2
-    { along = 300, kind = 'straight', side = '' },                                   -- format 1: no roads
-    { kind = 'turn', side = '' },                                                     -- not placed on the line
-    { along = 700, kind = 'fork', side = 'left' },                                   -- format 1, nothing live near
-  }
-  local live = {
-    { along = 106, kind = 'straight', side = '', inDeg = 5, outDeg = 5, sides = sB, x = 1, y = 2, z = 3 },
-    { along = 310, kind = 'turn', side = '', inDeg = 1, outDeg = 2, sides = sB, x = 4, y = 5, z = 6 },
-    { along = 500, kind = 'straight', side = '', inDeg = 0, outDeg = 0, sides = sA },
-  }
-  local m = J.merge(file, live)
-  T.check(#m == 4, 'three from the file (one could not be placed), one only live (' .. #m .. ')')
-  T.check(m[1].along == 100 and m[1].kind == 'turn' and m[1].sides == sA and m[1].inDeg == 0 and m[1].from == 'file',
-    'both have it: the file wins, roads and all')
-  T.check(m[1].x == 1, 'and takes the live junction\'s place in the game')
-  T.check(m[2].along == 300 and m[2].kind == 'straight' and m[2].sides == sB and m[2].outDeg == 2 and
-    m[2].from == 'file+live', 'a format 1 junction keeps its kind, its roads from the live map')
-  T.check(m[3].along == 500 and m[3].from == 'live', 'one only the live map has is added')
-  T.check(m[4].along == 700 and m[4].sides == nil and m[4].from == 'file', 'one only the file has stays, without roads')
-  T.check(file[2].sides == nil and live[1].from == nil, 'neither list is changed')
-  local m2 = J.merge({ { along = 100, kind = 'turn', side = '' } }, { { along = 120, kind = 'straight', side = '' } })
-  T.check(#m2 == 2, '20 m apart (more than 15): two junctions')
-  local m3 = J.merge({ { along = 100, kind = 'turn', side = '' } }, { { along = 120, kind = 'straight', side = '' } }, 25)
-  T.check(#m3 == 1, 'unless the tolerance says otherwise')
-  T.check(#J.merge(nil, live) == 3 and #J.merge(file, nil) == 3, 'either list missing')
-end
-
------------------------------------------------------------------------------------------- 6: the auto recce agrees
-
--- The same crossroads as a road graph in lat / lon, through the auto recce's own finder: the same junction, the same
--- roads, the same bearings, as the live map's. (BeamNG.Earth's frame is east / north, so the game's x, y and the
--- auto recce's stage frame are the same directions.)
-do
-  for _, rot in ipairs({ 0, 135, 250 }) do
-    local nodes, ln = scene(rot, 0, 90, { { 0, 120, 3.0 }, { 270, 120, 2.5 } })
-    local live = J.live(nodes, ln)[1]
-    local fr = auto.frame(47.0, -123.0)
-    local graph = { nodes = {}, edges = {} }
-    for name, n in pairs(nodes) do
-      local la, lo = fr.latlon(n.pos.x, n.pos.y)
-      graph.nodes[name] = { lat = la, lon = lo, alt = 50, radius = n.radius }
-      for o in pairs(n.links) do if name < o then graph.edges[#graph.edges + 1] = { name, o } end end
-    end
-    local kml = {}
-    for i, p in ipairs(ln) do kml[i] = { x = p.x, y = p.y } end
-    local gr = auto.build(graph, kml, fr)
-    local res, resAlong = auto.resample(kml, auto.OUT_STEP_M)
-    local flags = {}
-    for k = 1, #res do flags[k] = 0 end
-    local a = auto.junctions(gr, res, resAlong, flags)[1]
-    local tag = ' (turned ' .. rot .. ')'
-    T.check(a and live and a.kind == live.kind and a.side == live.side, 'the auto recce: the same kind' .. tag)
-    T.near(a and a.along or 0, live and live.along or -1, 0.5, 'the same place along' .. tag)
-    nearDeg(a and a.inDeg, live and live.inDeg, 0.01, 'the same way in' .. tag)
-    nearDeg(a and a.outDeg, live and live.outDeg, 0.01, 'the same way out' .. tag)
-    local sa, sl = sideDegs(a), sideDegs(live)
-    T.check(#sa == 2 and #sl == 2 and angDiff(sa[1], sl[1]) < 0.01 and angDiff(sa[2], sl[2]) < 0.01,
-      'the same side roads' .. tag .. ' (' .. table.concat(sa, ' ') .. ' / ' .. table.concat(sl, ' ') .. ')')
-    T.check(a and hasSide(a, rot) and hasSide(a, rot).halfW == 3.0, 'and the same half widths' .. tag)
-  end
-end
-
 ------------------------------------------------------------------------------------------ 7: 1.4.0's review
 
--- a live junction carries the stage road's own half width (its node's radius)
+-- a junction carries the stage road's own half width (its node's radius)
 do
   local nodes, ln = scene(0, 0, 90, { { 0, 120, 3.0 } })
-  local j = J.live(nodes, ln)[1]
+  local j = found(nodes, ln)[1]
   T.check(j and j.half == 4.0, 'live: the stage road\'s half width at the junction from its node (' .. tostring(j and j.half) .. ')')
 end
 

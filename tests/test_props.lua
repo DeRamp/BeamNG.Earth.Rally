@@ -187,41 +187,6 @@ T.check(select(1, props.dressingCount()) == props.DRESS_MAX_OBJS, 'dressing: the
 props.clear()
 T.check(liveCount() == 0 and select(2, props.dressingCount()) == 0, 'dressing: cleared with the stage')
 
--- The add-only path (the live road map's junctions, found as the car goes): new sites beside the ones there, nothing
--- standing taken away or put down again, a site already there (same kind, same metre along) left out.
-do
-  local function site(kind, along, x)
-    return { kind = kind, along = along, from = along, to = along,
-             objects = { { shape = kind .. '.dae', x = x or 0, y = along, dx = 1, dy = 0 } } }
-  end
-  props.setDressing({ site('tape', 100), site('board', 25) })
-  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
-  local before = {}
-  for id, o in pairs(live) do if o.fields.shapeName then before[#before + 1] = id end end
-  T.check(#before == 2, 'add-only: the stage\'s two sites down (' .. #before .. ')')
-  local n2 = props.addDressing({ site('tape', 100), site('tape', 100.3, 5), site('board', 100), site('tape', 200),
-                                 { kind = 'tape', along = 300, from = 300, to = 300, objects = {} } })
-  T.check(n2 == 2, 'add-only: two new sites taken, the same kind at the same metre left out, an empty one too (' ..
-    tostring(n2) .. ')')
-  local by, n = props.dressingSites()
-  T.check(n == 4 and by.tape == 2 and by.board == 2, 'add-only: beside the ones there (' .. n .. ')')
-  for _ = 1, 3 do props.update({ x = 0, y = 0, z = 0 }, toGame, 0) end
-  local kept = true
-  for _, id in ipairs(before) do if not live[id] then kept = false end end
-  T.check(kept, 'add-only: what stood is still standing, the same objects')
-  T.check(liveCount() == 4 and select(2, props.dressingCount()) == 4, 'add-only: the new ones down by the next update ('
-    .. liveCount() .. ')')
-  local made0 = #made
-  props.addDressing({ site('tape', 200), site('board', 100) })
-  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
-  T.check(#made == made0, 'add-only: the same sites again: nothing made')
-  -- far behind the car: taken away by the window as any other
-  props.update({ x = 0, y = 2000, z = 0 }, toGame, 2000)
-  T.check(liveCount() == 0, 'add-only: an added site taken away behind the car as the rest')
-  props.clear()
-  T.check(select(2, props.dressingSites()) == 0, 'add-only: cleared with the stage')
-end
-
 ------------------------------------------------------------------------------------------ 1.4.0's review
 local logs = {}
 function log(level, _, msg) logs[#logs + 1] = level .. ' ' .. tostring(msg) end
@@ -241,14 +206,14 @@ local function shapesLive(shape)
   return out
 end
 
--- setDressing: one site per key, as addDressing; removeDressing takes sites away by key, objects and all
+-- setDressing: one site per key
 do
   local n = props.setDressing({ one('tape', 100), one('tape', 100.2, 5), one('board', 100) })
   T.check(n == 2, 'setDressing: the same kind at the same metre kept once (' .. n .. ')')
   props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
   T.check(#shapesLive('tape.dae') == 1, 'setDressing: one tape down, not two')
-  T.check(props.removeDressing({ props.siteKey('tape', 100) }) == 1 and #shapesLive('tape.dae') == 0 and
-    #shapesLive('board.dae') == 1, 'removeDressing: the tape site and its object gone, the board left')
+  local by, k = props.dressingSites()
+  T.check(k == 2 and by.tape == 1 and by.board == 1, 'dressingSites: by kind')
   props.clear()
 end
 
@@ -290,6 +255,93 @@ do
   props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
   b = shapesLive('board.dae')[1]
   T.check(b and math.abs(b.pos[1] - 2.7) < 1e-6, 'edge: no road map there: as planned')
+  props.clear()
+end
+
+-- 1.4.0 in game (the user, 2026-11-14). 1: an object set from the edge is not moved by a road found there that runs
+-- another way (a Y-shaped hairpin's other branch): a road running east under a board on a road running north
+do
+  ox, oy = 0, 0
+  map = { getMap = function()
+    local nodes = {}
+    for k = -5, 5 do
+      nodes['e' .. k] = { pos = { x = k * 20, y = 100, z = 0 }, radius = 7, links = {} }
+      if k > -5 then nodes['e' .. k].links['e' .. (k - 1)] = {} end
+    end
+    return { nodes = nodes }
+  end }
+  props.setDressing({ one('board', 100, 2.7, { ex = 1, ey = 0, eo = 2.7, eh = 3 }) })
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+  local b = shapesLive('board.dae')[1]
+  T.check(b and math.abs(b.pos[1] - 2.7) < 1e-6,
+    'edge: a road across the object\'s road there (90 degrees off): not moved by its width (' .. tostring(b and b.pos[1]) .. ')')
+  props.clear()
+  -- 25 degrees off is still its road
+  map = { getMap = function()
+    local nodes = {}
+    local dx, dy = math.sin(math.rad(25)), math.cos(math.rad(25))
+    for k = 0, 20 do
+      nodes['n' .. k] = { pos = { x = dx * (k * 20 - 200), y = 100 + dy * (k * 20 - 200), z = 0 }, radius = 5, links = {} }
+      if k > 0 then nodes['n' .. k].links['n' .. (k - 1)] = {} end
+    end
+    return { nodes = nodes }
+  end }
+  props.setDressing({ one('board', 100, 2.7, { ex = 1, ey = 0, eo = 2.7, eh = 3 }) })
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+  b = shapesLive('board.dae')[1]
+  T.check(b and b.pos[1] > 3.5, 'edge: a road 25 degrees off still counts: moved out (' .. tostring(b and b.pos[1]) .. ')')
+  props.clear()
+  map = nil
+end
+
+-- 3: a stretched tape put down with its scale along Y, at the origin it was planned at; one of unknown width fitted
+-- to the road there (the 8 m model planned, a 10 m road found: the 10 m model stretched to 11.5 m, still centred)
+do
+  ox, oy = 0, 0
+  map = nil
+  props.setDressing({ one('tape10', 100, 5.75, { dx = 1, dy = 0, sy = 1.15 }) })
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+  local t = shapesLive('tape10.dae')[1]
+  T.check(t and t.fields.scale == '1 1.1500 1' and math.abs(t.pos[1] - 5.75) < 1e-6 and math.abs(t.pos[2] - 100) < 1e-6,
+    'tape: stretched along its Y, from the planned origin (' .. tostring(t and t.fields.scale) .. ')')
+  props.clear()
+  props.setDressing({ one('tape8', 100, 4) })
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+  t = shapesLive('tape8.dae')[1]
+  T.check(t and t.fields.scale == nil, 'tape: a model at its own length has no scale set')
+  props.clear()
+  local models = { { 6, 'tape6.dae' }, { 8, 'tape8.dae' }, { 10, 'tape10.dae' } }
+  -- (an 8 m tape across a side road running north at x = 0, centred on it: origin at x = 4, +Y east)
+  local function unknown() return one('tape8', 100, 4, { dx = 1, dy = 0, refit = { len = 8, past = 0.75, models = models } }) end
+  local function northRoad(radius)
+    map = { getMap = function()
+      local nodes = {}
+      for k = 0, 20 do
+        nodes['n' .. k] = { pos = { x = 0, y = k * 20, z = 0 }, radius = radius, links = {} }
+        if k > 0 then nodes['n' .. k].links['n' .. (k - 1)] = {} end
+      end
+      return { nodes = nodes }
+    end }
+  end
+  northRoad(5)
+  props.setDressing({ unknown() })
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+  t = shapesLive('tape10.dae')[1]
+  T.check(t and #shapesLive('tape8.dae') == 0 and t.fields.scale == '1 1.1500 1' and math.abs(t.pos[1] - 5.75) < 1e-6,
+    'tape of unknown width on a 10 m road: the 10 m model stretched to 11.5 m, centred (' ..
+    tostring(t and t.pos[1]) .. ')')
+  props.clear()
+  northRoad(2)
+  props.setDressing({ unknown() })
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+  t = shapesLive('tape6.dae')[1]
+  T.check(t and t.fields.scale == nil and math.abs(t.pos[1] - 3) < 1e-6, 'on a 4 m road: the 6 m model, centred')
+  props.clear()
+  map = nil
+  props.setDressing({ unknown() })
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+  t = shapesLive('tape8.dae')[1]
+  T.check(t and math.abs(t.pos[1] - 4) < 1e-6, 'no road map there: taken as 6 m, the 8 m model')
   props.clear()
 end
 

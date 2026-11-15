@@ -36,9 +36,12 @@ M._bearingToDir = bearingToDir
 ------------------------------------------------------------------------------------------ the rules
 
 M.HALF = 3.0              -- the stage road's half width when nothing says (props.DEFAULT_HALF_WIDTH_M)
-M.BOARD_OUT = -0.3        -- props.BOARD_OUT_M: a board stands a little inside the road's edge
+M.BOARD_OUT = -0.3        -- props.BOARD_OUT_M: a board stands a little inside the road's edge (radio / medical)
+M.DIR_BOARD_OUT = 1.0     -- a direction (tulip) board this far beyond the road's edge (the user, 2026-11-14: "a bit
+                          -- further off the road")
 M.TENT_OUT = 1.5          -- props.TENT_OUT_M: the gazebo's centre beyond the edge
 M.TAPE_IN = 8             -- tape this far into a side road from the junction ...
+M.TAPE_PAST = 0.75        -- ... each end this far past the side road's edge (the user, 2026-11-14: "just past")
 M.TAPE_CLEAR = 1.0        -- ... moved farther in until both its ends clear the stage's road by this much
 M.TAPE_IN_MAX = 30        -- (and no farther: a tape that never clears is left out -- the side road is the stage's
                           -- own later pass, or runs beside it -- and said so once in the log)
@@ -50,6 +53,8 @@ M.MEDICAL_AFTER = 8       -- a shared post's medical boards this far after the r
 M.SHARE_M = 50            -- a medical point this close to a radio point shares its post
 M.SPEC_OFF = 5            -- spectator tape off the road's edge
 M.FENCE_BEHIND = 2.5      -- the mesh fence behind the tape
+M.BALE_OFF = 1.2          -- the spectators' hay bales this far off the road's edge ...
+M.BALE_CLEAR = 0.7        -- ... and left out where that is less than this clear of every road there
 M.MARSHAL_BEHIND = 5      -- a junction marshal stands on the closed road this far behind its tape ...
 M.MARSHAL_SIDE = 1.5      -- ... this far off that road's centre
 -- ... and none at all where that road is within this of the way in: the stage turns off a through road and the only
@@ -223,11 +228,24 @@ function M.dirBoard(turnDeg, kind, keepSide)
   return side == 'left' and 'dir225Left' or 'dir135Right', side
 end
 
--- The tape for a side road of half width halfW (6 m when not known).
+-- The tape for a side road of half width halfW (HALF when not known: nil or 0), each end TAPE_PAST beyond its edge:
+-- the shortest of the 6 / 8 / 10 m models that reaches, else the 10 m one stretched along its length. Returns key,
+-- the length laid (m) and the model's scale along it (its Y: 1 for a model at its own length).
+M.TAPES = { { 'tape6', 6 }, { 'tape8', 8 }, { 'tape10', 10 } }
 function M.tapeFor(halfW)
-  local w = (halfW or 3) * 2
-  if w <= 6 then return 'tape6', 6 elseif w <= 8 then return 'tape8', 8 end
-  return 'tape10', 10
+  local h = (type(halfW) == 'number' and halfW > 0) and halfW or M.HALF
+  local need = 2 * h + 2 * M.TAPE_PAST
+  for _, t in ipairs(M.TAPES) do
+    if need <= t[2] + 1e-9 then return t[1], t[2], 1 end
+  end
+  local top = M.TAPES[#M.TAPES]
+  return top[1], need, need / top[2]
+end
+-- (what props.lua needs to fit a tape of unknown width to the road it finds there when it puts it down)
+local function refit(len)
+  local models = {}
+  for _, t in ipairs(M.TAPES) do models[#models + 1] = { t[2], M.SHAPES[t[1]] } end
+  return { len = len, past = M.TAPE_PAST, models = models }
 end
 
 -- A direction at a junction: given as a bearing, else from the line; turned round when it runs against the line
@@ -264,7 +282,7 @@ local function solveJunction(L, j)
   local along = j.along
   local px, py, pz = L.at(along)
   local jx, jy = j.x or px, j.y or py
-  -- (the stage road's half width here: the junction's own -- the file's eighth entry, the live node's radius -- else
+  -- (the stage road's half width here: the junction's own -- the file's eighth entry -- else
   -- the stage's)
   local jh = (type(j.half) == 'number' and j.half > 0) and j.half or L.half
   local inx, iny = wayAt(L, j.inDeg, along - M.LOOK_M, along)
@@ -277,20 +295,25 @@ local function solveJunction(L, j)
     if dx then
       dx, dy = norm(dx, dy)
       local rx, ry = rightOf(dx, dy)
-      local key, len = M.tapeFor(sr.halfW)
+      local key, len, sy = M.tapeFor(sr.halfW)
+      local known = type(sr.halfW) == 'number' and sr.halfW > 0
       local s, ax, ay, bx, by = M.TAPE_IN
       local clear = false
-      -- farther in until both ends clear the stage's road (a narrow fork's branches overlap at 8 m), the whole line
+      -- farther in until both ends and the middle clear the stage's road, the whole line (a narrow fork's branches
+      -- overlap at 8 m)
       while s <= M.TAPE_IN_MAX do
         local cx, cy = jx + dx * s, jy + dy * s
         ax, ay = cx + rx * len / 2, cy + ry * len / 2
         bx, by = cx - rx * len / 2, cy - ry * len / 2
-        if L.clear(ax, ay, jh) >= M.TAPE_CLEAR and L.clear(bx, by, jh) >= M.TAPE_CLEAR then clear = true break end
+        -- (its middle too: a tape longer than the stage road is wide clears it at both ends when the "side road" is
+        -- the stage's own other pass, the tape lying across it)
+        if L.clear(ax, ay, jh) >= M.TAPE_CLEAR and L.clear(bx, by, jh) >= M.TAPE_CLEAR and
+          L.clear(cx, cy, jh) >= M.TAPE_CLEAR then clear = true break end
         s = s + 0.5
       end
       if clear then
-        res.tapes[#res.tapes + 1] = { key = key, L = len, s = s, dx = dx, dy = dy, ax = ax, ay = ay, bx = bx, by = by,
-                                      halfW = sr.halfW or M.HALF }
+        res.tapes[#res.tapes + 1] = { key = key, L = len, sy = sy, known = known, s = s, dx = dx, dy = dy, ax = ax,
+                                      ay = ay, bx = bx, by = by, halfW = known and sr.halfW or M.HALF }
       else
         sayDropped(along, sr.deg or J and J.dirToBearing and J.dirToBearing(dx, dy))
       end
@@ -315,9 +338,10 @@ local function junctionMarshal(r)
   local cx, cy = r.jx + tp.dx * d + rx * M.MARSHAL_SIDE, r.jy + tp.dy * d + ry * M.MARSHAL_SIDE
   local tx, ty = -tp.dx, -tp.dy
   local qx, qy = rightOf(tx, ty)
+  -- (table and chair turned 90 degrees to the right of the way they face, as props.lua's TENT: the user, 2026-11-14)
   return {
-    upright('table', cx, cy, r.jz, tx, ty),
-    upright('chair', cx + qx * 0.9, cy + qy * 0.9, r.jz, tx, ty),
+    upright('table', cx, cy, r.jz, qx, qy),
+    upright('chair', cx + qx * 0.9, cy + qy * 0.9, r.jz, qx, qy),
     upright('flag', cx + tx * 1.6, cy + ty * 1.6, r.jz, tx, ty),
   }, tp
 end
@@ -369,9 +393,10 @@ local function roadsideMarshal(L, along, side)
   local rx, ry = rightOf(tx, ty)
   local nx, ny = outward(tx, ty, side)
   local o = L.half + M.TENT_OUT
+  -- (table and chair turned 90 degrees to the right of the road's way, as props.lua's TENT)
   return {
-    edged(upright('table', x, y, z, tx, ty), nx, ny, o, L.half),
-    edged(upright('chair', x - rx * side * 0.9, y - ry * side * 0.9, z, tx, ty), nx, ny, o - 0.9, L.half),
+    edged(upright('table', x, y, z, rx, ry), nx, ny, o, L.half),
+    edged(upright('chair', x - rx * side * 0.9, y - ry * side * 0.9, z, rx, ry), nx, ny, o - 0.9, L.half),
     edged(upright('flag', x + tx * 1.6, y + ty * 1.6, z, tx, ty), nx, ny, o, L.half),
   }
 end
@@ -399,8 +424,9 @@ local function spectators(L, s0, s1, sApex, side, clearOf)
       end
       local l = sqrt((bx - ax) ^ 2 + (by - ay) ^ 2)
       if l < chord * 0.8 then break end           -- (a short end left bare: the model is its own length)
-      -- (not over another part of the road: the far leg of a tight hairpin)
-      if clearOf(ax, ay) >= off - 1 and clearOf(bx, by) >= off - 1 then
+      -- (not over another part of the road: the far leg of a tight hairpin, a side road -- its middle too)
+      if clearOf(ax, ay) >= off - 1 and clearOf(bx, by) >= off - 1 and clearOf((ax + bx) / 2, (ay + by) / 2) >= off - 1
+      then
         local nx, ny = outward(btx, bty, side)
         objs[#objs + 1] = edged(linear(key, ax, ay, bx, by, az), nx, ny, half + off, half)
         n = n + 1
@@ -411,13 +437,14 @@ local function spectators(L, s0, s1, sApex, side, clearOf)
   end
   run(M.SPEC_OFF, 5, 'specTape', M.SPEC_TAPE_MAX)
   run(M.SPEC_OFF + M.FENCE_BEHIND, 2, 'fence', M.SPEC_FENCE_MAX)
-  -- hay bales at the inside edge, at the apex and 12 m either side
+  -- hay bales at the inside edge, at the apex and 12 m either side; one that would stand on a road (at a Y-shaped
+  -- hairpin the inside of the turn is another road, or the hairpin's other leg) left out
   for _, ds in ipairs({ -12, 0, 12 }) do
     local s = sApex + ds
-    if s >= s0 and s <= s1 then
-      local x, y, z, tx, ty = L.off(s, half + 1.2, side)
+    local x, y, z, tx, ty = L.off(s, half + M.BALE_OFF, side)
+    if s >= s0 and s <= s1 and clearOf(x, y) >= M.BALE_CLEAR then
       local nx, ny = outward(tx, ty, side)
-      objs[#objs + 1] = edged(upright('bale', x, y, z, tx, ty), nx, ny, half + 1.2, half)
+      objs[#objs + 1] = edged(upright('bale', x, y, z, tx, ty), nx, ny, half + M.BALE_OFF, half)
     end
   end
   -- the camp: in from the apex until clear of the road by the fence and a little more
@@ -433,9 +460,11 @@ local function spectators(L, s0, s1, sApex, side, clearOf)
       local ex, ey = tx, ty
       objs[#objs + 1] = edged(upright('gazeboFrame', gx, gy, pz, fx, fy), nx, ny, d, half)
       objs[#objs + 1] = edged(upright('gazeboCover', gx, gy, pz, fx, fy), nx, ny, d, half)
+      -- (the chairs turned 90 degrees to the right of the way the camp faces, as props.lua's TENT)
+      local cx, cy = rightOf(fx, fy)
       for k = 0, 3 do
         local o = -2 + k * 1.3
-        objs[#objs + 1] = edged(upright('chair', gx - nx * 3.5 + ex * o, gy - ny * 3.5 + ey * o, pz, fx, fy),
+        objs[#objs + 1] = edged(upright('chair', gx - nx * 3.5 + ex * o, gy - ny * 3.5 + ey * o, pz, cx, cy),
           nx, ny, d - 3.5, half)
       end
       for _, sgn in ipairs({ -1, 1 }) do
@@ -511,10 +540,8 @@ end
 --     cornerStepM (default 5, stageWriter.NOTE_STEP_M) from cornerStartM (default startM); or corners carrying their
 --     own `from` / `to` along the line),
 --   halfWidth (default 3),
---   only (nil: every kind) = { tape = true, board = true, ... }: only these kinds planned. runner.lua plans the stage
---     once at its start, then, as the live road map shows it junctions the file did not have, plans just the tape,
---     board and junction marshal for each of those (the radio points and spectator areas depend only on the line and
---     its corners, so they are not planned again),
+--   only (nil: every kind) = { tape = true, board = true, ... }: only these kinds planned (runner.lua plans the
+--     whole stage once, at its start, from the matched file's junctions),
 --   existingMarshals = { along... }: junction marshals already standing (from an earlier plan of the same stage),
 --     which the one-per-MARSHAL_EVERY_M spacing counts as its own }
 function M.plan(input)
@@ -556,16 +583,22 @@ function M.plan(input)
     local r = solveJunction(L, j)
     solved[#solved + 1] = r
     local objs = {}
-    for _, tp in ipairs(r.tapes) do objs[#objs + 1] = linear(tp.key, tp.ax, tp.ay, tp.bx, tp.by, r.jz) end
+    for _, tp in ipairs(r.tapes) do
+      local o = linear(tp.key, tp.ax, tp.ay, tp.bx, tp.by, r.jz)
+      if tp.sy ~= 1 then o.sy = tp.sy end
+      -- (a side road of unknown width: props.lua reads it off the road map where the tape goes down)
+      if not tp.known then o.refit = refit(tp.L) end
+      objs[#objs + 1] = o
+    end
     add('tape', 'rule', j.along, j.along, j.along, objs, j.kind)
     local key, side = M.dirBoard(r.turnDeg, j.kind, j.side)
     -- (none before the start line: a junction just after it is not called from the start area)
     if key and j.along - M.BOARD_BEFORE >= startM then
       local s = j.along - M.BOARD_BEFORE
       local sg = side == 'right' and 1 or -1
-      local x, y, z, tx, ty = L.off(s, r.half + M.BOARD_OUT, sg)
+      local x, y, z, tx, ty = L.off(s, r.half + M.DIR_BOARD_OUT, sg)
       local nx, ny = outward(tx, ty, sg)
-      add('board', 'rule', j.along, s, s, { edged(arrowBoard(key, x, y, z, tx, ty), nx, ny, r.half + M.BOARD_OUT,
+      add('board', 'rule', j.along, s, s, { edged(arrowBoard(key, x, y, z, tx, ty), nx, ny, r.half + M.DIR_BOARD_OUT,
         r.half) }, key)
     end
   end

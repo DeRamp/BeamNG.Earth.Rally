@@ -164,9 +164,12 @@ end
 M._ground = ground
 M._yawQuat = yawQuat
 
-local function makeObj(shape, x, y, z, q)
+-- (sy: the model stretched along its Y, a dressing tape longer than its model; nil or 1 at its own size. The scale is
+-- about the model's origin, so a tape still starts where it is put and runs along its -Y, sy times as far)
+local function makeObj(shape, x, y, z, q, sy)
   local o = createObject('TSStatic')
   o:setField('shapeName', 0, shape)
+  if sy and math.abs(sy - 1) > 1e-6 then o:setField('scale', 0, string.format('1 %.4f 1', sy)) end
   -- (not solid: an object added at runtime only collides after the game rebuilds its collision, which BeamNG.Earth
   -- does at times of its own; one that turned solid part way through a run would be worse than none)
   o:setField('collisionType', 0, 'None')
@@ -454,6 +457,11 @@ M.DRESS_GROUND_ABOVE_M = 2   -- a dressing object's ground: a hit at most this a
 M.DRESS_EDGE_SNAP_M = 8
 M.DRESS_EDGE_REUSE_M = 20
 M.DRESS_EDGE_SHIFT_MIN_M, M.DRESS_EDGE_SHIFT_MAX_M = -2, 6
+-- ... and not moved at all where the road found there runs more than this off the object's road: not the stage's own
+-- road (a Y-shaped hairpin's other branch, a road crossing it), whose width says nothing of the stage's (the user,
+-- 2026-11-14: hay bales in the street). A tape of unknown width (dressing.lua's refit) reads its side road the same
+-- way, else takes DEFAULT_HALF_WIDTH_M.
+M.DRESS_EDGE_MAX_DEG = 30
 local HEAD_M = 10
 
 -- { kind, along, from, to, name, key, objs (ids, when down or going down), at (the next item to put down),
@@ -488,8 +496,8 @@ local function shapeOk(shape)
 end
 M._shapeHas = shapeHas
 
--- A dressing site's key: its kind and where it is along the line, to the metre. Two plans of the same junction (the
--- file's at the stage's start, the live road map's later) give the same key, so the second is not put down twice.
+-- A dressing site's key: its kind and where it is along the line, to the metre: two sites at one key are one, and
+-- the second is not put down twice.
 local function dressKey(kind, along) return tostring(kind) .. '@' .. tostring(math.floor((along or 0) + 0.5)) end
 M._dressKey = dressKey
 
@@ -503,7 +511,7 @@ local function keepDress(site, toGeo, lost)
     local edge = type(o.ex) == 'number' and type(o.eo) == 'number' and type(o.eh) == 'number'
     -- (the way out from the road kept as a second spot, as the heading is: whatever a shift does, it survives)
     local nx, ny = edge and o.x + o.ex * HEAD_M, edge and o.y + o.ey * HEAD_M
-    local it = { shape = o.shape, eo = edge and o.eo or nil, eh = edge and o.eh or nil }
+    local it = { shape = o.shape, eo = edge and o.eo or nil, eh = edge and o.eh or nil, sy = o.sy, refit = o.refit }
     if toGeo then
       local la, lo, h = toGeo(o.x, o.y, o.z or 0)
       local hla, hlo = toGeo(hx, hy, o.z or 0)
@@ -534,8 +542,8 @@ end
 
 -- The stage's dressing (dressing.plan's sites, in game coordinates of the moment), replacing any there was. toGeo
 -- (x, y, z) -> lat, lon, h: earthAdapter.toGeo. Without one (the tests), the game coordinates are kept as they are
--- and a world shift is not followed. A site whose key (kind and along) is already there is left out, as addDressing
--- does: two sites at one key would both be taken away by one removeDressing.
+-- and a world shift is not followed. A site whose key (kind and along) is already there is left out (one plan of the
+-- same junction twice).
 function M.setDressing(list, toGeo)
   M.clearDressing()
   local have, lost = {}, { n = 0 }
@@ -548,44 +556,6 @@ function M.setDressing(list, toGeo)
   end
   sayLost(lost, 'of the stage')
   return #dress
-end
-
--- The sites with these keys (dressKey: as M.siteKey gives them) taken away, objects and all: a junction judged again
--- on more of the road map than it was first (runner.lua) has its sites replaced. Returns the number taken.
-function M.removeDressing(keys)
-  local drop = {}
-  for _, k in ipairs(keys or {}) do drop[k] = true end
-  local kept, n = {}, 0
-  for _, s in ipairs(dress) do
-    if drop[s.key] then removeDress(s) n = n + 1 else kept[#kept + 1] = s end
-  end
-  dress = kept
-  return n
-end
-M.siteKey = dressKey
-
--- More dressing for the stage, beside what there is: the sites of junctions the live road map has shown since the
--- stage was planned (runner.lua). Nothing already there is taken away or put down again (setDressing would take the
--- whole stage away and put it back, a flicker of every object near the car), and a site whose key (kind and along)
--- is already there is left out. The new ones go down by the next update, by the same window as the rest. Returns the
--- number added.
-function M.addDressing(list, toGeo)
-  local have, lost = {}, { n = 0 }
-  for _, s in ipairs(dress) do have[s.key or dressKey(s.kind, s.along)] = true end
-  local n = 0
-  for _, site in ipairs(list or {}) do
-    local k = dressKey(site.kind, site.along)
-    if not have[k] then
-      local d = keepDress(site, toGeo, lost)
-      if d then
-        dress[#dress + 1] = d
-        have[k] = true
-        n = n + 1
-      end
-    end
-  end
-  sayLost(lost, 'added from the live road map')
-  return n
 end
 
 -- The dressing sites kept (down or not), by kind: { [kind] = n }, and their number.
@@ -614,6 +584,39 @@ local function itemNow(it, toGame)
   return x, y, it.h and z or nil, hx, hy
 end
 
+-- (the road map's road at (x, y) running the way (dx, dy) (a unit direction, either sense), within DRESS_EDGE_SNAP_M
+-- and DRESS_EDGE_MAX_DEG of it; nil when there is none, or the nearest runs another way)
+local function alignedRoad(x, y, dx, dy)
+  local r = M.roadAt(x, y, { x = dx, y = dy }, M.DRESS_EDGE_SNAP_M)
+  if not (r and r.dx and r.dy) then return nil end
+  if math.abs(r.dx * dx + r.dy * dy) < math.cos(math.rad(M.DRESS_EDGE_MAX_DEG)) then return nil end
+  return r
+end
+M._alignedRoad = alignedRoad
+
+-- (a tape across a side road of unknown width fitted to the road there: its middle kept, the side road -- square to
+-- the tape -- looked for on the road map, else DEFAULT_HALF_WIDTH_M, and the shortest model reaching refit.past past
+-- each edge, else the longest stretched. Its origin is its end at +Y (the tape runs along -Y). Returns x, y, shape, sy)
+local function refitTape(it, x, y, dx, dy)
+  local rf = it.refit
+  local l = math.sqrt(dx * dx + dy * dy)
+  if l < 1e-9 or type(rf.models) ~= 'table' or #rf.models == 0 then return x, y, it.shape, it.sy end
+  dx, dy = dx / l, dy / l
+  local cx, cy = x - dx * rf.len / 2, y - dy * rf.len / 2
+  local r = alignedRoad(cx, cy, -dy, dx)
+  local h = (r and type(r.half) == 'number' and r.half > 0) and r.half or M.DEFAULT_HALF_WIDTH_M
+  local need = 2 * h + 2 * (rf.past or 0)
+  local len, shape, sy = nil, nil, 1
+  for _, m in ipairs(rf.models) do
+    if need <= m[1] + 1e-9 then len, shape = m[1], m[2] break end
+  end
+  if not len then
+    local top = rf.models[#rf.models]
+    len, shape, sy = need, top[2], need / top[1]
+  end
+  return cx + dx * len / 2, cy + dy * len / 2, shape, sy
+end
+
 -- (the move out for an object set from the road's edge, at (x, y) with the way out (nx, ny): the road map's half
 -- width at its planned road centre less the one it was planned against; 0 where the road map has no road there.
 -- One look serves a site's objects within DRESS_EDGE_REUSE_M of it: a spectator area is 64 objects)
@@ -622,7 +625,7 @@ local function edgeShift(s, it, x, y, nx, ny)
   local p = s.probe
   if p and (p.x - cx) ^ 2 + (p.y - cy) ^ 2 <= M.DRESS_EDGE_REUSE_M ^ 2 and p.eh == it.eh then return p.shift end
   local shift = 0
-  local r = M.roadAt(cx, cy, { x = -ny, y = nx }, M.DRESS_EDGE_SNAP_M)
+  local r = alignedRoad(cx, cy, -ny, nx)
   if r and type(r.half) == 'number' and r.half > 0 then
     shift = math.max(M.DRESS_EDGE_SHIFT_MIN_M, math.min(M.DRESS_EDGE_SHIFT_MAX_M, r.half - it.eh))
   end
@@ -633,11 +636,13 @@ end
 -- One object of a dressing site put down (or left out: a shape the game has not, a place with no game position).
 -- Returns false when the game would not make it.
 local function spawnItem(s, it, toGame, carZ)
-  if not shapeOk(it.shape) then return true end
   local x, y, z, hx, hy = itemNow(it, toGame)
   if not x then return true end
   local dx, dy = hx - x, hy - y
   if dx * dx + dy * dy < 1e-9 then dx, dy = 0, 1 end
+  local shape, sy = it.shape, it.sy
+  if it.refit then x, y, shape, sy = refitTape(it, x, y, dx, dy) end
+  if not shapeOk(shape) then return true end
   if it.eo then
     local nx, ny
     if it.nx then nx, ny = it.nx - it.x, it.ny - it.y
@@ -652,7 +657,7 @@ local function spawnItem(s, it, toGame, carZ)
       x, y = x + nx * sh, y + ny * sh
     end
   end
-  local ok, id = pcall(makeObj, it.shape, x, y, ground(x, y, z or carZ, M.DRESS_GROUND_ABOVE_M), yawQuat(dx, dy))
+  local ok, id = pcall(makeObj, shape, x, y, ground(x, y, z or carZ, M.DRESS_GROUND_ABOVE_M), yawQuat(dx, dy), sy)
   if ok then s.objs[#s.objs + 1] = id return true end
   log('W', 'earthRally', 'a dressing prop could not be put down (' .. tostring(id) .. ')')
   return false

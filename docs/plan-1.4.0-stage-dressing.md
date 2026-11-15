@@ -17,7 +17,8 @@ stage sketches) is not on this branch.
 - **The organisers' map first, automatic where it says nothing.** Radio, medical, spectator and marshal points
   come from the imported map when it marks them, and are placed by rule when it does not.
 - **Junctions from the live road map too**, not only from the auto recce's matched file, so a stage with only a
-  manual recce (or a matched file older than this version) still gets tape and boards.
+  manual recce (or a matched file older than this version) still gets tape and boards. *Dropped (the user,
+  2026-11-14): dressing from the auto recce only* -- see section 1.
 - **This branch is tape, boards and atmosphere.** Not the ghost and not stage sketches.
 
 ## What there is to build on
@@ -71,13 +72,15 @@ own rally missions use most):
 
 - **The matched file keeps them** (format 2): each junction becomes
   `[lat, lon, kind, side, inDeg, outDeg, [[sideDeg, halfW], ...]]`, bearings in degrees from north, half-width
-  from the road graph's node radius. Format 1 files still read (as `plan-1.2.0.md` proposed); what they lack comes
-  from the live map. `tools/auto_recce.py` writes the same shape.
-- **The live road map fills in the rest.** A small pure function, shared with the auto recce: given the road map's
-  nodes and links near a point of the line, find the degree-3+ nodes within 1.5 m of the line and their roads, the
-  same rule as `autoRecce.junctions`. Run as the car comes within ~400 m of each stretch of line (BeamNG.Earth only
-  has roads loaded around the car, so it cannot run up front). Used when a stage has no matched file, or an old one.
-- **Where both have a junction, the file wins**; the live map only adds junctions the file does not have.
+  from the road graph's node radius. Format 1 files still read (as `plan-1.2.0.md` proposed), with no side roads.
+  `tools/auto_recce.py` writes the same shape.
+- **The live road map: dropped (the user, 2026-11-14): dressing from the auto recce only.** The stage is dressed
+  once, at its start, from the matched file's junctions; a driven recce may still be run after the auto recce, and
+  the file's junctions are placed onto its line (`junctions.placeInOrder`). A stage whose file has no side roads (no
+  auto recce, or format 1) gets no tape, boards or junction marshals, and the log says once: `no side roads for this
+  stage: run Auto recce to dress its junctions`. The radio points and spectator areas need only the line and its
+  corners, so every stage has them. (Built first, then taken out: `junctions.live` / `junctions.merge` and
+  runner.lua's scan as the car went.)
 
 ### 2. Course tape and direction boards
 
@@ -141,7 +144,7 @@ budget.
 
 ## Order of work
 
-1. **Junction geometry kept**: matched format 2, the shared pure junction function, the live-map finder; offline
+1. **Junction geometry kept**: matched format 2, the shared pure junction function (the live-map finder: dropped); offline
    tests with roads in every direction (as `test_autorecce` / `test_props`).
 2. **Tape and boards**: the two new kinds in `props.lua`, sites from step 1 in `runner.stepBuild`, despawn behind.
 3. **The organisers' points**: importer folders / styles / descriptions, `marks` per stage, the one re-read;
@@ -183,11 +186,11 @@ right. Take it away with
 (a Lua reload, Ctrl+L, sweeps it too). No change to main.lua is needed: `require` hands back the module main.lua
 already loaded.
 
-**The switches** (no UI yet, see Settled 2): `runner.DRESSING` (the dressing at all) and `runner.DRESS_LIVE_SCAN`
-(the live road map looked at as the car goes), both `true`, read at each stage's start and at each look. From the
-console: `require('earthRally/runner').DRESSING = false`, then start the stage again.
+**The switch** (no UI yet, see Settled 2): `runner.DRESSING` (the dressing at all), `true`, read at each stage's
+start. From the console: `require('earthRally/runner').DRESSING = false`, then start the stage again.
 
-**What the log says** at a stage's start: `stage dressing: N site(s), M junction(s) from the file ...`; a tape left
+**What the log says** at a stage's start: `stage dressing: N site(s), M junction(s) from the file (K with side
+roads)`, and with none that has its side roads `no side roads for this stage: run Auto recce to dress its junctions`; a tape left
 out because its side road is the stage's own later pass says so once; a shape missing from the game is named once.
 
 ## Not changed by this branch

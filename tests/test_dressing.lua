@@ -17,9 +17,9 @@ local function find(objs, key)
   for _, o in ipairs(objs) do if o.key == key then out[#out + 1] = o end end
   return out
 end
--- a tape's two ends: the origin, and its length back along -Y
+-- a tape's two ends: the origin, and its length (its model's, times its Y scale) back along -Y
 local function ends(o)
-  local L = D.LINEAR_M[o.key]
+  local L = D.LINEAR_M[o.key] * (o.sy or 1)
   return o.x - o.dx * L, o.y - o.dy * L, o.x, o.y
 end
 -- distance from (x, y) to a polyline
@@ -50,18 +50,20 @@ do
   for _, o in ipairs(tape and tape.objects or {}) do
     local ax, ay, bx, by = ends(o)
     local cx, cy = (ax + bx) / 2, (ay + by) / 2
-    T.check(o.key == 'tape6' and o.shape:find('s_tape_road_closure_6m', 1, true), 'crossroads: 6 m tape for a 6 m road')
+    T.check(o.key == 'tape8' and o.shape:find('s_tape_road_closure_8m', 1, true) and o.sy == nil and o.refit == nil,
+      'crossroads: 8 m tape for a 6 m road (each end 0.75 m past its edge), at its own size')
     if cy > 4 then north = { cx, cy, ax, ay, bx, by } else west = { cx, cy, ax, ay, bx, by } end
   end
   T.check(north and math.abs(north[1]) < 1e-6 and math.abs(north[2] - 8) < 1e-6, 'crossroads: tape 8 m up the road straight on')
   T.check(west and math.abs(west[1] + 8) < 1e-6 and math.abs(west[2]) < 1e-6, 'crossroads: tape 8 m into the left road')
   -- square to its road: the north tape runs east-west
-  T.check(north and math.abs(north[4] - north[6]) < 1e-6 and math.abs(math.abs(north[3] - north[5]) - 6) < 1e-6,
+  T.check(north and math.abs(north[4] - north[6]) < 1e-6 and math.abs(math.abs(north[3] - north[5]) - 8) < 1e-6,
     'crossroads: tape square across its road')
   local board = ofKind(sites, 'board')[1]
   local b = board and board.objects[1]
   T.check(b and b.key == 'dirRight', 'crossroads: s_corner_dir_right')
-  T.check(b and math.abs(b.y + 75) < 1e-6 and math.abs(b.x - 2.7) < 1e-6, 'crossroads: board 75 m before, on the right')
+  T.check(b and math.abs(b.y + 75) < 1e-6 and math.abs(b.x - 4) < 1e-6,
+    'crossroads: board 75 m before, on the right, 1 m beyond the road\'s edge (' .. tostring(b and b.x) .. ')')
   -- its face (-X of the model) towards the car: +X (the right of +Y) along the way in
   T.check(b and math.abs(b.dy) < 1e-6 and b.dx < -0.99, 'crossroads: board turned to face the car (+X along the road)')
   local m = ofKind(sites, 'marshal')[1]
@@ -69,7 +71,11 @@ do
   local tbl = m and find(m.objects, 'table')[1]
   T.check(tbl and math.abs(tbl.x + 13) < 1e-6 and math.abs(tbl.y - 1.5) < 1e-6,
     'crossroads: marshal on the LEFT road, 5 m behind its tape, 1.5 m off its centre')
-  T.check(tbl and tbl.dx > 0.99, 'crossroads: marshal facing back to the junction')
+  -- (the marshal faces back to the junction, +x; table and chair turned 90 degrees to the right of that, as props.lua's
+  -- TENT: their +Y to -y)
+  T.check(tbl and tbl.dy < -0.99, 'crossroads: marshal\'s table a quarter turn right of facing back to the junction')
+  local chr, flg = m and find(m.objects, 'chair')[1], m and find(m.objects, 'flag')[1]
+  T.check(chr and chr.dy < -0.99 and flg and flg.dx > 0.99, 'crossroads: the chair turned as the table, the flag not')
   T.check(#find(m and m.objects or {}, 'flag') == 1 and #find(m and m.objects or {}, 'chair') == 1, 'crossroads: chair and flag')
 end
 
@@ -95,7 +101,7 @@ do
     sides = { { deg = bearing(rx, ry), halfW = 3 } } } } })
   local b = ofKind(sites, 'board')[1]
   T.check(b and b.objects[1].key == 'dir45Left', 'fork: s_corner_dir45_left')
-  T.check(b and math.abs(b.objects[1].x + 2.7) < 1e-6 and math.abs(b.objects[1].y + 75) < 1e-6,
+  T.check(b and math.abs(b.objects[1].x + 4) < 1e-6 and math.abs(b.objects[1].y + 75) < 1e-6,
     'fork: board 75 m before, on the left')
   local tape = ofKind(sites, 'tape')[1]
   local o = tape and tape.objects[1]
@@ -121,7 +127,7 @@ do
     sides = { { deg = bearing(sx, sy), halfW = 2.5 } } } } })
   T.check(#sites == 1 and sites[1].kind == 'tape', 'straight on: tape only (no board, no marshal)')
   local o = sites[1] and sites[1].objects[1]
-  T.check(o and o.key == 'tape6', 'straight on: a 5 m road takes the 6 m tape')
+  T.check(o and o.key == 'tape8', 'straight on: a 5 m road takes the 8 m tape (6.5 m wanted)')
   local ax, ay, bx, by = ends(o)
   T.near(len((ax + bx) / 2, (ay + by) / 2), 8, 1e-6, 'straight on: 8 m in')
 end
@@ -273,8 +279,8 @@ do
   T.check(okM, 'auto: junction marshals at most one per km (' .. #ms .. ')')
   T.check(#ofKind(sites, 'tape') == #js and #ofKind(sites, 'board') == #js, 'auto: tape and a board at every junction')
   local w8 = 0
-  for _, s in ipairs(ofKind(sites, 'tape')) do for _, o in ipairs(s.objects) do if o.key == 'tape8' then w8 = w8 + 1 end end end
-  T.check(w8 == #js, 'auto: an 8 m road takes the 8 m tape')
+  for _, s in ipairs(ofKind(sites, 'tape')) do for _, o in ipairs(s.objects) do if o.key == 'tape10' then w8 = w8 + 1 end end end
+  T.check(w8 == #js, 'auto: an 8 m road takes the 10 m tape (9.5 m wanted)')
   T.check(#ofKind(sites, 'medical') == 0, 'auto: no medical point made up')
   local sorted = true
   for i = 2, #sites do if sites[i].from < sites[i - 1].from then sorted = false end end
@@ -411,7 +417,7 @@ do
   T.check(#ofKind(wide, 'marshal') == 1, 'a closed road 50 degrees off the way in: a marshal')
 end
 
--- The stage road's half width at a junction (the file's eighth entry, the live node's radius): the tape cleared and
+-- The stage road's half width at a junction (the file's eighth entry): the tape cleared and
 -- the board set against it, not against 3 m; the objects away from the junctions carry their way out for props.lua
 do
   local S = { V(0, -300), V(0, 0), V(300, 0) }
@@ -421,9 +427,9 @@ do
                       sides = { { deg = 270 } } } } })
   end
   local b3, b6 = ofKind(plan6(nil), 'board')[1].objects[1], ofKind(plan6(6), 'board')[1].objects[1]
-  T.near(b3.x, 3 + D.BOARD_OUT, 1e-6, 'a board before the turn: 2.7 m off the centre against the default 3 m')
-  T.near(b6.x, 6 + D.BOARD_OUT, 1e-6, 'against the junction\'s own 6 m: 5.7 m off')
-  T.check(b6.eh == 6 and b6.ex == 1 and math.abs(b6.ey) < 1e-9 and math.abs(b6.eo - 5.7) < 1e-9,
+  T.near(b3.x, 3 + D.DIR_BOARD_OUT, 1e-6, 'a board before the turn: 4 m off the centre against the default 3 m')
+  T.near(b6.x, 6 + D.DIR_BOARD_OUT, 1e-6, 'against the junction\'s own 6 m: 7 m off')
+  T.check(b6.eh == 6 and b6.ex == 1 and math.abs(b6.ey) < 1e-9 and math.abs(b6.eo - 7) < 1e-9,
     'and it carries its way out and the width it was set against')
   local t3, t8 = ofKind(plan6(nil), 'tape')[1].objects[1], ofKind(plan6(8), 'tape')[1].objects[1]
   T.check(math.abs(t3.x + 8) < 1e-6 and math.abs(t8.x + 9) < 1e-6,
@@ -437,6 +443,104 @@ do
   local all = r and #r.objects > 0
   for _, o in ipairs(r and r.objects or {}) do if not (o.ex and o.eo and o.eh == 3) then all = false end end
   T.check(all, 'a radio point: every object carries its way out from the edge')
+end
+
+------------------------------------------------------------------------------------------ 1.4.0 in game (the user, 2026-11-14)
+
+-- 1. A hairpin whose two legs run close (a Y-shaped one): no hay bale on the other leg's road; a wide one keeps all
+-- three. (Before the fix the bales took a fixed offset with no look at the road.)
+local function hairpin(gap)
+  local r = gap / 2
+  local S = { V(0, -800), V(0, 0) }
+  for k = 1, 17 do
+    local a = math.pi - k * math.pi / 18
+    S[#S + 1] = V(r + r * math.cos(a), r * math.sin(a))
+  end
+  S[#S + 1] = V(gap, 0)
+  S[#S + 1] = V(gap, -400)
+  local cum = geo.cumulative(S)
+  local from, to = 800, 800 + math.pi * r
+  return D.plan({ line = S, cum = cum, startM = 0, finishM = cum[#cum],
+    corners = { { from = from, to = to, dir = 'right', angleDeg = 180, minRadius = r } } }), S
+end
+do
+  local tight, S = hairpin(7)
+  local sp = ofKind(tight, 'spectators')[1]
+  local bales = sp and find(sp.objects, 'bale') or {}
+  local onRoad = 0
+  for _, b in ipairs(bales) do if distTo(S, b.x, b.y) < 3 + 0.5 then onRoad = onRoad + 1 end end
+  T.check(onRoad == 0, 'Y hairpin: no hay bale on the road (' .. onRoad .. ' of ' .. #bales .. ')')
+  local wide, SW = hairpin(60)
+  local ws = ofKind(wide, 'spectators')[1]
+  T.check(ws and #find(ws.objects, 'bale') == 3, 'a wide hairpin: its three bales (' ..
+    (ws and #find(ws.objects, 'bale') or 0) .. ')')
+  -- spectator tape and fence: none on the road either
+  local runs = 0
+  for _, o in ipairs(sp and sp.objects or {}) do
+    if o.key == 'specTape' or o.key == 'fence' then
+      local ax, ay, bx, by = ends(o)
+      if distTo(S, ax, ay) < 3 or distTo(S, bx, by) < 3 or distTo(S, (ax + bx) / 2, (ay + by) / 2) < 3 then
+        runs = runs + 1
+      end
+    end
+  end
+  T.check(runs == 0, 'Y hairpin: no spectator tape or fence on the road (' .. runs .. ')')
+  -- 2. the spectators' chairs a quarter turn right of the way the camp faces (as props.lua's TENT)
+  local gz = ws and find(ws.objects, 'gazeboFrame')[1]
+  local chairs = ws and find(ws.objects, 'chair') or {}
+  local turned = gz and #chairs == 4
+  for _, c in ipairs(chairs) do
+    if not (math.abs(c.dx - gz.dy) < 1e-6 and math.abs(c.dy + gz.dx) < 1e-6) then turned = false end
+  end
+  T.check(turned, 'spectator chairs: turned 90 degrees to the right of the way the camp faces')
+end
+
+-- 2. A marshal post from the map by the road: table and chair turned 90 degrees right of the road's way (as TENT)
+do
+  local S = { V(0, 0), V(0, 600) }
+  local m = ofKind(D.plan({ line = S, startM = 0, finishM = 600,
+    marks = { { kind = 'marshal', along = 300, offLineM = 5 } } }), 'marshal')[1]
+  local tbl, chr = m and find(m.objects, 'table')[1], m and find(m.objects, 'chair')[1]
+  T.check(tbl and tbl.dx > 0.99 and chr and chr.dx > 0.99, 'roadside marshal: table and chair a quarter turn right of north')
+  local flg = m and find(m.objects, 'flag')[1]
+  T.check(flg and flg.dy > 0.99, 'roadside marshal: the flag along the road as before')
+end
+
+-- 3. The tape just past both edges: the next model up from the road's width + 1.5 m, stretched beyond 10 m; a side
+-- road of unknown width (0 or nil) planned as 6 m and carrying what props.lua needs to fit it to the road it finds
+do
+  local function tf(h) return table.concat({ D.tapeFor(h) }, ' ') end
+  T.check(tf(2.25) == 'tape6 6 1' and tf(2.5) == 'tape8 8 1' and tf(3) == 'tape8 8 1' and tf(3.25) == 'tape8 8 1' and
+    tf(3.5) == 'tape10 10 1' and tf(4.25) == 'tape10 10 1', 'tapeFor: the shortest model each end 0.75 m past the edge')
+  local k, l, sy = D.tapeFor(5)
+  T.check(k == 'tape10' and math.abs(l - 11.5) < 1e-9 and math.abs(sy - 1.15) < 1e-9,
+    'tapeFor: a 10 m road takes the 10 m tape stretched to 11.5 m (' .. tf(5) .. ')')
+  T.check(tf(nil) == 'tape8 8 1' and tf(0) == 'tape8 8 1', 'tapeFor: unknown width taken as 6 m')
+  local S = { V(0, -100), V(0, 100) }
+  local function tapeOf(halfW)
+    local t = ofKind(D.plan({ line = S, startM = 0, finishM = 200, junctions = { { along = 100, x = 0, y = 0,
+      kind = 'straight', inDeg = 0, outDeg = 0, sides = { { deg = 270, halfW = halfW } } } } }), 'tape')[1]
+    return t and t.objects[1]
+  end
+  local w = tapeOf(5)
+  local ax, ay, bx, by = ends(w)
+  T.check(w and w.sy and math.abs(w.sy - 1.15) < 1e-9 and math.abs(math.abs(ay - by) - 11.5) < 1e-6 and
+    math.abs((ay + by) / 2) < 1e-6, 'a wide side road: the stretched tape centred across it, 5.75 m either side')
+  local u0, un = tapeOf(0), tapeOf(nil)
+  T.check(u0 and u0.refit and un and un.refit and u0.refit.len == 8 and #u0.refit.models == 3 and
+    u0.refit.past == D.TAPE_PAST and u0.refit.models[3][2] == D.SHAPES.tape10,
+    'unknown width: a tape that props.lua fits to the road there')
+  T.check(tapeOf(3).refit == nil, 'a known width: no fitting at spawn')
+end
+
+-- 4. The direction boards 1 m beyond the road's edge; the radio / medical boards where they were
+do
+  local long = { V(0, 0), V(0, 7000) }
+  local r = ofKind(D.plan({ line = long, startM = 0, finishM = 7000 }), 'radio')[1]
+  local rb = r and find(r.objects, 'radio')[1]
+  T.check(rb and math.abs(rb.x - (3 + D.BOARD_OUT)) < 1e-6, 'a radio board still just inside the edge (' ..
+    tostring(rb and rb.x) .. ')')
+  T.check(D.DIR_BOARD_OUT == 1.0 and D.BOARD_OUT == -0.3, 'DIR_BOARD_OUT 1 m; BOARD_OUT unchanged')
 end
 
 T.done('test_dressing')

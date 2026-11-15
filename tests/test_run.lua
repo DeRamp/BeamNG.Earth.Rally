@@ -1232,8 +1232,8 @@ end
 
 ------------------------------------------------------------------------------------------ 1.4.0: the stage dressing in a run
 -- Planned as the stage is set out (the matched file's junctions placed on the line), put down and taken away by the
--- car's distance along it, cleared at the end of the stage; and on a stage whose file kept no side roads (format 1),
--- the junctions the live road map shows as the car goes ADDED, nothing standing taken away.
+-- car's distance along it, cleared at the end of the stage; a stage whose file kept no side roads (format 1), or with
+-- no file, gets no junction dressing (the live road map is not looked at for it: the user, 2026-11-14).
 do
   local props = require('earthRally/props')
   local J = require('earthRally/junctions')
@@ -1267,8 +1267,8 @@ do
   T.check((by.tape or 0) == 2 and (by.board or 0) == 1,
     'dressing: the stage start puts its sites in, tape at both junctions and a board before the fork (' ..
     tostring(rA.checks.dressing) .. ')')
-  T.check(rA.dress and rA.dress.scan == false and not tostring(rA.checks.dressing):find('live road map'),
-    'dressing: the file gave every junction\'s roads: the live road map not looked at')
+  T.check(tostring(rA.checks.dressing):find('2 junction(s) from the file (2 with side roads)', 1, true) ~= nil,
+    'dressing: the checks say the file\'s junctions and their roads (' .. tostring(rA.checks.dressing) .. ')')
   T.check(shapes('s_tape_road_closure') == 1 and shapes('s_corner_dir') == 0,
     'dressing: at the start, the tape 300 m on is down and nothing further (' .. shapes('s_tape_road_closure') .. ')')
   go(rA)
@@ -1287,81 +1287,71 @@ do
   runner.abort(true)
   T.check(nA > 0 and select(2, props.dressingSites()) == 0, 'dressing: nothing left after the run')
 
-  -- ------------------------------------------------------------ a format 1 file and the live road map
-  -- The file has the junction 300 m up but not its roads; the live road map has the stage's road with that side road,
-  -- and, once the car is under way, more of the road and a second junction (west, 600 m up) the file does not have.
+  -- ------------------------------------------------------------ a format 1 file, and no file: no junction dressing
+  -- The file has the junction 300 m up but not its roads; the live road map has that side road. Nothing is read off
+  -- the map for it: no tape, no board, no marshal, and the log says once how to get them (Auto recce).
   local evB = evFor('dressB')
   files['/earthRally/matched/dressB__hill.json'] = { format = 1, points = recFrom,
     junctions = { { full[311][1], full[311][2], 'straight', '' } } }
-  local K, west = 40, false
   map = { getMap = function()
     local nodes = {}
-    for k = 0, K do
+    for k = 0, 40 do
       local x, y = toGame(full[1 + 10 * k][1], full[1 + 10 * k][2], 0)
       nodes['r' .. k] = { pos = vec3(x, y, 100), radius = 3.5, links = {} }
       if k > 0 then nodes['r' .. k].links['r' .. (k - 1)] = {} end
     end
-    local function side(at, sx, name)
-      local x0, y0 = toGame(full[1 + 10 * at][1], full[1 + 10 * at][2], 0)
-      local prev = 'r' .. at
-      for m = 1, 6 do
-        nodes[name .. m] = { pos = vec3(x0 + sx * 10 * m, y0, 100), radius = 3, links = { [prev] = {} } }
-        prev = name .. m
-      end
+    local x0, y0 = toGame(full[311][1], full[311][2], 0)
+    local prev = 'r31'
+    for m = 1, 6 do
+      nodes['e' .. m] = { pos = vec3(x0 + 10 * m, y0, 100), radius = 3, links = { [prev] = {} } }
+      prev = 'e' .. m
     end
-    side(31, 1, 'e')
-    if west then side(61, -1, 'w') end
     return { nodes = nodes }
   end }
+  local said = {}
+  local plainLogB = log
+  log = function(level, tag, msg)
+    if tostring(msg):find('no side roads for this stage: run Auto recce', 1, true) then said[#said + 1] = msg end
+    plainLogB(level, tag, msg)
+  end
   local rB = toTheLine(evB)
-  T.check(runner.state() == 'waitStart', 'live: waiting on the line (' .. runner.state() .. ')')
-  T.check(rB.dress and rB.dress.scan == true, 'live: a format 1 file: the live road map looked at')
+  T.check(runner.state() == 'waitStart', 'format 1: waiting on the line (' .. runner.state() .. ')')
   by = props.dressingSites()
-  T.check((by.tape or 0) == 1 and rB.dress.known[1] and rB.dress.known[1].needSides == false,
-    'live: the file\'s junction given its side road by the live road map while waiting at the start (' ..
-    tostring(by.tape) .. ')')
-  local nT, firstIds = shapes('s_tape_road_closure')
-  T.check(nT == 1, 'live: and its tape down (' .. nT .. ')')
+  T.check((by.tape or 0) == 0 and (by.board or 0) == 0 and (by.marshal or 0) == 0,
+    'format 1: no tape, board or marshal from its junctions (' .. tostring(rB.checks.dressing) .. ')')
+  T.check(#said == 1, 'format 1: said once at setup (' .. #said .. ')')
   go(rB)
-  driveTo(11, 361)
-  -- the road map loads further up the stage, with a junction the file never had
-  K, west = 100, true
-  driveTo(386, 436)
-  by = props.dressingSites()
-  T.check((by.tape or 0) == 2 and (rB.dress.added or 0) == 2,
-    'live: the new junction\'s tape ADDED beside the first (' .. tostring(by.tape) .. ')')
-  local stillThere = true
-  for _, id in ipairs(firstIds) do if not objects[id] then stillThere = false end end
-  T.check(stillThere, 'live: the first junction\'s tape still standing, the same object (nothing replaced)')
-  T.check(shapes('s_tape_road_closure') == 2, 'live: both tapes down (' .. shapes('s_tape_road_closure') .. ')')
-  driveTo(461, 486)
-  T.check((props.dressingSites().tape or 0) == 2, 'live: the same junctions seen again: nothing added twice')
+  driveTo(11, 436)
+  T.check(shapes('s_tape_road_closure') == 0 and (props.dressingSites().tape or 0) == 0,
+    'format 1: driving past the junction the road map shows: nothing added')
+  T.check(#said == 1, 'format 1: and not said again as the car goes')
   runner.abort(true)
-  T.check(select(2, props.dressingSites()) == 0 and shapes('s_tape_road_closure') == 0, 'live: the run stopped: its dressing gone')
+  -- a stage line with no junctions in its file (a driven recce's: no auto recce run)
+  said = {}
+  local evN = evFor('dressNone')
+  files['/earthRally/matched/dressNone__hill.json'] = { format = 2, points = recFrom }
+  local rN = toTheLine(evN)
+  T.check(runner.state() == 'waitStart' and rN and rN.dress and (props.dressingSites().tape or 0) == 0 and #said == 1,
+    'no junctions in the file: no junction dressing, said once (' .. tostring(rN and rN.checks.dressing) .. ')')
+  runner.abort(true)
+  log = plainLogB
+  map = nil
+  T.check(J.live == nil and J.merge == nil and runner.DRESS_LIVE_SCAN == nil,
+    'the live road map scan is gone (junctions.live, junctions.merge, runner.DRESS_LIVE_SCAN)')
 
   -- ------------------------------------------------------------ 1.4.0's review: the switches, the faults, the shifts
-  K, west = 40, false
   local function evWith(id, fileFrom)
     local ev = evFor(id)
     files['/earthRally/matched/' .. id .. '__hill.json'] = files['/earthRally/matched/' .. fileFrom .. '__hill.json']
     return ev
   end
-  -- runner.DRESSING off: no dressing at all; runner.DRESS_LIVE_SCAN off: planned, the live road map not looked at
+  -- runner.DRESSING off: no dressing at all
   runner.DRESSING = false
   local rO = toTheLine(evWith('dressOff', 'dressA'))
   T.check(runner.state() == 'waitStart' and rO.dress == nil and select(2, props.dressingSites()) == 0 and
     tostring(rO.checks.dressing):find('off') ~= nil, 'switch: DRESSING off, no dressing (' .. tostring(rO.checks.dressing) .. ')')
   runner.abort(true)
   runner.DRESSING = true
-  runner.DRESS_LIVE_SCAN = false
-  local liveCalls = 0
-  local plainLive = J.live
-  J.live = function(...) liveCalls = liveCalls + 1 return plainLive(...) end
-  local rS = toTheLine(evWith('dressNoScan', 'dressB'))
-  T.check(rS.dress and rS.dress.scan == false and liveCalls == 0 and (props.dressingSites().tape or 0) == 0,
-    'switch: DRESS_LIVE_SCAN off, a format 1 file: the live road map never looked at (' .. liveCalls .. ')')
-  runner.abort(true)
-  runner.DRESS_LIVE_SCAN = true
 
   -- the stage dressing raising as it is set out: the stage still starts, the fault in its checks
   local plainJunctions = events.junctions
@@ -1372,42 +1362,6 @@ do
     tostring(rF.checks.dressing):find('^failed: .*a fault for the test') ~= nil,
     'a fault setting the dressing out: the stage still starts, its checks say so (' .. tostring(rF.checks.dressing) .. ')')
   runner.abort(true)
-
-  -- the live look raising: it switches itself off, the run goes on
-  local warned = {}
-  local plainLogFn = log
-  log = function(level, tag, msg) if level == 'W' then warned[#warned + 1] = tostring(msg) end plainLogFn(level, tag, msg) end
-  J.live = function() error('a road map fault for the test') end
-  local rL = toTheLine(evWith('dressScanFault', 'dressB'))
-  J.live = plainLive
-  local said = false
-  for _, w in ipairs(warned) do if w:find('no longer looked at', 1, true) and w:find('road map fault', 1, true) then said = true end end
-  T.check(runner.state() == 'waitStart' and rL.dress and rL.dress.scan == false and said,
-    'a fault in the live look: switched off and said, the run waiting at the start as before')
-  log = plainLogFn
-  runner.abort(true)
-
-  -- no look while the world shifts, nor for RESET_AFTER_MOVE_S after
-  J.live = function(...) liveCalls = liveCalls + 1 return plainLive(...) end
-  local rM = toTheLine(evWith('dressShift', 'dressB'))
-  liveCalls = 0
-  frames(15, 0.1)
-  T.check(liveCalls >= 1, 'shift: looked at while waiting (' .. liveCalls .. ')')
-  local plainRebasing = beamngEarth_api.rebasing
-  beamngEarth_api.rebasing = function() return true end
-  liveCalls = 0
-  frames(30, 0.1)
-  beamngEarth_api.rebasing = plainRebasing
-  T.check(liveCalls == 0, 'shift: none while the world is shifting (' .. liveCalls .. ')')
-  runner._moved({ purpose = 'test', source = 'test' })
-  frames(15, 0.1)
-  T.check(liveCalls == 0, 'shift: none in the ' .. runner.RESET_AFTER_MOVE_S .. ' s after it (' .. liveCalls .. ')')
-  frames(15, 0.1)
-  T.check(liveCalls >= 1, 'shift: looked at again after (' .. liveCalls .. ')')
-  J.live = plainLive
-  T.check(rM.dress and rM.dress.scan, 'shift: still looking')
-  runner.abort(true)
-  map = nil
 
   -- the showcase from the console: one of each shape ahead of the car, the log naming them, cleared again
   local D = require('earthRally/dressing')
