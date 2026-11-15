@@ -762,7 +762,7 @@ end
 -- one of each shape in a row dressing.SHOWCASE_AHEAD_M in front of the player's car, across the way it faces, each
 -- turned as on a real stage driven towards them; the log says which is which, left to right. From the game's Lua
 -- console: require('earthRally/runner').dressShowcase(), and .dressShowcaseClear() to take it away (a Lua reload
--- sweeps it too). docs/plan-1.5.0-stage-dressing.md, "Checking it in game". Returns the number of objects put down.
+-- sweeps it too). docs/plan-1.6.0-stage-dressing.md, "Checking it in game". Returns the number of objects put down.
 function M.dressShowcase()
   local veh = getPlayerVehicle and getPlayerVehicle(0)
   if not veh then log('W', logTag, 'dressing showcase: no car') return 0 end

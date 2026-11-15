@@ -1,4 +1,4 @@
--- dressing.lua: the mock-up's scenes (docs/mockups-1.5.0/stage.html) put through the Lua, and the automatic fill along
+-- dressing.lua: the mock-up's scenes (docs/mockups-1.6.0/stage.html) put through the Lua, and the automatic fill along
 -- a whole stage. Game coordinates: +x east, +y north; bearings clockwise from north.
 local T = dofile(TESTS .. '/testlib.lua')
 local geo = require('earthRally/geo')
@@ -339,7 +339,7 @@ do
     'only / existingMarshals: no longer read by plan')
 end
 
------------------------------------------------------------------------------------------- 1.5.0's review
+------------------------------------------------------------------------------------------ 1.6.0's review
 
 -- A stage that comes back through the same crossroads: north through it (straight on, side roads east and west),
 -- round a loop, then west to east through it. On the first pass the road east is the stage's later pass, the road
@@ -420,7 +420,7 @@ do
   T.check(all, 'a radio point: every object carries its way out from the edge')
 end
 
------------------------------------------------------------------------------------------- 1.5.0 in game (the user, 2026-11-14)
+------------------------------------------------------------------------------------------ 1.6.0 in game (the user, 2026-11-14)
 
 -- 1. A hairpin whose two legs run close (a Y-shaped one): no hay bale on the other leg's road; a wide one keeps all
 -- three. (Before the fix the bales took a fixed offset with no look at the road.)
@@ -599,7 +599,7 @@ do
     'spectators: bales, tape and fence flagged offRoad, nothing else (' .. wrong .. ')')
 end
 
------------------------------------------------------------------------------------------- 1.5.0: the organisers' points
+------------------------------------------------------------------------------------------ 1.6.0: the organisers' points
 -- The map's points first, per kind; the kinds it is silent about filled by chance, the chance seeded from the stage
 -- (runner passes "<event>/<stage>"): the same stage dresses the same every run, two stages differ, all within bounds.
 do

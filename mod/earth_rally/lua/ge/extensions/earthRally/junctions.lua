@@ -1,7 +1,7 @@
 -- earthRally/junctions: the junctions along a stage -- where the stage meets another road, which way it comes in and
 -- leaves by, and the side roads it does not take -- from the matched file (autoRecce.lua in the game,
 -- tools/auto_recce.py offline), which finds them on the road graph when the stage is matched and keeps them as lat /
--- lon. (1.5.0 also read them off BeamNG.Earth's live road map as the car went, for a stage without side roads in its
+-- lon. (1.6.0 also read them off BeamNG.Earth's live road map as the car went, for a stage without side roads in its
 -- file; dropped, the user, 2026-11-14: the stage dressing comes from the auto recce only.) M.branch and M.judge below
 -- are the rule both auto recces share. Pure and offline (tests/test_junctions.lua): nothing from the game.
 --

@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Earth Rally stage points</title>
-<!-- Mock-up for 1.5.0 (not built): on a stage's page, which of the organisers' four kinds of point the stage's map
+<!-- Mock-up for 1.6.0 (not built): on a stage's page, which of the organisers' four kinds of point the stage's map
      marks. The user, 2026-11-15: "add indicators on each stage's page that let me know if they have these or not"
-     -- these being the points the 1.5.0 stage dressing uses (docs/plan-1.5.0-stage-dressing.md; the dressing
-     itself is drawn in docs/mockups-1.5.0/stage.html).
+     -- these being the points the 1.6.0 stage dressing uses (docs/plan-1.6.0-stage-dressing.md; the dressing
+     itself is drawn in docs/mockups-1.6.0/stage.html).
 
      THE THREE STATES, per kind, per stage
        FROM THE MAP  the organisers' map marks n of this kind on the stage: the dressing puts them there.
@@ -27,7 +27,7 @@
        - menu.lua, M.stageBase (~line 155, the returned table): one new field,
            marks = events.stageMarks(e.id, s.id)   -- { radio = n, medical = n, spectator = n, marshal = n }
          M.stage() passes it through unchanged. Nothing else in menu.lua moves.
-       - events.lua: the new events.stageMarks(eventId, stageId), counting the points the 1.5.0 importer files
+       - events.lua: the new events.stageMarks(eventId, stageId), counting the points the 1.6.0 importer files
          under the stage (the same ones dressing.lua reads as source = 'map'), so the page and the dressing can
          never disagree.
        - EarthRally.vue, the stage section (~line 151): a new <div class="er-pts"> straight after
@@ -192,12 +192,12 @@ body[data-v="prop"] .n-only { display: none; }
 </svg>
 
 <div class="mock-bar">
-  <b>Earth Rally 1.5.0 &mdash; the stage's points</b>
+  <b>Earth Rally 1.6.0 &mdash; the stage's points</b>
   <a href="#screen">the stage page</a>
   <a href="#cases">three stages</a>
   <a href="#states">the three states</a>
   <a href="#list">in the stage list?</a>
-  <div class="tg"><button data-v="now">Now (1.4.0)</button><button data-v="prop" class="on">Proposed (1.5.0)</button></div>
+  <div class="tg"><button data-v="now">Now (1.5.0)</button><button data-v="prop" class="on">Proposed (1.6.0)</button></div>
 </div>
 
 <!-- ======================================================= 1 ======================================================= -->

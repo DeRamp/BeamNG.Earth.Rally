@@ -1,14 +1,14 @@
-# 1.5.0 on the stage: stage dressing (plan)
+# 1.6.0 on the stage: stage dressing (plan)
 
 Drafted 2026-11-14 in its own worktree (branch `worktree-stage-dressing-1.4.0`), alongside the rally-file work and
 the roadmap edits going on elsewhere; nothing here touches `docs/roadmap.md`, `docs/version-plans.md` or the menus.
-**Renumbered 1.5.0** (2026-11-15): 1.4.0 went to the rally files, released on main first; this branch was drafted as 1.4.0, and its docs were renamed when main was merged in.
+**Renumbered 1.6.0** (2026-11-15): drafted as 1.4.0; the rally files took 1.4.0 and the co-driver 1.5.0, both released on main first, and this branch's docs were renamed each time main was merged in.
 
 **A plan, not a build: nothing is written until the user says go.**
 
-The part of 1.5.0 that makes a stage look like an event: course tape across the side roads not taken (roadmap item
+The part of 1.6.0 that makes a stage look like an event: course tape across the side roads not taken (roadmap item
 5), direction boards before the junctions (6), and atmosphere: radio points, medical points, marshal posts and
-spectator areas (29). The rest of 1.5.0 (pre-loading, the late-start penalty, stages wider than ~26 km, the ghost,
+spectator areas (29). The rest of 1.6.0 (pre-loading, the late-start penalty, stages wider than ~26 km, the ghost,
 stage sketches) is not on this branch.
 
 ## What the user decided (2026-11-14)
@@ -36,7 +36,7 @@ world shift (`runner._moved` → `props.reset()`); all in one `earthRally_props`
 road-graph node of degree 3+ on the line, the road the stage comes in by, the one it leaves by, and every side road
 40 m+ long, each as a direction. It keeps only `{along, kind, side}`, and the matched file stores
 `[lat, lon, kind, side]` (autoRecce.lua:754). Node half-widths are read from `api.roadGraph` and dropped too
-(autoRecce.lua:1004, "1.5.0's question"). Tape needs the side roads' directions, and its length wants their width.
+(autoRecce.lua:1004, "1.6.0's question"). Tape needs the side roads' directions, and its length wants their width.
 
 **The organisers' points: read, then mostly thrown away.** `importer.readKml` keeps a placemark's name and first
 point, never its folder, style or description; only atc / start / ff / stop become a stage's `controls`; the rest
@@ -166,7 +166,7 @@ automatic) driven end to end with tape, boards and radio points standing where t
    taking the player's camera. The gazebo and boards say it.
 2. **No switch on this branch:** dressing is always on. "Stage dressing: full / tape and boards / off" in Settings
    is UI (mock-up first) and the menus are the rally-file session's ground; it comes when they are free.
-3. **A mock-up first:** top-down drawings of each layout at true scale in `docs/mockups-1.5.0/stage.html`, agreed
+3. **A mock-up first:** top-down drawings of each layout at true scale in `docs/mockups-1.6.0/stage.html`, agreed
    before the placement code is written.
 4. **Passed to the rally-file session** (2026-11-14): reserve `marks` beside `controls` on a stage in its format,
    shape `[{ kind, name, lat, lon, distM, offLineM }]`, so 1.6.0's file can carry them.
@@ -198,4 +198,4 @@ out because its side road is the stage's own later pass says so once; a shape mi
 ## Not changed by this branch
 
 The menus and HUD, `docs/roadmap.md`, `docs/version-plans.md`, and the rally-file work. When this merges, the
-roadmap's 1.5.0 rows for items 5, 6 and 29 point here.
+roadmap's 1.6.0 rows for items 5, 6 and 29 point here.

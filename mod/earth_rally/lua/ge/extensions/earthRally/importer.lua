@@ -296,7 +296,7 @@ M._pointRole = pointRole
 
 ------------------------------------------------------------------------------------------ the organisers' points
 
--- The kinds of point the stage dressing puts out where the map has them (docs/plan-1.5.0-stage-dressing.md, 3), in
+-- The kinds of point the stage dressing puts out where the map has them (docs/plan-1.6.0-stage-dressing.md, 3), in
 -- the order a point's kinds are listed.
 M.MARK_KINDS = { 'radio', 'medical', 'spectator', 'marshal' }
 M.MARK_NEAR_M = 100          -- a point this near a stage's line is on that stage; farther (a hospital) it is not
@@ -685,7 +685,7 @@ M.readKmz = readKmz
 -- index was written with, the next scan re-imports everything, which keeps each event's id (so its recces, matched
 -- lines and times still belong to it) and only rewrites the event files.
 --   2  the rally's name from the document or the file (1.3.2)
---   3  the organisers' points kept on each stage as `marks` (1.5.0): the rallies already here gain them
+--   3  the organisers' points kept on each stage as `marks` (1.6.0): the rallies already here gain them
 -- (A stage's line is read as before, so its matched line and recces still fit it: events.mapKey.)
 M.NAME_RULES = 3
 
