@@ -75,14 +75,34 @@ do
   local big = { passes = { { ss = 'SS1', stage = 'alpha', run = 1, km = 10, field = {} } } }
   for i = 1, 30 do big.passes[1].field[i] = crew(100 + i, 'Crew ' .. i) end
   r = B.stageBoard(big, 'alpha', { bestS = 120.5 })
-  T.check(#r.rows == 11 and r.rows[10].pos == 10 and r.rows[11].you and r.rows[11].pos == 21 and r.rows[11].skipped
-    and r.you.of == 31, 'you outside the top 10: the top 10 and your row after, marked skipped')
+  T.check(#r.rows == 13 and r.rows[10].pos == 10 and r.rows[11].pos == 20 and r.rows[11].skipped and
+    r.rows[12].you and r.rows[12].pos == 21 and r.rows[13].pos == 22 and r.rows[13].name == 'Crew 21' and
+    not r.rows[12].skipped and not r.rows[13].skipped and r.you.of == 31,
+    'you outside the top 10: the top 10, a gap, then the crew ahead, you and the crew behind')
   r = B.stageBoard(big, 'alpha', { bestS = 103.5, top = 5 })
   T.check(#r.rows == 6 and r.rows[4].you and r.rows[4].pos == 4 and r.rows[6].pos == 6 and not r.rows[4].skipped,
     'you inside the top: top crews plus you in place')
+  r = B.stageBoard(big, 'alpha', { bestS = 50 })
+  T.check(#r.rows == 11 and r.rows[1].you and r.rows[1].pos == 1 and r.rows[11].pos == 11, 'you first: you and ten crews')
   r = B.stageBoard(big, 'alpha', { bestS = 110.5, top = 10 })
-  T.check(#r.rows == 11 and r.rows[11].you and r.rows[11].pos == 11 and not r.rows[11].skipped,
-    'you right after the top: not marked skipped')
+  T.check(#r.rows == 12 and r.rows[11].you and r.rows[11].pos == 11 and r.rows[12].pos == 12 and
+    not r.rows[11].skipped and not r.rows[12].skipped, '11th: you right after the top, and the crew behind, no gap')
+  r = B.stageBoard(big, 'alpha', { bestS = 111.5 })
+  T.check(#r.rows == 13 and r.rows[11].pos == 11 and r.rows[12].you and r.rows[13].pos == 13 and
+    not r.rows[11].skipped, '12th: the crew ahead is 11th, no gap')
+  r = B.stageBoard(big, 'alpha', { bestS = 112.5 })
+  T.check(#r.rows == 14 and r.rows[11].pos == 11 and r.rows[12].pos == 12 and r.rows[13].you and
+    r.rows[14].pos == 14 and not r.rows[11].skipped, '13th: one crew between the top and the one ahead: shown, no gap')
+  r = B.stageBoard(big, 'alpha', { bestS = 113.5 })
+  T.check(#r.rows == 13 and r.rows[11].pos == 13 and r.rows[11].skipped and r.rows[12].you and r.rows[12].pos == 14,
+    '14th: two crews left out, the gap before the crew ahead')
+  r = B.stageBoard(big, 'alpha', { bestS = 200 })
+  T.check(#r.rows == 12 and r.rows[11].pos == 30 and r.rows[11].skipped and r.rows[12].you and r.rows[12].pos == 31
+    and r.you.pos == 31 and r.you.of == 31, 'last: the crew ahead and you, nobody behind')
+  local small = { passes = { { ss = 'SS1', stage = 'alpha', run = 1, km = 10, field = {} } } }
+  for i = 1, 4 do small.passes[1].field[i] = crew(100 + i, 'Crew ' .. i) end
+  r = B.stageBoard(small, 'alpha', { bestS = 300 })
+  T.check(#r.rows == 5 and r.rows[5].you and not r.rows[5].skipped, 'a field smaller than the top: everyone and you')
 
   local empty = { passes = { { ss = 'SS1', stage = 'alpha', run = 1, km = 10, field = {} } } }
   r = B.stageBoard(empty, 'alpha', { bestS = 300 })
@@ -336,8 +356,8 @@ do
   for i = 1, 12 do list[i] = { pos = i, name = 'C' .. i, totalS = 100 + i, gapS = i - 1 } end
   table.insert(list, 12, { pos = 12, name = 'You', totalS = 111.5, gapS = 10.5, you = true })
   local rows = B.topRows(list, 10)
-  T.check(#rows == 11 and rows[11].you and rows[11].skipped and rows[11].timeS == 111.5 and rows[1].timeS == 101,
-    'topRows: ten crews, then you with the gap marked; totals as timeS')
+  T.check(#rows == 13 and rows[11].name == 'C11' and rows[12].you and not rows[12].skipped and rows[12].timeS == 111.5
+    and rows[13].name == 'C12' and rows[1].timeS == 101, 'topRows: ten crews, then the crew ahead, you and the one behind; totals as timeS')
 
   local none = B.standings({}, {})
   T.check(#none.rows == 0 and none.you == nil and none.entries == 0, 'a season with no rounds: an empty table')

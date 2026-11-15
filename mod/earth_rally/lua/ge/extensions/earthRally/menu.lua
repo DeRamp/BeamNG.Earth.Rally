@@ -482,7 +482,8 @@ end
 --   it), list[i].place = { pos, of, pass } | nil, list[i].placeWhy = 'noTime' | 'lineMismatch' | nil
 --   results (with a board) = { complete, totalS, you = { pos, of, gapS }, winnerS, stages, driven,
 --     chips = { { name, done } } (the comparable stages: the ones the result is over),
---     rows = top 10 and you { pos, name, car, class, timeS, gapS, you, skipped },
+--     rows = top 10 and you, with the crews either side of you below it (boards.menuRows)
+--       { pos, name, car, class, timeS, gapS, you, skipped },
 --     crews = how many crews have a time on every comparable pass, counted / comparable (passes), kmTotal /
 --     kmCovered, partial = true | nil (some counted pass left out: its stage is more than 5% off the official
 --     distance), notRanked = true | nil (the comparable passes under 75% of the km: no place, no points),
@@ -549,7 +550,8 @@ end
 --   season, single, media (as the rally's), passes = { { ss, run, km, cancelled }... }, notRun = true | nil
 --   board = nil (no results for this stage: no Leaderboard card) | { passes = { { ss, run, km, cancelled }... },
 --     pass = the shown pass's ss, km, lineKm (the map line's), field (crews on it), fastestS,
---     rows = top 10 and you { pos, name, car, class, timeS, gapS, you, skipped }, you = { pos, of, gapS... } | nil,
+--     rows = top 10 and you, with the crews either side of you below it (boards.menuRows)
+--       { pos, name, car, class, timeS, gapS, you, skipped }, you = { pos, of, gapS... } | nil,
 --     reason = nil | 'cancelled' | 'noTime' | 'lineMismatch', lineKm = the stage's length start to flying finish on
 --     the line you are timed on ('recce' / 'matched' in lineOf), else the map's ('map'), bestS = your best on that
 --     line (the one placed), oldLine = true when your times were all driven on an earlier line }

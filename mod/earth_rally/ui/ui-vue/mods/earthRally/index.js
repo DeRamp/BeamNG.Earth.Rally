@@ -3,8 +3,9 @@ import { lua } from "@/bridge"
 // Earth Rally's menu (ui/ui-vue/mods/README.md, as BeamNG.Earth's own mod does it):
 //   a full-screen route "earthRally" (EarthRally.vue: Rallies, a rally, a stage, Settings), opened from Lua with
 //     ui_router.navigate('earthRally') (earthRally_main.openMenu / toggleMenu: Ctrl+Alt+K)
-//   an "Earth Rally" tab of its own in the pause menu: Rallies (EarthRallyTab.vue) and Settings
-//     (EarthRallySettings.vue), EarthRallySide.vue as its second card
+//   an "Earth Rally" tab of its own in the pause menu (EarthRallyTab.vue): one button into the menu page, which opens
+//     where it was left (the user, 2026-11-14: "simplify it and just have it have a button that takes you to the
+//     rally menu"). The game's mod tabs show a component per button, not a bare button, so that is its one page.
 // Lua side: lua/ge/extensions/earthRally/main.lua. A failure in one part is logged and leaves the other alone.
 const TAB_ID = "earthRally"
 const MOD_ROOT = "/ui/ui-vue/mods/earthRally"
@@ -46,27 +47,20 @@ async function registerRoute() {
 }
 
 async function registerPauseTab() {
+  // (a UI reload keeps the game's Lua, and with it the Settings button an older build registered here)
+  try { await lua.extensions.ui_pause_actions.unregisterModButton("earthRally-settings") } catch (e) { /* none */ }
   try {
     await lua.extensions.ui_pause_actions.registerModTab({
       id: TAB_ID,
       label: "Earth Rally",
       icon: "flag",
-      card2ComponentName: `${MOD_ROOT}/EarthRallySide.vue`,
     })
     await lua.extensions.ui_pause_actions.registerModButton({
       id: "earthRally-rallies",
       tabId: TAB_ID,
-      label: "Rallies",
+      label: "Rally menu",
       icon: "flag",
       componentName: `${MOD_ROOT}/EarthRallyTab.vue`,
-    })
-    await lua.extensions.ui_pause_actions.registerModButton({
-      id: "earthRally-settings",
-      tabId: TAB_ID,
-      label: "Settings",
-      icon: "cogOutline",
-      componentName: `${MOD_ROOT}/EarthRallySettings.vue`,
-      props: { card: true },
     })
   } catch (e) {
     console.error("Earth Rally: pause menu tab failed", e)

@@ -1,5 +1,5 @@
-// Earth Rally's menu: the state shared by its page (EarthRally.vue, a route of its own) and its pause-menu cards
-// (EarthRallyTab.vue, EarthRallySettings.vue, EarthRallySide.vue). Lua side: lua/ge/extensions/earthRally/main.lua
+// Earth Rally's menu: the state shared by its page (EarthRally.vue, a route of its own) and its pause-menu
+// card (EarthRallyTab.vue). Lua side: lua/ge/extensions/earthRally/main.lua
 // (uiState, uiSeason, uiRally, uiStage, uiAction, uiSet), as BeamNG.Earth's settings pages talk to its settings.lua.
 import { ref } from "vue"
 
@@ -64,11 +64,15 @@ export function setSetting(key, value) {
   })
 }
 
+// view: the page to open at; none opens where the menu was left (EarthRally.vue's lastPlace)
 export function openMenu(view, eventId) {
-  engineLua(`if earthRally_main then earthRally_main.openMenu(${q(view || "rallies")}, ${q(eventId)}) end`)
+  engineLua(`if earthRally_main then earthRally_main.openMenu(${q(view)}, ${q(eventId)}) end`)
 }
+
+// Where the menu page was left: { view, sel, rallyTab }, kept here because the page itself is unmounted when the
+// menu closes (this module lives as long as the UI does; a UI reload starts on Rallies again).
+export const lastPlace = { at: null }
 export function closeMenu() { engineLua("if earthRally_main then earthRally_main.closeMenu() end") }
-export function previewHud() { engineLua("if earthRally_main then earthRally_main.previewHud() end") }
 
 // The poll while a page or card is open (a count: started / stopped by each)
 let users = 0

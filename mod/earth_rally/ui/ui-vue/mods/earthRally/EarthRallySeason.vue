@@ -70,14 +70,16 @@
 </template>
 
 <script setup>
-import { ref, computed } from "vue"
+import { ref, computed, watch } from "vue"
 import EarthRallyPic from "./EarthRallyPic.vue"
-import { arr, ord, days, months, shortName } from "./store.js"
+import { arr, ord, days, months, shortName, lastPlace } from "./store.js"
 
 const props = defineProps({ s: { type: Object, required: true } })   // menu.season
 const emit = defineEmits(["rally"])
 const TABS = [{ id: "rounds", label: "Rallies" }, { id: "standings", label: "Standings" }]
-const tab = ref("rounds")
+// (kept per season across the menu closing, as the rest of where the menu was left: store.js lastPlace)
+const tab = ref((lastPlace.seasonTab && lastPlace.seasonTab.id === props.s.id && lastPlace.seasonTab.tab) || "rounds")
+watch(tab, t => { lastPlace.seasonTab = { id: props.s.id, tab: t } })
 
 const st = computed(() => props.s.standings || {})
 const you = computed(() => st.value.you || null)

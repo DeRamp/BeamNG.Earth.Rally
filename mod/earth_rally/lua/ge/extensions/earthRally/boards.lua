@@ -181,26 +181,47 @@ local function indexOf(list, x)
   return nil
 end
 
--- The menu rows of a ranked list (a stage's, or rallyResult's `ranked`): the first `top` crews, and you at your
--- place among them (so up to top + 1 rows), or after them with skipped = true when crews were left out between.
+-- The menu rows of a ranked list (a stage's, or rallyResult's `ranked`): the first `top` crews, with you at your
+-- place among them (so up to top + 1 rows). Placed below them, you come with the crew just ahead of you and the
+-- one just behind (the user, 2026-11-14: "show you your total place, and the person directly above/behind you"),
+-- and the first row after crews left out is marked skipped = true (the menu draws a gap above it).
+-- (Fewer than M.MIN_GAP crews between the top and the one ahead of you are shown rather than skipped: a gap of
+-- one would hide no more than the row it takes.)
 -- Rows: { pos, name, car, class, timeS, gapS, you, skipped }. The one home of "the top 10 and you".
+M.NEAR = 1      -- crews shown either side of you, below the top
+M.MIN_GAP = 2   -- the fewest crews a gap may hide; fewer are shown
+local function menuRow(r)
+  return { pos = r.pos, name = r.name, car = r.car, class = r.class, timeS = r.timeS or r.totalS, gapS = r.gapS,
+    you = r.you == true }
+end
 local function menuRows(out, top)
-  local rows, crews = {}, 0
-  for _, r in ipairs(out or {}) do
+  out = out or {}
+  local rows, crews, at = {}, 0, nil
+  for i, r in ipairs(out) do
+    if r.you then at = i break end
+  end
+  -- the top crews, and you when you are among them
+  local last = 0
+  for i, r in ipairs(out) do
     if r.you then
-      local row = { pos = r.pos, name = r.name, car = r.car, class = r.class, you = true }
-      row.timeS, row.gapS = r.timeS or r.totalS, r.gapS
-      if crews >= top and #rows > 0 and not rows[#rows].you then
-        row.skipped = indexOf(out, r) > #rows + 1
-      end
-      rows[#rows + 1] = row
       if crews >= top then break end
-    elseif crews < top then
+      rows[#rows + 1] = menuRow(r)
+    else
+      if crews >= top then break end
       crews = crews + 1
-      local row = { pos = r.pos, name = r.name, car = r.car, class = r.class, timeS = r.timeS or r.totalS,
-        gapS = r.gapS, you = false }
-      rows[#rows + 1] = row
+      rows[#rows + 1] = menuRow(r)
     end
+    last = i
+  end
+  if not at or at <= last then return rows end
+  -- you below the top: the crews around you, joined on to the top when the gap is small
+  local from = math.max(at - M.NEAR, last + 1)
+  if from - last - 1 < M.MIN_GAP then from = last + 1 end
+  local to = math.min(at + M.NEAR, #out)
+  for i = from, to do
+    local row = menuRow(out[i])
+    if i == from and from > last + 1 then row.skipped = true end
+    rows[#rows + 1] = row
   end
   return rows
 end

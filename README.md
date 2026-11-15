@@ -83,7 +83,7 @@ co-driver. With an auto recce, junctions are called too — *at junction*, *past
 
 To rebind: Options > Controls > Bindings, category **Gameplay**, the actions starting **Earth Rally:**.
 
-**Settings** (menu, or the pause-menu tab): units, the reset penalty, the control-zone brake, where the start
+**Settings** (in the Earth Rally menu): units, the reset penalty, the control-zone brake, where the start
 clock's close-up shows.
 
 ## The menu will not open

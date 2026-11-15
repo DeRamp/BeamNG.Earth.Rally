@@ -867,7 +867,7 @@ end
 
 function M.uiRally(eventId)
   local out = menu.rally(eventId, importer.lastReports, earth.hasRoadGraph())
-  if not out then return { missing = true } end
+  if not out then return { missing = true, id = eventId } end
   for k, v in pairs(runSummary()) do out[k] = v end
   out.autoLines = autoLinesFor(eventId)
   return out
@@ -884,7 +884,7 @@ end
 -- pass: the leaderboard's pass ('SS4'), nil for the one you place best on
 function M.uiStage(eventId, stageId, pass)
   local _, stage = menu.findStage(eventId, stageId)
-  if not stage then return { missing = true } end
+  if not stage then return { missing = true, eventId = eventId, id = stageId } end   -- (ids: the page tells whose)
   local _, _, arrival = runner.arrivalPoint(stage)
   local out = menu.stage(eventId, stageId, arrival, earth.hasRoadGraph(), pass)
   for k, v in pairs(runSummary()) do out[k] = v end

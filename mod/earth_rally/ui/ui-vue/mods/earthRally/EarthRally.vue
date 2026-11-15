@@ -238,12 +238,7 @@
       <!-- ===== Settings ===== -->
       <section v-else-if="view === 'settings'" class="er-settings-page">
         <div class="er-card"><EarthRallySettings /></div>
-        <div class="er-card er-side">
-          <h3>Developer</h3>
-          <p class="er-muted">The HUD preview plays sample moments of a run through the HUD, without driving.</p>
-          <BngButton :accent="ACCENTS.outlined" @click="previewHud">HUD preview</BngButton>
-          <p class="er-dim er-small">Earth Rally {{ st.version }}</p>
-        </div>
+        <p class="er-dim er-small">Earth Rally {{ st.version }}</p>
       </section>
 
       <div v-else class="er-muted">Loading...</div>
@@ -257,7 +252,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from "vue"
+import { ref, computed, watch, onMounted, onUnmounted } from "vue"
 import { BngButton, ACCENTS } from "@/common/components/base"
 import EarthRallySettings from "./EarthRallySettings.vue"
 import EarthRallyHome from "./EarthRallyHome.vue"
@@ -267,7 +262,7 @@ import EarthRallyBoard from "./EarthRallyBoard.vue"
 import EarthRallyResults from "./EarthRallyResults.vue"
 import {
   state, season, rally, stage, busyMsg, action as luaAction, refreshState, takeOpenAt, loadSeason, loadRally, loadStage,
-  closeMenu, previewHud,
+  closeMenu, lastPlace,
   arr, units, len, lenNum, riseNum, riseUnit, time, when, ord, days, ssName, STATUS, AUTO_OUTCOME, RUN_WORDS,
 } from "./store.js"
 
@@ -435,6 +430,39 @@ const controlsLine = computed(() => {
 })
 
 function go(v) { view.value = v; busyMsg.value = "" }
+// Where the menu was left, for the next time it opens with no page asked for (the pause menu's button, Ctrl+Alt+K):
+// the user, 2026-11-14, "the rally menu should also now remember where it was when you close and open it".
+// (not the leaderboard's pass: after another drive the board opens on the pass you place best on, as Lua picks it)
+watch([view, sel, rallyTab], () => {
+  lastPlace.at = { view: view.value, sel: { ...sel.value, pass: null }, rallyTab: rallyTab.value }
+}, { deep: true })
+function resume(at) {
+  const s = at.sel || {}
+  if (at.view === "stage" && s.eventId && s.stageId) {
+    openStage(s.eventId, s.stageId)
+  } else if (at.view === "rally" && s.eventId) {
+    openRally(s.eventId, false)
+    if (at.rallyTab) rallyTab.value = at.rallyTab
+  } else if (at.view === "season" && s.seasonId) openSeason(s.seasonId)
+  else if (at.view === "settings") go("settings")
+  else return
+  // the season the rally or stage was reached through, for Back and the crumbs
+  if (s.seasonId) sel.value = { ...sel.value, seasonId: s.seasonId }
+}
+// A remembered page whose rally, season or stage has gone (removed from the import folder): Rallies, rather than
+// "Loading..." for ever. Each reply is checked against the page asked for (main.lua's missing replies carry their
+// ids), so an old "missing" left in the store from an earlier page cannot send the player back.
+watch(season, x => {
+  if (x && x.missing && view.value === "season" && x.id === sel.value.seasonId) go("rallies")
+})
+watch(rally, x => {
+  if (x && x.missing && view.value === "rally" && x.id === sel.value.eventId) go("rallies")
+})
+watch(stage, x => {
+  if (x && x.missing && view.value === "stage" && x.eventId === sel.value.eventId && x.id === sel.value.stageId) {
+    go("rallies")
+  }
+})
 const pill = status => STATUS[status] || STATUS.none
 const dash = v => (v === null || v === undefined ? "–" : v)
 function openSeason(id) {
@@ -525,6 +553,8 @@ onMounted(() => {
     else if (at && at.view === "rally" && at.eventId) openRally(at.eventId)
     else if (at && at.view === "season" && at.eventId) openSeason(at.eventId)
     else if (at && at.view === "settings") go("settings")
+    else if (at && at.view === "rallies") { /* asked for (main.openMenu('rallies')): Rallies */ }
+    else if (lastPlace.at) resume(lastPlace.at)
   })
   timer = setInterval(poll, 1000)
 })
@@ -689,5 +719,4 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
   .er-pen { color: #ffd36b; text-align: right; } .er-clean { color: #6fd39a; text-align: right; } }
 
 .er-settings-page { display: grid; grid-template-columns: 1.6fr 1fr; gap: 28px; align-items: start; }
-.er-side { padding: 22px 26px; h3 { margin: 0 0 8px; } }
 </style>
