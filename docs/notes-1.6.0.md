@@ -142,3 +142,21 @@ stage that comes back alongside no longer takes it from the later pass; past 300
 line, the bridge is kept with no span.
 
 Already right: the `NAME_RULES` comment said 1.6.0 (the renumbering commit fixed it).
+
+## 5. A rally with map points on any stage: the others get none, not random (the user, 2026-11-15)
+
+"If a rally event has spots marked on a map for at least one stage, don't assume random on the others, assume zero."
+Logged, not acted on yet.
+
+Now: each stage decides alone. A kind with no marks on that stage is filled at random (`dressing.lua`, map marks
+first else random per kind), and the stage page shows "Random" (`EarthRally.vue` `ptState`).
+
+Proposed: work out per rally whether the organisers' map marks points at all. If it does, a stage with none of a kind
+gets none, and its page shows "None" instead of "Random". Random fill stays only for rallies whose map marks nothing.
+Touches `events.stageMarks` (or a new per-event flag next to it), `runner.setupDressing` (pass it to `plan`),
+`dressing.plan` (skip the random fill), and `ptState` / help text in `EarthRally.vue`, with tests in `test_dressing`
+and `test_menu_rally_files`.
+
+Open: per kind or any kind? (a) A rally that marks radios on some stage gets no random radios, but still random
+spectators if it marks no spectators anywhere; or (b) any point of any kind on any stage turns random off for every
+kind in that rally. Junction marshals at taped turns are dressing, not map points, so they stay either way.
