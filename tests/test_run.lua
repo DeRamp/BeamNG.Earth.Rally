@@ -1938,6 +1938,34 @@ do
   for _, x in ipairs(streams) do kinds[x.k] = (kinds[x.k] or 0) + 1 end
   T.check((kinds.rallyLoop or 0) >= 5 and (kinds.earthRally or 0) >= 5, 'both streams queued (' ..
     tostring(kinds.rallyLoop) .. ', ' .. tostring(kinds.earthRally) .. ')')
+  -- the rates (1.6.1): one second at 60 fps in each state. Our HUD at HUD_STREAM_HZ, but STREAM_HZ on the line and
+  -- off route; the stock stream at STREAM_HZ on the line and on the stage, else HUD_STREAM_HZ
+  do
+    local r = runner.current()
+    local was, wasOff = r.state, r.offRoute
+    local function rates(state, off)
+      r.state, r.offRoute = state, off
+      main._sendStreams(1 / 60)        -- (the state change: both sent at once, not counted)
+      streams = {}
+      for _ = 1, 60 do main._sendStreams(1 / 60) end
+      local n = {}
+      for _, x in ipairs(streams) do n[x.k] = (n[x.k] or 0) + 1 end
+      return n.rallyLoop or 0, n.earthRally or 0
+    end
+    local function near(n, hz) return math.abs(n - hz) <= math.max(2, hz * 0.2) end
+    local slow, fast = main.HUD_STREAM_HZ, main.STREAM_HZ
+    local a, b = rates('toStart')
+    T.check(near(a, slow) and near(b, slow), 'stream rates: on the way to the start, both ' .. slow .. ' Hz (' .. a .. ', ' .. b .. ')')
+    a, b = rates('waitStart')
+    T.check(near(a, fast) and near(b, fast), 'stream rates: on the line, both ' .. fast .. ' Hz (' .. a .. ', ' .. b .. ')')
+    a, b = rates('running')
+    T.check(near(a, fast) and near(b, slow), 'stream rates: on the stage, the stock ' .. fast .. ' Hz, ours ' .. slow
+      .. ' (' .. a .. ', ' .. b .. ')')
+    a, b = rates('running', true)
+    T.check(near(b, fast), 'stream rates: off route, ours ' .. fast .. ' Hz (' .. b .. ')')
+    r.state, r.offRoute = was, wasOff
+    main._sendStreams(1 / 60)
+  end
   T.check(main.previewHud() == false, 'no HUD preview during a run')
   main.uiAction('abort')
   streams = {}

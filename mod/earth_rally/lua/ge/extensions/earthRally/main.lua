@@ -1013,7 +1013,8 @@ local function sendStreams(dt)
   local rlHz = idle and M.STREAM_IDLE_HZ or ((s == 'waitStart' or s == 'running') and M.STREAM_HZ or M.HUD_STREAM_HZ)
   -- (ours fast too where it moves with the stock apps: the countdown's big numeral on the line, and the way-back
   -- arrow while off the route)
-  local hudHz = idle and M.STREAM_IDLE_HZ or (s == 'waitStart' and M.STREAM_HZ or M.HUD_STREAM_HZ)
+  local fast = s == 'waitStart' or (s == 'running' and r.offRoute)
+  local hudHz = idle and M.STREAM_IDLE_HZ or (fast and M.STREAM_HZ or M.HUD_STREAM_HZ)
   local fresh = s ~= streamOn
   local rlDue, hudDue = fresh or streamT >= 1 / rlHz, fresh or hudT >= 1 / hudHz
   if not (rlDue or hudDue) then return end
@@ -1025,9 +1026,6 @@ local function sendStreams(dt)
   end
   streamOn = s
   local rl, ours = runner.uiFrame()
-  if rlDue and not hudDue and type(ours) == 'table' and type(ours.show) == 'table' and ours.show.offRoute then
-    hudDue = true
-  end
   if rlDue then
     streamT = 0
     if rl then gh.queueStream('rallyLoop', rl) end
