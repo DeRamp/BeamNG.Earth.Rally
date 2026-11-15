@@ -71,6 +71,18 @@ docs/release-1.4.0.md; the format in docs/rally-file.md.
 | ✔ | A rally total and its place; season standings from each rally's finishing order (the first part of 28) | built |
 | ✔ | The pause menu's tab down to one **Rally menu** button; the Settings page's HUD preview button gone | built |
 
+## 1.5.2: the time control stays (released 2026-11-14)
+
+A patch: Run stage no longer skips the ATC after Auto recce, Go to start or a stopped Recce. Auto recce lands at the
+ATC, and a car on the stage line is never taken for one driven up to the board; docs/notes-1.5.2.md has the detail
+and what is left open.
+
+## 1.5.1: the menus clear (released 2026-11-14)
+
+A patch: BeamNG.Earth's imgui strips no longer draw over the Escape menu or the rally menu. It is BeamNG.Earth's bug
+(its menu check misses 0.40's `pause` route), and the fix is a stopgap of ours to remove once BeamNG.Earth fixes it;
+docs/notes-1.5.1.md says how to tell, and what to remove.
+
 ## 1.5.0: the co-driver (released 2026-11-14)
 
 Pacenotes worth trusting, from the line and its heights. Built on its own branch alongside on the stage and

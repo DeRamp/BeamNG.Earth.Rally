@@ -70,6 +70,9 @@ function M.internals()
     "BeamNG.Earth's connection warnings are not repeated on the stage HUD")
   probe('rebaseRead', 'beamngEarth/rebase.distance', mod('rebase', 'distance'),
     'the rebase distance cannot be read back after it is set')
+  -- (earthMenuFix.lua, a stopgap: drop this probe with it)
+  probe('setUiState', 'beamngEarth/credits.setUiState', mod('credits', 'setUiState'),
+    "BeamNG.Earth's strips and download line show over the pause menu and the rally menu")
   return out
 end
 
@@ -335,9 +338,11 @@ end
 --
 -- An API for this was drafted and deliberately not sent (docs/plan-1.3.0.md, "The strips: no pull request"): the
 -- shape that reads well for a third-party mod would also let any mod take BeamNG.Earth's data credits down, and a
--- CC BY attribution strip is the one thing that must not have a one-call off switch. Earth Rally never touches
--- credits by either route -- EARTH_STRIPS is status and banner, and our own stage layout keeps `beamngEarthCredits`
+-- CC BY attribution strip is the one thing that must not have a one-call off switch. Earth Rally never takes the
+-- credits down while driving -- EARTH_STRIPS is status and banner, and our own stage layout keeps `beamngEarthCredits`
 -- on screen (earthRallyStage.uilayout.json), so the attribution stays up, drawn by its own app, all through a stage.
+-- (The one exception is BeamNG.Earth's own: it hides them behind a menu, and earthMenuFix.lua -- a stopgap -- only
+-- puts that back for 0.40's pause menu, which its menu test misses.)
 --
 -- Held, not set once: those apps fire `hudApp(name, false)` as they are destroyed in the layout swap, so the runner
 -- asserts this every frame while the stage layout is on. Given back on every way out -- runner's layoutOff, and

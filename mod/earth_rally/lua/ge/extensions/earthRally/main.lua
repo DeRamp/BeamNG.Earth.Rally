@@ -18,10 +18,11 @@ local settings = require('earthRally/settings')
 local menu = require('earthRally/menu')
 local preview = require('earthRally/preview')
 local versions = require('earthRally/versions')
+local earthMenuFix = require('earthRally/earthMenuFix') -- STOPGAP: remove with BeamNG.Earth's fix (the file says)
 
 local M = {}
 local logTag = 'earthRally'
-M.VERSION = '1.5.0-alpha'
+M.VERSION = '1.5.2-alpha'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_HZ = 30                  -- the HUD's streams this often while something moves on it
 M.STREAM_IDLE_HZ = 2              -- ... and this often once the run is over
@@ -95,8 +96,10 @@ function M.onUiChangedState(toState)
   menuOpen = toState == M.ROUTE
   -- Our own full-screen page counts too: it is not called 'menu...' but it is just as much in the way. So does
   -- BeamNG.Earth's world map, a route of its own ('beamngEarthMap', its credits.lua MAP_ROUTE).
-  runner.uiHidden = toState:sub(1, 4) == 'menu' or toState == 'loading' or toState == M.ROUTE
-    or toState == 'beamngEarthMap'
+  -- 'pause' is the in-game Escape menu in 0.40 ('menu' is the main menu); this check missed it, as BeamNG.Earth's does.
+  runner.uiHidden = toState:sub(1, 4) == 'menu' or earthMenuFix.isPause(toState) or toState == 'loading'
+    or toState == M.ROUTE or toState == 'beamngEarthMap'
+  earthMenuFix.uiState(toState, M.ROUTE)
 end
 
 ------------------------------------------------------------------------------------------ the developer panel
@@ -491,15 +494,23 @@ autoSeqStep = function(what, arg)
 
   -- Go to the stage if it is far, then match. The last two legs, reached once the ground is as good as it is
   -- going to get: downloaded, declined, or nothing missing in the first place.
+  --
+  -- Going there lands at the stage's ARRIVAL point (runner.arrivalPoint: its ATC when it has one of its own, else
+  -- its start), the same place Run stage would take the car. Landing at the start instead skipped any ATC within
+  -- about NO_SET_DOWN_M (150 m) of the line: Run stage found the car that near it, left it where it stood
+  -- ("driven there"), and the first thing it did was drive past the time control (the user, 2026-11-14: "when you
+  -- press run stage, you unintentinaly skip the ATC"). Landing on the ATC point itself is inside
+  -- DRIVEN_THERE_MIN_M, and runner.faceAtc sets it down 40 m before the board, on the road, facing it. (Run stage's
+  -- own "on the stage" check covers the other ways a car ends up at the start: Go to start, a stopped Recce.)
   local function goThenMatch()
-    local st = sq.stage.controls and sq.stage.controls.start
-      or { lat = sq.stage.line[1][1], lon = sq.stage.line[1][2] }
+    local lat, lon, kind = runner.arrivalPoint(sq.stage)
+    if not lat then lat, lon, kind = sq.stage.line[1][1], sq.stage.line[1][2], 'start' end
     local p = earth.pose()
-    local away = (not p) and math.huge or require('earthRally/geo').metres(p.lat, p.lon, st.lat, st.lon)
+    local away = (not p) and math.huge or require('earthRally/geo').metres(p.lat, p.lon, lat, lon)
     if away > M.GO_IF_FURTHER_M then
-      local tok, terr = earth.teleport(st.lat, st.lon, sq.stage.name .. ' start')
+      local tok, terr = earth.teleport(lat, lon, sq.stage.name .. ' ' .. kind)
       if not tok then autoSeqEnd('Could not go to the stage: ' .. tostring(terr)) return end
-      sq.phase, sq.t, sq.ready = M.GOING, 0, 0
+      sq.phase, sq.t, sq.ready, sq.arrival = M.GOING, 0, 0, kind
       return
     end
     sq.phase, sq.t = 'matching', 0
@@ -595,7 +606,12 @@ autoSeqStep = function(what, arg)
     if sq.phase == M.GOING then
       sq.ready = earth.ready() and sq.t > 2 and (sq.ready + (arg or 0)) or 0
       if sq.ready >= runner.TELEPORT_SETTLE_S then
-        pcall(runner.faceStage, sq.stage, sq.ev.id)
+        -- (at the ATC: set down on the road before its board, as Run stage would. Not faceStage, which puts the car
+        -- behind the START line -- the very skip this landing exists to avoid)
+        local fok, placed, how = pcall(sq.arrival == 'ATC' and runner.faceAtc or runner.faceStage, sq.stage, sq.ev.id)
+        log('I', logTag, string.format('auto recce: landed at the %s: %s', tostring(sq.arrival),
+          fok and (placed and tostring(how) or ('left where it landed' .. (how and (' (' .. tostring(how) .. ')') or '')))
+          or tostring(placed)))
         sq.phase, sq.t = 'matching', 0
         local ok, why = autoStartMatch(sq.ev, sq.stage, sq.ss)
         if not ok then autoSeqEnd('The auto recce could not start: ' .. tostring(why)) end
@@ -729,7 +745,8 @@ doAction = function(what, eventId, stageId, fromPanel)
     if not autoSeq then return res(false, (autoLines[autoKey(ev.id, stage.id)] or {}).text or
       'the auto recce could not be started') end
     if autoSeq.phase == M.GOING then
-      return res(true, string.format('Auto recce of %s: going to the start first.', stage.name))
+      return res(true, string.format('Auto recce of %s: going to the %s first.', stage.name,
+        autoSeq.arrival == 'ATC' and 'time control' or 'start'))
     end
     local pr = autoRecce.progress() or {}
     return res(true, string.format('Auto recce of %s: %d windows. %s', stage.name, pr.windows or 0,
@@ -1014,6 +1031,7 @@ function M.onUpdate(dtReal, dtSim)
     scanIn = scanIn - (dtReal or 0)
     if scanIn <= 0 then scanIn = nil M.scanImports(false) end
   end
+  pcall(earthMenuFix.update)   -- (ahead of earth.update, which is not pcall'd)
   earth.update()
   -- In the BeamNG.Earth level: the version check again, now that the game's rally engine can be looked at without
   -- dragging it in at the main menu (versions.lua says why). Once per level, and quiet unless something changed
