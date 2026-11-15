@@ -53,7 +53,7 @@ def floor(test, spot, label, pair, base=False):
 
 def race(test, spot, label, pair, base=False):
     """A fresh run, the car at `spot`, the race active (running), settled."""
-    return start() + [{"op": "spot", "alongM": spot}, {"op": "state", "name": "running"},
+    return start() + [{"op": "state", "name": "running"}, {"op": "spot", "alongM": spot},
                       {"op": "settle", "timeout": 120},
                       cap(label, test, "running", spot, switch="state", value="running", pair=pair, base=base)]
 
@@ -63,7 +63,7 @@ def go_at_line(test, label, pair):
     settle: the start clock is fed until the clock reaches 8 s, the start-line prism drawn until 10 s), then the
     race settled on the line."""
     return start() + [
-        {"op": "spot", "alongM": LINE}, {"op": "state", "name": "waitStart"}, {"op": "settle", "timeout": 120},
+        {"op": "state", "name": "waitStart"}, {"op": "spot", "alongM": LINE}, {"op": "settle", "timeout": 120},
         cap(f"{label}-waitStart", test, "waitStart", LINE, switch="state", value="waitStart", pair=pair, base=True),
         {"op": "state", "name": "running"},
         cap(f"{label}-go", test, "running", LINE, warm=0, seconds=20, switch="state", value="go", pair=pair),
@@ -79,7 +79,7 @@ def go_suite(test, pairs):
         p = i + 1
         line_first = i % 2 == 0
         run_part = go_at_line(test, f"{test}-{p}", p)
-        idle_part = start() + [{"op": "spot", "alongM": LINE}] + floor(test, LINE, f"{test}-{p}-none", p)
+        idle_part = start() + [{"op": "state", "name": "running"}, {"op": "spot", "alongM": LINE}] + floor(test, LINE, f"{test}-{p}-none", p)
         steps += (run_part + floor(test, LINE, f"{test}-{p}-none", p)) if line_first else (idle_part + run_part)
     return steps
 
@@ -95,7 +95,7 @@ def suite_quick():
     for i in range(3):
         p = i + 1
         r = race("quick", SPOT1, f"q-running-{p}", p)
-        n = start() + [{"op": "spot", "alongM": SPOT1}] + floor("quick", SPOT1, f"q-none-{p}", p, base=True)
+        n = start() + [{"op": "state", "name": "running"}, {"op": "spot", "alongM": SPOT1}] + floor("quick", SPOT1, f"q-none-{p}", p, base=True)
         steps += (r + floor("quick", SPOT1, f"q-none-{p}", p, base=True)) if i % 2 == 0 else (n + r)
     steps += start() + [{"op": "state", "name": "running"},
                         {"op": "arrival", "label": "q-arrival", "test": "quick-arrival", "alongM": SPOT1}]
@@ -111,7 +111,8 @@ def suite_t1():
     """World or mod: 2 min from arrival at 2.3 km, the mod idle vs running, A B B A, no settle on purpose."""
     steps = []
     for i, state in enumerate(["none", "running", "running", "none"]):
-        steps += start() + [{"op": "spot", "alongM": SPOT1}, {"op": "state", "name": state}]
+        steps += start() + [{"op": "state", "name": "running"}, {"op": "spot", "alongM": SPOT1},
+                            {"op": "state", "name": state}]
         if state == "none":
             steps.append({"op": "set", "switch": "traffic", "value": "off"})
         steps.append(cap(f"t1-{state}-{i + 1}", "t1", state, SPOT1, warm=0, seconds=120, switch="state", value=state,
@@ -121,7 +122,7 @@ def suite_t1():
 
 def suite_t2():
     """Where a slow frame goes: Optick and the Lua sampler, the race vs the mod idle, 10 s each, at 2.3 km."""
-    steps = start() + [{"op": "spot", "alongM": SPOT1}, {"op": "state", "name": "running"},
+    steps = start() + [{"op": "state", "name": "running"}, {"op": "spot", "alongM": SPOT1},
                        {"op": "settle", "timeout": 120}]
     steps.append(cap("t2-running", "t2", "running", SPOT1, seconds=10, optick=True, profile=True, switch="state",
                      value="running", pair=1))
@@ -139,7 +140,7 @@ T3_SWITCHES = [("streams", 30, 1), ("layout", "stage", "plain"), ("notes", True,
 def suite_t3():
     """What GO switches on: one system taken away at a time at 2.3 km in running. Base = as shipped (on).
     Pairs alternate on/off, off/on, on/off."""
-    steps = start() + [{"op": "spot", "alongM": SPOT1}, {"op": "state", "name": "running"},
+    steps = start() + [{"op": "state", "name": "running"}, {"op": "spot", "alongM": SPOT1},
                        {"op": "settle", "timeout": 120}]
     for sw, on, off in T3_SWITCHES:
         for i in range(3):
@@ -176,7 +177,7 @@ def suite_t4():
 
 def suite_t5():
     """After the run: finished at 4.6 km (results card up), traffic back on (base, as the player has it) vs off."""
-    steps = start() + [{"op": "spot", "alongM": SPOT2}, {"op": "state", "name": "running"},
+    steps = start() + [{"op": "state", "name": "running"}, {"op": "spot", "alongM": SPOT2},
                        {"op": "settle", "timeout": 120}]
     steps += [{"op": "state", "name": "finished"}, {"op": "wait", "seconds": 3}, {"op": "settle", "timeout": 90}]
     for i in range(2):

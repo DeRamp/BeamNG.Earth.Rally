@@ -56,6 +56,9 @@ local I = {
 }
 I.trafficOn = upv(I.tidy, 'trafficOn')
 I.systems = upv(I.trafficOn, 'systems')
+I.freeze = upv(I.zoneRelease, 'freeze')
+I.vehCtl = runner._vehCtl
+local NEEDED = { 'setState', 'zoneRelease', 'tidy', 'trafficOff', 'trafficOn', 'systems', 'freeze', 'vehCtl' }
 
 ------------------------------------------------------------------------------------------ hook timers
 -- Each Earth Rally function below is wrapped while a suite runs: time per call (max and total per capture). The mod
@@ -92,9 +95,11 @@ local function wrapHooks()
   end
   local mainUpdate = rawget(_G, 'earthRally_main') and earthRally_main.onUpdate
   local idx, orig = upvIndex(mainUpdate, 'sendStreams')
-  if idx and type(orig) == 'function' and not wrapped['main.sendStreams'] then
-    wrapped['main.sendStreams'] = { upvalueOf = mainUpdate, index = idx, orig = orig }
-    debug.setupvalue(mainUpdate, idx, timed('main.sendStreams', orig))
+  -- (debug.setupvalue is refused by the MCP server's sandbox: then sendStreams goes untimed, and says so)
+  if idx and type(orig) == 'function' and not wrapped['main.sendStreams'] and debug.setupvalue then
+    local ok = pcall(debug.setupvalue, mainUpdate, idx, timed('main.sendStreams', orig))
+    if ok then wrapped['main.sendStreams'] = { upvalueOf = mainUpdate, index = idx, orig = orig }
+    else B.untimed = 'main.sendStreams (debug.setupvalue not allowed)' end
   end
 end
 local function unwrapHooks()
@@ -228,6 +233,7 @@ end
 
 local function restoreSwitches()
   if swOrig.streams ~= nil then earthRally_main.STREAM_HZ = swOrig.streams end
+  if swOrig.resultsTimeout ~= nil then runner.RESULTS_TIMEOUT_S = swOrig.resultsTimeout end
   if swOrig.layoutHold ~= nil then runner.LAYOUT_HOLD_S = swOrig.layoutHold end
   if swOrig.dress ~= nil then props.DRESS_OBJS_PER_UPDATE = swOrig.dress end
   trafficPutBack()
@@ -243,9 +249,11 @@ end
 local W = nil            -- the capture under way
 local lastT = nil
 local metrics = {}
-local function frame(dt)
+local function frame(dt, prevT)
   local w = W
   if not w then return end
+  -- (a frame that began before the capture did carries the bench's own set-up work: counts, placing; left out)
+  if prevT < w.t0 then return end
   local el = (ms() - w.t0) / 1000
   if el < w.warm then
     for _, s in pairs(hookStats) do s.frame = 0 end
@@ -449,6 +457,8 @@ local function placeAt(alongM)
   local t0 = ms()
   local hitZ
   waitFrames(function()
+    -- (on the line: the car's own staging point is taken again once it is set down, so the move is no jump start)
+    if r.state == 'waitStart' then r.staged = nil end
     local p, dir = target()
     local z, found = runner.groundNear(p.x, p.y, p.z)
     if found then hitZ = z return true end
@@ -459,9 +469,22 @@ local function placeAt(alongM)
   runner.placeCar(veh, vec3(p.x, p.y, hitZ + 0.3), vec3(dir.x, dir.y, 0))
   r.prevAlong, r.along = s, s
   pcall(rallyA.resync)
+  if r.state == 'waitStart' then B._holdOnLine() end
   local waited = (ms() - t0) / 1000
   note(string.format('placed at %d m (line %.0f m), ground z %.1f, %.1f s for ground', alongM, s, hitZ, waited))
   return waited
+end
+
+-- Held on the line as zone() holds a car that stopped there (runner.lua, keepHeld): frozen, launch control on, the
+-- zone marked stopped, so GO's zoneRelease() lets it go as it would a player's. Staging taken afresh.
+function B._holdOnLine()
+  local r = run()
+  local veh = getPlayerVehicle(0)
+  if not (r and veh) then return end
+  I.freeze(veh, true)
+  pcall(I.vehCtl, veh, 'launch')
+  r.zone = { t = 0, stopped = true, held = veh }
+  r.staged, r.jumpStart, r.jumpStartAt = nil, nil, nil
 end
 
 local function setState(name)
@@ -480,14 +503,18 @@ local function setState(name)
   elseif name == 'waitStart' then
     r.startAt = (runner.clock() or 0) + 3600
     r.prevLeft = 3600
-    r.staged = nil
     I.setState('waitStart')
+    B._holdOnLine()
     I.trafficOff()
   elseif name == 'finished' then
     -- (a time, so the results card and the stage layout stay as after a real finish; wrapUp writes no result:
-    -- addResult is only called from stepRunning)
+    -- addResult is only called from stepRunning. sinceFinish past the finish banner, as a real finish is by the time
+    -- the card shows; the card's own time-out held off for the captures and put back after)
     r.finalTime = r.finalTime or 0
     runner.wrapUp()
+    r.sinceFinish = 10
+    if swOrig.resultsTimeout == nil then swOrig.resultsTimeout = runner.RESULTS_TIMEOUT_S end
+    runner.RESULTS_TIMEOUT_S = 1e9
   else
     error('unknown state ' .. name, 0)
   end
@@ -647,7 +674,7 @@ local E = {}
 function E.onUpdate()
   local t = ms()
   if lastT then
-    local ok, err = pcall(frame, t - lastT)
+    local ok, err = pcall(frame, t - lastT, lastT)
     if not ok and S and not S.done then
       S.err = 'recorder: ' .. tostring(err)
       note('ERROR: ' .. S.err)
@@ -674,19 +701,22 @@ extensions.load('erBenchExt')
 function B.run(cfg)
   if type(cfg) == 'string' then cfg = jsonDecode(cfg) end
   if S and not S.done then return 'ERROR: a suite is running' end
-  for k, v in pairs(I) do if v == nil then return 'ERROR: missing runner internal: ' .. k end end
+  for _, k in ipairs(NEEDED) do if I[k] == nil then return 'ERROR: missing runner internal: ' .. k end end
   wrapHooks()
   S = { cfg = cfg, t0 = ms(), step = 0, captures = 0, log = {} }
   S.co = coroutine.create(body)
   FS:directoryCreate(DIR .. cfg.name, true)
   progressKey = nil
   writeProgress(true)
-  return 'running ' .. cfg.name .. ' (' .. #cfg.steps .. ' steps)'
+  if B.untimed then note('not timed: ' .. B.untimed) end
+  return 'running ' .. cfg.name .. ' (' .. #cfg.steps .. ' steps)' .. (B.untimed and ('; not timed: ' .. B.untimed) or '')
 end
 
 local function stopAll(why, quiet)
   if W then B._endCapture('stopped') end
   profStop()
+  -- (anything but a clean end: the bench's run aborted too, so the player is not left in a made-up state)
+  if why ~= 'finished' and S and not S.done then pcall(runner.abort, true) end
   restoreSwitches()
   unwrapHooks()
   if S and not S.done then
@@ -701,5 +731,5 @@ function B.stop(why) return stopAll(why, false) end
 function B._quietStop(why) return stopAll(why, true) end
 
 local missing = {}
-for k, v in pairs(I) do if v == nil then missing[#missing + 1] = k end end
+for _, k in ipairs(NEEDED) do if I[k] == nil then missing[#missing + 1] = k end end
 return #missing == 0 and 'erBench loaded' or ('erBench loaded, MISSING internals: ' .. table.concat(missing, ','))

@@ -110,7 +110,7 @@ function trend(){
  for(let k=0;k<=4;k++){const v=ymax*k/4;el('line',{x1:L,x2:W-R,y1:y(v),y2:y(v)},g);el('text',{x:L-6,y:y(v)+4,'text-anchor':'end'},ax).textContent=v.toFixed(m==='over50'?0:1)}
  if(m!=='over50')for(const [v,lab] of [[16.7,'60 fps'],[33.3,'30 fps']])if(v<ymax){el('line',{x1:L,x2:W-R,y1:y(v),y2:y(v),class:'ref'},svg);el('text',{x:W-R-2,y:y(v)-4,'text-anchor':'end',class:'reftext'},svg).textContent=lab}
  ss.forEach((s,i)=>{const r=rows.find(r=>r.suite===s);const tx=el('text',{x:x(i),y:H-B+16,'text-anchor':'middle'},ax);tx.textContent=(r.commit||'')+(r.dirty?'*':'');const t2=el('text',{x:x(i),y:H-B+30,'text-anchor':'middle'},ax);t2.textContent=(r.label||'').slice(0,18)});
- for(const s of ser){if(s.pts.length>1)el('polyline',{points:s.pts.map(p=>x(p.i)+','+y(p.v)).join(' '),fill:'none',stroke:s.c,'stroke-width':2,'stroke-linejoin':'round'},svg);
+ for(const s of ser.slice().reverse()){if(s.pts.length>1)el('polyline',{points:s.pts.map(p=>x(p.i)+','+y(p.v)).join(' '),fill:'none',stroke:s.c,'stroke-width':2,'stroke-linejoin':'round'},svg);
   for(const p of s.pts){el('circle',{cx:x(p.i),cy:y(p.v),r:4.5,fill:s.c,stroke:'var(--panel)','stroke-width':2},svg)}}
  const hit=el('rect',{x:L,y:T,width:W-L-R,height:H-T-B,fill:'transparent'},svg);const cross=el('line',{y1:T,y2:H-B,stroke:'var(--muted)','stroke-width':1,visibility:'hidden'},svg);
  hit.addEventListener('mousemove',ev=>{const b=svg.getBoundingClientRect();const px=(ev.clientX-b.left)*W/b.width;let i=Math.round((px-L)/((W-L-R)/Math.max(1,ss.length-1)));i=Math.max(0,Math.min(ss.length-1,i));cross.setAttribute('x1',x(i));cross.setAttribute('x2',x(i));cross.setAttribute('visibility','visible');
@@ -155,7 +155,7 @@ function hooks(){
  const box=$('#hooks');const r=rows[+fCap.value];if(!r||!r.hooks){box.innerHTML='<div class="empty">No capture.</div>';return}
  const e=Object.entries(r.hooks).sort((a,b)=>(b[1].max||0)-(a[1].max||0));
  let h='<table><tr><th class="l">Hook</th><th>max ms</th><th>ms / frame</th></tr>';for(const [k,v] of e)h+=`<tr><td class="l">${k}</td><td>${f2(v.max)}</td><td>${f2(v.perFrame)}</td></tr>`;
- box.innerHTML=h+`</table><p class="sub" style="margin:8px 0 0">GC ${f2(r.gcKBs)} KB/s · statics ${r.counts&&r.counts.statics} · road nodes ${r.counts&&r.counts.nodes} · props ${r.counts&&r.counts.props}</p>`;
+ box.innerHTML=h+`</table><p class="sub" style="margin:8px 0 0">GE Lua garbage, whole game ${f2(r.gcKBs)} KB/s · statics ${r.counts&&r.counts.statics} · road nodes ${r.counts&&r.counts.nodes} · props ${r.counts&&r.counts.props}</p>`;
 }
 
 function trace(){
