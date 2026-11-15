@@ -196,3 +196,21 @@ gazebos one after the other on the right, the striped barrier/barrel row and the
   auto-recce line runs off the road's centre, they land on the tarmac. `BALE_CLEAR` only tests against the other roads'
   lines, with the same width. Same root cause as note 6; the same fix (measure the real edge at spawn, push out until
   clear, drop if it can't be) covers both.
+
+## 8. Junction tape long enough but off-centre: past the right edge, short of the left (the user, 2026-11-15)
+
+"I'm seeing the extended caution tape on junctions, but it only is extended off the right side, the left side is
+still not wide. The total width is good, but can you center these better?" Logged, not acted on yet.
+
+Candidates, to check in this order:
+- **Two-piece tapes refit as if each were the whole tape.** A tape longer than 1.25 x 10 m is planned as two pieces
+  (`dressing.lua` `tapePieces`, ~651), and each piece gets `refit(tp.L)` with the whole tape's length. `props.lua`
+  `refitTape` (~640) then takes each piece's own origin as the tape's end and puts the centre `rf.len / 2` from it, so
+  the two pieces are refit about two different centres, neither the side road's. Wide side roads, where the tape is
+  extended, are exactly the two-piece ones. Fix: refit the tape once, before it is split (one `refit` per tape, with
+  its true ends, and the pieces made in props from the refit length), or pass each piece its offset from the centre.
+- **Not centred on the side road the game has.** The centre is the junction point plus `s` along the side road's
+  bearing; `refitTape` reads the width there (`alignedRoad`) but never moves the centre onto that road. Where the
+  junction node or the bearing is off the side road's middle, a tape of the right length sits to one side. Fix: take
+  the centre from the nearest point on the road `alignedRoad` finds, within a metre or two.
+Test: a two-piece unknown-width tape refit against a road centred on the plan must come out symmetric about it.
