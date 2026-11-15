@@ -149,6 +149,36 @@
             <div class="er-card er-tile"><div class="er-v">{{ riseNum(stg.gainM) }}<small>{{ riseUnit() }}</small></div><div class="er-l">Gain</div></div>
             <div class="er-card er-tile"><div class="er-v">{{ riseNum(stg.lossM) }}<small>{{ riseUnit() }}</small></div><div class="er-l">Loss</div></div>
           </div>
+          <!-- The organisers' four kinds of point, from the stage's map (menu.lua, events.stageMarks), on the tiles'
+               own grid: each one From the map (n marked: the dressing puts them there), Random (none marked: the
+               dressing places them, seeded per stage) or None (medical with none marked: never invented). An icon
+               and a word for each state, so nothing rests on colour (docs/mockups-1.6.0/stage-points.html). -->
+          <template v-if="stg.marks">
+            <div class="er-pts">
+              <div v-for="p in pts" :key="p.key" class="er-card er-pt" :class="p.state">
+                <svg class="er-pi" viewBox="0 0 24 24">
+                  <template v-if="p.key === 'radio'"><rect x="7" y="8" width="10" height="14" rx="2"/><path d="M9.5 8V2"/><path d="M10 13h4M10 16.5h4"/></template>
+                  <path v-else-if="p.key === 'medical'" d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z"/>
+                  <template v-else-if="p.key === 'marshal'"><path d="M5 22V3"/><path d="M5 4h13l-3 4.5 3 4.5H5"/></template>
+                  <template v-else><circle cx="8" cy="8" r="3"/><circle cx="16.5" cy="9" r="2.5"/><path d="M2.5 20c0-3.6 2.5-6 5.5-6s5.5 2.4 5.5 6"/><path d="M14.5 14.3c.6-.2 1.3-.3 2-.3 2.6 0 5 2 5 5.5"/></template>
+                </svg>
+                <div>
+                  <div class="er-l">{{ p.label }}</div>
+                  <div v-if="p.state === 'map'" class="er-pv"><svg class="er-ps" viewBox="0 0 24 24"><path d="M12 22s7-6.6 7-12a7 7 0 0 0-14 0c0 5.4 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg><b>{{ p.n }}</b>on the map</div>
+                  <div v-else-if="p.state === 'rnd'" class="er-pv"><svg class="er-ps" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/><circle class="f" cx="8.5" cy="8.5" r="1.6"/><circle class="f" cx="15.5" cy="15.5" r="1.6"/><circle class="f" cx="15.5" cy="8.5" r="1.6"/><circle class="f" cx="8.5" cy="15.5" r="1.6"/><circle class="f" cx="12" cy="12" r="1.6"/></svg>Random</div>
+                  <div v-else class="er-pv"><svg class="er-ps" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M6 18L18 6"/></svg>None</div>
+                </div>
+              </div>
+            </div>
+            <div class="er-pts-help">
+              <template v-if="ptsHelp.all">All four are where the organisers put them.</template>
+              <template v-else>
+                <template v-if="ptsHelp.rnd"><b>Random</b>: this rally's map doesn't mark {{ ptsHelp.rnd }}, so they're placed for you &mdash; the same places every time.</template>
+                <template v-if="ptsHelp.rnd && ptsHelp.none">{{ " " }}</template>
+                <template v-if="ptsHelp.none"><b>None</b>: medical points only go where the organisers mark one.</template>
+              </template>
+            </div>
+          </template>
           <div v-if="autoHere" class="er-card er-line-note">
             <span class="er-pill working" :style="{ '--er-done': autoPct }">{{ STATUS.working.label }} <span class="er-wn">{{ autoLeg }}</span></span>
             <span v-if="auto.phase === 'going'">Going to the start of the stage and waiting for the world to load. A road graph can only be asked for near where you are.</span>
@@ -395,6 +425,25 @@ const ssLine = computed(() => {
   const ss = s.notRun ? "NOT RUN" : arr(s.passes).map(p => p.ss).join(" · ")
   return [ss, (s.rally || "").toUpperCase()].filter(Boolean).join(" · ")
 })
+// The points row under the tiles: each kind's state from the map's count -- n > 0 "map", 0 "rnd", except medical
+// "none" (the dressing never invents a medical point) -- and the one help line, naming only what is Random / None
+const PT_KINDS = [
+  { key: "radio", label: "Radio", words: "radio points" },
+  { key: "medical", label: "Medical", words: "medical points" },
+  { key: "marshal", label: "Marshals", words: "marshal posts" },
+  { key: "spectator", label: "Spectators", words: "spectator areas" },
+]
+const ptState = (key, n) => (n > 0 ? "map" : key === "medical" ? "none" : "rnd")
+const pts = computed(() => {
+  const m = (stg.value && stg.value.marks) || {}
+  return PT_KINDS.map(k => ({ ...k, n: m[k.key] || 0, state: ptState(k.key, m[k.key] || 0) }))
+})
+const ptsHelp = computed(() => {
+  const rnd = pts.value.filter(p => p.state === "rnd").map(p => p.words)
+  const none = pts.value.some(p => p.state === "none")
+  const list = rnd.length < 2 ? rnd.join("") : rnd.slice(0, -1).join(", ") + " or " + rnd[rnd.length - 1]
+  return { rnd: list, none, all: !rnd.length && !none }
+})
 const runsShown = computed(() => {
   const runs = arr(stg.value && stg.value.runs)
   return stg.value && stg.value.board ? runs.slice(0, 2) : runs
@@ -604,7 +653,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .er-warnline { margin-bottom: 14px; color: #ffd36b; }
 .er-msg { margin-top: 12px; color: #ffd36b; }
 .er-stat .er-v { font-family: "Overpass Mono", monospace; font-size: 32px; font-weight: 700; }
-.er-stat .er-l, .er-tile .er-l { font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--er-muted); }
+.er-stat .er-l, .er-tile .er-l, .er-pt .er-l { font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--er-muted); }
 
 .er-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; padding: 3px 12px; border-radius: 999px; white-space: nowrap;
   &::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
@@ -705,6 +754,22 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .er-stage-name { font-size: 52px; font-weight: 700; line-height: 1.1; }
 .er-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 26px 0; }
 .er-tile { padding: 18px 20px; .er-v { font-family: "Overpass Mono", monospace; font-size: 40px; font-weight: 700; line-height: 1.1; small { font-size: 18px; margin-left: 4px; color: var(--er-muted); } } }
+/* the stage's points: the tiles' own grid, so each cell sits under a tile. Its -10px top margin collapses with
+   .er-tiles' 26px bottom one to a 16px gap -- the gap between the tiles themselves -- so the eight read as one block. */
+.er-pts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: -10px 0 10px; }
+.er-pt { display: flex; align-items: center; gap: 12px; padding: 12px 16px; min-width: 0; }
+.er-pt .er-pi { width: 28px; height: 28px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.er-pv { display: flex; align-items: center; gap: 6px; font-size: 17px; font-weight: 600; white-space: nowrap; }
+.er-pv b { font: 700 22px "Overpass Mono", monospace; line-height: 1; }
+.er-pv .er-ps { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.er-pv .er-ps .f { fill: currentColor; stroke: none; }
+.er-pt.map { color: #fff; }
+.er-pt.rnd { color: var(--er-muted); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22); border: 1px dashed rgba(255, 255, 255, 0.28); padding: 11px 15px; background: rgba(0, 0, 0, 0.45); }
+.er-pt.rnd .er-pv { color: #dfe3ea; }
+.er-pt.none { color: #6f7480; background: rgba(0, 0, 0, 0.35); }
+.er-pt.none .er-l { color: #6f7480; }
+.er-pts-help { margin: 0 0 22px; font-size: 15px; line-height: 1.5; color: var(--er-muted); }
+.er-pts-help b { color: #fff; }
 .er-line-note { display: flex; align-items: center; gap: 14px; padding: 14px 18px; font-size: 17px; }
 .er-actions { display: flex; gap: 14px; margin-top: 24px; flex-wrap: wrap; }
 .er-act-help { margin-top: 16px; font-size: 15px; line-height: 1.7; color: var(--er-muted); }

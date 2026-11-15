@@ -282,7 +282,10 @@ do
   local line = { { 47.0, -123.0 }, { 47.01, -123.0 } }
   files['/earthRally/events/ev.json'] = { format = 1, id = 'ev', name = 'Test Rally', source = { file = 'Test 26.kml' },
     stages = {
-      { id = 'a', name = 'Alpha', lengthM = 5000, line = line, controls = {} },
+      { id = 'a', name = 'Alpha', lengthM = 5000, line = line, controls = {}, marks = {
+        { kind = 'radio', name = 'Radio 1', lat = 47.002, lon = -123 },
+        { kind = 'radio', name = 'Radio 2', lat = 47.006, lon = -123 },
+        { kind = 'marshal', name = 'Marshal 1', lat = 47.004, lon = -123 } } },
       { id = 'b', name = 'Bravo', lengthM = 7000, line = line, controls = { stop = { lat = 47.011, lon = -123 } } },
       { id = 'c', name = 'Charlie', lengthM = 3000, line = line, controls = {} },
     } }
@@ -356,6 +359,14 @@ do
   local s3 = menu.stage('ev', 'c')
   T.check(s3.status == 'none' and not s3.canDrive and s3.corners == nil and s3.gainM == nil,
     'no line: no Drive stage, and the one dash that means no line')
+  -- the points row (docs/mockups-1.6.0/stage-points.html): the map's counts per kind, and a stage that marks
+  -- nothing still carries all four at 0, so its row reads Random / None rather than not being drawn
+  local m = s.marks
+  T.check(m and m.radio == 2 and m.marshal == 1 and m.medical == 0 and m.spectator == 0,
+    'a stage\'s marks: the map\'s count of each kind, 0 for a kind it marks none of')
+  local m3 = s3.marks
+  T.check(m3 and m3.radio == 0 and m3.medical == 0 and m3.spectator == 0 and m3.marshal == 0,
+    'a stage the map marks nothing on: all four kinds, each 0')
   T.check(menu.stage('ev', 'zzz') == nil and menu.rally('nope') == nil, 'unknown ids: nil')
 end
 

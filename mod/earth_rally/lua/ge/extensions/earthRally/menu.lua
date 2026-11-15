@@ -158,6 +158,10 @@ function M.stageBase(e, s, i, arrival, autoRecce)
     corners = fig.corners, gainM = fig.gainM, lossM = fig.lossM,
     atc = arrival == 'ATC', stop = ctl.stop ~= nil, best = events.best(e.id, s.id), runs = runs,
     canDrive = st.kind ~= nil,
+    -- the row under the tiles (docs/mockups-1.6.0/stage-points.html): how many of each kind of organisers' point
+    -- the map marks on the stage, { radio, medical, spectator, marshal }, every kind there and 0 for none -- the
+    -- same marks the dressing reads as source = 'map', so the page and the dressing never disagree
+    marks = events.stageMarks(e.id, s.id, s),
     -- the Auto recce button's own two answers: it is offered on a stage with no line, and when it cannot be
     -- offered at all the page says why beside it rather than greying it with nothing to read
     autoCan = st.status == 'none' or nil,
