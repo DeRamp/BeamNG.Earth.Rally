@@ -215,6 +215,32 @@ do
     'stage done: the stock apps blank, our results card')
   T.check(p and p.jumpStart == 10 and p.late == 10 and p.lateMinutes == 1 and p.resets == 20 and p.resetCount == 2 and
     p.missedAtc == 0 and ours.results.next.name == 'Deckerville' and ours.results.next.ss == 3, 'the penalties itemised, the next stage')
+  T.check(ours.stage.ssLabel == 'SS2' and ours.results.next.ssLabel == 'SS3',
+    'a run carrying no SS label (an old event file): SS numbers by map order, as before')
+
+  -- the SS label the menu names (menu.ssLabel, carried by the runner): its passes; false: its name alone
+  rl, ours = hud.build(run('running', { clock = 10, along = 300, ssLabel = 'SS4 · SS9' }), { now = 38772 })
+  T.check(rl.stageData.stageHeader == 'SS4 · SS9 · KUHNLE' and ours.stage.ssLabel == 'SS4 · SS9',
+    'a stage run twice: both passes in the header and on our HUD, as the menu names them')
+  T.check(rl.scheduleData.label == 'SS4' and rl.scheduleData.ssLabel == '4' and rl.stageData.label == '4',
+    "and the stock apps' one-SS badge: its first pass only, never '4 · SS9' (" .. tostring(rl.scheduleData.ssLabel) .. ')')
+  rl, ours = hud.build(run('toStart', { ssLabel = 'SS4 · SS9', startAt = 38610, toControlM = 50 }), { now = 38552 })
+  T.check(rl.scheduleData.label == 'SS4' and rl.scheduleData.ssLabel == '4', 'the same on the way to the start')
+  rl, ours = hud.build(run('running', { clock = 10, along = 300, ssLabel = false }), { now = 38772 })
+  T.check(rl.stageData.stageHeader == 'KUHNLE' and rl.scheduleData.label == 'Kuhnle' and rl.stageData.label == 'Kuhnle'
+    and ours.stage.ssLabel == '', 'a stage the itinerary never runs: its name, no made-up SS number, no empty badge')
+  rl, ours = hud.build(run('toStart', { ssLabel = false, startAt = 38610, toControlM = 50 }), { now = 38552 })
+  T.check(rl.scheduleData.label == 'Kuhnle' and rl.scheduleData.ssLabel == 'Kuhnle', 'and on the way to the start')
+  T.check(hud.stockLabel('SS2 · SS4', 'X') == 'SS2' and hud.stockLabel('SS7', 'X') == 'SS7' and
+    hud.stockLabel('', 'Wildcat') == 'Wildcat' and hud.stockLabel('2 · 5', 'X') == '2', 'stockLabel')
+  local d2 = {}
+  for k, v in pairs(done) do d2[k] = v end
+  d2.nextStage = { id = 'ss3', ss = 3, ssLabel = false, name = 'Deckerville', lengthM = 11800 }
+  rl, ours = hud.build(run('finished', d2), { now = 39000 })
+  T.check(ours.results.next.ssLabel == '', 'the next stage, never run: its name alone')
+  T.check(hud.ssText('SS5', 2) == 'SS5' and hud.ssText(false, 2) == '' and hud.ssText(nil, 2) == 'SS2' and
+    hud.ssText(nil, nil) == '', 'ssText')
+
   done.resultsOpen = false
   rl, ours = hud.build(run('finished', done), { now = 39000 })
   T.check(not ours.show.results, 'the card closed')
