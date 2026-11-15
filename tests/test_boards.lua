@@ -134,9 +134,42 @@ do
   local mis = { stages = { { id = 'alpha', name = 'Alpha', lengthM = 12000 }, event.stages[2] } }
   r = B.rallyResult(mis, board, { alpha = 300, bravo = 150 })
   T.check(#r.lineMismatch == 1 and r.lineMismatch[1] == 'alpha' and r.complete, 'a stage whose line is off is named')
-  T.check(r.notRanked and r.totalS == 750 and r.you == nil and #r.ranked == 4,
-    'and the result is not ranked: your total stands, no place among the crews (who are still ranked)')
+  T.check(r.counted == 3 and r.comparable == 1 and r.kmTotal == 25 and r.kmCovered == 5 and r.partial and
+    r.passes[1].comparable == false and r.passes[2].comparable == true and #r.missing == 0,
+    'the result is over the comparable passes: 1 of 3, 5 of 25 km')
+  T.check(r.notRanked and r.totalS == 150 and r.you == nil and #r.ranked == 4 and r.ranked[1].name == 'Bob' and
+    r.ranked[1].totalS == 140,
+    'under 75% of the km: not ranked; your total and the crews\' over the comparable pass only, you not placed')
   for _, x in ipairs(r.ranked) do T.check(not x.you, 'you not in the ranked list') end
+
+  -- four stages, one off: ranked over the other three (the user, 2026-11-14)
+  local four = { stages = { { id = 'a', name = 'A', lengthM = 10000 }, { id = 'b', name = 'B', lengthM = 10000 },
+    { id = 'c', name = 'C', lengthM = 10000 }, { id = 'd', name = 'D', lengthM = 10000 } } }
+  local function fb(dKm)
+    return { passes = {
+      { ss = 'SS1', stage = 'a', km = 10, field = { crew(100, 'X'), crew(101, 'Y'), crew(99, 'Z') } },
+      { ss = 'SS2', stage = 'b', km = 10, field = { crew(100, 'X'), crew(101, 'Y'), crew(99, 'Z') } },
+      { ss = 'SS3', stage = 'c', km = 10, field = { crew(100, 'X'), crew(101, 'Y'), crew(99, 'Z') } },
+      { ss = 'SS4', stage = 'd', km = dKm, field = { crew(50, 'X'), crew(40, 'Z') } } } }
+  end
+  local b4 = fb(2)          -- (d's map line is 10 km against a 2 km pass: off)
+  r = B.rallyResult(four, b4, { a = 100.5, b = 100.5, c = 100.5 })
+  T.check(r.comparable == 3 and r.counted == 4 and r.kmCovered == 30 and r.kmTotal == 32 and r.partial and
+    not r.notRanked and r.complete and r.totalS == 301.5 and #r.lineMismatch == 1 and r.lineMismatch[1] == 'd',
+    'one stage off, 30 of 32 km: ranked over the other three, d not needed for a complete result')
+  T.check(r.you and r.you.pos == 3 and r.you.of == 4 and r.ranked[1].name == 'Z' and r.ranked[3].you and
+    r.ranked[4].name == 'Y', 'Y, with no time on the left-out pass, is ranked: crews need only the comparable passes')
+  r = B.rallyResult(four, fb(10), { a = 100.5, b = 100.5, c = 100.5 },
+    { lineMByStage = { d = 13000 } })
+  T.check(r.comparable == 3 and r.kmCovered == 30 and r.kmTotal == 40 and not r.notRanked and r.you ~= nil,
+    'measured on the driven line (13 km against 10): off; 30 of 40 km is exactly 75%: ranked')
+  r = B.rallyResult(four, fb(10), { a = 100.5, b = 100.5, c = 100.5 },
+    { lineMByStage = { c = 13000, d = 13000 } })
+  T.check(r.comparable == 2 and r.notRanked and r.you == nil and r.complete and r.totalS == 201,
+    'two of four off (50%): not ranked, your total over the two still shown')
+  r = B.rallyResult({ stages = { { id = 'a', name = 'A', lengthM = 20000 } } }, fb(10), { a = 100 },
+    { lineMByStage = { a = 10100 } })
+  T.check(#r.lineMismatch == 0 and r.comparable == 1, "the driven line's length is taken over the map's")
   -- the same line, its start and flying finish 10 km apart: start to FF is what the stage's km measures
   local ff = { stages = { { id = 'alpha', name = 'Alpha', lengthM = 12000,
     controls = { start = { distM = 1000 }, ff = { distM = 11000 } } }, event.stages[2] } }
@@ -187,23 +220,47 @@ do
       board = one({ { 100, 'bob ' }, { 101, 'Ann' }, { 102, 'Cara' } }), bestByStage = {} },
   }
   local st = B.standings(season, rounds)
-  -- r1 (national + you): Ann 1 (10), you 2 (6), Bob 3 (4), Cara 4 (3); Reg filtered out
-  -- r2 no board: no points; r3: Bob 1 (10), Ann 2 (6), Cara 3 (4)
-  -- Ann 16, Bob 14, Cara 7, you 6
+  -- r1 (national): the crews by their real places, Ann 1 (10), Bob 2 (6), Cara 3 (4), Reg filtered out; you 2nd
+  -- among them (6), no crew moved down for it. r2 no board: no points; r3: Bob 1 (10), Ann 2 (6), Cara 3 (4)
+  -- Ann 16, Bob 16, Cara 8, you 6
   T.check(#st.rounds == 3 and st.rounds[2].noBoard and st.rounds[1].scored == 4, 'a round with no board: listed')
-  T.check(st.rows[1].name == 'Ann' and st.rows[1].points == 16 and st.rows[2].name == 'Bob' and st.rows[2].points == 14,
-    'points summed; crews one entry by driver name, trimmed and case folded')
+  T.check(st.rows[1].name == 'Ann' and st.rows[1].points == 16 and st.rows[2].name == 'Bob' and st.rows[2].points == 16
+    and st.rows[1].perRound[1].pos == 1 and st.rows[2].perRound[1].pos == 2 and st.rows[2].perRound[1].points == 6,
+    'points summed; crews one entry by driver name, trimmed and case folded; you move no crew down')
+  -- the crews' points are the same with no result of yours, and with a mismatch
+  local function crewPoints(x)
+    local t = {}
+    for _, r in ipairs(x.rows) do if not r.you then t[#t + 1] = r.name .. '=' .. r.points end end
+    table.sort(t)
+    return table.concat(t, ',')
+  end
+  local noYou = {}
+  for i, rd in ipairs(rounds) do noYou[i] = { event = rd.event, board = rd.board, bestByStage = {} } end
+  local offLine = {}
+  for i, rd in ipairs(rounds) do offLine[i] = { event = rd.event, board = rd.board, bestByStage = rd.bestByStage,
+    lineMByStage = { s = 5000 } } end
+  local sOff = B.standings(season, offLine)
+  T.check(crewPoints(B.standings(season, noYou)) == crewPoints(st) and crewPoints(sOff) == crewPoints(st) and
+    sOff.you == nil, "crews' points identical with no result of yours and with your line off (" .. crewPoints(st) .. ')')
   T.check(st.you and st.you.points == 6 and st.you.pos == 4 and st.you.perRound[1].pos == 2 and
     st.you.perRound[2].noBoard and st.you.perRound[3].pos == nil, 'your row, per round')
   local reg = false
   for _, r in ipairs(st.rows) do if r.name == 'Reg' then reg = true end end
   T.check(not reg and st.entries == 4, 'other championships do not score')
 
-  -- a round whose map is not the stage as run (2 km of line against a 1 km pass): your fastest time scores nothing
-  local mis = B.standings(season, { { event = { id = 'm1', name = 'Mis', stages = { { id = 's', name = 'S',
+  -- a round whose map is not the stage as run (2 km of line against a 1 km pass): not ranked, your fastest time
+  -- scores nothing there; the crews score as usual, from their real places
+  local mis = B.standings(season, { rounds[1], { event = { id = 'm1', name = 'Mis', stages = { { id = 's', name = 'S',
     lengthM = 2000 } } }, board = one({ { 100, 'Ann' }, { 102, 'Bob' } }), bestByStage = { s = 90 } } })
-  T.check(mis.you == nil and mis.rows[1].name == 'Ann' and mis.rows[1].points == 10 and mis.rounds[1].scored == 2,
-    'a line mismatch: no place and no points for you in that round; the crews still score')
+  T.check(mis.rounds[2].notRanked and mis.rounds[2].scored == 2 and mis.rows[1].name == 'Ann' and
+    mis.rows[1].points == 20 and mis.you.points == 6, 'a round not ranked: you score nothing in it, the crews do')
+  T.check(mis.you.perRound[2].notRanked and mis.you.perRound[2].points == 0 and mis.rows[1].perRound[2].pos == 1 and
+    mis.you.perRound[1].pos == 2, 'your cell flags it; the crews keep their places')
+  local mis2 = B.standings(season, { { event = { id = 'm1', name = 'Mis', stages = { { id = 's', name = 'S',
+    lengthM = 2000 } } }, board = one({ { 100, 'Ann' }, { 102, 'Bob' } }), bestByStage = { s = 90 },
+    lineMByStage = { s = 1020 } } })
+  T.check(mis2.you and mis2.you.pos == 1 and not mis2.rounds[1].notRanked,
+    'the same round measured on the driven line (1.02 km against 1 km): ranked, you score')
   local noB = B.rallyResult({ stages = { { id = 's', name = 'S', lengthM = 12000,
     controls = { start = { distM = 1000 }, ff = { distM = 11000 } } } } }, nil, { s = 90 })
   T.check(#noB.lineMismatch == 0 and not noB.notRanked, 'no board: no mismatch (there is no km to set it against)')
@@ -220,7 +277,7 @@ do
   local b1 = B.standings({ standings = { points = { 10, 6, 4, 3 }, best = 1 } }, rounds)
   T.check(b1.rows[1].name == 'Ann' and b1.rows[1].points == 10 and b1.rows[2].name == 'Bob' and
     b1.rows[2].points == 10, 'best = N: only the best N rounds count')
-  T.check(b1.rows[1].pos == 1 and b1.rows[2].pos == 2, 'ties on points: more wins... then more seconds')
+  T.check(b1.rows[1].pos == 1 and b1.rows[2].pos == 1, 'a win and a second each: a full tie, the same place')
 
   -- a full tie: same points, same finishes
   local tie = {
@@ -249,12 +306,21 @@ do
   for _, r in ipairs(w.rows) do if r.name == 'X' then px = r elseif r.name == 'Y' then py = r end end
   T.check(px.points == 26 and py.points == 26 and px.pos < py.pos, 'equal points: more wins first')
 
-  -- a round whose map is not the stages as run: you score nothing in it, the crews still do
+  -- a season whose only round does not match the official distance: no points for you, the crews' as usual
   local off = { { event = { id = 'r1', stages = { { id = 's', name = 'S', lengthM = 2000 } } },
     board = one({ { 100, 'Ann' }, { 102, 'Bob' } }), bestByStage = { s = 50 } } }
   local so = B.standings({}, off)
-  T.check(so.you == nil and so.rows[1].name == 'Ann' and so.rows[1].points == 25,
+  T.check(so.you == nil and so.rows[1].name == 'Ann' and so.rows[1].points == 25 and so.rounds[1].notRanked,
     'line mismatch: no points for you in that round')
+  -- you ahead of crews in a partial ranking: your points from your place there; the crews below are not moved
+  local pr = B.rallyResult(ev, one({ { 100, 'Ann' }, { 102, 'Bob' } }), { s = 99 })
+  T.check(pr.field[1].name == 'Ann' and pr.field[1].pos == 1 and pr.field[2].pos == 2 and pr.ranked[1].you,
+    "rallyResult's field: the crews' real ranking, without you")
+  local sp = B.standings({}, { { event = ev, board = one({ { 100, 'Ann' }, { 102, 'Bob' } }), bestByStage = { s = 99 } } })
+  local ann, bob
+  for _, r in ipairs(sp.rows) do if r.name == 'Ann' then ann = r elseif r.name == 'Bob' then bob = r end end
+  T.check(sp.you.perRound[1].pos == 1 and sp.you.points == 25 and ann.points == 25 and ann.perRound[1].pos == 1 and
+    bob.points == 20, 'you 1st: 25; Ann still 1st among the crews (25), Bob 2nd (20)')
 
   -- topRows: the top N and you, the one home of that list
   local list = {}

@@ -1,7 +1,7 @@
 <template>
   <!-- A stage's leaderboard (docs/mockups-rally-files/menu.html, screen 4): a toggle between its passes, the real
-       top 10 and your row, or one line saying why you are not placed: no time yet, the map's line is not the stage
-       as run, or the pass was cancelled. Data: menu.lua, addStageRallyFiles (uiStage's `board`). -->
+       top 10 and your row, or one line saying why you are not placed: no time yet (or only on an earlier line), the
+       line you are timed on does not match the official distance, or the pass was cancelled. Data: menu.lua, addStageRallyFiles (uiStage's `board`). -->
   <div class="er-card er-lb">
     <div class="er-top">
       <h3>Leaderboard</h3>
@@ -21,8 +21,9 @@
         <span class="er-p">{{ ord(b.you.pos) }}<small>of {{ b.you.of }}</small></span>
         <span>{{ b.you.gapS > 0 ? `${gap(b.you.gapS)} to the fastest` : b.you.leadS ? `fastest by ${gap(b.you.leadS).slice(1)}` : "fastest" }}</span>
       </div>
+      <div v-else-if="b.reason === 'noTime' && b.oldLine" class="er-note">Your times were driven on an earlier line of this stage. Drive it again to be placed.</div>
       <div v-else-if="b.reason === 'noTime'" class="er-you-line"><span>{{ b.field }} times on {{ b.pass }}. Drive it to see where you'd place.</span></div>
-      <div v-else-if="b.reason === 'lineMismatch'" class="er-note">This map's stage is {{ km(b.lineKm) }}; the real one was {{ km(b.km) }}.</div>
+      <div v-else-if="b.reason === 'lineMismatch'" class="er-note">{{ b.lineOf === "map" ? "This map's stage" : "Your line" }} is {{ km(b.lineKm) }} start to finish; the official distance is {{ km(b.km) }}.</div>
 
       <div class="er-trow er-hdr"><span>Pos</span><span>Driver</span><span>Class</span><span class="er-r">Time</span><span class="er-r">Gap</span></div>
       <template v-for="(r, i) in arr(b.rows)" :key="i">
@@ -36,8 +37,8 @@
         <div v-if="b.field > arr(b.rows).length" class="er-trow er-gap"><span>⋮</span></div>
         <div class="er-trow me er-plain">
           <span class="er-pos">–</span><span>You</span><span></span>
-          <span v-if="b.reason === 'lineMismatch' && best" class="er-t">{{ time(best) }}</span><span v-else class="er-t er-dim">no time</span>
-          <span class="er-g">{{ b.reason === "lineMismatch" && best ? "not placed" : "" }}</span>
+          <span v-if="shownBest" class="er-t">{{ time(shownBest) }}</span><span v-else class="er-t er-dim">no time</span>
+          <span class="er-g">{{ shownBest ? "not placed" : "" }}</span>
         </div>
       </template>
     </template>
@@ -55,6 +56,13 @@ const props = defineProps({
 const emit = defineEmits(["pass"])
 const passes = computed(() => arr(props.b.passes))
 const others = computed(() => passes.value.filter(p => !p.cancelled && p.ss !== props.b.pass).map(p => p.ss))
+// (the time shown "not placed": your best on this line when it is off the official distance, your best on an earlier
+// line when that is all you have)
+const shownBest = computed(() => {
+  if (props.b.reason === "lineMismatch") return props.b.bestS || props.best || null
+  if (props.b.oldLine) return props.best || null
+  return null
+})
 const km = k => (k === null || k === undefined ? "–" : units() === "mi" ? `${(k * 1000 / MILE_M).toFixed(1)} mi` : `${Number(k).toFixed(1)} km`)
 </script>
 

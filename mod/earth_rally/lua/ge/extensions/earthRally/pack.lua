@@ -85,8 +85,11 @@ local function statOf(path)
   return string.format('%d@%d', size, mt)
 end
 
--- (not part of a pack when looking for its one top folder: a Mac's __MACOSX/, and dot files like .DS_Store)
-local function ignored(name) return name == '__MACOSX' or name:sub(1, 1) == '.' end
+-- (not part of a pack when looking for its one top folder: a Mac's __MACOSX/, dot files like .DS_Store, and the
+-- files Windows leaves in a folder of pictures, Thumbs.db and desktop.ini, whatever their case)
+local IGNORED = { ['__macosx'] = true, ['thumbs.db'] = true, ['desktop.ini'] = true }
+local function ignored(name) return IGNORED[name:lower()] == true or name:sub(1, 1) == '.' end
+M._ignored = ignored
 
 -- (dir's sub-folders by name: directoryList may list files as well, so only what is a folder)
 local function subFolders(dir)
@@ -306,8 +309,13 @@ local function folderStat(src, named)
   local parts = {}
   for _, rel in ipairs(named) do
     local p = src.path(rel)
-    local st = FS:fileExists(p) and statOf(p) or 'missing'
-    if not st then return nil end
+    local st
+    if FS:fileExists(p) then
+      st = statOf(p)
+      if not st then return nil end        -- (the game gives no stat for it: the bytes decide)
+    else
+      st = 'missing'
+    end
     parts[#parts + 1] = rel .. '=' .. st
   end
   return table.concat(parts, '|')
@@ -584,8 +592,9 @@ end
 
 ------------------------------------------------------------------------------------------ the folder
 
--- (a season's rounds made, its file written)
-local function importSeason(src, m, index, entry, gone, fp, out)
+-- (a season's rounds made, its file written. ids: importPack's { adopt(match) -> a gone pack's entry, taken(id) ->
+-- whether an event file of that id is another pack's })
+local function importSeason(src, m, index, entry, ids, fp, out)
   local d = m.data
   if type(d.name) ~= 'string' or d.name == '' then return nil, m.file .. ' has no name' end
   if type(d.rounds) ~= 'table' or #d.rounds == 0 then return nil, m.file .. ' has no rounds' end
@@ -599,33 +608,55 @@ local function importSeason(src, m, index, entry, gone, fp, out)
   if slugOf(d.id) ~= '' then
     local own = slugOf(d.id)
     prev = (entry and entry.seasonId == own) and entry
-      or adopt(gone, function(e) return e.seasonId == own end) or entry
+      or ids.adopt(function(e) return e.seasonId == own end) or entry
     sid = ownId(d.id, seasonTaken, 'season', warn)
   else
     prev = (entry and entry.seasonId) and entry
-      or adopt(gone, function(e) return e.seasonId ~= nil and e.nameSlug == nameSlug end)
+      or ids.adopt(function(e) return e.seasonId ~= nil and e.nameSlug == nameSlug end)
     sid = prev and prev.seasonId
     if not sid or seasonTaken(sid) then sid = firstFree(nameSlug, seasonTaken) end
   end
   local season = { format = 1, id = sid, name = d.name, championship = d.championship, rounds = {},
     standings = boards.standingsRules({ standings = d.standings }) }
 
-  -- round ids: recorded ones by map file first (for every round, before any is given out), then by name
+  -- round ids: recorded ones by map first (for every round, before any is given out), then by name. A round's map
+  -- is its path inside the pack, lower case ('rounds/01/map.kml'): a bare file name is the same for a pack with a
+  -- map.kml in every round's folder, and would hand the ids out by position. A round recorded before paths were (a
+  -- bare file name) is matched by its file name when only one round now has that file name.
   local specs = rallySpecs(src, m)
   local prevRounds = prev and type(prev.rounds) == 'table' and prev.rounds or {}
-  local used, claimed, byMap, mapsNow = {}, {}, {}, {}
+  local used, claimed, byMap, mapsNow, baseCount = {}, {}, {}, {}, {}
   local function mapOf(r)
     local rel = type(r.spec) == 'table' and join(r.base, r.spec.map)
-    return rel and baseName(rel):lower() or nil
+    return rel and rel:lower() or nil
   end
-  for _, r in ipairs(specs) do if mapOf(r) then mapsNow[mapOf(r)] = true end end
-  for i, r in ipairs(specs) do
+  for _, r in ipairs(specs) do
     local mf = mapOf(r)
-    for _, pr in ipairs(prevRounds) do
-      if mf and pr.map == mf and not claimed[pr.id] then claimed[pr.id], byMap[i] = true, pr break end
+    if mf then
+      mapsNow[mf] = true
+      baseCount[baseName(mf)] = (baseCount[baseName(mf)] or 0) + 1
     end
   end
-  local function roundTaken(c) return used[c] or importer.idTaken(index, c, nil, src.name) end
+  local function sameMap(pr, mf)
+    if not (pr.map and mf) then return false end
+    if pr.map == mf then return true end
+    return not pr.map:find('/', 1, true) and pr.map == baseName(mf) and baseCount[pr.map] == 1
+  end
+  -- (two passes: the map and the name's slug both, then the map alone: two rounds on one map each keep their own)
+  for pass = 1, 2 do
+    for i, r in ipairs(specs) do
+      local mf, want = mapOf(r), type(r.spec) == 'table' and slugOf(r.spec.name) or ''
+      if not byMap[i] then
+        for _, pr in ipairs(prevRounds) do
+          if not claimed[pr.id] and sameMap(pr, mf) and (pass == 2 or (want ~= '' and pr.slug == want)) then
+            claimed[pr.id], byMap[i] = true, pr
+            break
+          end
+        end
+      end
+    end
+  end
+  local function roundTaken(c) return used[c] or importer.idTaken(index, c, nil, src.name) or ids.taken(c) end
   local function everGiven(c)
     for _, pr in ipairs(prevRounds) do if pr.id == c then return true end end
     return false
@@ -687,6 +718,33 @@ local function importSeason(src, m, index, entry, gone, fp, out)
   if #season.rounds == 0 then return nil, out.warnings[1] or 'no rounds could be read' end
   ensureDir(M.SEASONS_DIR)
   jsonWriteFile(M.SEASONS_DIR .. sid .. '.json', season, true)
+  -- the season's id changed (its manifest given one, or another): the old season file goes, or Home would show a
+  -- second season of the same rallies. Not while another pack has that id.
+  for _, old in ipairs({ entry or false, prev or false }) do
+    local oid = old and old.seasonId or nil
+    if oid and oid ~= sid and not seasonTaken(oid) then
+      local f = M.SEASONS_DIR .. oid .. '.json'
+      if FS:fileExists(f) then pcall(FS.removeFile, FS, f) end
+    end
+  end
+  -- the rallies the season had at its last import that it no longer has (a round taken out, or every round's id
+  -- changed with the season's): retired, so Home does not show them as rallies of their own. The event file and
+  -- the times driven on it stay; a round put back under its id is written afresh, not retired.
+  local now, retired = {}, {}
+  for _, id in ipairs(season.rounds) do now[id] = true end
+  for _, old in ipairs({ entry or false, prev or false }) do
+    for _, id in ipairs(old and old.eventIds or {}) do
+      if not now[id] and not used[id] and not retired[id] then
+        retired[id] = true
+        local f = importer.EVENTS_DIR .. id .. '.json'
+        local okR, ev = pcall(function() return FS:fileExists(f) and jsonReadFile(f) or nil end)
+        if okR and type(ev) == 'table' and type(ev.retired) ~= 'table' then
+          ev.retired = { season = sid, date = os.date('!%Y-%m-%dT%H:%M:%SZ') }
+          jsonWriteFile(f, ev, true)
+        end
+      end
+    end
+  end
   out.seasonId, out.name, out.nameSlug = sid, d.name, nameSlug
   return true
 end
@@ -694,6 +752,35 @@ end
 -- (one pack looked at: nil when it is unchanged, else what happened; and whether the index changed)
 local function importPack(p, index, force, gone)
   local entry = index.packs[p.name]
+  -- (the gone pack this one is found to be under a new name: its ids are this pack's to take, and kept if this
+  -- import then fails)
+  local adopted = nil
+  local function adoptOne(match)
+    local e = adopt(gone, match)
+    if e then adopted = e end
+    return e
+  end
+  local function hasId(e, id)
+    for _, x in ipairs(e and e.eventIds or {}) do if x == id then return true end end
+    for _, r in ipairs(e and type(e.rounds) == 'table' and e.rounds or {}) do if r.id == id then return true end end
+    return false
+  end
+  -- (an id whose event file is already another pack's, or a loose map's, is taken: a pack gone from the folder
+  -- keeps its rallies but leaves the index, so the index alone would let a new pack of the same slug write over
+  -- them. The ids this pack's index entry has, and the adopted pack's, are its own whatever their files say.)
+  local owners = {}
+  local function ownedElsewhere(id)
+    if owners[id] == nil then
+      local f = importer.EVENTS_DIR .. id .. '.json'
+      local okO, ev = pcall(function() return FS:fileExists(f) and jsonReadFile(f) or nil end)
+      owners[id] = (okO and type(ev) == 'table') and (type(ev.pack) == 'table' and tostring(ev.pack.file) or true)
+        or false
+    end
+    local o = owners[id]
+    if o == false or o == p.name then return false end
+    return not (hasId(entry, id) or (adopted and hasId(adopted, id)))
+  end
+  local ids = { adopt = adoptOne, taken = ownedElsewhere }
   local fp, st = nil, nil
   if p.kind == 'zip' then
     -- (size and time first: hashing a zip of images byte by byte in Lua is what makes a start slow)
@@ -710,8 +797,10 @@ local function importPack(p, index, force, gone)
   local src, why
   if p.kind == 'zip' then src, why = zipSource(p.path, p.name) else src = folderSource(p.path, p.name) end
   local function fail(w, f)
-    -- (told once, until it changes; the ids it had kept for when it is put right)
+    -- (told once, until it changes; the ids it had kept for when it is put right: its own, or those of the pack it
+    -- was found to be under its old name)
     local keep = entry or {}
+    if not (keep.seasonId or keep.eventIds) and adopted then keep = adopted end
     index.packs[p.name] = { fingerprint = f or fp or ('failed:' .. w), stat = st, failed = true,
       seasonId = keep.seasonId, eventIds = keep.eventIds, rounds = keep.rounds, nameSlug = keep.nameSlug,
       kind = keep.kind }
@@ -739,21 +828,26 @@ local function importPack(p, index, force, gone)
     if not m then return fail(mwhy, fp) end
     local out = { rallies = {}, warnings = {}, kind = m.kind }
     if m.kind == 'season' then
-      local okS, swhy = importSeason(src, m, index, entry, gone, fp, out)
+      local okS, swhy = importSeason(src, m, index, entry, ids, fp, out)
       if not okS then return fail(swhy, fp) end
     else
       if not m.data.map and not (m.kind == 'stage' and type(m.data.line) == 'table') then
         return fail(m.file .. ' names no map', fp)
       end
       local function warn(w) out.warnings[#out.warnings + 1] = w end
-      local function taken(c) return importer.idTaken(index, c, nil, p.name) end
+      local function taken(c) return importer.idTaken(index, c, nil, p.name) or ownedElsewhere(c) end
       local ev, rep = makeRally(src, m.data, '', { fp = fp, manifest = m.file,
         idFor = function(name)
+          -- (a renamed pack with its id in its manifest is the gone pack of the same kind that had that id)
+          local own = slugOf(m.data.id)
+          if own ~= '' and not (entry and entry.eventIds) then
+            adoptOne(function(e) return e.kind == m.kind and hasId(e, own) end)
+          end
           local id = ownId(m.data.id, taken, m.kind, warn)
           if id then return id end
           local slug = idOr(name, m.kind)
           local prev = (entry and entry.eventIds) and entry
-            or adopt(gone, function(e) return e.kind == m.kind and e.nameSlug == slug and e.eventIds ~= nil end)
+            or adoptOne(function(e) return e.kind == m.kind and e.nameSlug == slug and e.eventIds ~= nil end)
           local kept = prev and prev.eventIds and prev.eventIds[1]
           if kept and not taken(kept) then return kept end
           return firstFree(slug, taken)

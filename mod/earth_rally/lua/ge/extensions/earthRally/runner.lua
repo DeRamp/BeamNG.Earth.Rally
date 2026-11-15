@@ -30,6 +30,7 @@ local earth = require('earthRally/earthAdapter')
 local rallyA = require('earthRally/rallyAdapter')
 local writer = require('earthRally/stageWriter')
 local events = require('earthRally/events')
+local menu = require('earthRally/menu')
 local settings = require('earthRally/settings')
 local hudFrame = require('earthRally/hudFrame')
 
@@ -391,13 +392,21 @@ function M.start(event, stage)
     oldRebase = earth.rebaseDistance(),
     clockBase = todNow(), clockRun = 0, realT = 0, resets = 0,
   }
-  -- its SS number (the stage's place in the rally's map) and the next stage
+  -- the line it is timed on, kept with the time (events.addResult): a time is only placed against this line
+  run.lineKey = events.lineKey(source, kind)
+  -- its SS number (the stage's place in the rally's map), its SS label as the menu names it (menu.ssLabel: its
+  -- passes from the itinerary, 'SS3' by map order with none, nil for a stage the itinerary never runs: the HUD
+  -- says its name alone, never a made-up SS number) and the next stage
   run.ssCount = #(event.stages or {})
+  run.ssLabel = menu.ssLabel(event, stage.id) or false
   for i, st in ipairs(event.stages or {}) do
     if st == stage or st.id == stage.id then
       run.ss = i
       local nx = event.stages[i + 1]
-      if nx then run.nextStage = { id = nx.id, ss = i + 1, name = nx.name, lengthM = nx.lengthM } end
+      if nx then
+        run.nextStage = { id = nx.id, ss = i + 1, ssLabel = menu.ssLabel(event, nx.id) or false, name = nx.name,
+          lengthM = nx.lengthM }
+      end
       break
     end
   end
@@ -1245,6 +1254,7 @@ local function stepRunning(dtSim)
     local best = events.addResult(run.event.id, run.stage.id, { finished = true, timeS = time, stageS = run.clock,
       penaltyS = run.penalty, jumpStart = run.jumpStart == true, lateMinutes = checks.lateMinutes,
       missedAtc = run.missedAtc == true, resets = run.resets or 0, resetPenaltyS = resetPen, line = checks.line,
+      lineKey = run.lineKey, lineM = math.floor(run.finishM - run.startM + 0.5),
       startAt = M.formatClock(run.startAt), date = os.date('!%Y-%m-%dT%H:%M:%SZ'), checks = checks })
     run.finalTime, run.best = time, best
     run.sinceFinish = 0

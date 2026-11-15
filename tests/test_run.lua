@@ -365,6 +365,17 @@ T.check(r.finalTime and r.finalTime > 100 and r.finalTime < 130, 'a time of ~2 m
 T.check(rebaseDistance == 15000, 'the rebase distance back')
 local res = events.results('test', 'hill')
 T.check(#res.runs == 1 and res.runs[1].finished, 'the time saved')
+do
+  local info = events.stageLineInfo('test', event.stages[1].id, event.stages[1])
+  local x = res.runs[1]
+  T.check(info and x.lineKey == info.key and x.line == info.kind and type(x.lineM) == 'number' and
+    math.abs(x.lineM - (r.finishM - r.startM)) <= 1,
+    'the time records the line it was driven on: its identity and its length start to flying finish as timed')
+  T.check(info and math.abs(x.lineM - info.lengthM) < 0.02 * info.lengthM,
+    'and the menu measures the same line to within 2% (' .. tostring(x.lineM) .. ' vs ' ..
+    tostring(info and info.lengthM) .. ')')
+  T.check(r.ssLabel == 'SS1', 'an event with no itinerary: the run carries SS1 by map order (' .. tostring(r.ssLabel) .. ')')
+end
 T.check(events.addResult('test', 'hill', { finished = true, timeS = 99 }) == 99 and #events.results('test', 'hill').runs == 2,
   'a second time kept beside the first, the best of both')
 runner.abort(true)

@@ -9,6 +9,7 @@
 --   earthRally/boards/<event>.json            a rally's real results, trimmed to leaderboards (pack.lua)
 -- Files are read once and kept (the window asks for them every frame); what this module writes updates its copy.
 local lineStats = require('earthRally/lineStats')
+local geo = require('earthRally/geo')
 
 local M = {}
 
@@ -250,6 +251,56 @@ function M.landmarks(eventId, stageId, stage)
   return out
 end
 
+-- A driven line's identity, as kept with each time (runner.lua, at the start of a run): its kind and its points in
+-- short (how many, the first, the middle and the last, to about a metre). A recce driven again, a stage matched
+-- again or a reset all change it, so a time is only set against the line it was driven on. nil with no line.
+function M.lineKey(line, kind)
+  local pts = type(line) == 'table' and line.points
+  if type(pts) ~= 'table' or #pts == 0 then return nil end
+  local a, m, b = pts[1], pts[math.floor((#pts + 1) / 2)], pts[#pts]
+  return string.format('%s:%d:%.5f:%.5f:%.5f:%.5f:%.5f:%.5f', tostring(kind or 'line'), #pts, a[1], a[2], m[1], m[2],
+    b[1], b[2])
+end
+
+-- Start to flying finish along a line of { lat, lon } points (m, flat), as the runner times it: each control where
+-- it is along the line (one more than 200 m off it is not on it: the line's own end), the whole line when the two
+-- are not at least 100 m apart along it. stage: the event's stage (its controls). Kept on the line (it is asked for
+-- every stage on every look at a rally page), worked out again only when the points or the stage change.
+M.CONTROL_OFF_LINE_M = 200
+function M.drivenLengthM(line, stage)
+  local pts = type(line) == 'table' and line.points
+  if type(pts) ~= 'table' or #pts < 2 then return nil end
+  if line._lenM and line._lenFor == pts and line._lenStage == stage then return line._lenM end
+  local o = pts[1]
+  local function flat(lat, lon)
+    return { x = geo.metres(o[1], o[2], o[1], lon) * (lon < o[2] and -1 or 1),
+             y = geo.metres(o[1], o[2], lat, o[2]) * (lat < o[1] and -1 or 1) }
+  end
+  local xy = {}
+  for i, p in ipairs(pts) do xy[i] = flat(p[1], p[2]) end
+  local cum = geo.cumulative(xy)
+  local total = cum[#cum]
+  local ctl = type(stage) == 'table' and type(stage.controls) == 'table' and stage.controls or {}
+  local function along(c, default)
+    if type(c) ~= 'table' or type(c.lat) ~= 'number' or type(c.lon) ~= 'number' then return default end
+    local _, _, s, off = geo.locate(xy, cum, flat(c.lat, c.lon))
+    if off > M.CONTROL_OFF_LINE_M then return default end
+    return s
+  end
+  local s, f = along(ctl.start, 0), along(ctl.ff, total)
+  local len = (f > s + 100) and (f - s) or total
+  line._lenM, line._lenFor, line._lenStage = len, pts, stage
+  return len
+end
+
+-- The line a stage is timed on now, in short: { kind = 'recce' | 'matched', key = M.lineKey, lengthM = start to
+-- flying finish on it }, or nil when it has none (then the map's line is all there is to measure).
+function M.stageLineInfo(eventId, stageId, stage)
+  local line, kind = M.stageLine(eventId, stageId, stage)
+  if not line then return nil end
+  return { kind = kind, key = M.lineKey(line, kind), lengthM = M.drivenLengthM(line, stage) }
+end
+
 function M.results(eventId, stageId)
   return readOnce(M.RESULTS_DIR .. key(eventId, stageId)) or { runs = {} }
 end
@@ -263,6 +314,25 @@ function M.best(eventId, stageId)
   return best
 end
 
+-- Your best finished time on the line the stage runs on now: what is placed on leaderboards and counted in rally
+-- results. A time driven on another line (its `lineKey` differs: a recce driven again, a reset) still shows in Your
+-- runs (M.best), but is not placed. A time saved before times carried their line (no lineKey) is taken as driven
+-- on this one. stage: the event's stage (for M.stageLine's map check).
+function M.bestPlaceable(eventId, stageId, stage)
+  local info = M.stageLineInfo(eventId, stageId, stage)
+  local cur = info and info.key
+  local best = nil
+  for _, x in ipairs(M.results(eventId, stageId).runs or {}) do
+    if x.finished and type(x.timeS) == 'number' and (x.lineKey == nil or x.lineKey == cur) and
+      (not best or x.timeS < best) then
+      best = x.timeS
+    end
+  end
+  return best
+end
+
+-- run: { finished, timeS, ..., line = 'recce' | 'matched', lineKey = M.lineKey of that line, lineM = start to
+-- flying finish on it as timed }. Returns the best time (M.best).
 function M.addResult(eventId, stageId, run)
   local path = M.RESULTS_DIR .. key(eventId, stageId)
   local r = M.results(eventId, stageId)

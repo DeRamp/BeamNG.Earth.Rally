@@ -507,6 +507,137 @@ do
     'a .jpg logo replaced by a .png: the old one removed')
 end
 
+------------------------------------------------------------------------------------------ review round 2
+
+local function ix() return files['/earthRally/importIndex.json'].packs end
+
+-- round ids by the map's path inside the pack (a map.kml in every round's folder), the name's slug the tie-break
+do
+  local P = IMP .. 'Paths/'
+  local function season(rounds) files[P .. 'season.json'] = J({ format = 1, name = 'Path Cup', rounds = rounds }) end
+  files[P .. 'r1/map.kml'] = kml('North', { { 'North One', 61.0, -11.0, 20 } })
+  files[P .. 'r2/map.kml'] = kml('South', { { 'South One', 61.1, -11.0, 20 } })
+  files[P .. 'shared.kml'] = kml('Shared', { { 'Shared One', 61.2, -11.0, 20 } })
+  season({ { round = 1, name = 'North', map = 'r1/map.kml' }, { round = 2, name = 'South', map = 'r2/map.kml' },
+           { round = 3, name = 'Day One', map = 'shared.kml' }, { round = 4, name = 'Day Two', map = 'shared.kml' } })
+  imp.scan()
+  local sea = files['/earthRally/seasons/path-cup.json']
+  T.check(sea and sea.rounds[1] == 'path-cup-north' and sea.rounds[2] == 'path-cup-south' and
+    sea.rounds[3] == 'path-cup-day-one' and sea.rounds[4] == 'path-cup-day-two', 'paths: four rounds')
+  T.check(ix()['Paths'].rounds[1].map == 'r1/map.kml', 'a round recorded by its map\'s path in the pack, lower case')
+  -- reordered and both folder rounds renamed: each id stays with its map, not its position
+  season({ { round = 1, name = 'Day Two', map = 'shared.kml' }, { round = 2, name = 'Southern', map = 'r2/map.kml' },
+           { round = 3, name = 'Northern', map = 'r1/map.kml' }, { round = 4, name = 'Day One', map = 'shared.kml' } })
+  imp.scan()
+  sea = files['/earthRally/seasons/path-cup.json']
+  T.check(sea.rounds[2] == 'path-cup-south' and sea.rounds[3] == 'path-cup-north',
+    'two rounds both on a map.kml, reordered and renamed: each keeps its id by its path (' ..
+    table.concat(sea.rounds, ', ') .. ')')
+  T.check(sea.rounds[1] == 'path-cup-day-two' and sea.rounds[4] == 'path-cup-day-one',
+    'two rounds on one map, reordered: the name\'s slug tells them apart')
+  -- an index from before paths were recorded (bare file names): matched by file name where it is unique
+  for _, r in ipairs(ix()['Paths'].rounds) do if r.id == 'path-cup-north' then r.map = 'one.kml' end end
+  files[P .. 'r1/one.kml'] = files[P .. 'r1/map.kml']
+  season({ { round = 1, name = 'Day Two', map = 'shared.kml' }, { round = 2, name = 'Southern', map = 'r2/map.kml' },
+           { round = 3, name = 'Northern Again', map = 'r1/one.kml' }, { round = 4, name = 'Day One', map = 'shared.kml' } })
+  imp.scan()
+  T.check(files['/earthRally/seasons/path-cup.json'].rounds[3] == 'path-cup-north',
+    'an old index\'s bare file name still finds its round')
+end
+
+-- a folder pack where the game gives no file stat: its bytes decide, so an edit is imported
+do
+  local P = IMP .. 'No Stat/'
+  local stat = FS.stat
+  FS.stat = function() return nil end
+  files[P .. 'rally.json'] = J({ format = 1, name = 'No Stat Rally', map = 'm.kml' })
+  files[P .. 'm.kml'] = kml('NS', { { 'Nostat Lane', 62.0, -12.0, 20 } })
+  local r = imp.scan()
+  T.check(find(r, 'No Stat') and find(r, 'No Stat').ok, 'no stat: imported')
+  T.check(ix()['No Stat'].stat == nil, 'no stat: none recorded (not "missing" for every file)')
+  T.check(find(imp.scan(), 'No Stat') == nil, 'no stat, unchanged: not imported again')
+  files[P .. 'm.kml'] = kml('NS', { { 'Nostat Lane', 62.0, -12.0, 30 } })
+  r = imp.scan()
+  T.check(find(r, 'No Stat') and find(r, 'No Stat').ok and #files['/earthRally/events/no-stat-rally.json'].stages[1].line > 20,
+    'no stat, the map edited: imported again')
+  FS.stat = stat
+end
+
+-- a season given an id: the old season file goes; its rounds no longer listed are retired, not loose rallies
+do
+  local P = IMP .. 'Id Change/'
+  files[P .. 'a.kml'] = kml('IA', { { 'Ia Lane', 63.0, -13.0, 20 } })
+  files[P .. 'b.kml'] = kml('IB', { { 'Ib Lane', 63.1, -13.0, 20 } })
+  files[P .. 'season.json'] = J({ format = 1, name = 'Idc Cup', rounds = {
+    { round = 1, name = 'Alpha', map = 'a.kml' }, { round = 2, name = 'Bravo', map = 'b.kml' } } })
+  imp.scan()
+  T.check(files['/earthRally/seasons/idc-cup.json'] and files['/earthRally/events/idc-cup-alpha.json'], 'idc: imported')
+  files[P .. 'season.json'] = J({ format = 1, id = 'idc-2030', name = 'Idc Cup', rounds = {
+    { round = 1, id = 'idc-a', name = 'Alpha', map = 'a.kml' } } })
+  local r = imp.scan()
+  T.check(find(r, 'Id Change') and find(r, 'Id Change').seasonId == 'idc-2030' and
+    files['/earthRally/seasons/idc-2030.json'] and files['/earthRally/seasons/idc-cup.json'] == nil,
+    'the season\'s id changed: the old season file removed')
+  local oa, ob = files['/earthRally/events/idc-cup-alpha.json'], files['/earthRally/events/idc-cup-bravo.json']
+  T.check(oa and oa.retired and oa.retired.season == 'idc-2030' and ob and ob.retired and
+    files['/earthRally/events/idc-a.json'].retired == nil, 'the rallies it no longer lists: kept, retired')
+  -- Bravo back under its old id: written afresh, no longer retired
+  files[P .. 'season.json'] = J({ format = 1, id = 'idc-2030', name = 'Idc Cup', rounds = {
+    { round = 1, id = 'idc-a', name = 'Alpha', map = 'a.kml' }, { round = 2, id = 'idc-cup-bravo', name = 'Bravo', map = 'b.kml' } } })
+  imp.scan()
+  T.check(files['/earthRally/events/idc-cup-bravo.json'].retired == nil and
+    files['/earthRally/events/idc-cup-bravo.json'].season.id == 'idc-2030', 'a retired round put back: not retired')
+end
+
+-- a renamed pack whose import then fails keeps the ids it took from its old name
+do
+  local P = IMP .. 'Ren A/'
+  files[P .. 'season.json'] = J({ format = 1, name = 'Ren Cup', rounds = { { round = 1, name = 'Rone', map = 'r.kml' } } })
+  files[P .. 'r.kml'] = kml('Ren', { { 'Ren Lane', 64.0, -14.0, 20 } })
+  imp.scan()
+  T.check(ix()['Ren A'] and ix()['Ren A'].seasonId == 'ren-cup', 'ren: imported')
+  for f, v in pairs(files) do
+    if f:sub(1, #P) == P then files[f] = nil if f:match('season%.json$') then files[IMP .. 'Ren B/season.json'] = v end end
+  end
+  local r = imp.scan()                     -- (Ren B: the same season, its map left behind: no round can be read)
+  T.check(find(r, 'Ren B') and not find(r, 'Ren B').ok and find(r, 'Ren A') == nil, 'renamed and broken: refused')
+  local e = ix()['Ren B']
+  T.check(e and e.failed and e.seasonId == 'ren-cup' and e.eventIds and e.eventIds[1] == 'ren-cup-rone',
+    'the failed import keeps the ids it adopted (' .. tostring(e and e.seasonId) .. ')')
+  files[IMP .. 'Ren B/r.kml'] = kml('Ren', { { 'Ren Lane', 64.0, -14.0, 20 } })
+  r = imp.scan()
+  T.check(find(r, 'Ren B') and find(r, 'Ren B').seasonId == 'ren-cup' and
+    files['/earthRally/seasons/ren-cup.json'].rounds[1] == 'ren-cup-rone', 'put right: the same ids')
+end
+
+-- a pack gone, its rallies kept; in the same scan a pack of another kind with the same slug: not written over
+do
+  files[IMP .. 'Kind A/rally.json'] = J({ format = 1, name = 'Same Name', map = 'k.kml' })
+  files[IMP .. 'Kind A/k.kml'] = kml('KA', { { 'Ka Lane', 65.0, -15.0, 20 } })
+  imp.scan()
+  T.check(files['/earthRally/events/same-name.json'] and files['/earthRally/events/same-name.json'].pack.file == 'Kind A',
+    'kind a: imported')
+  files[IMP .. 'Kind A/rally.json'], files[IMP .. 'Kind A/k.kml'] = nil, nil
+  files[IMP .. 'Kind B/stage.json'] = J({ format = 1, name = 'Same Name', map = 'k.kml' })
+  files[IMP .. 'Kind B/k.kml'] = kml('KB', { { 'Kb Lane', 65.5, -15.0, 20 } })
+  local r = imp.scan()
+  local kb = find(r, 'Kind B')
+  T.check(kb and kb.ok and kb.eventId == 'same-name-2' and files['/earthRally/events/same-name.json'].pack.file == 'Kind A',
+    'the kept rally is not overwritten: the new pack is same-name-2 (' .. tostring(kb and (kb.eventId or kb.why)) .. ')')
+end
+
+-- Windows' Thumbs.db and desktop.ini are not part of a pack
+do
+  T.check(pack._ignored('Thumbs.db') and pack._ignored('THUMBS.DB') and pack._ignored('Desktop.ini') and
+    pack._ignored('__MACOSX') and pack._ignored('.DS_Store') and not pack._ignored('season.json'), 'ignored names')
+  files[IMP .. 'Thumby/Thumby/rally.json'] = J({ format = 1, name = 'Thumb Rally', map = 't.kml' })
+  files[IMP .. 'Thumby/Thumby/t.kml'] = kml('T', { { 'Thumb Lane', 66.0, -16.0, 20 } })
+  files[IMP .. 'Thumby/Thumbs.db'] = 'x'
+  files[IMP .. 'Thumby/desktop.ini'] = 'x'
+  local r = imp.scan()
+  T.check(find(r, 'Thumby') and find(r, 'Thumby').ok, 'a folder holding one folder and Thumbs.db: its pack read')
+end
+
 ------------------------------------------------------------------------------------------ the real ARA pack
 
 local ARA = 'C:/Users/Station/Documents/Claude/Rally Files/ARA Nationals 2026'
@@ -565,24 +696,24 @@ else
       end
     end
     if not bd then sorted = false end
-    -- (a rally you would not be ranked in, whatever you drove: some counted stage's map length is off)
+    -- (each rally under the 75% rule, on the map's lines: how many of its counted passes are comparable, their km)
     if ev and bd then
       local bests = {}
       for _, s in ipairs(ev.stages) do bests[s.id] = 100 end
       local res = B.rallyResult(ev, bd, bests)
-      if res.notRanked then
-        unranked[#unranked + 1] = string.format('%s (%d)', ev.name, #res.lineMismatch)
-        if res.you or #res.lineMismatch == 0 then sorted = false end
-      end
+      unranked[#unranked + 1] = string.format('%s %s %d/%d passes %.0f/%.0f km', ev.name,
+        res.notRanked and 'NOT RANKED' or 'ranked', res.comparable, res.counted, res.kmCovered, res.kmTotal)
+      if res.notRanked and (res.you or #res.lineMismatch == 0) then sorted = false end
+      if not res.notRanked and not res.you then sorted = false end
     end
   end
   T.check(sorted and passes == 125, 'ARA: every pass\'s field fastest first (' .. passes .. ' passes)')
   -- (what the 5% rule makes of the real season: printed, not checked, as it is the organisers' maps that decide)
   print(string.format('test_pack: ARA passes over 5%% off: %d of 125 on the whole line (%d of the counted ones); '
-    .. '%d counted ones start to flying finish. Rallies not ranked: %s', allLine, overLine, overFF,
-    table.concat(unranked, ', ')))
-  local oj = mem['/earthRally/events/ara-nationals-2026-ojibwe-forests-rally-2026.json']
-  local ob = mem['/earthRally/boards/ara-nationals-2026-ojibwe-forests-rally-2026.json']
+    .. '%d counted ones start to flying finish. Rallies: %s', allLine, overLine, overFF,
+    table.concat(unranked, '; ')))
+  local oj = mem['/earthRally/events/ara26-ojibwe-forests.json']
+  local ob = mem['/earthRally/boards/ara26-ojibwe-forests.json']
   local run = {}
   for _, ps in ipairs(ob and ob.passes or {}) do run[ps.stage] = true end
   local unrun = {}
@@ -591,9 +722,9 @@ else
   T.check(#unrun == 2 and unrun[1] == 'Perkins' and unrun[2] == 'Tulaby Lake',
     "ARA: Ojibwe's two lines never run, Perkins and Tulaby Lake (" .. table.concat(unrun, ', ') .. ')')
   T.check(oj and oj.place == 'Bemidji, MN' and #oj.itinerary == 16 and oj.itinerary[3].cancelled == true and
-    oj.media.cover == '/earthRally/media/ara-nationals-2026-ojibwe-forests-rally-2026/cover.png',
+    oj.media.cover == '/earthRally/media/ara26-ojibwe-forests/cover.png',
     'ARA: Ojibwe\'s place, itinerary, cover')
-  T.check(#rounds == 8 and rounds[8] == 'ara-nationals-2026-lake-superior-performance-rally-2026', 'ARA: the season')
+  T.check(#rounds == 8 and rounds[8] == 'ara26-lake-superior', 'ARA: the season, its ids from the manifest')
 end
 
 T.done('test_pack')

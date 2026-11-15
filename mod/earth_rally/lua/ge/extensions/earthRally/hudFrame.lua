@@ -29,6 +29,15 @@ M.TIMECARD_UNTIL_S = 10       -- the checked-in / start time line kept on the li
 M.MILE_M = 1609.344
 
 -- 'HH:MM:SS' of a time of day (s).
+-- A stage's SS label on the HUD: label as the runner carries it (menu.ssLabel: 'SS3', 'SS2 · SS4'), '' when it is
+-- false (a stage its rally's itinerary never runs: the HUD says its name alone), or SS<ss> by map order when the run
+-- carries none (as every run did before rally files).
+function M.ssText(label, ss)
+  if type(label) == 'string' then return label end
+  if label == false or ss == nil then return '' end
+  return 'SS' .. tostring(ss)
+end
+
 function M.clockText(t)
   if not t then return '--:--:--' end
   t = math.floor(t + 0.5) % 86400
@@ -146,14 +155,17 @@ function M.build(run, ctx)
   local stage = run.stage or {}
   local totalM = (run.finishM and run.startM) and (run.finishM - run.startM) or stage.lengthM or 0
   ours.clock, ours.clockText = now, M.clockText(now)
-  ours.stage = { ss = run.ss, ssCount = run.ssCount, name = stage.name, rally = run.event and run.event.name,
-    lengthM = totalM }
+  local label = M.ssText(run.ssLabel, run.ss)
+  ours.stage = { ss = run.ss, ssLabel = label, ssCount = run.ssCount, name = stage.name,
+    rally = run.event and run.event.name, lengthM = totalM }
   ours.atcTime, ours.startAt, ours.missedAtc = run.atcTime, run.startAt, run.missedAtc == true
   ours.toControlM = run.toControlM
   ours.finish = finishInfo(run, c)
   if s == 'failed' then ours.error = run.error end
 
-  local ssLabel = run.ss and tostring(run.ss) or ''
+  -- (the stock apps' ssLabel is the number after "SS" as they were always sent it: '2' for SS2)
+  local ssLabel = label:gsub('^SS', '')
+  local header = label ~= '' and (label .. ' · ' .. string.upper(stage.name or '')) or string.upper(stage.name or '')
   local rl = { activeState = 'inactive', showStageApps = false,
     rallyClock = { wallClockSecs = now, wallClockTime = { time = M.clockText(now), ampm = '' }, use24hFormat = true,
                    canSkipCountdown = false, canSkipTimeControls = false, isTimeControlSkipAvailable = false } }
@@ -168,7 +180,7 @@ function M.build(run, ctx)
     ours.control = 'start'
     show.timecard = (run.atcTime or run.startAt or run.missedAtc) and true or nil
     rl.activeState = 'vehicleProximity'
-    rl.scheduleData = { eventType = 'ss_start', label = 'SS' .. ssLabel, ssLabel = ssLabel, totalSSCount = run.ssCount,
+    rl.scheduleData = { eventType = 'ss_start', label = label, ssLabel = ssLabel, totalSSCount = run.ssCount,
       timeDiff = run.startAt and M.diffText(run.startAt - now) or nil }
     local d = run.toControlM or 0
     rl.vehicleProximity = { distance = d, distanceToPlane = d, isNear = run.zone ~= nil,
@@ -185,7 +197,7 @@ function M.build(run, ctx)
     rl.activeState = 'countdown'
     rl.rallyClock.canSkipCountdown = ctx.canSkip == true
     rl.countdownData = { countdown = n, state = n > 0 and 'counting' or 'go' }
-    rl.scheduleData = { eventType = 'ss_start', label = 'SS' .. ssLabel, ssLabel = ssLabel, totalSSCount = run.ssCount,
+    rl.scheduleData = { eventType = 'ss_start', label = label, ssLabel = ssLabel, totalSSCount = run.ssCount,
       timeDiff = M.diffText(left) }
     -- Staged and ready: the stage clock and the progress meter come up reading zero rather than at GO (the user,
     -- 2026-11-13). uiColors must go with them or the stock apps hide themselves.
@@ -195,7 +207,7 @@ function M.build(run, ctx)
     rl.showStageApps = not show.timecard or nil
     rl.uiColors = { theme = M.THEME }
     rl.stageData = {
-      stageHeader = string.format('SS%s · %s', ssLabel, string.upper(stage.name or '')),
+      stageHeader = header,
       label = ssLabel, currentSSTime = 0, isActive = false, isComplete = false, unit = units,
       completion = { distM = 0, distPct = 0, totalDistM = totalM },
       splits = { { pathnodeId = 1, pathnodeType = 'finish', splitLabel = M.lengthText(totalM, units), distPct = 1 } },
@@ -210,14 +222,14 @@ function M.build(run, ctx)
     rl.showStageApps = true
     rl.uiColors = { theme = M.THEME }
     rl.stageData = {
-      stageHeader = string.format('SS%s · %s', ssLabel, string.upper(stage.name or '')),
+      stageHeader = header,
       label = ssLabel, currentSSTime = s == 'running' and (run.clock or 0) or (run.stageTime or run.clock or 0),
       isActive = s == 'running', isComplete = s == 'toStop', unit = units,
       completion = { distM = done, distPct = totalM > 0 and done / totalM or 0, totalDistM = totalM },
       splits = { { pathnodeId = 1, pathnodeType = 'finish', splitLabel = M.lengthText(totalM, units), distPct = 1,
                    time = s == 'toStop' and run.stageTime or nil } },
     }
-    rl.scheduleData = { label = 'SS' .. ssLabel, ssLabel = ssLabel, totalSSCount = run.ssCount }
+    rl.scheduleData = { label = label, ssLabel = ssLabel, totalSSCount = run.ssCount }
     if s == 'running' then
       rl.activeState = 'stageActive'
       ours.offM, ours.backBearing = run.off, run.backBearing
@@ -241,7 +253,8 @@ function M.build(run, ctx)
       show.results = true
       local nx = run.nextStage
       ours.results = { finish = ours.finish,
-        next = nx and { id = nx.id, ss = nx.ss, name = nx.name, lengthM = nx.lengthM } or nil }
+        next = nx and { id = nx.id, ss = nx.ss, ssLabel = M.ssText(nx.ssLabel, nx.ss), name = nx.name,
+          lengthM = nx.lengthM } or nil }
     end
   end
   -- the jump-start card, a few seconds from the moment

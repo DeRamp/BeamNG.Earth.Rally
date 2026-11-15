@@ -18,10 +18,14 @@
 --     it, so "the same passes" for the crews leaves it out too. rallyResult lists it in `unmatched`.
 --   * "of N" counts you: 14th of 41 when the field has 40 crews. Equal times share a place (1, 2, 2, 4) and you go
 --     after the crews you tie with.
---   * A stage's length on the map (M.stageLengthM) is start to flying finish when the map has both controls (what
---     an official stage km measures), else the whole line. More than 5% off a pass's km is a line mismatch: you are
---     not placed on that pass's board, and when any counted pass's stage is off, your rally total is not ranked
---     (no place, no points): rallyResult names those stages in `lineMismatch` and sets `notRanked`.
+--   * A stage's length is measured on the line you are timed on (the caller passes it: menu.lua measures start to
+--     flying finish on the recce or matched line, events.drivenLengthM), else on the map (M.stageLengthM): start to
+--     flying finish when the map has both controls (what an official stage km measures), else the whole line. More
+--     than 5% off a pass's km is a line mismatch: you are not placed on that pass's board, and the pass is left out
+--     of the rally result. The result is over the comparable passes (counted, not a mismatch): your total and every
+--     crew's. It is ranked only when those passes cover at least M.RANK_MIN_SHARE of the rally's counted km (the
+--     user, 2026-11-14); below that it is shown, `notRanked`, and scores you nothing. The crews' standings points
+--     never depend on your lines: they come from their real ranking over every counted pass (M.standings).
 --   * A rally with no board still gets your total, over its itinerary's counted passes (or each stage once); only
 --     the ranking needs the board. Such a round scores no points in the standings, and is still listed.
 --   * The results' overall table is not read (pack.lua does not keep it): a crew is ranked exactly when it has a
@@ -33,6 +37,7 @@
 local M = {}
 
 M.LINE_MISMATCH = 0.05
+M.RANK_MIN_SHARE = 0.75     -- the share of a rally's counted km its comparable passes must cover to rank
 M.TOP = 10
 M.EPS = 1e-6
 M.DEFAULT_STANDINGS = {
@@ -286,74 +291,121 @@ local function countedPasses(event, board)
   return counted, cancelled, unmatched
 end
 
+-- (the crews with a time on every one of these passes, each with its total, fastest first: notional included, as
+-- they are the official times)
+local function crewTotals(passes)
+  local crews = {}
+  if #passes == 0 then return crews end
+  local acc, order = {}, {}
+  for pi, c in ipairs(passes) do
+    for _, r in ipairs(fieldOf(c.pass, true)) do
+      local a = acc[r.key]
+      if not a then
+        a = { name = r.name, car = r.car, class = r.class, championship = r.championship, n = 0, totalS = 0,
+          first = #order + 1 }
+        acc[r.key] = a
+        order[#order + 1] = r.key
+      end
+      if a.lastPass ~= pi then
+        a.n, a.totalS, a.lastPass = a.n + 1, a.totalS + r.timeS, pi
+        a.championship = a.championship or r.championship
+      end
+    end
+  end
+  for _, k in ipairs(order) do
+    local a = acc[k]
+    if a.n == #passes then
+      crews[#crews + 1] = { key = k, name = a.name, car = a.car, class = a.class, championship = a.championship,
+        timeS = ms(a.totalS), first = a.first }
+    end
+  end
+  table.sort(crews, function(a, b)
+    if math.abs(a.timeS - b.timeS) > M.EPS then return a.timeS < b.timeS end
+    return a.first < b.first
+  end)
+  return crews
+end
+
+-- (the length a stage is checked by: the driven line's, from the caller, else the map's)
+local function lengthOf(stage, opts)
+  local l = stage and type(opts.lineMByStage) == 'table' and opts.lineMByStage[stage.id] or nil
+  if type(l) == 'number' then return l end
+  return M.stageLengthM(stage)
+end
+
 -- event: the rally (events/<id>.json); board: its board or nil; bestByStage: { [stageId] = seconds }.
--- opts: { name = your row's name }.
--- Returns { passes = counted [{ ss, run, km, stageId }], cancelled = [{ ss, stageId }], unmatched = [{ ss, stage }],
---   complete, totalS (when complete), missing = [stageId...] (stages still to drive, in running order),
---   ranked = [{ pos, name, car, class, championship, totalS, gapS, you }] (crews with every counted pass, and you
---   when complete and ranked), you = placing or nil, noBoard, lineMismatch = [stageId...] (counted stages whose
---   map length is more than 5% off the pass's km), notRanked = true when there are any: your total stands, but it
---   is not placed among the crews and scores no points }
+-- opts: { name = your row's name, lineMByStage = { [stageId] = metres start to flying finish on the line you are
+-- timed on } (a stage not in it is measured on the map) }.
+-- Returns { passes = counted [{ ss, run, km, stageId, comparable }], cancelled = [{ ss, stageId }],
+--   unmatched = [{ ss, stage }], counted = #passes, comparable = how many of them are not a line mismatch,
+--   kmTotal / kmCovered (the counted passes' km, and the comparable ones'), partial = true when some are left out,
+--   complete (a time on every comparable pass), totalS (when complete: over the comparable passes),
+--   missing = [stageId...] (comparable stages still to drive, in running order),
+--   ranked = [{ pos, name, car, class, championship, totalS, gapS, you }] (crews with a time on every comparable
+--   pass, and you when complete and ranked), you = placing or nil, noBoard, lineMismatch = [stageId...] (counted
+--   stages whose length is more than 5% off the pass's km), notRanked = true when the comparable passes cover less
+--   than M.RANK_MIN_SHARE of the counted km: your total stands, but it is not placed and scores you nothing,
+--   field = [{ pos, key, name, championship, totalS }] (the crews' real ranking over every counted pass, without
+--   you: their standings points come from it) }
 function M.rallyResult(event, board, bestByStage, opts)
   opts = opts or {}
   bestByStage = bestByStage or {}
   local counted, cancelled, unmatched = countedPasses(event, board)
   local out = { passes = {}, cancelled = cancelled, unmatched = unmatched, missing = {}, ranked = {},
     lineMismatch = {}, noBoard = type(board) ~= 'table', complete = false }
-  local seenMissing, seenStage, byId = {}, {}, {}
+  local seenMissing, byId, mism = {}, {}, {}
   for _, s in ipairs((event and event.stages) or {}) do byId[s.id] = s end
-  local total = 0
+  -- (only against a board's km: with none there is nothing to rank against, and the map-only fallback's km is
+  -- the whole line, which would set a start-to-flying-finish length against itself)
+  local comparable, kmTotal, kmCovered = {}, 0, 0
   for _, c in ipairs(counted) do
-    out.passes[#out.passes + 1] = { ss = c.ss, run = c.run, km = c.km, stageId = c.stageId }
+    local off = false
+    if not out.noBoard then
+      if mism[c.stageId] == nil then
+        mism[c.stageId] = M.isMismatch(lengthOf(byId[c.stageId], opts), c.km)
+        if mism[c.stageId] then out.lineMismatch[#out.lineMismatch + 1] = c.stageId end
+      end
+      off = mism[c.stageId]
+    end
+    local km = type(c.km) == 'number' and c.km or 0
+    kmTotal = kmTotal + km
+    if not off then
+      comparable[#comparable + 1] = c
+      kmCovered = kmCovered + km
+    end
+    out.passes[#out.passes + 1] = { ss = c.ss, run = c.run, km = c.km, stageId = c.stageId, comparable = not off }
+  end
+  local total = 0
+  for _, c in ipairs(comparable) do
     local b = bestByStage[c.stageId]
     if type(b) == 'number' then total = total + b
     elseif not seenMissing[c.stageId] then
       seenMissing[c.stageId] = true
       out.missing[#out.missing + 1] = c.stageId
     end
-    -- (only against a board's km: with none there is nothing to rank against, and the map-only fallback's km is
-    -- the whole line, which would set a start-to-flying-finish length against itself)
-    local s = byId[c.stageId]
-    if not out.noBoard and not seenStage[c.stageId] and M.isMismatch(M.stageLengthM(s), c.km) then
-      seenStage[c.stageId] = true
-      out.lineMismatch[#out.lineMismatch + 1] = c.stageId
-    end
   end
-  out.complete = #counted > 0 and #out.missing == 0
+  out.counted, out.comparable = #counted, #comparable
+  out.kmTotal, out.kmCovered = math.floor(kmTotal * 100 + 0.5) / 100, math.floor(kmCovered * 100 + 0.5) / 100
+  out.partial = #comparable < #counted or nil
+  out.complete = #comparable > 0 and #out.missing == 0
   if out.complete then out.totalS = ms(total) end
-  out.notRanked = #out.lineMismatch > 0 or nil
-
-  -- the crews' totals over the same passes (notional included: the official times)
-  local crews = {}
-  if not out.noBoard and #counted > 0 then
-    local acc, order = {}, {}
-    for pi, c in ipairs(counted) do
-      for _, r in ipairs(fieldOf(c.pass, true)) do
-        local a = acc[r.key]
-        if not a then
-          a = { name = r.name, car = r.car, class = r.class, championship = r.championship, n = 0, totalS = 0,
-            first = #order + 1 }
-          acc[r.key] = a
-          order[#order + 1] = r.key
-        end
-        if a.lastPass ~= pi then
-          a.n, a.totalS, a.lastPass = a.n + 1, a.totalS + r.timeS, pi
-          a.championship = a.championship or r.championship
-        end
-      end
+  -- (the share by km; by passes when the passes have no km)
+  local share = kmTotal > 0 and kmCovered / kmTotal or (#counted > 0 and #comparable / #counted or 0)
+  out.notRanked = (not out.noBoard and #counted > 0 and share < M.RANK_MIN_SHARE - M.EPS) or nil
+  -- the crews' totals over the comparable passes (the Results table, with you placed), and over every counted pass
+  -- (their real ranking: what their standings points come from, whatever your lines are)
+  if not out.noBoard then
+    local full = crewTotals(counted)
+    for i, r in ipairs(full) do
+      local prev = full[i - 1]
+      r.pos = (prev and math.abs(prev.timeS - r.timeS) <= M.EPS) and prev.pos or i
     end
-    for _, k in ipairs(order) do
-      local a = acc[k]
-      if a.n == #counted then
-        crews[#crews + 1] = { key = k, name = a.name, car = a.car, class = a.class, championship = a.championship,
-          timeS = ms(a.totalS), first = a.first }
-      end
+    out.field = {}
+    for i, r in ipairs(full) do
+      out.field[i] = { pos = r.pos, key = r.key, name = r.name, championship = r.championship, totalS = r.timeS }
     end
-    table.sort(crews, function(a, b)
-      if math.abs(a.timeS - b.timeS) > M.EPS then return a.timeS < b.timeS end
-      return a.first < b.first
-    end)
   end
+  local crews = (not out.noBoard) and crewTotals(comparable) or {}
   local ranks = out.complete and not out.notRanked
   local you = ranks and { you = true, key = nil, name = opts.name or M.YOU, timeS = out.totalS } or nil
   local list, me = rank(crews, ranks and out.totalS or nil, you)
@@ -386,10 +438,15 @@ local function standingsRules(season)
 end
 M.standingsRules = standingsRules
 
--- season: seasons/<id>.json (its standings block); rounds: [{ event, board, bestByStage }] in season order.
--- opts: { name = your row's name, top = rows shown (default all) }.
--- Returns { rules = { championship, points, best }, rounds = [{ id, name, noBoard, scored = crews placed }],
---   rows = [{ pos, name, points, perRound = [{ pos, points } | { noBoard = true, points = 0 }], wins, you }],
+-- season: seasons/<id>.json (its standings block); rounds: [{ event, board, bestByStage, lineMByStage }] in season
+-- order (lineMByStage as rallyResult's). opts: { name = your row's name, top = rows shown (default all) }.
+-- The crews' points in every round come from their real ranking over all its counted passes (rallyResult's field),
+-- whatever your lines. Yours come from your place in the comparable-stage ranking (your total against the crews'
+-- over the same passes), set beside theirs without moving any crew a place. A round not ranked (its comparable
+-- passes under M.RANK_MIN_SHARE of its km) scores you nothing; the crews score in it as usual.
+-- Returns { rules = { championship, points, best }, rounds = [{ id, name, noBoard, notRanked, scored = crews
+--   placed }], rows = [{ pos, name, points, perRound = [{ pos, points } | { noBoard = true, points = 0 } |
+--   { notRanked = true, points = 0 } (yours, in a round not ranked) | { points = 0 }], wins, you }],
 --   you = your row (also when it is not in rows; nil only with no rally result anywhere), entries = all rows' count }
 function M.standings(season, rounds, opts)
   opts = opts or {}
@@ -411,18 +468,44 @@ function M.standings(season, rounds, opts)
     local ev = rd.event or {}
     local info = { id = ev.id, name = ev.name, noBoard = type(rd.board) ~= 'table', scored = 0 }
     out.rounds[ri] = info
-    if not info.noBoard then
-      local res = M.rallyResult(ev, rd.board, rd.bestByStage, { name = opts.name })
+    local res = (not info.noBoard) and
+      M.rallyResult(ev, rd.board, rd.bestByStage, { name = opts.name, lineMByStage = rd.lineMByStage }) or nil
+    info.notRanked = res and res.notRanked or nil
+    if res then
+      local function inChamp(r) return not rules.championship or norm(r.championship) == norm(rules.championship) end
+      -- the crews: their real places over every counted pass (among their championship), never moved by you
       local pos, prev = 0, nil
-      for _, r in ipairs(res.ranked) do
-        local ok = r.you or not rules.championship or norm(r.championship) == norm(rules.championship)
-        if ok then
+      for _, r in ipairs(res.field or {}) do
+        if inChamp(r) then
           pos = pos + 1
           local p = (prev and math.abs(prev.totalS - r.totalS) <= M.EPS) and prev.place or pos
           prev = { totalS = r.totalS, place = p }
-          local e = entry(r.you and YOUKEY or r.key, r.name, r.you)
-          local pts = rules.points[p] or 0
-          e.perRound[ri] = { pos = p, points = pts }
+          local e = entry(r.key, r.name, false)
+          e.perRound[ri] = { pos = p, points = rules.points[p] or 0 }
+          e.finishes[#e.finishes + 1] = p
+          info.scored = info.scored + 1
+        end
+      end
+      -- you: your place in the comparable-stage ranking (among the same championship), the crews' points as they are
+      if not res.notRanked then
+        local p, before = nil, 0
+        for _, r in ipairs(res.ranked) do
+          if r.you then p = before + 1 break end
+          if inChamp(r) then before = before + 1 end
+        end
+        -- (tied with the crews just ahead: their place)
+        if p then
+          local mine
+          for _, r in ipairs(res.ranked) do if r.you then mine = r end end
+          local k = 0
+          for _, r in ipairs(res.ranked) do
+            if not r.you and inChamp(r) then
+              k = k + 1
+              if math.abs(r.totalS - mine.totalS) <= M.EPS then p = math.min(p, k) end
+            end
+          end
+          local e = entry(YOUKEY, mine.name, true)
+          e.perRound[ri] = { pos = p, points = rules.points[p] or 0 }
           e.finishes[#e.finishes + 1] = p
           info.scored = info.scored + 1
         end
@@ -434,7 +517,8 @@ function M.standings(season, rounds, opts)
     local scores = {}
     for ri = 1, nRounds do
       if out.rounds[ri].noBoard then e.perRound[ri] = { noBoard = true, points = 0 }
-      elseif not e.perRound[ri] then e.perRound[ri] = { points = 0 }
+      elseif not e.perRound[ri] then
+        e.perRound[ri] = { points = 0, notRanked = (e.you and out.rounds[ri].notRanked) or nil }
       else scores[#scores + 1] = e.perRound[ri].points end
     end
     table.sort(scores, function(a, b) return a > b end)

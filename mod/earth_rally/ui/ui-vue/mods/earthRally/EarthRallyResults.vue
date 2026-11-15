@@ -3,9 +3,10 @@
        left to drive beside the real top 10; then your total against them. Data: menu.lua, addRallyFiles
        (uiRally's `results`). -->
   <div class="er-res-wrap">
-    <!-- a line mismatch (boards.lua): your total stands, but it is not placed among the crews and scores no points -->
-    <div v-if="mismatchLine" class="er-mis">{{ mismatchLine }}</div>
-    <div v-if="!r.complete" class="er-card er-todo">
+    <!-- stages that don't match the official distance (boards.lua) are left out: ranked over the rest, or, under 75%
+         of the km, not ranked at all (your total stands, no place, no points) -->
+    <div v-if="mismatchLine" class="er-mis">{{ mismatchLine }}<span v-if="leftOut" class="er-mis-names">{{ leftOut }}</span></div>
+    <div v-if="!r.complete && r.stages" class="er-card er-todo">
       <div class="er-head">Drive all {{ r.stages }} stages to get a rally result</div>
       <div class="er-bar"><i :style="{ width: (r.stages ? (100 * r.driven) / r.stages : 0) + '%' }"></i></div>
       <div class="er-muted er-of"><span class="er-mono er-w">{{ r.driven }}</span> of {{ r.stages }} driven</div>
@@ -13,7 +14,7 @@
         <span v-for="(c, i) in arr(r.chips)" :key="i" class="er-chip" :class="{ done: c.done }">{{ c.done ? "✓ " : "" }}{{ c.name }}</span>
       </div>
     </div>
-    <div v-else class="er-card er-todo">
+    <div v-else-if="r.complete" class="er-card er-todo">
       <h3>Your rally</h3>
       <div v-if="r.you" class="er-big">{{ ord(r.you.pos) }}<small>of {{ r.you.of }}</small></div>
       <div v-else class="er-big er-nr">Not ranked</div>
@@ -21,7 +22,7 @@
       <div v-if="r.you && r.you.gapS > 0" class="er-muted er-of">{{ gap(r.you.gapS) }} to the winner</div>
       <div v-else-if="r.you" class="er-muted er-of">Ahead of the winner</div>
       <div v-if="r.points !== undefined && r.points !== null" class="er-pts"><b>+{{ r.points }} points</b> <span class="er-muted">in the season</span></div>
-      <div class="er-foot-note">Your best on each stage, against the {{ crewsText }} with a time on every stage.</div>
+      <div class="er-foot-note">Your best on each stage{{ r.partial ? " counted" : "" }}, against the {{ crewsText }} with a time on every {{ r.partial ? "one of them" : "stage" }}.</div>
     </div>
 
     <div class="er-card er-table">
@@ -52,15 +53,21 @@ const crewsText = computed(() => {
   const n = Number(props.r.crews) || 0
   return `${n} ${n === 1 ? "crew" : "crews"}`
 })
-// "Not ranked: 3 stages on this map aren't the stages as run (Irish Ridge, Kettle Creek, Lost Hill, ...)"
+// (stages here are passes, as the results count them: a stage run twice is two)
+// "Ranked over 14 of 16 stages (271 of 279 km)." / "Not ranked: only 6 of 20 stages match the stages as run (a recce
+// may fix this)." -- the user's words, 2026-11-14
 const mismatchLine = computed(() => {
+  const r = props.r
+  if (r.notRanked) return `Not ranked: only ${r.comparable} of ${r.counted} stages match the stages as run (a recce may fix this).`
+  if (r.partial) return `Ranked over ${r.comparable} of ${r.counted} stages (${Math.round(r.kmCovered)} of ${Math.round(r.kmTotal)} km).`
+  return ""
+})
+// " Left out, they don't match the official distance: Irish Ridge, Kettle Creek, Lost Hill, ..."
+const leftOut = computed(() => {
   const m = arr(props.r.mismatch)
-  if (!props.r.notRanked || !m.length) return ""
-  const n = m.length
-  const names = n > 3 ? `${m.slice(0, 3).join(", ")}, ...` : m.join(", ")
-  return n === 1
-    ? `Not ranked: 1 stage on this map isn't the stage as run (${names})`
-    : `Not ranked: ${n} stages on this map aren't the stages as run (${names})`
+  if (!m.length) return ""
+  const names = m.length > 3 ? `${m.slice(0, 3).join(", ")}, ...` : m.join(", ")
+  return m.length === 1 ? ` Left out, it doesn't match the official distance: ${names}` : ` Left out, they don't match the official distance: ${names}`
 })
 </script>
 
@@ -83,7 +90,8 @@ const mismatchLine = computed(() => {
 .er-total { font: 700 30px "Overpass Mono", monospace; margin-top: 14px; }
 .er-pts { margin-top: 22px; font-size: 20px; b { color: var(--er-orange); } }
 .er-foot-note { margin-top: 14px; font-size: 15px; color: var(--er-muted); }
-.er-mis { grid-column: 1 / -1; font-size: 17px; color: #ffd36b; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.er-mis { grid-column: 1 / -1; font-size: 17px; color: #ffd36b; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  .er-mis-names { color: var(--er-muted); } }
 .er-nr { font-size: 40px; color: var(--er-muted); }
 .er-table { position: relative; padding: 6px 0; }
 .er-ghosted { opacity: 0.4; filter: saturate(0.4); }

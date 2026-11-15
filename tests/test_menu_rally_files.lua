@@ -211,13 +211,61 @@ do
   local s = menu.stage('mm', 'fox', 'start')
   T.check(s.notRun and #s.passes == 0, 'stage page: not run')
   local res = r.results
-  T.check(res.complete and res.totalS == 230 and res.notRanked and res.you == nil and res.points == nil and
-    res.mismatch and #res.mismatch == 1 and res.mismatch[1] == 'Delta' and res.crews == 2,
-    'results: fastest of all, but Delta is not the stage as run: not ranked, named; 2 crews with every stage')
+  T.check(res.complete and res.totalS == 80 and res.notRanked and res.you == nil and res.points == nil and
+    res.mismatch and #res.mismatch == 1 and res.mismatch[1] == 'Delta' and res.crews == 3 and res.counted == 2 and
+    res.comparable == 1 and res.kmTotal == 12 and res.kmCovered == 5 and res.partial and res.stages == 1 and
+    res.chips[1].name == 'Echo',
+    'results: Delta does not match the official distance: left out; Echo alone is 5 of 12 km, under 75%: not ranked')
   for _, row in ipairs(res.rows) do T.check(not row.you, 'results: you not among the ranked rows') end
   s = menu.stage('mm', 'delta', 'start')
-  T.check(s.board and s.board.reason == 'lineMismatch' and s.board.lineKm == 10 and s.board.km == 7,
-    'stage board: the map\'s km and the real km, for the mismatch line')
+  T.check(s.board and s.board.reason == 'lineMismatch' and s.board.lineKm == 10 and s.board.km == 7 and
+    s.board.lineOf == 'map', 'stage board: the map\'s km and the real km, for the mismatch line')
+
+  -- Delta matched to the roads, 7.0 km start to finish: the driven line is what is measured, and it matches
+  files['/earthRally/matched/mm__delta.json'] = { format = 1, points = { { 47.0, -123.0, 0 },
+    { 47.0 + 3500 / 111195, -123.0, 0 }, { 47.0 + 7000 / 111195, -123.0, 0 } } }
+  events.forget()
+  r = menu.rally('mm')
+  res = r.results
+  T.check(not res.notRanked and not res.partial and res.comparable == 2 and res.totalS == 230 and res.you and
+    res.you.pos == 1 and res.you.of == 3 and res.mismatch == nil,
+    'measured on the matched line (7.0 km, as run): Delta counts, ranked 1st of 3')
+  s = menu.stage('mm', 'delta', 'start')
+  T.check(s.board and s.board.reason == nil and s.board.you and s.board.lineOf == 'matched' and
+    math.abs(s.board.lineKm - 7) < 0.01, 'stage board: placed, the matched line\'s km')
+  local info = events.stageLineInfo('mm', 'delta', menu.findEvent('mm').stages[1])
+  T.check(info and info.kind == 'matched' and info.key and info.key:sub(1, 10) == 'matched:3:' and
+    math.abs(info.lengthM - 7000) < 5, 'stageLineInfo: the line\'s kind, identity and start-to-finish length')
+
+  -- a time driven on another line: in Your runs, not on the boards; a time with no line recorded: placed
+  local old = run(50)
+  old.lineKey = 'recce:2:0:0:0:0:0:0'
+  local same = run(79)
+  same.lineKey = info.key
+  files['/earthRally/results/mm__delta.json'] = { runs = { run(150), old, same } }
+  events.forget()
+  T.check(events.best('mm', 'delta') == 50 and events.bestPlaceable('mm', 'delta', menu.findEvent('mm').stages[1]) == 79,
+    'best: every time; bestPlaceable: the times on the line the stage runs on now, and those with none recorded')
+  s = menu.stage('mm', 'delta', 'start')
+  T.check(s.best == 50 and s.board.bestS == 79 and s.board.you.timeS == 79 and s.board.oldLine == nil,
+    "stage page: Your runs' BEST is every time; the board places the best on this line")
+  T.check(menu.rally('mm').results.totalS == 159, 'rally result: the placeable best (79 + 80)')
+  files['/earthRally/results/mm__delta.json'] = { runs = { old } }
+  events.forget()
+  s = menu.stage('mm', 'delta', 'start')
+  T.check(s.best == 50 and s.board.bestS == nil and s.board.you == nil and s.board.reason == 'noTime' and
+    s.board.oldLine, 'only times on an earlier line: none placed, and the board says so')
+  T.check(menu.rally('mm').results.complete == false, 'and the rally result waits for a time on this line')
+
+  -- a round its season no longer lists, retired by the import: not a card on Home
+  files['/earthRally/events/retired.json'] = { format = 1, id = 'retired', name = 'Retired Rally',
+    stages = { stage('q1', 'Quince', 3) }, season = { id = 'ts', name = 'Test Season', round = 3 },
+    retired = { season = 'ts', date = '2026-11-14T00:00:00Z' } }
+  events.forget()
+  events.list(true)
+  local seen = false
+  for _, c in ipairs(menu.home().rallies) do if c.id == 'retired' then seen = true end end
+  T.check(not seen and menu.rally('retired') ~= nil, 'a retired round: off Home, its page and times still there')
   T.check(r.media.cover == '/earthRally/media/mm/cover.png?v=ab12cd34'
     and menu.mediaUrl('/x.png', 'abc') == '/x.png?v=abc', 'media: cache-busted with the pack\'s fingerprint')
 end

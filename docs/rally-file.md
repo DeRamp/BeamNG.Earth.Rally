@@ -152,29 +152,39 @@ them.
 - **Season**: its manifest's `id` (slugged); else the id this pack had at its last import; else the id of a pack
   gone from the folder in the same scan with a season of the same name (a renamed zip or folder takes its old ids);
   else a slug of its name.
-- **Round**: its own `id`; else the id recorded for that round at the last import, found by its map's file name,
-  then by its name; else `<seasonId>-<slug of its name>` (`<seasonId>-round` when the name slugs to nothing), never an
-  id this season gave another round before.
+- **Round**: its own `id`; else the id recorded for that round at the last import, found by its map's path inside
+  the pack (case folded: a `map.kml` in every round's folder does not hand the ids out by position; two rounds on one
+  map are told apart by their names), then by its name; else `<seasonId>-<slug of its name>` (`<seasonId>-round`
+  when the name slugs to nothing), never an id this season gave another round before.
 - **Rally or stage pack**: its `id`; else the one this pack (or a renamed one, as for a season) had; else a slug of
   its name.
-- An id another import already has is an import warning, and the next free one (`x-2`, `x-3`...) is used. A pack
-  that fails to import keeps the ids it had, for when it is put right.
+- An id another import already has is an import warning, and the next free one (`x-2`, `x-3`...) is used. So is an
+  id whose rally is still on this computer from another pack (one taken out of the folder keeps its rallies) or from
+  a loose map. A pack that fails to import keeps the ids it had, for when it is put right: a renamed pack, the ids it
+  took from its old name.
 - **Stage ids** inside a rally are slugs of the line name, as for a loose map.
 
 ## What the mod writes from a pack (internal, not part of the format)
 
 - `earthRally/events/<rallyId>.json`: as today (format 1), plus `season` `{ id, name, round }` when it came from a
   season, `dates`, `place`, `itinerary` `[{ ss, stage, run, km, cancelled, day, powerStage }]`, `rules`, `media`
-  `{ cover, logo, photo }`, `boards` (a boards file name, or missing), and `pack` `{ file, fingerprint }`.
+  `{ cover, logo, photo }`, `boards` (a boards file name, or missing), and `pack` `{ file, fingerprint }`. A round
+  its season no longer lists (taken out, or its id changed) is kept with `retired` `{ season, date }`: not shown on
+  the Rallies page, its times kept; put back under its id, it is written afresh.
 - `earthRally/seasons/<seasonId>.json`: `{ format: 1, id, name, championship, rounds: [rallyId...], standings }`.
+  When a season's id changes, the file under the old id is removed.
+- `earthRally/results/<rallyId>__<stageId>.json`: each finished run also records the line it was driven on:
+  `line` (`recce` / `matched`), `lineKey` (that line in short: kind, point count, first, middle and last points)
+  and `lineM` (start to flying finish on it, as timed). Times saved before that have none.
 - `earthRally/boards/<rallyId>.json`: the results, trimmed: `{ format: 1, fingerprint, passes: [{ ss, stage, run,
   km, cancelled, field: [[seconds, driver, car, class, championship, notional]...] }] }`, fastest first. Removed
   when the pack no longer names results.
 - Images: copied to `earthRally/media/<rallyId>/<cover|logo|photo>.<ext>`; a re-import first removes the ones the
   last import copied. The menu loads them with `?v=` and the pack's fingerprint, so a changed picture is not taken
   from the page's cache. Whether the menu can load from there is still to be checked in game (`menu.mediaUrl`).
-- A pack is imported again only when it changed: its size and modification time first, then (when those moved) its
-  bytes. For a folder, that is the manifest and every file it names.
+- A pack is imported again only when it changed: its size and modification time first, then (when those moved, or
+  the game gives none) its bytes. For a folder, that is the manifest and every file it names. `__MACOSX`, dot files,
+  `Thumbs.db` and `desktop.ini` (any case) are not part of a pack.
 
 ## Leaderboards and standings (what is computed, and the rules for it)
 
@@ -183,15 +193,30 @@ them.
   no leaderboard.
 - **On the rally page**, a stage run twice shows once, and its Place is the better of your placings on its passes
   (the user, 2026-11-14). The leaderboard on the stage page has a toggle between passes.
-- **The map's stage against the stage as run**: the map's length of a stage is start to flying finish when both
-  controls are on its line, else the whole line. More than 5% off a pass's `km` is a line mismatch: that pass's
-  field is shown but you are not placed in it ("This map's stage is 12.0 km; the real one was 10.5 km").
-- **Your rally result**: when you have a time on every stage that has a counted pass (not cancelled), your total
-  is the sum of your best time on each stage, once per counted pass. A real crew's total is the sum of its times
-  over the same passes (notional included: they are the official times); a crew missing any of them is not ranked.
-  When any counted stage is a line mismatch, your total is shown but **not ranked**: no place, and no points in the
-  standings ("Not ranked: 3 stages on this map aren't the stages as run (...)").
-- **Season standings**: in each round, the ranked crews (only those of `standings.championship`) and you if your
-  rally result is ranked get `points[position]`. Crews are one entry across rounds by driver name (trimmed, case
-  folded). Ties on points: more wins, then more second places, and so on. A round with no results scores nothing,
-  and is still listed.
+- **The stage you drive against the stage as run** (the user, 2026-11-14): a stage's length is measured on the line
+  you are timed on, start to flying finish: the recce or the matched line, whichever the stage runs on (a control
+  more than 200 m off that line is taken as its end; start and finish less than 100 m apart along it, the whole
+  line). With no such line, the map's: start to flying finish when both controls are on it, else the whole line.
+  More than 5% off a pass's `km` is a line mismatch: that pass's field is shown but you are not placed in it ("Your
+  line is 12.0 km start to finish; the official distance is 10.5 km").
+- **Which of your times count**: each time records the line it was driven on. Only your best on the line the stage
+  runs on now is placed on leaderboards and counted in rally results; a time driven on another line (a recce driven
+  again, a stage matched again, a reset) still shows in your runs and their best. A time saved before times recorded
+  their line is taken as driven on the current one.
+- **Your rally result** is over the comparable passes: the counted ones (not cancelled) whose stage is not a line
+  mismatch. When you have a time on every stage with a comparable pass, your total is the sum of your best time on
+  each, once per comparable pass. A real crew's total is the sum of its times over the same passes (notional
+  included: they are the official times); a crew missing any of them is not ranked. The result is **ranked** when
+  the comparable passes cover at least 75% of the rally's counted km ("Ranked over 14 of 16 stages (271 of 279
+  km)." when some are left out, naming the ones that don't match the official distance). Below that it is shown but
+  **not ranked**: no place, and no points for you ("Not ranked: only 6 of 20 stages match the
+  stages as run (a recce may fix this).").
+- **Season standings**: the real crews' standings never depend on your map or your lines. In every round with
+  results, each crew (only those of `standings.championship`) gets `points[position]` by its real ranking over all
+  the counted passes (the full rally, notional included), whether or not you are ranked. You get
+  `points[position]` by your place in the comparable-stage ranking (your total against the crews' totals over the
+  same comparable passes, among that championship's crews), set beside theirs without moving any crew: the crews
+  below you do not drop a place for points. In a round that is not ranked (under 75% of its km) you score nothing
+  ("NR") and the crews score as usual. Crews are one entry across rounds by driver name (trimmed, case folded). Ties
+  on points: more wins, then more second places, and so on. A round with no results scores nothing, and is still
+  listed.

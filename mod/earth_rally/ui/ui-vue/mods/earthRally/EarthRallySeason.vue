@@ -21,6 +21,7 @@
           <EarthRallyPic class="er-rpic-in" :url="(r.media && r.media.cover) || ''" :kind="`ROUND ${r.round}`" :name="shortName(r.name)" />
           <span class="er-rn">R{{ r.round }}</span>
           <span v-if="r.complete && r.you" class="er-res">{{ ord(r.you.pos) }}</span>
+          <span v-else-if="r.notRanked" class="er-res er-nr">Not ranked</span>
         </div>
         <div class="er-body">
           <div class="er-nm" :title="r.name">{{ r.name }}</div>
@@ -32,11 +33,11 @@
 
     <div v-else class="er-stand-wrap">
       <div class="er-card er-table">
-        <div class="er-trow er-hdr" :style="cols"><span>Pos</span><span>Driver</span><span v-for="r in rounds" :key="r.round" class="er-c">R{{ r.round }}</span><span class="er-r">Points</span></div>
+        <div class="er-trow er-hdr" :style="cols"><span>Pos</span><span>Driver</span><span v-for="r in rounds" :key="r.round" class="er-c" :class="{ 'er-cnr': r.notRanked }">R{{ r.round }}</span><span class="er-r">Points</span></div>
         <template v-for="(row, i) in rows" :key="i">
           <div class="er-trow" :class="{ me: row.you }" :style="cols">
             <span class="er-pos">{{ row.pos }}</span><span class="er-clip">{{ row.name }}</span>
-            <span v-for="(p, k) in arr(row.perRound)" :key="k" class="er-rp" :class="{ w: p.pos === 1, x: !p.pos }">{{ p.pos ? p.points : "–" }}</span>
+            <span v-for="(p, k) in arr(row.perRound)" :key="k" class="er-rp" :class="{ w: p.pos === 1, x: !p.pos }">{{ cell(p) }}</span>
             <span class="er-pts">{{ row.points }}</span>
           </div>
         </template>
@@ -44,7 +45,7 @@
           <div class="er-trow er-gap" :style="cols"><span>⋮</span></div>
           <div class="er-trow me" :style="cols">
             <span class="er-pos">{{ you.pos }}</span><span>{{ you.name }}</span>
-            <span v-for="(p, k) in arr(you.perRound)" :key="k" class="er-rp" :class="{ w: p.pos === 1, x: !p.pos }">{{ p.pos ? p.points : "–" }}</span>
+            <span v-for="(p, k) in arr(you.perRound)" :key="k" class="er-rp" :class="{ w: p.pos === 1, x: !p.pos }">{{ cell(p) }}</span>
             <span class="er-pts">{{ you.points }}</span>
           </div>
         </template>
@@ -61,6 +62,7 @@
           <div v-if="s.next" class="er-foot-note">Finish {{ s.next }} to score{{ you ? " again" : "" }}.</div>
         </div>
         <div v-if="pointsLine" class="er-foot-note er-pad">{{ pointsLine }}</div>
+        <div v-if="nrLine" class="er-foot-note er-pad">{{ nrLine }}</div>
       </div>
     </div>
   </section>
@@ -81,6 +83,15 @@ const you = computed(() => st.value.you || null)
 const rows = computed(() => arr(st.value.rows))
 const rounds = computed(() => arr(st.value.rounds))
 const cols = computed(() => ({ gridTemplateColumns: `70px minmax(0, 1fr) repeat(${rounds.value.length}, 52px) 90px` }))
+// a round's cell: its points, "–" when not placed, "NR" for yours in a round not ranked
+const cell = p => (p.pos ? p.points : p.notRanked ? "NR" : "–")
+// "R4 is not ranked: too few of its stages match the official distance, so you can't score there."
+const nrLine = computed(() => {
+  const nr = rounds.value.filter(r => r.notRanked).map(r => `R${r.round}`)
+  if (!nr.length) return ""
+  const one = nr.length === 1
+  return `${nr.join(", ")} ${one ? "is" : "are"} not ranked: too few of ${one ? "its" : "their"} stages match the official distance, so you can't score there.`
+})
 const pct = (a, b) => (b ? (100 * a) / b : 0) + "%"
 // "SnoDrift 11th · 100 Acre Wood 9th": the rounds you were placed in
 const placed = computed(() => arr(props.s.rounds).filter(r => r.complete && r.you).map(r => `${shortName(r.name, true)} ${ord(r.you.pos)}`))
@@ -117,7 +128,8 @@ const pointsLine = computed(() => {
 .er-rpic { position: relative; height: 214px; }
 .er-rpic-in { position: absolute; inset: 0; }
 .er-rn { position: absolute; top: 12px; left: 12px; z-index: 2; font: 700 15px "Overpass Mono", monospace; background: rgba(0, 0, 0, 0.72); padding: 3px 10px; border-radius: 0.25rem; }
-.er-res { position: absolute; top: 12px; right: 12px; z-index: 2; font-size: 15px; font-weight: 700; padding: 3px 10px; border-radius: 0.25rem; background: var(--er-orange-500); }
+.er-res { position: absolute; top: 12px; right: 12px; z-index: 2; font-size: 15px; font-weight: 700; padding: 3px 10px; border-radius: 0.25rem; background: var(--er-orange-500);
+  &.er-nr { background: rgba(0, 0, 0, 0.72); color: #ffd36b; } }
 .er-body { padding: 14px 18px 16px; min-width: 0; }
 .er-nm { font-size: 21px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .er-dt { font-size: 15px; color: var(--er-muted); margin-top: 2px; }
@@ -132,7 +144,7 @@ const pointsLine = computed(() => {
   &.er-hdr { height: 38px; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--er-muted); }
   &.me { background: rgba(199, 91, 30, 0.26); border-left-color: var(--er-orange); font-weight: 700; .er-pos { color: #fff; } }
   &.er-gap { height: 26px; color: #6f7480; font-size: 18px; line-height: 1; }
-  .er-r { text-align: right; } .er-c { text-align: center; }
+  .er-r { text-align: right; } .er-c { text-align: center; } .er-cnr { color: #6f7480; }
   .er-pos { font-family: "Overpass Mono", monospace; font-weight: 700; color: var(--er-muted); }
   .er-pts { font-family: "Overpass Mono", monospace; font-weight: 700; font-size: 21px; text-align: right; }
   .er-rp { font-family: "Overpass Mono", monospace; font-size: 15px; text-align: center; color: var(--er-muted);
