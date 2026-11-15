@@ -1514,6 +1514,16 @@ do
   main.onUiChangedState('earthRally')
   main.toggleMenu()
   T.check(navs[1] == 'earthRally' and navs[2] == 'play', 'Ctrl+Alt+K opens the menu page and closes it')
+  -- the Escape menu ('pause' in 0.40): our HUD hidden, and BeamNG.Earth's imgui strips told it is a menu (earthMenuFix)
+  do
+    local told = {}
+    package.loaded['beamngEarth/credits'] = { setUiState = function(s) told[#told + 1] = s end }
+    main.onUiChangedState('pause')
+    T.check(runner.uiHidden and told[1] == 'menu', 'pause menu: our HUD hidden, BeamNG.Earth told "menu"')
+    main.onUiChangedState('pause.hudApps')
+    T.check(not runner.uiHidden and #told == 1, 'the HUD-apps editor: the apps stay, nothing told')
+    package.loaded['beamngEarth/credits'] = nil
+  end
   main.onUiChangedState('play')
   -- Drive stage from the page: the run starts, the page closes
   anchor = { lat = 47.0, lon = -123.0 }

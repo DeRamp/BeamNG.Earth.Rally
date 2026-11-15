@@ -18,7 +18,7 @@ local settings = require('earthRally/settings')
 local menu = require('earthRally/menu')
 local preview = require('earthRally/preview')
 local versions = require('earthRally/versions')
-local pauseStrips = require('earthRally/pauseStrips')   -- STOPGAP: remove with BeamNG.Earth's fix (the file says)
+local earthMenuFix = require('earthRally/earthMenuFix') -- STOPGAP: remove with BeamNG.Earth's fix (the file says)
 
 local M = {}
 local logTag = 'earthRally'
@@ -96,11 +96,10 @@ function M.onUiChangedState(toState)
   menuOpen = toState == M.ROUTE
   -- Our own full-screen page counts too: it is not called 'menu...' but it is just as much in the way. So does
   -- BeamNG.Earth's world map, a route of its own ('beamngEarthMap', its credits.lua MAP_ROUTE).
-  -- 'pause' is the in-game Escape menu in 0.40 ('menu' is the main menu): BeamNG.Earth's own check misses it, and
-  -- this one did too. Our HUD went with it anyway (the pause route takes every UI app down), but the flag says so now.
-  runner.uiHidden = toState:sub(1, 4) == 'menu' or pauseStrips.isPause(toState) or toState == 'loading'
+  -- 'pause' is the in-game Escape menu in 0.40 ('menu' is the main menu); this check missed it, as BeamNG.Earth's does.
+  runner.uiHidden = toState:sub(1, 4) == 'menu' or earthMenuFix.isPause(toState) or toState == 'loading'
     or toState == M.ROUTE or toState == 'beamngEarthMap'
-  pauseStrips.uiState(toState)
+  earthMenuFix.uiState(toState, M.ROUTE)
 end
 
 ------------------------------------------------------------------------------------------ the developer panel
@@ -1019,6 +1018,7 @@ function M.onUpdate(dtReal, dtSim)
     if scanIn <= 0 then scanIn = nil M.scanImports(false) end
   end
   earth.update()
+  pcall(earthMenuFix.update)
   -- In the BeamNG.Earth level: the version check again, now that the game's rally engine can be looked at without
   -- dragging it in at the main menu (versions.lua says why). Once per level, and quiet unless something changed
   -- since the last time, so this is not a per-frame cost.
@@ -1053,9 +1053,6 @@ function M.onUpdate(dtReal, dtSim)
     local okP, errP = pcall(updatePlaytest, dtReal or 0)
     if not okP then log('E', logTag, 'playtest: ' .. tostring(errP)) playtest = nil end
   end
-  -- (before the runner: a stage that holds BeamNG.Earth's strips re-asserts its hold after this in the same frame)
-  local okPs, errPs = pcall(pauseStrips.update, dtReal or 0, earth)
-  if not okPs then log('E', logTag, 'pause strips: ' .. tostring(errPs)) end
   local ok, err = pcall(runner.update, dtReal, dtSim)
   if not ok then log('E', logTag, 'run: ' .. tostring(err)) runner.abort(true) message = 'Run stopped: ' .. tostring(err) end
   local okS, errS = pcall(sendStreams, dtReal or 0)
@@ -1120,7 +1117,6 @@ function M.onClientEndMission()
   if previewT then pcall(M.previewStop) end
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)
-  pcall(pauseStrips.reset)
   pcall(earth.reset)
 end
 
@@ -1150,7 +1146,6 @@ function M.onModDeactivated()
   if previewT then pcall(M.previewStop) end
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)
-  pcall(pauseStrips.reset)
   pcall(earth.reset)
   unloadNext = true     -- (not from in here: extensions.hook is walking the extension list while we run)
 end
@@ -1173,7 +1168,6 @@ function M.onExtensionUnloaded()
   if previewT then pcall(M.previewStop) end
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)
-  pcall(pauseStrips.reset)
   pcall(earth.reset)
 end
 
@@ -1182,7 +1176,6 @@ function M.onExtensionLoaded()
   --  and BeamNG.Earth's strips given back in case a run was cut short holding them)
   pcall(require('earthRally/props').sweep)
   pcall(earth.holdStrips, false)
-  pcall(pauseStrips.reset)
   local veh = getPlayerVehicle and getPlayerVehicle(0)
   if veh then pcall(runner._vehCtl, veh, 'off') end
   settings.load()

@@ -345,13 +345,12 @@ end
 -- believes an app has a strip it leaves its own drawing of it out, and the banner is where "BeamNG.Earth server not
 -- running" and "the car is held in place" are said.
 M.EARTH_STRIPS = { 'status', 'banner' }
--- names: which strips (default all of EARTH_STRIPS; pauseStrips gives back only some).
-function M.holdStrips(on, names)
+function M.holdStrips(on)
   local c = core()
   if not (c and c.hudApp) then return false end
   local want = on and true or false
   local ok = true
-  for _, n in ipairs(names or M.EARTH_STRIPS) do
+  for _, n in ipairs(M.EARTH_STRIPS) do
     -- What it answers matters, not only that it did not throw: BeamNG.Earth's setMounted returns false for a strip
     -- name it does not know, with no error, so a renamed strip would otherwise look held to us while it was still
     -- on screen. (Releasing answers false for both the real case and the unknown name, which is harmless: giving
@@ -360,17 +359,6 @@ function M.holdStrips(on, names)
     if not okCall or res ~= want then ok = false end
   end
   return ok
-end
-
--- Whether BeamNG.Earth believes a strip's app is on screen (its hudapps.mounted): true / false, nil when it cannot be
--- read. Internal, like hudApp above; only pauseStrips (a stopgap) reads it. Only an already loaded module is looked at
--- (package.loaded, not require), so this never loads BeamNG.Earth's code on its behalf.
-function M.stripMounted(name)
-  local h = package.loaded['beamngEarth/hudapps']
-  if not (type(h) == 'table' and h.mounted) then return nil end
-  local ok, on = pcall(h.mounted, name)
-  if not ok then return nil end
-  return on == true
 end
 
 -- Where the car is, from BeamNG.Earth's public API: { street, place, region, country }, each only when it has one.
