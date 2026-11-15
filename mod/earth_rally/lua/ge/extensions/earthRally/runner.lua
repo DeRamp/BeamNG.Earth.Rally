@@ -763,7 +763,9 @@ local function setupDressing()
   local corners = writer.stageCorners(run.line, run.cum, { startM = run.startM, finishM = run.finishM, mute = run.mute })
   local sites = dressing.plan({ line = run.line, cum = run.cum, startM = run.startM, finishM = run.finishM,
     junctions = js, marks = marks, corners = corners, cornerStartM = run.startM, cornerStepM = writer.NOTE_STEP_M,
-    seed = tostring(run.event.id) .. '/' .. tostring(run.stage.id) })
+    seed = tostring(run.event.id) .. '/' .. tostring(run.stage.id),
+    -- (the kinds the rally's map marks on any stage: none of those filled in by chance here)
+    mapKinds = events.markedKinds and events.markedKinds(run.event.id, run.event) or nil })
   local n = props.setDressing(sites, earth.toGeo)
   run.checks.dressing = string.format('%d site(s), %d junction(s) from the file (%d with side roads)', n, #js,
     withSides)

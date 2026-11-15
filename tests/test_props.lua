@@ -229,12 +229,12 @@ do
     end
     return { nodes = nodes }
   end }
-  -- a board on the right of a road running north, planned 2.7 m out against a half width of 3
-  local function board(along) return one('board', along, 2.7, { ex = 1, ey = 0, eo = 2.7, eh = 3 }) end
+  -- a board on the right of a road running north, planned 4 m out (1 m past the edge) against a half width of 3
+  local function board(along) return one('board', along, 4, { ex = 1, ey = 0, eo = 4, eh = 3 }) end
   props.setDressing({ board(100), one('tape', 120, 2.7) })
   props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
   local b, t = shapesLive('board.dae')[1], shapesLive('tape.dae')[1]
-  T.check(b and math.abs(b.pos[1] - 4.7) < 1e-6 and math.abs(b.pos[2] - 100) < 1e-6,
+  T.check(b and math.abs(b.pos[1] - 6) < 1e-6 and math.abs(b.pos[2] - 100) < 1e-6,
     'edge: on a road 5 m half wide, a board planned against 3 m moved out 2 m (' .. tostring(b and b.pos[1]) .. ')')
   T.check(t and math.abs(t.pos[1] - 2.7) < 1e-6, 'edge: an object not set from the edge left where it was')
   props.clear()
@@ -245,7 +245,7 @@ do
   props.reset()
   props.update({ x = -500, y = 0, z = 0 }, toGame, 0)
   b = shapesLive('board.dae')[1]
-  T.check(b and math.abs(b.pos[1] - (4.7 - 500)) < 1e-6,
+  T.check(b and math.abs(b.pos[1] - (6 - 500)) < 1e-6,
     'edge: kept as lat / lon, the way out follows the shift too (' .. tostring(b and b.pos[1]) .. ')')
   props.clear()
   ox = 0
@@ -254,26 +254,27 @@ do
   props.setDressing({ board(100) })
   props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
   b = shapesLive('board.dae')[1]
-  T.check(b and math.abs(b.pos[1] - 2.7) < 1e-6, 'edge: no road map there: as planned')
+  T.check(b and math.abs(b.pos[1] - 4) < 1e-6, 'edge: no road map there: as planned')
   props.clear()
 end
 
 -- 1.4.0 in game (the user, 2026-11-14). 1: an object set from the edge is not moved by a road found there that runs
--- another way (a Y-shaped hairpin's other branch): a road running east under a board on a road running north
+-- another way (a Y-shaped hairpin's other branch): a narrow road running east just beside a board on a road running
+-- north (1.6.0: beside it, not under it -- a board on a road is now pushed off it, below)
 do
   ox, oy = 0, 0
   map = { getMap = function()
     local nodes = {}
     for k = -5, 5 do
-      nodes['e' .. k] = { pos = { x = k * 20, y = 100, z = 0 }, radius = 7, links = {} }
+      nodes['e' .. k] = { pos = { x = k * 20, y = 101.5, z = 0 }, radius = 1, links = {} }
       if k > -5 then nodes['e' .. k].links['e' .. (k - 1)] = {} end
     end
     return { nodes = nodes }
   end }
-  props.setDressing({ one('board', 100, 2.7, { ex = 1, ey = 0, eo = 2.7, eh = 3 }) })
+  props.setDressing({ one('board', 100, 4, { ex = 1, ey = 0, eo = 4, eh = 3 }) })
   props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
   local b = shapesLive('board.dae')[1]
-  T.check(b and math.abs(b.pos[1] - 2.7) < 1e-6,
+  T.check(b and math.abs(b.pos[1] - 4) < 1e-6,
     'edge: a road across the object\'s road there (90 degrees off): not moved by its width (' .. tostring(b and b.pos[1]) .. ')')
   props.clear()
   -- 25 degrees off is still its road
@@ -286,10 +287,12 @@ do
     end
     return { nodes = nodes }
   end }
-  props.setDressing({ one('board', 100, 2.7, { ex = 1, ey = 0, eo = 2.7, eh = 3 }) })
+  props.setDressing({ one('board', 100, 4, { ex = 1, ey = 0, eo = 4, eh = 3 }) })
   props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
   b = shapesLive('board.dae')[1]
-  T.check(b and b.pos[1] > 3.5, 'edge: a road 25 degrees off still counts: moved out (' .. tostring(b and b.pos[1]) .. ')')
+  -- (1 m past that road's edge, square to it: 6 m from its centre line)
+  T.check(b and math.abs(b.pos[1] - 6 / math.cos(math.rad(25))) < 1e-6,
+    'edge: a road 25 degrees off still counts: moved out to 1 m past its edge (' .. tostring(b and b.pos[1]) .. ')')
   props.clear()
   map = nil
 end
@@ -523,24 +526,150 @@ end
 
 -- 4. The edge shift only from the stage's own road, found by position: a Y branch 15 degrees off whose centre line
 -- is 6 m from the planned stage-line point moves nothing; the stage road at a tight apex, 40 degrees off the
--- tangent but through the point, does
+-- tangent but through the point, does. (1.6.0: the branch a narrow one, 1.5 m half wide, so the board is not on it --
+-- one on it is pushed off, below -- and its width taken would pull the board in)
 do
   ox, oy = 0, 0
-  local function board() return one('board', 100, 2.7, { ex = 1, ey = 0, eo = 2.7, eh = 3 }) end
-  mapOf(straightRoad(6 / math.cos(math.rad(15)), 100, 15, 5))
+  local function board() return one('board', 100, 4, { ex = 1, ey = 0, eo = 4, eh = 3 }) end
+  mapOf(straightRoad(6 / math.cos(math.rad(15)), 100, 15, 1.5))
   props.setDressing({ board() })
   props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
   local b = shapesLive('board.dae')[1]
-  T.check(b and math.abs(b.pos[1] - 2.7) < 1e-6, 'edge: a Y branch 15 degrees off, 6 m away: not moved (' ..
+  T.check(b and math.abs(b.pos[1] - 4) < 1e-6, 'edge: a Y branch 15 degrees off, 6 m away: not moved (' ..
     tostring(b and b.pos[1]) .. ')')
   props.clear()
   mapOf(straightRoad(0, 100, 40, 5))
   props.setDressing({ board() })
   props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
   b = shapesLive('board.dae')[1]
-  T.check(b and math.abs(b.pos[1] - 4.7) < 1e-6, 'edge: the stage road at a tight apex, 40 degrees off: moved out 2 m (' ..
+  T.check(b and math.abs(b.pos[1] - 6 / math.cos(math.rad(40))) < 1e-6,
+    'edge: the stage road at a tight apex, 40 degrees off: moved out to 1 m past its edge (' ..
     tostring(b and b.pos[1]) .. ')')
   props.clear()
+  map = nil
+end
+
+-- 5. 1.6.0's note 6 (a roadside marshal on the road at Weaver Bend): the stage line off the road map's centre is
+-- allowed for, not only the road's width -- the road's centre 1.5 m right of the line (towards the board), and 3 m
+-- (beyond the 2 m looked within until then); a road 70 degrees off is not the stage's
+do
+  ox, oy = 0, 0
+  local function board() return one('board', 100, 4, { ex = 1, ey = 0, eo = 4, eh = 3 }) end
+  mapOf(straightRoad(1.5, 100, 0, 3))
+  props.setDressing({ board() })
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+  local b = shapesLive('board.dae')[1]
+  T.check(b and math.abs(b.pos[1] - 5.5) < 1e-6, 'edge: the line 1.5 m off the road\'s centre towards the board: ' ..
+    'the board still 1 m past the real edge (' .. tostring(b and b.pos[1]) .. ')')
+  props.clear()
+  mapOf(straightRoad(-1.5, 100, 0, 3))
+  props.setDressing({ board() })
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+  b = shapesLive('board.dae')[1]
+  T.check(b and math.abs(b.pos[1] - 2.5) < 1e-6, 'edge: the line 1.5 m off the other way: the board brought in to ' ..
+    '1 m past the edge (' .. tostring(b and b.pos[1]) .. ')')
+  props.clear()
+  mapOf(straightRoad(3, 100, 0, 3))
+  props.setDressing({ board() })
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+  b = shapesLive('board.dae')[1]
+  T.check(b and math.abs(b.pos[1] - 7) < 1e-6, 'edge: the road\'s centre 3 m off the line: still found, the board ' ..
+    '1 m past its edge (' .. tostring(b and b.pos[1]) .. ')')
+  props.clear()
+  T.check(props.DRESS_EDGE_NEAR_M == 4 and props.DRESS_EDGE_MAX_DEG == 60, 'edge: looked for within 4 m, 60 degrees')
+  map = nil
+end
+
+-- 6. The push off the road: a roadside marshal's table, chair and flag (one group) where a short road ends under the
+-- table go out together until all three clear it; a group a wide road covers whatever the push is left out, said
+-- once in the log; with no road map, as planned
+do
+  ox, oy = 0, 0
+  logs = {}
+  local function marshal()
+    local site = { kind = 'marshal', along = 100, from = 100, to = 100, objects = {} }
+    local function o(shape, x, y, eo, foot)
+      site.objects[#site.objects + 1] = { shape = shape, x = x, y = y, dx = 1, dy = 0, ex = 1, ey = 0, eo = eo, eh = 3,
+                                          grp = 'marshal', foot = foot }
+    end
+    o('table.dae', 3.9, 100, 3.9, 0.5)
+    o('chair.dae', 4.8, 100, 4.8, 0.3)
+    o('flag.dae', 3.9, 101.6, 3.9, 0.2)
+    return site
+  end
+  -- (the stage road north at x = 0, 3 m half wide, and a driveway's end from x = 2 to 5.95 along y = 100, 0.6 m)
+  local function drive()
+    return { d1 = { pos = { x = 2, y = 100, z = 0 }, radius = 0.6, links = { d2 = {} } },
+             d2 = { pos = { x = 5.95, y = 100, z = 0 }, radius = 0.6, links = {} } }
+  end
+  mapOf(straightRoad(0, 100, 0, 3), drive)
+  props.setDressing({ marshal() })
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+  local t, c, f = shapesLive('table.dae')[1], shapesLive('chair.dae')[1], shapesLive('flag.dae')[1]
+  -- (the table 0.6 + 0.3 + 0.5 = 1.4 m clear of the driveway's end at x = 5.95: at 7.4, a 3.5 m push in 0.5 m steps)
+  T.check(t and c and f and math.abs(t.pos[1] - 7.4) < 1e-6 and math.abs(c.pos[1] - 8.3) < 1e-6 and
+    math.abs(f.pos[1] - 7.4) < 1e-6, 'push: the whole group out together until the table clears the road (' ..
+    tostring(t and t.pos[1]) .. ', ' .. tostring(c and c.pos[1]) .. ', ' .. tostring(f and f.pos[1]) .. ')')
+  props.clear()
+  -- clear already: not moved
+  mapOf(straightRoad(0, 100, 0, 3))
+  props.setDressing({ marshal() })
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+  t = shapesLive('table.dae')[1]
+  T.check(t and math.abs(t.pos[1] - 3.9) < 1e-6, 'push: a group already clear of the road stays where it is')
+  props.clear()
+  -- a wide road beside the stage covering it however far it goes: the group left out, said once
+  mapOf(straightRoad(0, 100, 0, 3), straightRoad(9, 100, 0, 6))
+  props.setDressing({ marshal() })
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+  T.check(#shapesLive('table.dae') == 0 and #shapesLive('chair.dae') == 0 and #shapesLive('flag.dae') == 0,
+    'push: a group no push of 6 m clears: all of it left out')
+  T.check(logged('left out: on the road') == 1, 'push: said once in the log (' .. logged('left out: on the road') .. ')')
+  props.clear()
+  map = nil
+  props.setDressing({ marshal() })
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+  t = shapesLive('table.dae')[1]
+  T.check(t and math.abs(t.pos[1] - 3.9) < 1e-6, 'push: no road map: as planned')
+  props.clear()
+end
+
+-- 7. 1.6.0's note 8: a junction tape of unknown width planned, then refit at spawn as ONE tape about its true middle
+-- and split into pieces there -- on a 19 m side road centred on the plan, two pieces symmetric about the road; on one
+-- whose centre is 1.5 m off the plan's middle, re-centred on it
+do
+  ox, oy = 0, 0
+  local D = require('earthRally/dressing')
+  -- (the stage north along x = 0; a side road west from (0, 0), of unknown width)
+  local pl = D.plan({ line = { { x = 0, y = -100, z = 0 }, { x = 0, y = 100, z = 0 } }, startM = 0, finishM = 200,
+    junctions = { { along = 100, x = 0, y = 0, kind = 'straight', inDeg = 0, outDeg = 0, sides = { { deg = 270 } } } } })
+  local tapeSite
+  for _, s in ipairs(pl) do if s.kind == 'tape' then tapeSite = s end end
+  T.check(tapeSite and #tapeSite.objects == 1 and tapeSite.objects[1].refit, 'note 8: the plan gives the tape as one object')
+  local function span(sideY)
+    mapOf(straightRoad(-50, sideY, 270, 9.5))
+    props.setDressing({ tapeSite })
+    props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+    local lo, hi, n = math.huge, -math.huge, 0
+    for _, o in ipairs(shapesLive(D.SHAPES.tape10)) do
+      -- (the tape runs along -Y from its origin; +Y south here, so from the origin north, 10 m x its scale)
+      local sy = tonumber((o.fields.scale or '1 1 1'):match('^%S+ (%S+)')) or 1
+      lo, hi, n = math.min(lo, o.pos[2]), math.max(hi, o.pos[2] + 10 * sy), n + 1
+      T.check(math.abs(o.pos[1] + 8) < 1e-6, 'note 8: each piece across the side road 8 m in')
+    end
+    props.clear()
+    return lo, hi, n
+  end
+  local lo, hi, n = span(0)
+  T.check(n == 2 and math.abs(lo + hi) < 1e-6 and math.abs((hi - lo) - 20.5) < 1e-6,
+    'note 8: a two-piece tape on a 19 m side road centred on the plan: symmetric about it, 20.5 m (' ..
+    tostring(lo) .. ' .. ' .. tostring(hi) .. ')')
+  lo, hi, n = span(1.5)
+  T.check(n == 2 and math.abs((lo + hi) / 2 - 1.5) < 1e-6 and math.abs((hi - lo) - 20.5) < 1e-6,
+    'note 8: the side road\'s centre 1.5 m off the plan\'s middle: the tape re-centred on it (' ..
+    tostring(lo) .. ' .. ' .. tostring(hi) .. ')')
+  lo, hi, n = span(3)
+  T.check(n == 2 and math.abs(lo + hi) < 1e-6, 'note 8: 3 m off (beyond DRESS_TAPE_CENTRE_M): left about the plan\'s middle')
   map = nil
 end
 

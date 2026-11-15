@@ -151,7 +151,8 @@
           </div>
           <!-- The organisers' four kinds of point, from the stage's map (menu.lua, events.stageMarks), on the tiles'
                own grid: each one From the map (n marked: the dressing puts them there), Random (none marked: the
-               dressing places them, seeded per stage) or None (medical with none marked: never invented). An icon
+               dressing places them, seeded per stage) or None (medical with none marked: never invented; a radio or
+               spectator kind the rally marks on other stages only: none here, stg.marked). An icon
                and a word for each state, so nothing rests on colour (docs/mockups-1.6.0/stage-points.html). -->
           <template v-if="stg.marks">
             <div class="er-pts">
@@ -175,7 +176,9 @@
               <template v-else>
                 <template v-if="ptsHelp.rnd"><b>Random</b>: the map doesn't mark {{ ptsHelp.rnd }} on this stage, so they're placed for you where the stage has room.</template>
                 <template v-if="ptsHelp.rnd && ptsHelp.none">{{ " " }}</template>
-                <template v-if="ptsHelp.none"><b>None</b>: medical points only go where the organisers mark one.</template>
+                <template v-if="ptsHelp.none"><b>None</b>:</template>
+                <template v-if="ptsHelp.elsewhere">{{ " " }}this rally's map marks {{ ptsHelp.elsewhere }} on other stages but not this one, so there are none here.</template>
+                <template v-if="ptsHelp.medical">{{ " " }}{{ ptsHelp.elsewhere ? "And medical" : "medical" }} points only go where the organisers mark one.</template>
               </template>
             </div>
           </template>
@@ -426,23 +429,31 @@ const ssLine = computed(() => {
   return [ss, (s.rally || "").toUpperCase()].filter(Boolean).join(" · ")
 })
 // The points row under the tiles: each kind's state from the map's count -- n > 0 "map", 0 "rnd", except medical
-// "none" (the dressing never invents a medical point) -- and the one help line, naming only what is Random / None
+// "none" (the dressing never invents a medical point) and a radio / spectator kind the rally's map marks on another
+// stage, "none" too (stg.marked, events.markedKinds: the dressing puts none of it here; 1.6.0's note 5). Marshals stay
+// "rnd" at 0: the junction marshals at taped turns go up whatever the map marks. And the one help line, naming only
+// what is Random / None
 const PT_KINDS = [
   { key: "radio", label: "Radio", words: "radio points" },
   { key: "medical", label: "Medical", words: "medical points" },
   { key: "marshal", label: "Marshals", words: "marshal posts" },
   { key: "spectator", label: "Spectators", words: "spectator areas" },
 ]
-const ptState = (key, n) => (n > 0 ? "map" : key === "medical" ? "none" : "rnd")
+const ptState = (key, n, marked) =>
+  n > 0 ? "map" : key === "medical" ? "none" : key !== "marshal" && marked && marked[key] ? "none" : "rnd"
 const pts = computed(() => {
   const m = (stg.value && stg.value.marks) || {}
-  return PT_KINDS.map(k => ({ ...k, n: m[k.key] || 0, state: ptState(k.key, m[k.key] || 0) }))
+  const marked = (stg.value && stg.value.marked) || {}
+  return PT_KINDS.map(k => ({ ...k, n: m[k.key] || 0, state: ptState(k.key, m[k.key] || 0, marked) }))
 })
+const joinWords = (l, conj) => (l.length < 2 ? l.join("") : l.slice(0, -1).join(", ") + " " + conj + " " + l[l.length - 1])
 const ptsHelp = computed(() => {
   const rnd = pts.value.filter(p => p.state === "rnd").map(p => p.words)
-  const none = pts.value.some(p => p.state === "none")
-  const list = rnd.length < 2 ? rnd.join("") : rnd.slice(0, -1).join(", ") + " or " + rnd[rnd.length - 1]
-  return { rnd: list, none, all: !rnd.length && !none }
+  const none = pts.value.filter(p => p.state === "none")
+  const elsewhere = none.filter(p => p.key !== "medical").map(p => p.words)
+  const medical = none.some(p => p.key === "medical")
+  return { rnd: joinWords(rnd, "or"), none: none.length > 0, elsewhere: joinWords(elsewhere, "and"), medical,
+           all: !rnd.length && !none.length }
 })
 const runsShown = computed(() => {
   const runs = arr(stg.value && stg.value.runs)

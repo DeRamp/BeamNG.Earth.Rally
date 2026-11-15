@@ -163,6 +163,9 @@ function M.stageBase(e, s, i, arrival, autoRecce)
     -- marks the dressing reads as source = 'map', counted with its off-line and stage-span limits (on the map's
     -- line, where the dressing measures on the line driven: a point right at a limit can differ, nothing else)
     marks = events.stageMarks(e.id, s.id, s),
+    -- the kinds the rally's map marks on any of its stages (events.markedKinds): a kind marked elsewhere and not
+    -- here reads None, not Random -- the dressing puts none of it on this stage (1.6.0's note 5)
+    marked = events.markedKinds(e.id, e),
     -- the Auto recce button's own two answers: it is offered on a stage with no line, and when it cannot be
     -- offered at all the page says why beside it rather than greying it with nothing to read
     autoCan = st.status == 'none' or nil,

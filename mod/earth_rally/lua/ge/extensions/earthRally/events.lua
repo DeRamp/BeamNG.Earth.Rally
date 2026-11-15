@@ -287,9 +287,27 @@ function M.marks(eventId, stageId, stage)
   return out
 end
 
+-- The kinds of organisers' point the rally's map marks on ANY of its stages -- { radio = bool, medical = bool,
+-- spectator = bool, marshal = bool } -- counted from every stage's stored marks, wherever they lie (1.6.0's note 5:
+-- a kind marked anywhere in the rally is never filled in by chance on a stage that has none of it; dressing.plan's
+-- mapKinds, and the stage page's None). event: the event's table, if the caller has it (else found by its id).
+function M.markedKinds(eventId, event)
+  local out = { radio = false, medical = false, spectator = false, marshal = false }
+  if not event then
+    for _, e in ipairs(M.list()) do if e.id == eventId then event = e break end end
+  end
+  for _, s in ipairs(event and type(event.stages) == 'table' and event.stages or {}) do
+    for _, m in ipairs(M.marks(eventId, s.id, s)) do
+      if out[m.kind] ~= nil then out[m.kind] = true end
+    end
+  end
+  return out
+end
+
 -- For the stage page: how many of each kind of organisers' point the map marks on a stage --
 -- { radio = n, medical = n, spectator = n, marshal = n } (a kind it marks none of 0: the dressing fills it in, all but
--- medical, by chance). Counted with the dressing's own tests, on the map's line: within MARKS_OFF_LINE_M of it
+-- medical, by chance -- unless the rally marks that kind on another stage: markedKinds). Counted with the dressing's
+-- own tests, on the map's line: within MARKS_OFF_LINE_M of it
 -- (runner.MARKS_OFF_LINE_M) and from MARKS_SPAN_PAD_M before the start control to as far past the flying finish
 -- (dressing.plan's span; with no start / finish control on the line, its ends). The dressing measures on the line
 -- driven, which can lie a few metres from the map's, so a point right at one of those limits can still count here

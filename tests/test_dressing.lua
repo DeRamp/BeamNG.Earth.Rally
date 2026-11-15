@@ -157,12 +157,12 @@ do
   T.check(#r == 1 and r[1].source == 'map' and #r[1].objects == 7, 'radio: one point from the map, 7 objects')
   local o = r[1] and r[1].objects or {}
   local w, b = find(o, 'radioWarn')[1], find(o, 'radio')[1]
-  T.check(w and math.abs(w.x - 2.7) < 1e-6 and math.abs(w.y - (-125 + 28)) < 1e-6 and w.dy > 0.99,
-    'radio: warning 100 m before, on the right, +Y along the road')
+  T.check(w and math.abs(w.x - (3 + D.BOARD_OUT)) < 1e-6 and math.abs(w.y - (-125 + 28)) < 1e-6 and w.dy > 0.99,
+    'radio: warning 100 m before, on the right 1 m past the edge, +Y along the road')
   local cum = geo.cumulative(S)
   local p, dir = geo.pointAt(S, cum, 128)
   T.check(b and math.abs((b.x - p.x) * dir.x + (b.y - p.y) * dir.y) < 1e-6
-    and math.abs((b.x - p.x) * dir.y - (b.y - p.y) * dir.x - 2.7) < 1e-6, 'radio: the board at the point, beside the bend')
+    and math.abs((b.x - p.x) * dir.y - (b.y - p.y) * dir.x - (3 + D.BOARD_OUT)) < 1e-6, 'radio: the board at the point, beside the bend')
   local g = find(o, 'gazeboFrame')[1]
   local pg = geo.pointAt(S, cum, 134)
   T.near(g and len(g.x - pg.x, g.y - pg.y), 4.5, 1e-6, 'radio: the post 6 m after, its centre 1.5 m off the edge')
@@ -177,7 +177,7 @@ do
   local mw, mb = find(so, 'medicalWarn')[1], find(so, 'medical')[1]
   T.check(mw and math.abs(mw.y - (-125 + 36)) < 1e-6, 'shared: medical warning 8 m after the radio warning')
   local pm = geo.pointAt(S, cum, 136)
-  T.check(mb and len(mb.x - pm.x, mb.y - pm.y) < 3.2, 'shared: medical board 8 m after the radio board')
+  T.check(mb and len(mb.x - pm.x, mb.y - pm.y) < 3 + D.BOARD_OUT + 0.2, 'shared: medical board 8 m after the radio board')
   local gs = find(so, 'gazeboFrame')[1]
   local pp = geo.pointAt(S, cum, 142)
   T.near(gs and len(gs.x - pp.x, gs.y - pp.y), 4.5, 1e-6, 'shared: the post after the medical board')
@@ -306,7 +306,8 @@ do
   local t1 = ma[1] and find(ma[1].objects, 'table')[1]
   T.check(t1 and t1.x < -10, 'map marshal near a turn: behind the closed road\'s tape (the left road)')
   local t2 = ma[2] and find(ma[2].objects, 'table')[1]
-  T.check(t2 and math.abs(t2.x + 4.5) < 1e-6 and math.abs(t2.y - 2250) < 1e-6, 'map marshal on the road: off the edge, left as marked')
+  T.check(t2 and math.abs(t2.x + 3 + D.TENT_OUT - 0.6) < 1e-6 and math.abs(t2.y - 2250) < 1e-6,
+    'map marshal on the road: off the edge, left as marked')
   -- the map's medical point far from any radio point: alone, after its own warning
   input.marks = { { kind = 'medical', along = 8000, name = 'MIV' } }
   local m3 = D.plan(input)
@@ -471,14 +472,31 @@ do
 end
 
 -- 2. A marshal post from the map by the road: table and chair turned 90 degrees right of the road's way (as TENT)
+-- 1.6.0's note 6: as TENT on either side -- table and chair with their +Y out from the road (TENT's yaw 90 on the
+-- right), the table TENT_OUT - 0.6 past the edge, the chair 0.9 m behind it on the far side from the road; one group
 do
   local S = { V(0, 0), V(0, 600) }
-  local m = ofKind(D.plan({ line = S, startM = 0, finishM = 600,
-    marks = { { kind = 'marshal', along = 300, offLineM = 5 } } }), 'marshal')[1]
+  local function marshalAt(off)
+    return ofKind(D.plan({ line = S, startM = 0, finishM = 600,
+      marks = { { kind = 'marshal', along = 300, offLineM = off } } }), 'marshal')[1]
+  end
+  local m = marshalAt(5)
   local tbl, chr = m and find(m.objects, 'table')[1], m and find(m.objects, 'chair')[1]
   T.check(tbl and tbl.dx > 0.99 and chr and chr.dx > 0.99, 'roadside marshal: table and chair a quarter turn right of north')
+  T.check(tbl and math.abs(tbl.x - (3 + D.TENT_OUT - 0.6)) < 1e-6 and chr and math.abs(chr.x - (tbl.x + 0.9)) < 1e-6 and
+    math.abs(chr.y - tbl.y) < 1e-6, 'roadside marshal on the right: the chair behind the table, away from the road')
   local flg = m and find(m.objects, 'flag')[1]
   T.check(flg and flg.dy > 0.99, 'roadside marshal: the flag along the road as before')
+  local L = marshalAt(-5)
+  local lt, lc = L and find(L.objects, 'table')[1], L and find(L.objects, 'chair')[1]
+  T.check(lt and lt.dx < -0.99 and lc and lc.dx < -0.99 and math.abs(lt.x + (3 + D.TENT_OUT - 0.6)) < 1e-6 and
+    math.abs(lc.x - (lt.x - 0.9)) < 1e-6, 'roadside marshal on the left: mirrored, +Y out from the road (west), the ' ..
+    'chair behind the table on the far side (' .. tostring(lt and lt.dx) .. ', ' .. tostring(lc and lc.x) .. ')')
+  local grouped = true
+  for _, o in ipairs((m and m.objects or {})) do
+    if o.grp ~= 'marshal' or not o.eo or not o.foot then grouped = false end
+  end
+  T.check(grouped, 'roadside marshal: one group, every object set from the edge with its reach (props.lua pushes it)')
 end
 
 -- 3. The tape just past both edges: the next model up from the road's width + 1.5 m, stretched beyond 10 m; a side
@@ -508,14 +526,22 @@ do
   T.check(tapeOf(3).refit == nil, 'a known width: no fitting at spawn')
 end
 
--- 4. The direction boards 1 m beyond the road's edge; the radio / medical boards where they were
+-- 4. The direction boards 1 m beyond the road's edge; since 1.6.0's note 9 the radio / medical boards and their
+-- warnings too (until then 0.3 m inside it, as props' control boards, which stay so)
 do
   local long = { V(0, 0), V(0, 7000) }
-  local r = ofKind(D.plan({ line = long, startM = 0, finishM = 7000 }), 'radio')[1]
-  local rb = r and find(r.objects, 'radio')[1]
-  T.check(rb and math.abs(rb.x - (3 + D.BOARD_OUT)) < 1e-6, 'a radio board still just inside the edge (' ..
-    tostring(rb and rb.x) .. ')')
-  T.check(D.DIR_BOARD_OUT == 1.0 and D.BOARD_OUT == -0.3, 'DIR_BOARD_OUT 1 m; BOARD_OUT unchanged')
+  local r = ofKind(D.plan({ line = long, startM = 0, finishM = 7000, marks = { { kind = 'medical', along = 3000 } } }),
+    'radio')
+  local rb = r[1] and find(r[1].objects, 'radio')[1]
+  local rw = r[1] and find(r[1].objects, 'radioWarn')[1]
+  T.check(rb and math.abs(rb.x - 4) < 1e-6 and rw and math.abs(rw.x - 4) < 1e-6 and rb.eo == 4 and rb.eh == 3,
+    'a radio board and its warning 1 m past the edge (' .. tostring(rb and rb.x) .. ')')
+  local md = ofKind(D.plan({ line = long, startM = 0, finishM = 7000, mapKinds = { radio = true },
+    marks = { { kind = 'medical', along = 3000 } } }), 'medical')[1]
+  local mb, mw = md and find(md.objects, 'medical')[1], md and find(md.objects, 'medicalWarn')[1]
+  T.check(mb and math.abs(mb.x - 4) < 1e-6 and mw and math.abs(mw.x - 4) < 1e-6, 'a medical board and its warning too')
+  T.check(D.DIR_BOARD_OUT == 1.0 and D.BOARD_OUT == 1.0 and require('earthRally/props').BOARD_OUT_M == -0.3,
+    'DIR_BOARD_OUT and BOARD_OUT 1 m; the control boards (props.BOARD_OUT_M) unchanged')
 end
 
 ------------------------------------------------------------------------------------------ review round 2
@@ -579,8 +605,8 @@ do
     'tapePieces: one to 12.5 m, two beyond')
 end
 
--- 3. Hay bales, spectator tape and fence carry offRoad (props.lua drops one standing on a road it finds there);
--- nothing else does
+-- 3. Spectator tape and fence carry offRoad (props.lua drops one standing on a road it finds there); nothing else
+-- does -- since 1.6.0's notes 6 / 7 the hay bales are pushed out from the road one by one instead, as the posts are
 do
   local S = {}
   for k = 0, 36 do local a = math.rad(k * 5) S[#S + 1] = V(30 * math.cos(a), 30 * math.sin(a)) end
@@ -592,11 +618,16 @@ do
   local flagged, wrong = {}, 0
   for _, o in ipairs(sp and sp.objects or {}) do
     if o.offRoad then flagged[o.key] = (flagged[o.key] or 0) + 1 end
-    if o.offRoad and not (o.key == 'bale' or o.key == 'specTape' or o.key == 'fence') then wrong = wrong + 1 end
-    if not o.offRoad and (o.key == 'bale' or o.key == 'specTape' or o.key == 'fence') then wrong = wrong + 1 end
+    if o.offRoad and not (o.key == 'specTape' or o.key == 'fence') then wrong = wrong + 1 end
+    if not o.offRoad and (o.key == 'specTape' or o.key == 'fence') then wrong = wrong + 1 end
+    if o.key == 'bale' and not (o.eo and o.foot == D.FOOT.bale and o.grp == nil) then wrong = wrong + 1 end
+    if (o.key == 'gazeboFrame' or o.key == 'chair' or o.key == 'tarp') and o.grp ~= 'camp' then wrong = wrong + 1 end
   end
-  T.check(sp and (flagged.bale or 0) > 0 and (flagged.specTape or 0) > 0 and (flagged.fence or 0) > 0 and wrong == 0,
-    'spectators: bales, tape and fence flagged offRoad, nothing else (' .. wrong .. ')')
+  T.check(sp and (flagged.specTape or 0) > 0 and (flagged.fence or 0) > 0 and wrong == 0 and #find(sp.objects, 'bale') > 0,
+    'spectators: tape and fence flagged offRoad; bales each on their own, the camp one group (' .. wrong .. ')')
+  local b = sp and find(sp.objects, 'bale')[1]
+  T.check(b and D.BALE_OFF - D.FOOT.bale >= 0.7 and b.eo == 3 + D.BALE_OFF,
+    'bales: BALE_OFF past the edge, clear of it by their reach (' .. tostring(b and b.eo) .. ')')
 end
 
 ------------------------------------------------------------------------------------------ 1.6.0: the organisers' points
@@ -707,16 +738,30 @@ do
   T.check(tp and tp.x < 0, 'map spectator left of the line (offLineM < 0): its tape on the left (' .. tostring(tp and tp.x) .. ')')
   T.check(#ofKind(gulf, 'medical') == 0, 'map medical sharing the radio post: no post of its own')
 
-  -- (review round 3) a kind whose every map point lies outside the stage is filled in as if the map marked none --
-  -- medical still never is
+  -- (review round 3, then 1.6.0's note 5) a kind whose every map point lies outside the stage is still a kind the
+  -- rally's map marks: none of it here, not by chance; the junction marshals by rule all the same; medical never
   local outside = plan('rally/ss1', {
     { kind = 'radio', along = -500 }, { kind = 'spectator', along = 30500 }, { kind = 'marshal', along = -300 },
     { kind = 'medical', along = 31000 } })
-  T.check(key(outside, 'radio') == key(p1, 'radio') and ofKind(outside, 'radio')[1].source == 'rule',
-    'map radios all outside the stage: radio by chance, as with none')
-  T.check(key(outside, 'spectators') == key(p1, 'spectators') and key(outside, 'marshal') == key(p1, 'marshal'),
-    'map spectators / marshals all outside the stage: by chance, as with none')
+  T.check(#ofKind(outside, 'radio') == 0 and #ofKind(outside, 'spectators') == 0,
+    'map radios / spectators all outside the stage: none here, not by chance')
+  T.check(key(outside, 'marshal') == key(p1, 'marshal'), 'map marshals all outside the stage: the junction marshals as with none')
   T.check(#ofKind(outside, 'medical') == 0, 'a map medical point outside the stage: none, never one made up')
+
+  -- 1.6.0's note 5: per kind, per rally. The rally's map marks radio points on another stage (mapKinds): none on this
+  -- one; spectators it marks nowhere still by chance; the junction marshals at taped turns stay
+  local elsewhere = D.plan({ line = S, startM = 0, finishM = 30000, junctions = js, corners = corners, seed = 'rally/ss1',
+                             mapKinds = { radio = true, medical = true, spectator = false, marshal = true } })
+  T.check(#ofKind(elsewhere, 'radio') == 0, 'rally marks radios elsewhere: none on this stage')
+  T.check(key(elsewhere, 'spectators') == key(p1, 'spectators') and #ofKind(elsewhere, 'spectators') > 0,
+    'rally marks no spectators anywhere: still by chance, the same as before')
+  T.check(key(elsewhere, 'marshal') == key(p1, 'marshal') and #ofKind(elsewhere, 'marshal') > 0,
+    'rally marks marshals elsewhere: the junction marshals at taped turns still go up')
+  T.check(#ofKind(elsewhere, 'medical') == 0, 'and no medical point made up')
+  local specElsewhere = D.plan({ line = S, startM = 0, finishM = 30000, junctions = js, corners = corners,
+                                 seed = 'rally/ss1', mapKinds = { spectator = true } })
+  T.check(#ofKind(specElsewhere, 'spectators') == 0 and key(specElsewhere, 'radio') == key(p1, 'radio'),
+    'rally marks spectators elsewhere: none here; radio it marks nowhere still by chance')
 
   -- (review round 3) every turn that can have a marshal gets one, when none is within 1 km of another
   local sparse = {}
@@ -731,6 +776,73 @@ do
     if #ofKind(p, 'marshal') ~= #sparse then allOk = false end
   end
   T.check(allOk, 'random fill: a marshal at every turn 1.5 km apart, on every stage (' .. #sparse .. ' turns)')
+end
+
+------------------------------------------------------------------------------------------ 1.6.0's notes 7 and 9: merging
+-- Points of one kind within MERGE_M along the line (spectators and marshals: on one side) are one; a roadside marshal
+-- post within MARSHAL_NEAR_POST_M of a radio / medical point is left out
+do
+  local S = { V(0, 0), V(0, 3000) }
+  local function plan(marks, extra)
+    local input = { line = S, startM = 0, finishM = 3000, marks = marks, mapKinds = { radio = true, spectator = true } }
+    for k, v in pairs(extra or {}) do input[k] = v end
+    return D.plan(input)
+  end
+  local function spec(along, off) return { kind = 'spectator', along = along, offLineM = off or 20, name = 'S' .. along } end
+  T.check(D.MERGE_M == 100 and D.MARSHAL_NEAR_POST_M == 50, 'merging: 100 m of one kind, 50 m marshal to post')
+
+  -- spectators: two points 60 m apart on one side, one area over both, its apex in the middle (Weaver Bend's pair)
+  local two = ofKind(plan({ spec(1000), spec(1060) }), 'spectators')
+  T.check(#two == 1 and math.abs(two[1].along - 1030) < 1e-6 and two[1].from <= 1000 - D.SPEC_POINT_M + 1e-6 and
+    two[1].to >= 1060 + D.SPEC_POINT_M - 1e-6 and two[1].name == 'S1000',
+    'spectators 60 m apart: one area from before the first to past the last, apex between (' .. #two .. ')')
+  T.check(#find(two[1] and two[1].objects or {}, 'gazeboFrame') == 1, 'spectators merged: one gazebo')
+  -- a chain within 100 m each: one; its span held to SPEC_SPAN_MAX_M round the middle
+  local chain = ofKind(plan({ spec(1000), spec(1090), spec(1180) }), 'spectators')
+  T.check(#chain == 1 and math.abs(chain[1].along - 1090) < 1e-6 and chain[1].to - chain[1].from <= D.SPEC_SPAN_MAX_M + 1e-6,
+    'spectators in a chain 90 m apart: one area, no longer than SPEC_SPAN_MAX_M (' .. #chain .. ')')
+  T.check(#ofKind(plan({ spec(1000), spec(1250) }), 'spectators') == 2, 'spectators 250 m apart: two areas')
+  T.check(#ofKind(plan({ spec(1000, 20), spec(1040, -20) }), 'spectators') == 2,
+    'spectators 40 m apart on opposite sides: two areas')
+
+  -- radio: two 80 m apart one post, at the first; 150 m apart two
+  local r2 = ofKind(plan({ { kind = 'radio', along = 1000, name = 'R1' }, { kind = 'radio', along = 1080, name = 'R2' } }),
+    'radio')
+  T.check(#r2 == 1 and r2[1].along == 1000 and r2[1].name == 'R1', 'radio points 80 m apart: one post at the first')
+  T.check(#ofKind(plan({ { kind = 'radio', along = 1000 }, { kind = 'radio', along = 1150 } }), 'radio') == 2,
+    'radio points 150 m apart: two posts')
+  -- medical alone: two 70 m apart one post at the first
+  local m2 = ofKind(plan({ { kind = 'medical', along = 1500 }, { kind = 'medical', along = 1570 } }), 'medical')
+  T.check(#m2 == 1 and m2[1].along == 1500, 'medical points 70 m apart: one post at the first')
+  -- radio + medical: still one shared post within SHARE_M
+  local sh = plan({ { kind = 'radio', along = 1000 }, { kind = 'medical', along = 1040 } })
+  T.check(#ofKind(sh, 'radio') == 1 and ofKind(sh, 'radio')[1].shared and #ofKind(sh, 'medical') == 0,
+    'radio + medical 40 m apart: one shared post, as before')
+
+  -- marshals by the road: 50 m apart on one side one post at the first; on opposite sides two
+  local function mar(along, off) return { kind = 'marshal', along = along, offLineM = off or 8 } end
+  local mm = ofKind(plan({ mar(2000), mar(2050) }), 'marshal')
+  T.check(#mm == 1 and mm[1].along == 2000, 'roadside marshals 50 m apart: one post at the first')
+  T.check(#ofKind(plan({ mar(2000, 8), mar(2050, -8) }), 'marshal') == 2, 'roadside marshals on opposite sides: two')
+  -- a roadside marshal within 50 m of a radio / medical point: left out; 80 m away: kept
+  T.check(#ofKind(plan({ mar(1040), { kind = 'radio', along = 1000 } }), 'marshal') == 0,
+    'a roadside marshal 40 m from a radio point: left out (the post has its table and chair)')
+  T.check(#ofKind(plan({ mar(1530), { kind = 'medical', along = 1500 } }), 'marshal') == 0,
+    'a roadside marshal 30 m from a medical point: left out')
+  T.check(#ofKind(plan({ mar(1080), { kind = 'radio', along = 1000 } }), 'marshal') == 1,
+    'a roadside marshal 80 m from a radio point: kept')
+  -- the random radio points count too (the rally marks none anywhere: by chance)
+  local rr = ofKind(D.plan({ line = { V(0, 0), V(0, 9000) }, startM = 0, finishM = 9000, seed = 'm' }), 'radio')
+  local at = rr[1] and rr[1].along
+  local nearRandom = at and D.plan({ line = { V(0, 0), V(0, 9000) }, startM = 0, finishM = 9000, seed = 'm',
+    marks = { mar(at + 20) } })
+  T.check(at and #ofKind(nearRandom, 'marshal') == 0, 'a roadside marshal 20 m from a random radio point: left out')
+
+  -- merged() itself: the groups in order, each from its first to its last, sides apart
+  local g = D._merged({ { along = 0 }, { along = 90, offLineM = -1 }, { along = 95 }, { along = 300 } },
+    function(m) return (m.offLineM or 0) < 0 and -1 or 1 end)
+  T.check(#g == 3 and g[1].first == 0 and g[1].last == 95 and g[1].n == 2 and g[2].side == -1 and g[3].along == 300,
+    'merged: by side, within 100 m of the group\'s last point (' .. #g .. ')')
 end
 
 T.done('test_dressing')

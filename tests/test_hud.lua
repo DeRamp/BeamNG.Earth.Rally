@@ -367,6 +367,14 @@ do
   local m3 = s3.marks
   T.check(m3 and m3.radio == 0 and m3.medical == 0 and m3.spectator == 0 and m3.marshal == 0,
     'a stage the map marks nothing on: all four kinds, each 0')
+  -- 1.6.0's note 5: the kinds the rally's map marks on any stage, on every stage's page (a kind marked elsewhere and
+  -- not here reads None, not Random)
+  local k3 = s3.marked
+  T.check(k3 and k3.radio == true and k3.marshal == true and k3.medical == false and k3.spectator == false and
+    s.marked and s.marked.radio == true, 'marked: the rally\'s kinds, the same on a stage with none of its own')
+  local kz = events.markedKinds('nope')
+  T.check(kz.radio == false and kz.medical == false and kz.spectator == false and kz.marshal == false,
+    'markedKinds: an unknown rally marks nothing')
   T.check(menu.stage('ev', 'zzz') == nil and menu.rally('nope') == nil, 'unknown ids: nil')
 end
 

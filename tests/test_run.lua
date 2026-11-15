@@ -1456,6 +1456,11 @@ do
       'marks: the medical point after the bend, 6 m left (-) (' .. tostring(m2 and m2.offLineM) .. ')')
     T.check(seen and seen.seed == 'dressMarks/hill', 'the random fill seeded from the event and the stage (' ..
       tostring(seen and seen.seed) .. ')')
+    -- (1.6.0's note 5: the kinds the rally's map marks anywhere -- the far spectator point too -- handed over, so
+    -- none of them is filled in by chance)
+    local mk2 = seen and seen.mapKinds or {}
+    T.check(mk2.radio == true and mk2.medical == true and mk2.spectator == true and mk2.marshal == false,
+      'the kinds the rally marks handed to the plan (' .. tostring(mk2.spectator) .. ')')
     T.check(runner._marksOnLine ~= nil and #runner._marksOnLine({ { x = 0, y = 0 } }, { 0 }, mk, toGame) == 0,
       'marksOnLine: no line, no marks')
     runner.abort(true)

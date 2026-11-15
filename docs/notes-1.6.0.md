@@ -161,6 +161,16 @@ Open: per kind or any kind? (a) A rally that marks radios on some stage gets no 
 spectators if it marks no spectators anywhere; or (b) any point of any kind on any stage turns random off for every
 kind in that rally. Junction marshals at taped turns are dressing, not map points, so they stay either way.
 
+Fixed (per kind, per rally, as approved: (a)): `events.markedKinds` says which kinds the rally's map marks on any of
+its stages (every stored mark, wherever it lies); `runner.setupDressing` passes it to `dressing.plan` as `mapKinds`,
+and `plan` fills radio points and spectator areas by chance only for a kind the rally marks nowhere (a kind marked
+only outside this stage's span now counts as marked too: none, where review round 3 had made it random). Medical is
+still never random; the junction marshals at taped turns still go up whatever the map marks. The stage page gets
+`marked` (`menu.stageBase`), and `EarthRally.vue`'s `ptState` shows None for a radio / spectator kind marked on
+other stages only, its help line saying so ("this rally's map marks ... on other stages but not this one"); marshals
+at 0 still read Random (the junction marshals). Tests: `test_dressing` (mapKinds per kind, the outside-the-span case),
+`test_hud` (the page's `marked`), `test_run` (handed to the plan).
+
 ## 6. A roadside marshal on the road, its table and chair the wrong way (the user, 2026-11-15)
 
 "If a marshal is on the road, and isn't in an intersection, it should be OFF the road. Saw that on Early Weaver Bend.
@@ -180,6 +190,22 @@ Likely causes, to check:
   long edge runs along the road and the chair sits behind it on the far side, facing the road, on either side (to
   confirm which way the user wants it facing).
 
+Fixed: why the edge shift missed it -- it took only the road map's width less the planned one, never how far the
+stage line runs off the road's centre (towards the post: still on the tarmac), and it looked for the road within 2 m
+and 45 degrees of the line, so at a bend, where the map's chord lies further off, it found nothing and the post
+stayed where the one stage width put it; nothing then checked the post against the road's surface. Now props.lua's
+`edgeShift` sets an object as far from the real edge as it was planned from the assumed one (width AND the line's
+offset, over how square the way out is to that road), looking within `DRESS_EDGE_NEAR_M` 4 m and
+`DRESS_EDGE_MAX_DEG` 60 (the tape refit keeps 45: `DRESS_TAPE_MAX_DEG`); then every object set from the edge is held
+`DRESS_CLEAR_MARGIN_M` 0.3 m + its own reach (`dressing.FOOT`) clear of every road the map has there, its group
+(`grp`: a post's gazebo, table, chair and flag; a roadside marshal's three; the spectators' camp) pushed out
+together in 0.5 m steps up to `DRESS_PUSH_MAX_M` 6 m, and left out, said once in the log, where that does not clear
+it (`groupPush`). Boards and bales go on their own. Table and chair: `roadsideMarshal` now sets them as `TENT` on
+either side -- both with +Y out from the road (TENT's yaw 90 on the right, mirrored on the left), the table's long
+edge along the road `TENT_OUT - 0.6` past the edge, the chair 0.9 m behind it on the far side from the road; the
+junction marshal kept as note 2 left it. Tests: `test_props` 5-6 (the line's offset, 3 m off still found, the group
+pushed together, left out, no road map), `test_dressing` (either side).
+
 ## 7. Two spectator areas side by side, and on the road's edge (the user, 2026-11-15)
 
 "See the double spectator area, these should be merged into one. They also shouldn't stick onto the road like this."
@@ -196,6 +222,14 @@ gazebos one after the other on the right, the striped barrier/barrel row and the
   auto-recce line runs off the road's centre, they land on the tarmac. `BALE_CLEAR` only tests against the other roads'
   lines, with the same width. Same root cause as note 6; the same fix (measure the real edge at spawn, push out until
   clear, drop if it can't be) covers both.
+
+Fixed: the map's spectator points on one side within `MERGE_M` 100 m of each other are one area, from
+`SPEC_POINT_M` before the first to as far past the last, its apex in the middle, still held to `SPEC_SPAN_MAX_M`
+(`dressing.merged`, note 9's merge). On the road: note 6's edge fix (the real edge, the line's offset) sets the
+tape, fence and bales; the bales now stand `BALE_OFF` 1.5 m past the edge (was 1.2: clear of it by their 0.75 m
+reach) and are pushed off any road one by one, the camp as a group; the tape and fence, laid in runs, are still left
+out piece by piece where a road covers them. There is no spectator board in the plan: the "board" on the edge in the
+screenshot is most likely the striped barrier (the spectator tape) or a tarp. Tests: `test_dressing` (merging).
 
 ## 8. Junction tape long enough but off-centre: past the right edge, short of the left (the user, 2026-11-15)
 
@@ -215,6 +249,15 @@ Candidates, to check in this order:
   the centre from the nearest point on the road `alignedRoad` finds, within a metre or two.
 Test: a two-piece unknown-width tape refit against a road centred on the plan must come out symmetric about it.
 
+Fixed: the plan now gives a tape of unknown width as ONE object (the whole tape, its true ends), and props.lua's
+`refitTape` refits it once about its middle and splits it into one or two pieces there. (Checked: with an unknown
+width always planned as 8 m, such a tape was a single piece already, so the per-piece refit could not happen as
+things stood; it is closed off all the same.) The likelier cause, the second: the middle is now moved onto the
+centre line of the side road `alignedRoad` finds when that is within `DRESS_TAPE_CENTRE_M` 2 m along the tape, the
+cap (maxLen) shortened by twice the move so neither end reaches further towards the stage than the plan allowed.
+Tests: `test_props` 7 (planned in dressing, put down in props: on a 19 m side road two pieces symmetric about it,
+20.5 m; re-centred on one 1.5 m off; left alone at 3 m).
+
 ## 9. Warning boards too close to the road; merge any points that are right by each other (the user, 2026-11-15)
 
 "Warning signs are also too close to the road, move them further out please. Also if two points are right by each
@@ -230,3 +273,15 @@ other please merge them, this applies to all things." Logged, not acted on yet.
   add: a marshal post within ~50 m of a radio / medical post is dropped (that post already has its table and chair),
   and a map marshal near a junction turn already goes behind that turn's tape. Applies to map points and random ones
   alike. Distances to be judged in game; tests in `test_dressing` for each pairing.
+
+Fixed: `BOARD_OUT` is +1.0 m (was -0.3): the radio / medical boards and their warnings stand 1 m past the edge, as
+the tulip boards; props' control boards at the starts and finishes (`props.BOARD_OUT_M`) are unchanged, and there is
+no other stage board using it (the plan has no spectator board). Like every object set from the edge they also get
+note 6's real-edge fix and push. Merge (`dressing.merged`, before anything is placed): the map's points of one kind
+within `MERGE_M` 100 m along the line -- spectators and marshals on the same side, radio and medical posts always
+stand on the right -- are one: spectators one area over the span, radio, medical and marshal one post at the first.
+Radio + medical still share within `SHARE_M`. A roadside marshal post within `MARSHAL_NEAR_POST_M` 50 m of a radio
+or medical point (the map's or a random one) is left out; a map marshal at a turn still goes behind its tape, and
+the junction marshals at taped turns are not dropped (they stand up the closed road, not at the post). The random
+points need no merging among themselves (radio 4-6 km apart, spectators 4 km, junction marshals 1 km). Tests:
+`test_dressing` (each pairing, a chain, opposite sides, a random radio point).
