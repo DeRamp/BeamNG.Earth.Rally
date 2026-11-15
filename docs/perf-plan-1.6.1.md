@@ -1,6 +1,6 @@
 # Performance test plan, 1.6.1
 
-**Status: draft v3, waiting for approval.** Nothing in this plan runs in the game until it is approved.
+**Status: draft v4, waiting for approval.** Nothing in this plan runs in the game until it is approved.
 
 **Question:** what takes a player from 60 to 20 fps on a stage, and is it Earth Rally?
 
@@ -143,6 +143,67 @@ Repeat only the winning switch at the 4.6 km spot, to check it holds.
 
 **T7. The player's case (about 2 min)**
 * Repeat the winning A/B at the 2.3 km spot with a 60 fps cap, so it reads like 60 to 20.
+
+## Quick check, after every fix (about 5 min)
+
+The same short run each time, so fixes can be compared with each other:
+* Weaver Bend, the 2.3 km spot, settled.
+* `none` vs `running`, 3 pairs.
+* One 10 s arrival for the spawn spike.
+
+The first quick check runs on `main` before any fix, as the baseline.
+
+## Performance dashboard
+
+The point is to see each fix move the numbers, commit by commit.
+
+**Data**
+* `tools/perf_report.py` reads `earthRally/bench/*.json` and appends one summary line per capture to
+  `perf/history.jsonl`.
+* Each line holds:
+  * the commit, branch, whether the tree was dirty, and the date;
+  * the test, stage, spot, state and switch;
+  * the frame count, p50, p95 and p99, and frames over 33 and 50 ms;
+  * the spread between pairs;
+  * the engine category means, and each hook's max and mean;
+  * CPUBusy and GPUBusy when PresentMon ran.
+* Summaries only, a few KB a run, so `perf/history.jsonl` goes in git: the history travels with the code.
+  The raw frame files stay in the user folder.
+
+**Page**
+* `tools/perf_dashboard.py` writes `perf/dashboard.html`: one self-contained file, opened in a browser, no server.
+* It can also be published as a private claude.ai page to look at from another device.
+
+**Mock-up**
+
+```
+Earth Rally performance          Weaver Bend, 2.3 km   [state: running v]  [metric: p99 v]
+---------------------------------------------------------------------------------------
+ Frame time per commit (ms, lower is better)          60 fps ------  30 fps - - - -
+  40 |  o
+  30 |  |\                                           o = running   x = none (floor)
+  20 |  | o--o
+  10 |  |     \o---o
+   0 |  x--x--x--x--x
+       base  fix1 fix2 fix3 fix4
+       6ad8 1a2b 3c4d 5e6f 7a8b
+
+ Latest vs baseline      p50     p99    >50 ms/min   gap to floor
+   running             -4.1 ms -18.2 ms   -41          12 % left
+   spawn arrival         --    -60 ms     -9           --
+
+ Where the frame goes (running, latest)   Lua ##  Render ###  UI #  Present #######
+ Earth Rally hooks, max ms               props.update 3.2   runner.update 0.4   sendStreams 0.1
+ Last capture, frame trace (20 s)        _._.__|___._.__|__   (| = frame over 50 ms, hover: hooks that frame)
+```
+
+* **Trend:** p50 or p99 per commit, `running` against the `none` floor, with 60 and 30 fps lines.
+* **Latest vs baseline:** what the last fix gave back, and how much of the gap to the floor is left.
+* **Breakdown:** the engine categories as a stacked bar, then the Earth Rally hooks by max time.
+* **Trace:** the last capture's frame times, spikes marked, hover for the hook timings in that frame.
+* **A result inside the spread between pairs is grey**, marked "no change", so noise is never read as a win.
+
+**When:** built with the recorder, before the first in-game run, so the baseline lands in it.
 
 ## Out of scope
 
