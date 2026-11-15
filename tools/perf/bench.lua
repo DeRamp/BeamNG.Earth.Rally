@@ -141,7 +141,24 @@ local function counts()
   local r = runner.current()
   return { statics = staticCount(), nodes = nodeCount(), props = propCount(),
     startClock = rawget(_G, runner.CLOCK_EXT) ~= nil, layout = layoutNow(),
-    notesOn = r and r.state == 'running' or nil, streamHz = earthRally_main.STREAM_HZ }
+    notesOn = r and r.state == 'running' or nil, streamHz = earthRally_main.STREAM_HZ,
+    hudHz = earthRally_main.HUD_STREAM_HZ }
+end
+-- (what the frames were drawn at: the game's settings that move frame time, whatever this build calls them; a name
+-- the game has not is left out)
+local DISPLAY_KEYS = { 'GraphicOverallQuality', 'GraphicDisplayModes', 'GraphicDisplayResolutions', 'vsync',
+  'FPSLimiterEnabled', 'FPSLimiter', 'GraphicShadowsQuality', 'GraphicMeshQuality', 'GraphicTextureQuality',
+  'GraphicLightingQuality', 'GraphicPostfxQuality', 'GraphicAntialias', 'GraphicDynReflectionEnabled' }
+local function display()
+  local d = {}
+  for _, k in ipairs(DISPLAY_KEYS) do
+    local ok, v = pcall(settings.getValue, k)
+    if ok and v ~= nil then d[k] = v end
+  end
+  local okA, maj, mn = pcall(earth.apiVersion)
+  if okA then d.earthApi = maj and tostring(maj) .. (mn and ('.' .. tostring(mn)) or '') or nil end
+  d.earthRally = earthRally_main and earthRally_main.VERSION
+  return d
 end
 
 ------------------------------------------------------------------------------------------ state of the run
@@ -388,7 +405,7 @@ function B._endCapture(why)
   local res = {
     format = 2, suite = S and S.cfg.name, label = w.label, meta = w.meta, why = why,
     complete = why == 'time' or why == 'arrival',
-    startedAt = w.startedAt, quality = settings.getValue('GraphicOverallQuality'),
+    startedAt = w.startedAt, quality = settings.getValue('GraphicOverallQuality'), display = display(),
     frames = n, seconds = r2(sum / 1000), mean = n > 0 and r2(sum / n) or nil,
     p50 = r2(pct(s, 0.5)), p95 = r2(pct(s, 0.95)), p99 = r2(pct(s, 0.99)), max = r2(s[n]),
     over33 = o33, over50 = o50, engine = cats, hooks = hooks, spikes = w.spikes,
@@ -658,9 +675,11 @@ function OPS.record(st)
     if endAt and ms() >= endAt then break end
     n = n + 1
     local r = run()
-    local cnt = counts()
-    W = newCapture(string.format('drive-%02d', n), { test = 'drive', state = s, spot = r and r.along and math.floor(r.along),
-      switch = 'drive', value = s }, 0, st.seconds or 20, cnt)
+    local cnt = counts()      -- (also the last window's end: the windows are back to back)
+    local okL, loading = pcall(earth.loading)
+    W = newCapture(string.format('drive-%02d', n), { test = 'drive', state = s, switch = 'drive', value = s,
+      spot = r and r.along and r.startM and math.floor(r.along - r.startM) or nil,
+      layout = cnt.layout, startClock = cnt.startClock, loading = okL and loading or nil }, 0, st.seconds or 20, cnt)
     while W do coroutine.yield() end
   end
   note(string.format('drive: %d windows', n))

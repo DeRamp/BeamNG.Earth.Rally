@@ -201,18 +201,30 @@ end
 -- at a stretch of the stage. The cells only pick which nodes to look at: every test is still made on the node's own
 -- position, so the answer is the one a whole-map walk gives. Built when first asked for, and again when the map is
 -- another table, after onNavgraphReloaded or a world shift (M.mapChanged), or once it is IDX_MAX_AGE_S old (a node
--- moved in place, which nothing is known to do).
+-- moved in place, which nothing is known to do). A map of fewer than IDX_MIN_NODES nodes (BeamNG.Earth's navgraph
+-- round the car: about 250-300 in the 1.6.1 baseline) is walked whole as before, in the same order: its walk costs
+-- microseconds, and the index's lists would only add garbage.
 local IDX_CELL_M = 64
-local IDX_MAX_AGE_S = 30
+local IDX_MAX_AGE_S = 10
+local IDX_MIN_NODES = 2000
 local clock = rawget(os, 'clockhp') or os.clock
-local idx = nil      -- { nodes, at, cells = { [cell key] = { node name, ... } } }
+local idx = nil      -- { nodes, at, small, cells = { [cell key] = { node name, ... } } }
 local function cellKey(cx, cy) return (cx + 32768) * 65536 + (cy + 32768) end
 local function nodeIndex(nodes)
   local now = clock()
-  if idx and idx.nodes == nodes and now - idx.at <= IDX_MAX_AGE_S then return idx end
+  if idx and idx.nodes == nodes and now - idx.at <= IDX_MAX_AGE_S and now >= idx.at then return idx end
+  local n = 0
+  for _ in pairs(nodes) do
+    n = n + 1
+    if n >= IDX_MIN_NODES then break end
+  end
+  if n < IDX_MIN_NODES then
+    idx = { nodes = nodes, at = now, small = true }
+    return idx
+  end
   local cells = {}
-  for name, n in pairs(nodes) do
-    local p = n.pos
+  for name, nd in pairs(nodes) do
+    local p = nd.pos
     if p and p.x and p.y then
       local k = cellKey(math.floor(p.x / IDX_CELL_M), math.floor(p.y / IDX_CELL_M))
       local c = cells[k]
@@ -223,18 +235,22 @@ local function nodeIndex(nodes)
   idx = { nodes = nodes, at = now, cells = cells }
   return idx
 end
--- (the names of the nodes in the cells that (x, y) +- r touches: every node within r of it is among them)
-local function nodesNear(nodes, x, y, r)
-  local cells = nodeIndex(nodes).cells
-  local out = {}
+-- (the names of the nodes to look at for a point (x, y) +- r, as `for name in candidates(...)`: on a small map
+-- every node, in the map's own order; else those in the cells that (x, y) +- r touches, every node within r of it
+-- among them)
+local function candidates(nodes, x, y, r)
+  local ix = nodeIndex(nodes)
+  if ix.small then return next, nodes, nil end
+  local cells, out = ix.cells, {}
   for cx = math.floor((x - r) / IDX_CELL_M), math.floor((x + r) / IDX_CELL_M) do
     for cy = math.floor((y - r) / IDX_CELL_M), math.floor((y + r) / IDX_CELL_M) do
       local c = cells[cellKey(cx, cy)]
-      if c then for i = 1, #c do out[#out + 1] = c[i] end end
+      if c then for i = 1, #c do out[c[i]] = true end end
     end
   end
-  return out
+  return next, out, nil
 end
+M._IDX_MIN_NODES = IDX_MIN_NODES
 -- The road map has changed under the index (main.lua's onNavgraphReloaded, M.reset after a world shift).
 function M.mapChanged() idx = nil end
 
@@ -248,7 +264,7 @@ function M.roadAt(x, y, dir, snap)
   local best, bestScore = nil, math.huge
   local r2 = (snap + 40) ^ 2
   local dl = dir and math.sqrt(dir.x * dir.x + dir.y * dir.y) or 0
-  for _, na in ipairs(nodesNear(nodes, x, y, snap + 40)) do
+  for na in candidates(nodes, x, y, snap + 40) do
     local a = nodes[na]
     local pa = a and a.pos
     if pa and (pa.x - x) ^ 2 + (pa.y - y) ^ 2 <= r2 and a.links then
@@ -491,7 +507,7 @@ end
 -- the shift does), turned back into game coordinates (toGame) each time it is put down. Distances along the line do
 -- not change with a shift (runner.lua's line follows it), so the window needs nothing.
 M.DRESS_AHEAD_M = M.SPAWN_M
-M.DRESS_BEHIND_M = 200
+M.DRESS_BEHIND_M = 600
 M.DRESS_MAX_OBJS = 64        -- every dressing site's budget, whatever it asks for
 -- (objects put down a frame, a site carried on into the next: a whole window at once, after a shift, is a hitch, and
 -- one spectator area alone is 64 objects)
@@ -691,7 +707,7 @@ function M.roadCovers(x, y, margin)
   local nodes = mapNodes()
   if not nodes then return nil end
   margin = margin or 0
-  for _, na in ipairs(nodesNear(nodes, x, y, 250)) do
+  for na in candidates(nodes, x, y, 250) do
     local a = nodes[na]
     local pa = a and a.pos
     if pa and a.links and (pa.x - x) ^ 2 + (pa.y - y) ^ 2 <= 250 ^ 2 then
@@ -804,7 +820,7 @@ local function nearEdges(x, y, within)
   local nodes = mapNodes()
   if not nodes then return nil end
   local out = {}
-  for _, na in ipairs(nodesNear(nodes, x, y, 250)) do
+  for na in candidates(nodes, x, y, 250) do
     local a = nodes[na]
     local pa = a and a.pos
     if pa and a.links and (pa.x - x) ^ 2 + (pa.y - y) ^ 2 <= 250 ^ 2 then

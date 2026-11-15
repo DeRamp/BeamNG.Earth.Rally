@@ -94,7 +94,7 @@ def summary(cap, info, pm):
         "capture": cap["label"], "test": meta.get("test"), "spot": meta.get("spot"), "state": cap.get("state"),
         "switch": meta.get("switch"), "value": meta.get("value"), "pair": meta.get("pair"),
         "base": bool(meta.get("base")), "settleS": meta.get("settleS"), "groundS": meta.get("groundS"),
-        "layout": meta.get("layout"), "startClock": meta.get("startClock"), "quality": cap.get("quality"),
+        "layout": meta.get("layout"), "startClock": meta.get("startClock"), "quality": cap.get("quality"), "display": cap.get("display"), "loading": meta.get("loading"),
         "frames": cap.get("frames"), "mean": cap.get("mean"), "p50": cap.get("p50"),
         "p95": cap.get("p95"), "p99": cap.get("p99"), "max": cap.get("max"), "over33": cap.get("over33"),
         "over50": cap.get("over50"), "seconds": cap.get("seconds"), "gcKBs": cap.get("gcKBs"),

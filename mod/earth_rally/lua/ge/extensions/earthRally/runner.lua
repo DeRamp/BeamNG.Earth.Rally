@@ -1569,9 +1569,6 @@ function M.update(dtReal, dtSim)
   end
   if s == 'toAtc' or s == 'toStart' or s == 'waitStart' or (s == 'running' and (run.clock or 0) < 8) then
     feedStartClock()
-  elseif s == 'running' and run.clockExtOwned then
-    -- (1.6.1: no longer fed, and it kept its board and its checks running for the whole stage; ours to unload)
-    startClockOff()
   end
   -- the stage layout held while the run has it on: a car reloaded (Ctrl+R) or replaced mid-stage put the game's own
   -- layout back, and the progress bar, the finish time and the results card were gone (in game, 2026-11-13)
@@ -1829,16 +1826,19 @@ end
 -- each builds tables in BeamNG.Earth -- and the constants given as one table, not a new one each time)
 M.EARTH_ASK_S = 0.5
 local uiClock = rawget(os, 'clockhp') or os.clock
-local earthAsked, earthAt = nil, -math.huge
-local uiConsts = nil
+local earthAsked, earthAt, earthRun = nil, -math.huge, nil
+local uiConsts = {}
 function M.uiFrame()
   local t = uiClock()
-  if not earthAsked or t - earthAt >= M.EARTH_ASK_S or t < earthAt then
-    earthAsked, earthAt = { place = earth.place(), banner = earth.earthBanner(), loading = earth.loading() }, t
+  -- (asked afresh for a new run, so a new run never opens on the last one's place or banner)
+  if not earthAsked or earthRun ~= run or t - earthAt >= M.EARTH_ASK_S or t < earthAt then
+    earthAsked, earthAt, earthRun = { place = earth.place(), banner = earth.earthBanner(), loading = earth.loading() },
+      t, run
   end
-  uiConsts = uiConsts or { stoppedMs = M.STOPPED_MS, startZoneBeforeM = M.START_ZONE_BEFORE_M,
-    stopRadiusM = M.STOP_CONTROL_RADIUS_M, jumpStartS = M.JUMP_START_PENALTY_S, resetS = M.RESET_PENALTY_S,
-    missedAtcS = M.MISSED_TC_PENALTY_S }
+  -- (one table, its values read each time: a constant changed at run time still reaches the HUD)
+  local c = uiConsts
+  c.stoppedMs, c.startZoneBeforeM, c.stopRadiusM = M.STOPPED_MS, M.START_ZONE_BEFORE_M, M.STOP_CONTROL_RADIUS_M
+  c.jumpStartS, c.resetS, c.missedAtcS = M.JUMP_START_PENALTY_S, M.RESET_PENALTY_S, M.MISSED_TC_PENALTY_S
   return hudFrame.build(run, {
     now = M.clock() or 0, speed = run and speed() or 0, canSkip = M.canSkip(), units = settings.get('units'),
     uiHidden = M.uiHidden, place = earthAsked.place, earthBanner = earthAsked.banner, loading = earthAsked.loading,
