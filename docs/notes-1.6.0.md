@@ -179,3 +179,20 @@ Likely causes, to check:
   right of the road and the opposite way relative to the road on the left. Proposed: turn with the side so the table's
   long edge runs along the road and the chair sits behind it on the far side, facing the road, on either side (to
   confirm which way the user wants it facing).
+
+## 7. Two spectator areas side by side, and on the road's edge (the user, 2026-11-15)
+
+"See the double spectator area, these should be merged into one. They also shouldn't stick onto the road like this."
+Logged, not acted on yet. Seen on Overmountain Weaver Bend, 1.7 mi in, about 35.94061 N, 82.94383 W (screenshot: two
+gazebos one after the other on the right, the striped barrier/barrel row and the spectator board on the road's edge).
+
+- **Doubled:** every spectator point on the organisers' map becomes its own area (`dressing.lua` ~797-804, each
+  `m.along ± SPEC_POINT_M` 20 m). The map has two (or more) spectator points a few tens of metres apart for one
+  spectator area, so two gazebos go up. Nothing merges them; `props.setDressing` deduplicates only identical keys.
+  Proposed: before placing, group the map's spectator points on the same side whose spans overlap or lie within ~100 m,
+  and make one area from the first to the last (its apex the middle, still capped at `SPEC_SPAN_MAX_M`).
+- **On the road:** the bales/barrels go `BALE_OFF` 1.2 m past the edge the mod assumes, and the spectator board at
+  `BOARD_OUT`, with that edge taken from one road width for the whole stage (`L.half`). On a wider road, or where the
+  auto-recce line runs off the road's centre, they land on the tarmac. `BALE_CLEAR` only tests against the other roads'
+  lines, with the same width. Same root cause as note 6; the same fix (measure the real edge at spawn, push out until
+  clear, drop if it can't be) covers both.
