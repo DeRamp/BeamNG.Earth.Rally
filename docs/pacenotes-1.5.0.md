@@ -39,7 +39,7 @@ from the next run (a retry builds them again).
 | brake over crest | a crest just before a corner with a caution (not a care; and one caution more) | before the corner |
 | dip, bad dip, through dip | the grade change upward: 14 % (18 % on its own), bad at 22 % | before / in / after a corner, or its own note |
 | up, down | 8 % or steeper for 100 m or more, on the first corner that ends on it with 60 m of it still to come | after the corner |
-| down (at the top) | a crest at the top of a downhill from flat road (the user's third drive: "a downhill from a flat will be called an over crest, this should be a down"): the road before it within 4 % either way over 60 m, the road after it falling 6 % on average over 100 m; not a big crest (hidden from under 1 s on), which is still a crest to be warned of. In place of the crest, its corner shape ("over crest") or a keep over crest; that descent's own "down" is not said again. A voice with no "down" (the casual ones) hears the crest | before / after / in a corner, or its own note |
+| down (at the top) | a crest at the top of a downhill from flat road (the user's third drive: "a downhill from a flat will be called an over crest, this should be a down"): the road before it within 4 % either way over 60 m, the road after it falling 6 % on average over 100 m; not a big crest (hidden from under 1 s on), which is still a crest to be warned of. In place of the crest, its corner shape ("over crest") or a keep over crest; a corner that tightens over it is "tightens down", with the caution it would have over a crest. The descent is said once: at its top, or as the hill's own "down", whichever comes first. (The 6 % average is gentler than a hill's 8 % all the way: most of these are on descents no "down" was said on before.) A voice with no "down" (the casual ones) hears the crest | before / after / in a corner, or its own note |
 | keep left / right over crest | a fork on a crest | its own note |
 | narrows | the road's width ahead at most 70 % of the 200 m behind, 1 m (half width) less, and narrow at the point | as a junction: on the corner, or its own note |
 | over finish | on the note ending last if it is within 100 m of the finish, else a note of its own | the game's own stages all do it |
@@ -89,13 +89,14 @@ the mod's choice, which could change).
   33 % / 45 % (from the sight alone, a downhill from flat said "down"; 40 % / 48 % with those as crests; 65 % / 44 % with the grade's crests and the sight's at 0.3 m, the build of the
   second drive; 46 % / 43 % from the grade alone); opens 40 % / 41 %; tightens 18 % / 43 %; cautions 19 % / 21 % (a care on every corner: 12 %). The drivelines have a node only every 14-40 m, so a sharp hump between two is
   not in them: the jump and dip rows are a floor, and say little (the game calls 34 jumps, we 2). Hills, which that
-  spacing does show: 2 of our 30 where the game has one of its 18.
+  spacing does show: 3 of our 41 where the game has one of its 18 (2 of 30 before "down" at the top of a
+  downhill: the game's stages mostly call those spots crests).
 - `python tools/pacenote_survey.py <earthRally folder>`: rates per km over the user's matched stages, a line saved
   under two names counted once (93 stages, 1,299 km): 6.13 notes / km, 4.74 corners / km (long sweepers among
-  them), cautions on 6.7 % of corners (the game's own stages: 8.1 % of corner notes), crests 0.77 / km in all
+  them), cautions on 6.8 % of corners (the game's own stages: 8.1 % of corner notes), crests 0.76 / km in all
   (shapes included; 1.6 / km in the build of the second drive, 1 / km from the grade alone), jumps 0.03 / km (3 big ones in all), dips 0.12 / km, hairpins 0.14 / km, square 0.10 / km, up / down
-  0.20 / km (0.11 before "down" at the top of a downhill). On the 28 lines the game matched (295 km): crest calls
-  0.64 / km, and "down" 0.23 / km (the
+  0.21 / km (0.11 before "down" at the top of a downhill). On the 28 lines the game matched (295 km): crest calls
+  0.65 / km, and "down" 0.23 / km (the
   second drive's build, d13c1f0: 1.5, "too many ... crests the driver can see right over"; the grade alone: 0.51;
   the game's own stages: 1.38). Shadow buck: 1 in 7.5 km, from 15, and "down" 4 times (660,
   825, 1,160 and 4,165 m, each a crest before). The sight figures, before the two reviews'

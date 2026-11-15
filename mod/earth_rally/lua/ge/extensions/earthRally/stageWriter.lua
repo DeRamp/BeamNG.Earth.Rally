@@ -242,14 +242,24 @@ function M.build(line, opts)
       local shape = pacenotes.shape(c, k, step)
       -- (a crest inside the corner is part of its shape: "over crest", "tightens over crest", "opens over crest" --
       --  when the voice says corner shapes; one that does not (the casual ones) hears "over crest" after the corner)
-      local over = nil
+      local over, downIn = nil, nil
       for _, ev in ipairs(events) do
-        if not ev.used and ev.kind == 'crest' and ev.i >= c.i0 and ev.i <= c.i1 and not rimSaid(ev) and not asDown(ev) then
-          over = shape == nil and 'overCrest' or shape == 'tightens' and 'tightensOverCrest' or
-                 shape == 'opens' and 'opensOverCrest' or nil
-          if over and saidShape(over) then shape, ev.used = over, true end
-          break
+        if not ev.used and ev.kind == 'crest' and ev.i >= c.i0 and ev.i <= c.i1 and not rimSaid(ev) then
+          if asDown(ev) then
+            downIn = downIn or ev
+          else
+            over = shape == nil and 'overCrest' or shape == 'tightens' and 'tightensOverCrest' or
+                   shape == 'opens' and 'opensOverCrest' or nil
+            if over and saidShape(over) then shape, ev.used = over, true end
+            break
+          end
         end
+      end
+      -- (a corner that tightens over the top of a downhill from flat road: "tightens down", that descent's "down"
+      --  said in it; and its caution as for one that tightens over a crest -- the top is as blind)
+      if shape == 'tightens' and downIn then
+        over = 'tightensOverCrest'
+        if saidShape('tightensDown') then shape, downIn.used, downIn.downSaid = 'tightensDown', true, true end
       end
       if shape == 'tightens' and grade and saidShape('tightensDown') then
         local g = 0
@@ -357,7 +367,7 @@ function M.build(line, opts)
         f.alone = f.pre
       elseif ev.kind == 'crest' and asDown(ev) then
         f.prio = M.PRIORITY.crest
-        f.pre, f.within, f.post, f.alone = 'down', 'down', 'down', 'down'
+        f.pre, f.within, f.post, f.alone, f.descent = 'down', 'down', 'down', 'down', ev
       elseif ev.kind == 'crest' then
         f.prio = M.PRIORITY.crest
         f.pre = big and 'bigCrest' or (ev.size == 'small' and 'smallCrest' or 'crest')
@@ -379,13 +389,13 @@ function M.build(line, opts)
   --  corner's end, and one the stage starts on or that begins in a stretch with no road, alike)
   local ahead = math.ceil(M.HILL_AHEAD_M / step)
   for _, h in ipairs(hills) do
-    -- (a descent already said as "down" at its top: not again)
-    local saidAtTop = h.fromCrest and asDown(h.fromCrest)
+    -- (a descent that has a "down" at its top too: one of the two said, whichever comes first -- `descent`)
+    local descent = h.fromCrest and asDown(h.fromCrest) and h.fromCrest or nil
     for _, c in ipairs(corners) do
       local i = math.min(math.max(c.i0, h.i0), c.i1)
-      if not saidAtTop and c.i1 + ha >= h.i0 and c.i1 <= h.i1 - ahead and callable(i) then
+      if c.i1 + ha >= h.i0 and c.i1 <= h.i1 - ahead and callable(i) then
         features[#features + 1] = { i = i, post = h.kind, within = h.kind, prio = M.PRIORITY.hill,
-                                    before = 0, after = ha }
+                                    before = 0, after = ha, descent = descent }
         break
       end
     end
@@ -395,7 +405,9 @@ function M.build(line, opts)
     if a.prio ~= b.prio then return a.prio > b.prio end
     return tostring(a.alone or a.pre or a.post) < tostring(b.alone or b.pre or b.post)
   end)
-  for _, f in ipairs(features) do place(f) end
+  for _, f in ipairs(features) do
+    if not (f.descent and f.descent.downSaid) and place(f) and f.descent then f.descent.downSaid = true end
+  end
 
   table.sort(entries, function(a, b)
     if a.i0 ~= b.i0 then return a.i0 < b.i0 end

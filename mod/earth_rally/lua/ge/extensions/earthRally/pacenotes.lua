@@ -558,15 +558,13 @@ function M.heights(pts, step, v)
     end
   end
   -- (a crest at the top of a downhill from flat road: "down")
+  -- (the grades straight off the heights each side of the top: the centred grade would take some of the descent
+  --  into the road before it)
   local fb, fa = max(1, floor(M.FLAT_M / step + 0.5)), max(1, floor(M.HILL_M / step + 0.5))
-  local function mean(a, b)
-    local s = 0
-    for j = a, b do s = s + grade[j] end
-    return s / (b - a + 1)
-  end
   for _, ev in ipairs(events) do
     if ev.kind == 'crest' and ev.size ~= 'big' and ev.i - fb >= 1 and ev.i + fa <= n then
-      local before, after = mean(ev.i - fb, ev.i - 1), mean(ev.i + 1, ev.i + fa)
+      local before = (z[ev.i] - z[ev.i - fb]) / (fb * step)
+      local after = (z[ev.i + fa] - z[ev.i]) / (fa * step)
       if abs(before) <= M.FLAT_GRADE and after <= -M.DOWN_FROM_FLAT_GRADE then
         ev.down = true
         for _, h in ipairs(hills) do

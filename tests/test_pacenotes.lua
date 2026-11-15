@@ -351,6 +351,16 @@ do
   local fdCas = notes(writer.build(fdLine, { startM = 0, finishM = 1e9, quatFn = qf, speaks = { finish = true, crest = true, smallCrest = true, bigCrest = true, overCrest = true, intoCrest = true } }))
   T.check(not has(fdCas, 'down') and has(fdCas, 'rest'), 'the same, a voice with no "down": the crest (' ..
     show(fdCas) .. ')')
+  -- (its review: a corner that tightens over such a top keeps the caution it had over a crest, and says the
+  --  descent once)
+  local tdLine = road({ { 'straight', 650 }, { 'curve', { { 120, 25 }, { 40, 45 } } }, { 'straight', 900 } },
+    ease(0, -0.10, 690, 40))
+  local tdc = notes(build(tdLine))
+  local nDown = 0
+  for _, n in ipairs(tdc) do for _ in n:gmatch('[Dd]own') do nDown = nDown + 1 end end
+  T.check(not has(tdc, 'rest') and nDown == 1, 'a corner tightening over the top of a downhill from flat: "down" ' ..
+    'once, no crest (' .. show(tdc) .. ')')
+  T.check(has(tdc, 'caution[23]') and has(tdc, 'tightens'), 'and a caution as over a crest (' .. show(tdc) .. ')')
   local upDown = notes(build(road({ { 'straight', 1600 } }, ease(0.10, -0.10, 700, 80))))
   T.check(has(upDown, 'rest') or has(upDown, 'ump'), 'a 10 % climb over the top into a 10 % downhill: a crest (' ..
     show(upDown) .. ')')
