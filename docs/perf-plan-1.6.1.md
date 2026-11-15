@@ -1,6 +1,6 @@
 # Performance test plan, 1.6.1
 
-**Status: draft, waiting for approval.** Nothing in this plan runs in the game until it is approved.
+**Status: draft v2, waiting for approval.** Nothing in this plan runs in the game until it is approved.
 
 **Question:** what takes a player from 60 to 20 fps on a stage, and is it Earth Rally?
 
@@ -9,11 +9,10 @@
 * **Idle, mod loaded vs unloaded:** no difference. The mod costs nothing until a stage is on.
 * **On the start line (waitStart):** 156-166 fps.
 * **Clock running, car stopped 32 m in:** 82 fps, p99 32 ms.
-* **1.7 km in:** 30 fps, with 731 frames over 50 ms in 10 s.
-* **After the run (state none):** 23 fps.
+* **1.7 km in:** 30 fps, with 731 frames over 50 ms in 10 s. **After the run:** 23 fps.
 * **Lua is not the bulk of it:** 2-4 ms a frame, render about 2 ms, UI JS tiny. Lua spikes reach 74-164 ms.
-* **Already cheap:** `props.update` (mean 0.01 ms), `runner.update` (0.04 ms), `roadAt` (0.06 ms).
-* **Not reliable:** those runs teleported the car and polled the game over MCP every 10 s. They show where to look, not the answer.
+* **Not reliable:** those runs drove or stepped the car down the stage and polled over MCP. Moving the car makes
+  BeamNG.Earth load the world, which hides whatever the mod costs.
 
 ## What the research says (deep research, 2026-11-15)
 
@@ -23,63 +22,76 @@
   * UI data sent every frame ("really bad").
   * Table and vector churn (GC spikes).
   * Dynamic or animated statics, which lose batching.
-* **Engine-wide first:** PresentMon logs FrameTime, CPUBusy and GPUBusy per frame. That says whether a drop is CPU or GPU
-  bound, which in-game numbers cannot.
+* **Engine-wide first:** PresentMon logs CPUBusy and GPUBusy per frame, which says whether a drop is CPU or GPU bound.
 * **Judge by slow frames:** p50, p95, p99 frame time, A/B alternated, one tool for every run.
-* **Not settled by research:** how big any of these costs is in BeamNG. Every forum figure failed verification. We measure it.
+* **Not settled by research:** how big any of these costs is in BeamNG. We measure it.
 
 ## Suspects from the code audit
 
 | # | Suspect | Where | Why it fits |
 |---|---|---|---|
 | 1 | World still loading after the run's teleport and origin move | `runner.lua:485` | Steady fall, stays low after `tidy()`, Lua flat |
-| 2 | Stock stage apps switched on at GO, timing streamed at 30 Hz | `hudFrame.lua:226-247`, `main.lua:1006` | Only change that lines up exactly with GO |
+| 2 | Stock stage apps switched on at GO, timing streamed at 30 Hz | `hudFrame.lua:232`, `main.lua:1006` | Only change that lines up exactly with GO |
 | 3 | Dressing spawn bursts: whole road-graph scans, up to 24 objects a frame | `props.lua:942`, `:454` | The 74-164 ms spikes; grows as the graph grows |
 | 4 | Stock start clock rescanning every TSStatic once a second | `gameplay/rallyStartClock.lua:476` | Thousands of statics on Earth; may outlive the run |
-| 5 | Co-driver engine switched on at GO | `rallyAdapter.lua:93` | Starts at GO; should already be inside the Lua number |
-| 6 | Stage layout re-applied every second if something flips it | `runner.lua:1584-1597` | Each swap rebuilds every CEF app |
+| 5 | Co-driver engine switched on at GO | `rallyAdapter.lua:93` | Starts at GO |
+| 6 | Stage layout re-applied every second if something flips it | `runner.lua:1584` | Each swap rebuilds every CEF app |
 | 7 | Traffic and parked cars back after the run | `runner.lua:903` | Would explain 23 fps after the run |
 
 No per-run leak was found.
+
+## The stage and the spots
+
+* **Stage:** Overmountain Rally 2026, **Weaver Bend** (6.8 km, 733 points, one piece).
+  Fallback if it will not load: **Low Gap** (7.0 km).
+* **Three spots:** the start line (0 m), 2.3 km and 4.6 km.
+* **No driving.** The car stands still at every capture. It moves only by one teleport per spot.
+* **A teleport is never inside a measurement.** After each one, a settle gate must pass before capturing:
+  * BeamNG.Earth reports nothing loading (`earth.loading()` nil);
+  * the TSStatic count is unchanged for 5 s;
+  * the rolling 5 s median frame time is within 5 % of the 5 s before.
+
+  Gate timeout 120 s. If it times out, the spot is logged as "did not settle" and skipped, not measured.
+* **Every A/B pair is at the same spot**, after the same settle. Spots are never compared with each other.
 
 ## Method, for every test
 
 * **Recorder in the game** writes JSON to `earthRally/bench/`. It records:
   * `hptimer` frame gaps;
   * the engine's time categories;
-  * max (not just mean) time around each Earth Rally hook;
+  * the max (not just the mean) time around each Earth Rally hook;
   * memory churn;
-  * the TSStatic count and the road-graph node count;
+  * the TSStatic count and road-graph node count;
   * BeamNG.Earth loading status.
 
-  MCP only starts it, and those frames are dropped. No polling.
+  It runs the whole scripted test by itself; MCP only starts it, and those frames are dropped. No polling.
+* **Bench hook (test-only, not shipped):** `benchPlace(alongM)` teleports through BeamNG.Earth and sets
+  `run.prevAlong`, so the run keeps following. Progress is only searched 600 m ahead (`FOLLOW_AHEAD_M`), so a
+  plain teleport would put the run off route.
 * **PresentMon** runs beside it for CPUBusy and GPUBusy. It is not installed: needs your OK to download.
   Without it, Optick and the engine categories stand in.
-* **The AI drives** (`erdrive.lua`). No teleports while measuring. The mod's own **Go to start** resets between drives.
-* **Each capture:** 10 s warm-up, then 30 s capture, one change at a time, alternated A B A B, 3 pairs.
+* **Each capture:** 5 s warm-up, then 20 s capture. One change at a time, alternated A B A B, 3 pairs.
 * **Report:** p50, p95 and p99 frame time, frames over 33 and 50 ms, and the spread between pairs.
 * **A cause counts** when removing it gives back more than 20 % of the gap, outside the spread between pairs.
-* **Controls:** vivace, Low preset, vsync off, background fps limit off, power plan max, BeamNG.Earth not loading
-  (`earth.loading()` nil) before each capture.
-* **Every background script** gets a stall timeout and a total timeout, and reports when it ends.
+* **Controls:** vivace, Low preset, vsync off, background fps limit off, power plan max, camera fixed.
+* **The Python watcher** reads the progress file and has a stall timeout of 60 s and a total timeout of 15 min. It
+  says when it ends.
 
-## The tests, in order
+## The tests, in order (about 30 min of game time)
 
-**T1. Is it the world or the mod? (about 8 min)** Suspect 1, first, because a world still loading looks like a leak and
-spoils everything after it.
-* A: start a run, sit in waitStart for 3 min, no skip.
-* B: freeroam at the same start, no run, 3 min.
-* Log fps, Earth loading status and the TSStatic count every second.
-* Same fall in both: the mod is cleared of the trend, and later tests wait until the world has settled.
+**T1. Is it the world or the mod? (about 6 min)** Suspect 1 goes first, because a world still loading looks like a leak.
+* A: teleport to the start line in freeroam, no run. Log for 2 min.
+* B: start a Weaver Bend run from the menu, sit in waitStart. Log for 2 min.
+* Same fall in both: the world is the trend, and the settle gate handles it.
+* Also gives the real settle time, which sets the gate.
 
-**T2. Where does a slow frame go? (about 3 min)**
-* One Optick capture of 10 s on the stage, run active, after T1's settle time.
-* One capture of the same stretch with no run.
-* Read: main thread vs render vs GPU wait; which Lua extension; whether CEF shows.
-* Names the suspects worth T3.
+**T2. Where does a slow frame go? (about 3 min)** At the 2.3 km spot, settled, clock running:
+* one Optick capture of 10 s with the run;
+* one Optick capture of 10 s with the run aborted, same spot.
 
-**T3. What does GO switch on? (about 10 min)** Car stopped 300 m in, clock running, world settled. Take one thing away
-at a time:
+Read: main thread vs render vs GPU wait; which Lua extension; whether CEF shows.
+
+**T3. What does GO switch on? (about 12 min)** At the 2.3 km spot, settled, clock running. Take one thing away at a time:
 1. HUD streams: `earthRally_main.STREAM_HZ` 30 vs 1.
 2. Stock stage apps: stage layout vs plain layout.
 3. Co-driver: `rallyAdapter.notesOn(true)` vs `(false)`.
@@ -87,26 +99,26 @@ at a time:
 5. Props: shown vs hidden.
 
 Floor: the whole mod unloaded at the same spot.
+Repeat only the winning switch at the 4.6 km spot, to check it holds.
 
-**T4. The spikes (from the T5 data, plus one pair)**
+**T4. The spawn spikes (about 4 min)**
+* Arriving at a spot spawns that stretch's dressing.
+* Measure the 10 s after arrival, with `props.DRESS_OBJS_PER_UPDATE` 24 vs 2.
+* Alternated over the 2.3 km and 4.6 km spots, 2 arrivals each.
 * Line up frames over 50 ms with hook max times and the node count.
-* One pair with `props.DRESS_OBJS_PER_UPDATE` 24 vs 2: do the spike frames go?
 
-**T5. What does driving add? (about 8 min)**
-* The AI drives the same 1 km three times with a run and three without, alternated.
-* Catches dressing placed and removed, pacenote calls, streaming.
-
-**T6. After the run (about 4 min)**
-* Same spot, after `tidy()`, traffic on vs off.
+**T5. After the run (about 3 min)**
+* At the 4.6 km spot, after aborting the run.
+* Traffic on vs off.
 * Count `stage layout back on` lines in `beamng.log`.
 * Check whether `gameplay_rallyStartClock` is still loaded.
 
-**T7. Offline, no game (about 1 min)**
-* Dump the road graph at a small stage (Maryhill, 176 nodes) and a dense one (OTR Founders).
+**T6. Offline, no game (about 1 min)**
+* Dump the road graph at each spot during T3.
 * Time `roadAt`, `roadCovers`, `nearEdges` and one whole site's placement in LuaJIT.
 
-**T8. The player's case**
-* Repeat the winning A/B on OTR Founders at a 60 fps cap, with p99 as the measure, so it reads like 60 to 20.
+**T7. The player's case (about 2 min)**
+* Repeat the winning A/B at the 2.3 km spot with a 60 fps cap, so it reads like 60 to 20.
 
 ## Out of scope
 
@@ -116,6 +128,7 @@ Floor: the whole mod unloaded at the same spot.
 ## Afterwards
 
 * Findings and the ranked fixes go in `docs/notes-1.6.1.md`.
+* Remove the bench hook.
 * Put back the graphics preset Normal and the background fps limit (`restore-settings.json`), `clockView` back to
   `right`, and the power plan.
 * Abort any run left open.
