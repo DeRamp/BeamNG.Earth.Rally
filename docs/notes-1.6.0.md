@@ -160,3 +160,22 @@ and `test_menu_rally_files`.
 Open: per kind or any kind? (a) A rally that marks radios on some stage gets no random radios, but still random
 spectators if it marks no spectators anywhere; or (b) any point of any kind on any stage turns random off for every
 kind in that rally. Junction marshals at taped turns are dressing, not map points, so they stay either way.
+
+## 6. A roadside marshal on the road, its table and chair the wrong way (the user, 2026-11-15)
+
+"If a marshal is on the road, and isn't in an intersection, it should be OFF the road. Saw that on Early Weaver Bend.
+The table and chair for these marshals needs to rotate too." Logged, not acted on yet. Seen on Overmountain SS6/9/11
+Weaver Bend, 0.8 mi in, about 35.93339 N, 82.95062 W (screenshot taken then: table side-on, chair facing the camera,
+blue flag behind). These are map marshals away from a turn (`dressing.lua` `roadsideMarshal`, used when
+`turnNear(m.along, MARSHAL_AT_JUNCTION_M)` finds no turn within 40 m).
+
+Likely causes, to check:
+- **On the road:** the post stands at `L.half + TENT_OUT` (1.5 m) from the line, with `L.half` one half-width for the
+  whole stage. Where the road is wider than that, or the auto-recce line runs off the road's centre, 1.5 m past the
+  assumed edge is still on the tarmac. `post()` (radio/medical) has the same exposure; spectators test `clearOf`.
+  Proposed: measure the real edge at the post (in props, against the game's road at spawn, as `roadCovers` /
+  `alignedRoad` do) and push the whole group out until it is clear, dropping it if it can't be, as tape already does.
+- **Turned wrong:** table and chair both take `rightOf(tx, ty)` whatever the side, so the group faces one way on the
+  right of the road and the opposite way relative to the road on the left. Proposed: turn with the side so the table's
+  long edge runs along the road and the chair sits behind it on the far side, facing the road, on either side (to
+  confirm which way the user wants it facing).
