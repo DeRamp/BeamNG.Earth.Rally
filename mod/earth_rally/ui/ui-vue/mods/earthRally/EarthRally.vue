@@ -1,12 +1,14 @@
 <template>
-  <!-- Earth Rally's menu page (docs/mockups-1.2.0/menu.html): a route of its own ("earthRally", index.js), opened by
-       Ctrl+Alt+K, the pause menu's Earth Rally tab, or the results card. Four views in one component: Rallies, a
-       rally's stages, a stage, Settings. Data and buttons: earthRally_main (store.js). -->
+  <!-- Earth Rally's menu page (docs/mockups-1.2.0/menu.html, redrawn for rally files in
+       docs/mockups-rally-files/menu.html): a route of its own ("earthRally", index.js), opened by Ctrl+Alt+K, the
+       pause menu's Earth Rally tab, or the results card. Five views: Rallies (EarthRallyHome.vue), a season
+       (EarthRallySeason.vue), a rally's stages, a stage, Settings. Rallies > Season > Rally > Stage in the crumbs,
+       each one a way back. Data and buttons: earthRally_main (store.js). -->
   <div class="er-page">
     <div class="er-topbar">
       <div class="er-back" tabindex="0" @click="back" @keydown.enter="back"><span>‹</span> {{ view === "rallies" ? "Close" : "Back" }}</div>
       <div class="er-title"><span class="er-accent">Earth</span> Rally</div>
-      <div class="er-crumbs"><span v-for="c in crumbs" :key="c">{{ c }}</span></div>
+      <div class="er-crumbs"><span v-for="(c, i) in crumbs" :key="i" :class="{ 'er-cgo': c.go }" @click="c.go && c.go()">{{ c.label }}</span></div>
       <div class="er-right">
         <BngButton v-if="view !== 'settings'" :accent="ACCENTS.outlined" @click="go('settings')">Settings</BngButton>
       </div>
@@ -32,57 +34,53 @@
       <div v-for="(n, i) in arr(st.versionNotes)" :key="'vn' + i" class="er-warnline">{{ n }}</div>
 
       <!-- ===== Rallies ===== -->
-      <section v-if="view === 'rallies'" class="er-rallies">
-        <div v-for="r in arr(st.rallies)" :key="r.id" class="er-card er-rally-card">
-          <div class="er-rc-head">
-            <div class="er-rc-name er-clip" :title="r.name">{{ r.name }}</div>
-            <div v-if="r.file" class="er-dim er-clip" :title="r.file">from {{ r.file }}</div>
-          </div>
-          <div class="er-stats">
-            <div class="er-stat"><div class="er-v">{{ r.stages }}</div><div class="er-l">stages</div></div>
-            <div class="er-stat"><div class="er-v">{{ lenNum(r.lengthM) }}</div><div class="er-l">{{ units() }} of stages</div></div>
-            <div class="er-stat"><div class="er-v">{{ r.driven }}</div><div class="er-l">driven</div></div>
-          </div>
-          <div class="er-driven">
-            <span class="er-muted">{{ r.driven }} of {{ r.stages }} stages driven</span>
-            <div class="er-bar"><i :style="{ width: (r.stages ? 100 * r.driven / r.stages : 0) + '%' }"></i></div>
-          </div>
-          <div class="er-rc-foot"><BngButton :accent="ACCENTS.main" @click="openRally(r.id)">Open rally</BngButton></div>
-        </div>
+      <EarthRallyHome v-if="view === 'rallies'" @season="openSeason" @rally="openRally" @stage="openStage" @action="action" />
 
-        <div class="er-card er-add">
-          <div class="er-rc-name">+ Add a rally</div>
-          <ol>
-            <li>Get the rally's map: a <b>.kml</b>, <b>.kmz</b> or <b>.gpx</b> (Google My Maps, or the organisers' map).</li>
-            <li>Put it in the import folder. It is imported straight away.</li>
-          </ol>
-          <div class="er-path">{{ st.importFolder }}</div>
-          <div class="er-row">
-            <BngButton :accent="ACCENTS.main" @click="action('openFolder')">Open import folder</BngButton>
-            <BngButton :accent="ACCENTS.secondary" @click="action('rescan')">Re-scan</BngButton>
-          </div>
-          <div v-if="st.lastImport" class="er-report">
-            <div class="er-report-h">Last import · {{ st.lastImport.at }}</div>
-            <div v-for="(l, i) in arr(st.lastImport.lines)" :key="i" :class="l.ok ? 'er-ok' : 'er-warn'">{{ l.ok ? "✓" : "!" }} {{ l.text }}</div>
-          </div>
-        </div>
-      </section>
+      <!-- ===== a season ===== -->
+      <EarthRallySeason v-else-if="view === 'season' && ssn" :key="ssn.id" :s="ssn" @rally="openRally" />
 
       <!-- ===== a rally ===== -->
       <section v-else-if="view === 'rally' && rly">
-        <div class="er-rally-head">
-          <div class="er-rh-name er-clip" :title="rly.name" style="min-width: 0; flex: 0 1 auto">{{ rly.name }}</div>
-          <div class="er-stat"><div class="er-v">{{ rly.stages }}</div><div class="er-l">stages</div></div>
-          <div class="er-stat"><div class="er-v">{{ len(rly.lengthM) }}</div><div class="er-l">of stages</div></div>
-          <div class="er-stat"><div class="er-v">{{ rly.driven }} / {{ rly.stages }}</div><div class="er-l">driven</div></div>
+        <!-- the banner: the rally's photo behind, its logo (or a drawn plate), its round, dates and town -->
+        <div class="er-rbanner">
+          <EarthRallyPic class="er-rb-photo" bare :url="(rly.media && (rly.media.photo || rly.media.cover)) || ''" />
+          <EarthRallyPic class="er-rb-logo" contain :url="(rly.media && rly.media.logo) || ''" :kind="rly.season && rly.season.round ? `ROUND ${rly.season.round}` : 'RALLY'" :name="rly.name" />
+          <div class="er-rb-text">
+            <div v-if="rly.season" class="er-rb-round">Round {{ rly.season.round }} · {{ rly.season.name }}</div>
+            <div class="er-rb-name er-clip" :title="rly.name">{{ rly.name }}</div>
+            <div class="er-rb-sub">{{ rallySub }}</div>
+          </div>
+          <div class="er-rb-stats">
+            <div class="er-stat"><div class="er-v">{{ len(rly.lengthM) }}</div><div class="er-l">{{ rly.stages }} stages</div></div>
+            <div class="er-stat"><div class="er-v">{{ rly.driven }} / {{ rly.stages }}</div><div class="er-l">driven</div></div>
+          </div>
         </div>
+        <!-- Results (with real results) and Rules (when the file has any): no tabs at all on a rally with neither -->
+        <div v-if="rallyTabs.length > 1 || legend" class="er-under-banner">
+          <div v-if="rallyTabs.length > 1" class="er-tabs">
+            <span v-for="t in rallyTabs" :key="t.id" tabindex="0" :class="{ on: curTab === t.id }" @click="rallyTab = t.id" @keydown.enter="rallyTab = t.id">{{ t.label }}</span>
+          </div>
+          <div v-if="legend && curTab === 'stages'" class="er-legend">
+            <template v-if="rly.anyCancelled"><s>{{ cancelledSs }}</s> pass cancelled on the day</template><template v-if="rly.anyCancelled && rly.hasBoard"> · </template><template v-if="rly.hasBoard"><b>Place</b>: your best against the real field</template>
+          </div>
+        </div>
+        <EarthRallyResults v-if="curTab === 'results'" :r="rly.results" />
+        <div v-else-if="curTab === 'rules'" class="er-card er-rules">
+          <div v-for="(l, i) in arr(rly.rules)" :key="i" class="er-rule">
+            <span>{{ l.label }}</span><span><span class="er-rv">{{ l.value }}</span><span v-if="l.inGame" class="er-in">IN GAME</span></span>
+          </div>
+        </div>
+        <template v-else>
         <!-- Seven columns: the seventh holds the Auto recce button (docs/mockups-1.3.0/auto-recce-button.html,
              section 3). Its header cell is deliberately empty -- an AUTO RECCE heading over a column blank on most
              rows reads as data, and advertises on every row something half of them cannot do. -->
         <div class="er-card er-stages">
-          <div class="er-srow er-hdr"><span>Stage</span><span>Name</span><span class="er-r">Length</span><span class="er-st">Status</span><span></span><span class="er-r">Best</span><span></span></div>
-          <div v-for="s in arr(rly.list)" :key="s.id" class="er-srow er-click" :class="{ 'er-running': autoRow(s) }" tabindex="0" @click="openStage(rly.id, s.id)" @keydown.enter="rowEnter($event, s)">
-            <span class="er-ss">SS{{ s.ss }}</span><span>{{ s.name }}</span><span class="er-r er-mono">{{ len(s.lengthM) }}</span>
+          <div class="er-srow er-hdr" :style="srowCols"><span>Stage</span><span>Name</span><span class="er-r">Length</span><span class="er-st">Status</span><span></span><span class="er-r">Best</span><span v-if="rly.hasBoard" class="er-r">Place</span><span></span></div>
+          <div v-for="s in arr(rly.list)" :key="s.id" class="er-srow er-click" :class="{ 'er-running': autoRow(s) }" :style="srowCols" tabindex="0" @click="openStage(rly.id, s.id)" @keydown.enter="rowEnter($event, s)">
+            <!-- a stage run twice is one row: SS2 · SS4, a pass cancelled on the day struck out -->
+            <span v-if="s.notRun" class="er-ss er-notrun">Not run</span>
+            <span v-else class="er-ss"><span v-for="(p, k) in passList(s)" :key="k"><s v-if="p.cancelled">{{ p.ss }}</s><template v-else>{{ p.ss }}</template><template v-if="k < passList(s).length - 1"> · </template></span></span>
+            <span class="er-clip">{{ s.name }}</span><span class="er-r er-mono">{{ len(s.lengthM) }}</span>
             <span class="er-st">
               <span v-if="autoRow(s)" class="er-pill working" :style="{ '--er-done': autoPct }">{{ STATUS.working.label }} <span class="er-wn">{{ autoLeg }}</span></span>
               <span v-else class="er-pill" :class="pill(s.status).cls">{{ pill(s.status).label }}</span>
@@ -104,18 +102,24 @@
                    the column reads as one question. Deliberately NOT gated on st.autoOk: it removes files and asks
                    BeamNG.Earth for nothing, so a player on a stock BeamNG.Earth still has their way back from a
                    recce they are unhappy with -- gating it the way Auto recce is gated would lock out exactly the
-                   players with no auto recce to fall back on. A driven recce is confirmed on the stage page, where
-                   there is room to say what is lost; the row opens it rather than deleting from under them. -->
-              <BngButton v-else-if="s.line === 'matched'" :accent="ACCENTS.outlined" :disabled="busy" @click.stop="action('reset', rly.id, s.id)">Reset</BngButton>
+                   players with no auto recce to fall back on. A driven recce, or any line with times on it (they
+                   stop being placed), is confirmed on the stage page, where there is room to say what is lost; the
+                   row opens it rather than deleting from under them. -->
+              <BngButton v-else-if="s.line === 'matched' && !s.best" :accent="ACCENTS.outlined" :disabled="busy" @click.stop="action('reset', rly.id, s.id)">Reset</BngButton>
               <BngButton v-else-if="s.line" :accent="ACCENTS.outlined" @click.stop="askReset(rly.id, s.id)">Reset</BngButton>
             </span>
-            <span class="er-r er-mono" :class="{ 'er-none': !s.best }">{{ s.best ? time(s.best) : "–" }}</span><span class="er-go">›</span>
+            <!-- Old line: it has times, none on the line it runs on now (menu.lua, oldLine): not placed, not driven -->
+            <span v-if="s.oldLine" class="er-r er-none" :title="time(s.best)">Old line</span>
+            <span v-else class="er-r er-mono" :class="{ 'er-none': !s.best }">{{ s.best ? time(s.best) : "–" }}</span>
+            <!-- Place: the better of your placings over the stage's passes, against the real field -->
+            <span v-if="rly.hasBoard" class="er-plc"><template v-if="s.place">{{ ord(s.place.pos) }}<small>of {{ s.place.of }}</small></template><span v-else class="er-none">–</span></span>
+            <span class="er-go">›</span>
           </div>
         </div>
         <!-- how an auto recce ended, one line per stage: the pill only ever says whether the stage can be driven -->
         <div v-if="arr(rly.autoLines).length" class="er-under">
           <div v-for="l in arr(rly.autoLines)" :key="l.stageId" class="er-outcome" :class="outcomeCls(l.kind)">
-            <span class="er-ssx">SS{{ l.ss }}</span>{{ l.text }}
+            <span v-if="l.ssLabel" class="er-ssx">{{ l.ssLabel }}</span>{{ l.text }}
           </div>
         </div>
         <div class="er-muted er-help">
@@ -127,12 +131,13 @@
           <summary>Import report</summary>
           <div v-for="(l, i) in arr(rly.report)" :key="i">{{ l }}</div>
         </details>
+        </template>
       </section>
 
       <!-- ===== a stage ===== -->
       <section v-else-if="view === 'stage' && stg" class="er-stage-page">
         <div>
-          <div class="er-stage-ss">SS{{ stg.ss }} · {{ (stg.rally || "").toUpperCase() }}</div>
+          <div class="er-stage-ss">{{ ssLine }}</div>
           <div class="er-stage-name">{{ stg.name }}</div>
           <div class="er-muted">{{ controlsLine }}</div>
           <div class="er-tiles">
@@ -167,23 +172,34 @@
                  button is already absent and Reset is simply its v-else-if: the row keeps four buttons, never
                  five. A matched line goes at once (1.25 s to make again); a driven recce asks first, because it
                  cost the stage, driven, and cannot be got back. -->
-            <BngButton v-else-if="stg.line === 'matched'" :accent="ACCENTS.outlined" :disabled="busy" @click="action('reset', stg.eventId, stg.id)">Reset</BngButton>
-            <BngButton v-else-if="stg.line && !confirmReset" :accent="ACCENTS.outlined" @click="confirmReset = true">Reset</BngButton>
-            <BngButton :accent="ACCENTS.secondary" :disabled="busy" @click="action('recce', stg.eventId, stg.id)">Recce</BngButton>
+            <BngButton v-else-if="stg.line === 'matched' && !stg.best" :accent="ACCENTS.outlined" :disabled="busy" @click="action('reset', stg.eventId, stg.id)">Reset</BngButton>
+            <BngButton v-else-if="stg.line && !confirmReset" :accent="ACCENTS.outlined" @click="confirmRecce = false; confirmReset = true">Reset</BngButton>
+            <BngButton :accent="ACCENTS.secondary" :disabled="busy" @click="recce">Recce</BngButton>
           </div>
-          <!-- The confirm, for a driven recce only. Confirming the cheap case as well would be worse than not
-               confirming at all: it teaches clicking through, and the once it mattered that habit would carry. -->
-          <div v-if="confirmReset && stg.line && stg.line !== 'matched'" class="er-card er-confirm">
+          <!-- The confirm: for a driven recce, and for a matched line with times on it (they stop being placed).
+               A matched line with no times is not confirmed: confirming the cheap case would teach clicking
+               through, and the once it mattered that habit would carry. -->
+          <div v-if="confirmReset && stg.line" class="er-card er-confirm">
             <div>
-              <b>Remove the recce you drove?</b><br>
+              <b>{{ stg.line === "matched" ? "Remove the matched line?" : "Remove the recce you drove?" }}</b><br>
               <!-- It does NOT promise the auto recce will manage one here: whether the map has roads for this
                    stage on this computer is only known by asking for them, and a confirm that guessed would be
                    worse than one that does not say. -->
-              <span>This cannot be undone. Afterwards you can run the auto recce, or drive the recce again.</span>
+              <span v-if="stg.line === 'matched'">Afterwards you can run the auto recce again, or drive the recce.</span>
+              <span v-else>This cannot be undone. Afterwards you can run the auto recce, or drive the recce again.</span>
+              <template v-if="stg.best"><br><span>{{ PLACED_WARN }}</span></template>
             </div>
             <div class="er-confirm-row">
               <BngButton :accent="ACCENTS.outlined" @click="confirmReset = false">Keep it</BngButton>
-              <BngButton :accent="ACCENTS.main" :disabled="busy" @click="confirmReset = false; action('reset', stg.eventId, stg.id)">Remove the recce</BngButton>
+              <BngButton :accent="ACCENTS.main" :disabled="busy" @click="confirmReset = false; action('reset', stg.eventId, stg.id)">{{ stg.line === "matched" ? "Remove the line" : "Remove the recce" }}</BngButton>
+            </div>
+          </div>
+          <!-- A new recce over a line with times on it: said once before it starts (the new line replaces this one) -->
+          <div v-if="confirmRecce && stg.line && stg.best" class="er-card er-confirm">
+            <div><b>Drive a new recce?</b><br><span>{{ PLACED_WARN }}</span></div>
+            <div class="er-confirm-row">
+              <BngButton :accent="ACCENTS.outlined" @click="confirmRecce = false">Not now</BngButton>
+              <BngButton :accent="ACCENTS.main" :disabled="busy" @click="confirmRecce = false; action('recce', stg.eventId, stg.id)">Recce</BngButton>
             </div>
           </div>
           <!-- beside the row, never a tooltip: a disabled BngButton takes no pointer events and can never show one -->
@@ -202,10 +218,13 @@
             <b>Recce</b>: drive the stage once at your own pace; the line you drive gives the notes.
           </div>
         </div>
+        <!-- the Leaderboard card above Your runs (the user, 2026-11-14), which then shows the last two -->
+        <div class="er-rcol">
+        <EarthRallyBoard v-if="stg.board" :b="stg.board" :best="stg.best" @pass="choosePass" />
         <div class="er-card er-runs">
           <h3>Your runs</h3>
           <div v-if="stg.best" class="er-best-box"><span class="er-t">{{ time(stg.best) }}</span><span class="er-badge">BEST</span></div>
-          <div v-for="(r, i) in arr(stg.runs)" :key="i" class="er-run">
+          <div v-for="(r, i) in runsShown" :key="i" class="er-run">
             <span>{{ when(r.date) }} <span v-if="r.last" class="er-dim">· last</span></span>
             <span class="er-mono">{{ time(r.timeS) }}</span>
             <span :class="r.penaltyS > 0 ? 'er-pen' : 'er-clean'">{{ r.text }}</span>
@@ -213,17 +232,13 @@
           <div v-if="!arr(stg.runs).length" class="er-muted">No runs yet.</div>
           <div class="er-muted er-small">Times include penalties.</div>
         </div>
+        </div>
       </section>
 
       <!-- ===== Settings ===== -->
       <section v-else-if="view === 'settings'" class="er-settings-page">
         <div class="er-card"><EarthRallySettings /></div>
-        <div class="er-card er-side">
-          <h3>Developer</h3>
-          <p class="er-muted">The HUD preview plays sample moments of a run through the HUD, without driving.</p>
-          <BngButton :accent="ACCENTS.outlined" @click="previewHud">HUD preview</BngButton>
-          <p class="er-dim er-small">Earth Rally {{ st.version }}</p>
-        </div>
+        <p class="er-dim er-small">Earth Rally {{ st.version }}</p>
       </section>
 
       <div v-else class="er-muted">Loading...</div>
@@ -237,19 +252,29 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from "vue"
+import { ref, computed, watch, onMounted, onUnmounted } from "vue"
 import { BngButton, ACCENTS } from "@/common/components/base"
 import EarthRallySettings from "./EarthRallySettings.vue"
+import EarthRallyHome from "./EarthRallyHome.vue"
+import EarthRallySeason from "./EarthRallySeason.vue"
+import EarthRallyPic from "./EarthRallyPic.vue"
+import EarthRallyBoard from "./EarthRallyBoard.vue"
+import EarthRallyResults from "./EarthRallyResults.vue"
 import {
-  state, rally, stage, busyMsg, action as luaAction, refreshState, takeOpenAt, loadRally, loadStage, closeMenu, previewHud,
-  arr, units, len, lenNum, riseNum, riseUnit, time, when, STATUS, AUTO_OUTCOME, RUN_WORDS,
+  state, season, rally, stage, busyMsg, action as luaAction, refreshState, takeOpenAt, loadSeason, loadRally, loadStage,
+  closeMenu, lastPlace,
+  arr, units, len, lenNum, riseNum, riseUnit, time, when, ord, days, ssName, STATUS, AUTO_OUTCOME, RUN_WORDS,
 } from "./store.js"
 
 const view = ref("rallies")
-const sel = ref({ eventId: null, stageId: null })
+// pass: the stage leaderboard's pass the player picked (null: the one they place best on, chosen in Lua)
+const sel = ref({ seasonId: null, eventId: null, stageId: null, pass: null })
 const st = computed(() => state.value || {})
+const ssn = computed(() => (season.value && !season.value.missing && season.value.id === sel.value.seasonId) ? season.value : null)
 const rly = computed(() => (rally.value && !rally.value.missing && rally.value.id === sel.value.eventId) ? rally.value : null)
-const stg = computed(() => (stage.value && !stage.value.missing && stage.value.id === sel.value.stageId) ? stage.value : null)
+// (the rally as well as the stage: a stage's id is its line's name, and two rallies can both have a "Wildcat")
+const stg = computed(() => (stage.value && !stage.value.missing && stage.value.id === sel.value.stageId &&
+  stage.value.eventId === sel.value.eventId) ? stage.value : null)
 // An auto recce holds the page as a recce does: the Lua does one window at a time, so every other action is
 // greyed while one runs (the running row's own Stop is not disabled, and is the way out).
 const busy = computed(() => !!(st.value.recce || st.value.auto || (st.value.run && st.value.run.busy)))
@@ -297,18 +322,88 @@ const outcomeCls = kind => AUTO_OUTCOME[kind] || "flat"
 // would stop the auto recce and open the stage in the one keypress (the keyboard twin of needing @click.stop).
 function rowEnter(e, s) { if (e.target === e.currentTarget) openStage(rly.value.id, s.id) }
 
+// Rallies > Season > Rally > Stage: { label, go } each, go (a way back) on all but the last
 const crumbs = computed(() => {
-  if (view.value === "settings") return ["Settings"]
-  const c = ["Rallies"]
-  if (view.value === "rally" || view.value === "stage") c.push((rly.value && rly.value.name) || (stg.value && stg.value.rally) || "")
-  if (view.value === "stage" && stg.value) c.push(`SS${stg.value.ss} ${stg.value.name}`)
+  if (view.value === "settings") return [{ label: "Settings" }]
+  const c = [{ label: "Rallies", go: () => go("rallies") }]
+  const seasonCrumb = s => ({ label: s.name, go: () => openSeason(s.id) })
+  if (view.value === "season") c.push({ label: (ssn.value && ssn.value.name) || "" })
+  if (view.value === "rally" && rly.value) {
+    if (rly.value.season) c.push(seasonCrumb(rly.value.season))
+    c.push({ label: rly.value.name })
+  }
+  if (view.value === "stage" && stg.value) {
+    const s = stg.value
+    if (!s.single) {
+      if (s.season) c.push(seasonCrumb(s.season))
+      c.push({ label: s.rally, go: () => openRally(s.eventId, false) })
+    }
+    c.push({ label: s.name })
+  }
   return c
+})
+
+// ---- a rally's page
+// Stages / Results / Rules: Results with real results to show, Rules when the file has any
+const rallyTab = ref("stages")
+const rallyTabs = computed(() => {
+  const r = rly.value
+  const t = [{ id: "stages", label: "Stages" }]
+  if (r && r.results) t.push({ id: "results", label: "Results" })
+  if (r && arr(r.rules).length) t.push({ id: "rules", label: "Rules" })
+  return t
+})
+const curTab = computed(() => (rallyTabs.value.some(t => t.id === rallyTab.value) ? rallyTab.value : "stages"))
+const legend = computed(() => !!(rly.value && (rly.value.anyCancelled || rly.value.hasBoard)))
+const cancelledSs = computed(() => {
+  for (const s of arr(rly.value && rly.value.list)) {
+    const p = arr(s.passes).find(x => x.cancelled)
+    if (p) return p.ss
+  }
+  return ""
+})
+// a row's passes (menu.lua: the itinerary's, or SS1, SS2... in map order with none). A line the itinerary never
+// runs has none and says "Not run" (s.notRun): it is never given a made-up SS number.
+const passList = s => arr(s && s.passes)
+// The columns: the SS cell is as wide as the rally's longest label ("SS3 · SS7 · SS11"), and Place comes in with
+// real results. The seventh column (Auto recce / Reset) keeps its 210px whatever else changes (see .er-srow).
+// SS_CH_PX: one character of the cell's 18px Overpass Mono (0.6 em, rounded up); before, the cell was 100 or 170px,
+// and a stage run three times or more ran its label over the name (the user, 2026-11-14).
+const SS_CH_PX = 11
+const ssText = s => passList(s).map(p => p.ss).join(" · ")
+const srowCols = computed(() => {
+  const r = rly.value
+  const chars = Math.max(0, ...arr(r && r.list).map(s => (s.notRun ? 0 : ssText(s).length)))
+  const ss = Math.max(100, Math.ceil(chars * SS_CH_PX) + 20)
+  return { gridTemplateColumns: `${ss}px minmax(0, 1fr) 130px 260px 210px 150px ${r && r.hasBoard ? "130px " : ""}30px` }
+})
+const rallySub = computed(() => {
+  const r = rly.value
+  if (!r) return ""
+  const parts = [days(r.dates, true), r.place].filter(Boolean)
+  if (parts.length) return parts.join(" · ")
+  return `From ${r.file || "your map"} · ${r.stages} ${r.stages === 1 ? "stage" : "stages"}`
+})
+
+// ---- a stage's page
+// "SS2 · SS4 · OLYMPUS RALLY 2026"; "NOT RUN · ..." for a line the itinerary never runs; "STAGE" for a stage on
+// its own
+const ssLine = computed(() => {
+  const s = stg.value
+  if (!s) return ""
+  if (s.single) return "STAGE"
+  const ss = s.notRun ? "NOT RUN" : arr(s.passes).map(p => p.ss).join(" · ")
+  return [ss, (s.rally || "").toUpperCase()].filter(Boolean).join(" · ")
+})
+const runsShown = computed(() => {
+  const runs = arr(stg.value && stg.value.runs)
+  return stg.value && stg.value.board ? runs.slice(0, 2) : runs
 })
 
 const banner = computed(() => {
   const s = st.value
   if (s.auto) {
-    const n = `Auto recce of SS${s.auto.ss} ${s.auto.stageName}`
+    const n = `Auto recce of ${ssName(s.auto)}`
     if (s.auto.phase === "going") return `${n}: going to the start, waiting for the world to load`
     if (s.auto.phase === "planning") return `${n}: checking what map data is missing`
     if (s.auto.phase === "asking") return `${n}: ${MB(s.auto.ask && s.auto.ask.bytes)} of map data to download -- your call`
@@ -325,7 +420,7 @@ const banner = computed(() => {
     const pct = Math.round((s.recce.share || 0) * 100)
     return s.recce.started ? `Recce of ${s.recce.stageName}: ${pct} % driven` : `Recce of ${s.recce.stageName}: drive to the start of the stage; recording begins there`
   }
-  if (s.run && s.run.busy) return `SS${s.run.ss || ""} ${s.run.stageName}: ${RUN_WORDS[s.run.state] || s.run.state}`
+  if (s.run && s.run.busy) return `${ssName(s.run)}: ${RUN_WORDS[s.run.state] || s.run.state}`
   if (s.run && s.run.state === "failed") return `${s.run.stageName}: stopped (${s.run.error || ""})`
   return ""
 })
@@ -340,39 +435,106 @@ const controlsLine = computed(() => {
 })
 
 function go(v) { view.value = v; busyMsg.value = "" }
+// Where the menu was left, for the next time it opens with no page asked for (the pause menu's button, Ctrl+Alt+K):
+// the user, 2026-11-14, "the rally menu should also now remember where it was when you close and open it".
+// (not the leaderboard's pass: after another drive the board opens on the pass you place best on, as Lua picks it)
+watch([view, sel, rallyTab], () => {
+  lastPlace.at = { view: view.value, sel: { ...sel.value, pass: null }, rallyTab: rallyTab.value }
+}, { deep: true })
+function resume(at) {
+  const s = at.sel || {}
+  if (at.view === "stage" && s.eventId && s.stageId) {
+    openStage(s.eventId, s.stageId)
+  } else if (at.view === "rally" && s.eventId) {
+    openRally(s.eventId, false)
+    if (at.rallyTab) rallyTab.value = at.rallyTab
+  } else if (at.view === "season" && s.seasonId) openSeason(s.seasonId)
+  else if (at.view === "settings") go("settings")
+  else return
+  // the season the rally or stage was reached through, for Back and the crumbs
+  if (s.seasonId) sel.value = { ...sel.value, seasonId: s.seasonId }
+}
+// A remembered page whose rally, season or stage has gone (removed from the import folder): Rallies, rather than
+// "Loading..." for ever. Each reply is checked against the page asked for (main.lua's missing replies carry their
+// ids), so an old "missing" left in the store from an earlier page cannot send the player back.
+watch(season, x => {
+  if (x && x.missing && view.value === "season" && x.id === sel.value.seasonId) go("rallies")
+})
+watch(rally, x => {
+  if (x && x.missing && view.value === "rally" && x.id === sel.value.eventId) go("rallies")
+})
+watch(stage, x => {
+  if (x && x.missing && view.value === "stage" && x.eventId === sel.value.eventId && x.id === sel.value.stageId) {
+    go("rallies")
+  }
+})
 const pill = status => STATUS[status] || STATUS.none
 const dash = v => (v === null || v === undefined ? "–" : v)
-function openRally(id) {
-  sel.value = { eventId: id, stageId: null }
-  loadRally(id)
+function openSeason(id) {
+  sel.value = { seasonId: id, eventId: null, stageId: null, pass: null }
+  loadSeason(id)
+  go("season")
+}
+// redirect: a rally of one stage and no season opens on its stage (Back from that stage goes to Rallies, so it never
+// comes back through here; false from the stage's own crumb all the same)
+function openRally(id, redirect = true) {
+  if (sel.value.eventId !== id) rallyTab.value = "stages"
+  sel.value = { ...sel.value, eventId: id, stageId: null, pass: null }
+  loadRally(id, r => {
+    if (redirect && r && r.single && r.id === id && view.value === "rally" && sel.value.eventId === id) {
+      const first = arr(r.list)[0]
+      if (first) openStage(id, first.id)
+    }
+  })
   go("rally")
 }
 // Reset's confirm, for a driven recce (the matched case needs none). Held here rather than per stage because
 // it must not survive leaving the page: a confirm still up when another stage is opened would sit over a line it
 // was never asked about.
 const confirmReset = ref(false)
+// A new recce over a line that has times on it asks first, as Reset does: those times stop being placed.
+const confirmRecce = ref(false)
+const PLACED_WARN = "If the new line runs differently, your times here stop counting on the leaderboards (they stay in Your runs)."
+function recce() {
+  const s = stg.value
+  if (s && s.line && s.best) { confirmReset.value = false; confirmRecce.value = true }
+  else if (s) action("recce", s.eventId, s.id)
+}
 
 function openStage(eventId, stageId) {
-  sel.value = { eventId, stageId }
+  sel.value = { ...sel.value, eventId, stageId, pass: null }
   confirmReset.value = false
+  confirmRecce.value = false
   loadStage(eventId, stageId)
   go("stage")
 }
+// the leaderboard's pass toggle
+function choosePass(ss) {
+  sel.value = { ...sel.value, pass: ss }
+  loadStage(sel.value.eventId, sel.value.stageId, ss)
+}
 
-// Reset pressed on a list row whose line was driven: open the stage and put the confirm up there, rather than
-// deleting from under the player in a row that has no room to say what is lost.
+// Reset pressed on a list row whose line was driven, or that has times: open the stage and put the confirm up
+// there, rather than deleting from under the player in a row that has no room to say what is lost.
 function askReset(eventId, stageId) {
   openStage(eventId, stageId)
   confirmReset.value = true
 }
 function back() {
-  if (view.value === "stage") openRally(sel.value.eventId)
-  else if (view.value === "rally" || view.value === "settings") go("rallies")
+  if (view.value === "stage") {
+    const single = stg.value ? stg.value.single : (rly.value && rly.value.single)
+    if (single) go("rallies")
+    else openRally(sel.value.eventId, false)
+  } else if (view.value === "rally") {
+    const s = rly.value && rly.value.season
+    if (s) openSeason(s.id)
+    else go("rallies")
+  } else if (view.value === "season" || view.value === "settings") go("rallies")
   else closeMenu()
 }
 function action(what, eventId, stageId) {
   luaAction(what, eventId, stageId, () => {
-    if (view.value === "stage" && sel.value.stageId) loadStage(sel.value.eventId, sel.value.stageId)
+    if (view.value === "stage" && sel.value.stageId) loadStage(sel.value.eventId, sel.value.stageId, sel.value.pass)
     if (view.value === "rally" && sel.value.eventId) loadRally(sel.value.eventId)
   })
 }
@@ -383,8 +545,9 @@ let tick = 0
 function poll() {
   refreshState()
   if (++tick % 2) return
+  if (view.value === "season" && sel.value.seasonId) loadSeason(sel.value.seasonId)
   if (view.value === "rally" && sel.value.eventId) loadRally(sel.value.eventId)
-  if (view.value === "stage" && sel.value.stageId) loadStage(sel.value.eventId, sel.value.stageId)
+  if (view.value === "stage" && sel.value.stageId) loadStage(sel.value.eventId, sel.value.stageId, sel.value.pass)
 }
 
 onMounted(() => {
@@ -393,7 +556,10 @@ onMounted(() => {
   takeOpenAt(at => {
     if (at && at.view === "stage" && at.eventId && at.stageId) openStage(at.eventId, at.stageId)
     else if (at && at.view === "rally" && at.eventId) openRally(at.eventId)
+    else if (at && at.view === "season" && at.eventId) openSeason(at.eventId)
     else if (at && at.view === "settings") go("settings")
+    else if (at && at.view === "rallies") { /* asked for (main.openMenu('rallies')): Rallies */ }
+    else if (lastPlace.at) resume(lastPlace.at)
   })
   timer = setInterval(poll, 1000)
 })
@@ -418,7 +584,11 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .er-back { display: flex; align-items: center; gap: 10px; padding: 8px 16px 8px 10px; border-radius: 0.25rem; background: rgba(0, 0, 0, 0.4); color: var(--er-muted); font-size: 18px; cursor: pointer; }
 .er-title { font-size: 30px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
 .er-accent { color: var(--er-orange); }
-.er-crumbs { font-size: 18px; color: var(--er-muted); span + span::before { content: "›"; margin: 0 10px; color: #6f7480; } }
+.er-crumbs { font-size: 18px; color: var(--er-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+  span + span::before { content: "›"; margin: 0 10px; color: #6f7480; }
+  span:last-child { color: #fff; }
+  .er-cgo { cursor: pointer; }
+  .er-cgo:hover { color: #fff; text-decoration: underline; } }
 .er-right { margin-left: auto; display: flex; gap: 12px; }
 .er-content { flex: 1; padding: 28px 64px 24px; overflow-y: auto; }
 .er-infobar { height: 48px; flex-shrink: 0; display: flex; align-items: center; gap: 28px; padding: 0 64px; background: rgba(0, 0, 0, 0.6); color: var(--er-muted); }
@@ -453,27 +623,38 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 }
 @keyframes er-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
-.er-rallies { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 28px; }
-.er-rally-card { display: flex; flex-direction: column; min-height: 380px; border-top: 4px solid var(--er-orange); }
-.er-rc-head { padding: 26px 30px 10px; }
-.er-rally-card, .er-rc-head { min-width: 0; }   /* (a grid item: a long name must not widen the card) */
 .er-clip { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.er-rc-name { font-size: 30px; font-weight: 700; line-height: 1.15; }
-.er-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 16px 30px; }
-.er-driven { padding: 6px 30px 0; }
-.er-bar { height: 10px; border-radius: 5px; background: #2a2e38; overflow: hidden; margin-top: 8px; i { display: block; height: 100%; background: var(--er-blue); } }
-.er-rc-foot { margin-top: auto; padding: 20px 30px 24px; }
-.er-add { border: 3px dashed #5a6070; background: rgba(0, 0, 0, 0.35); padding: 26px 30px; display: flex; flex-direction: column; gap: 14px;
-  ol { margin: 0; padding-left: 26px; font-size: 17px; line-height: 1.55; } }
-.er-path { font-family: "Overpass Mono", monospace; font-size: 13px; color: var(--er-muted); background: rgba(0, 0, 0, 0.4); padding: 8px 10px; border-radius: 0.25rem; word-break: break-all; }
 .er-report { background: rgba(0, 0, 0, 0.4); border-radius: 0.25rem; padding: 12px 14px; font-size: 15px; line-height: 1.5; }
-.er-report-h { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--er-muted); margin-bottom: 4px; }
 .er-report-full { margin-top: 18px; summary { cursor: pointer; font-weight: 600; } }
-.er-ok { color: #6fd39a; }
-.er-warn { color: #ffd36b; }
 
-.er-rally-head { display: flex; align-items: flex-end; gap: 48px; margin-bottom: 22px; }
-.er-rh-name { font-size: 40px; font-weight: 700; }
+/* a rally's banner: its photo behind a dark fade, the logo (or a drawn plate), the name and its numbers */
+.er-rbanner { position: relative; height: 196px; border-radius: 0.5rem; overflow: hidden; display: flex; align-items: center; gap: 34px; padding: 0 34px; margin-bottom: 18px;
+  > :not(.er-rb-photo) { position: relative; z-index: 1; } }
+.er-rbanner .er-rb-photo { position: absolute; inset: 0;
+  &::after { content: ""; position: absolute; inset: 0; z-index: 1;
+    background: linear-gradient(90deg, rgba(8, 10, 14, 0.92) 0%, rgba(8, 10, 14, 0.78) 45%, rgba(8, 10, 14, 0.25) 100%); } }
+.er-rbanner .er-rb-logo { width: 290px; height: 145px; flex-shrink: 0; background: none;
+  :deep(.er-plate) { min-width: 100%; padding: 18px 16px 14px; }
+  :deep(.er-pn) { font-size: 24px; } }
+.er-rb-text { min-width: 0; }
+.er-rb-round { font-size: 14px; font-weight: 700; letter-spacing: 0.14em; color: var(--er-orange); text-transform: uppercase; }
+.er-rb-name { font-size: 46px; font-weight: 700; line-height: 1.1; }
+.er-rb-sub { font-size: 19px; color: #dfe3ea; margin-top: 4px; }
+.er-rb-stats { margin-left: auto; display: flex; gap: 36px; flex-shrink: 0;
+  .er-stat { text-align: right; }
+  .er-v { font-size: 30px; }
+  .er-l { font-size: 13px; } }
+.er-under-banner { display: flex; align-items: center; gap: 20px; margin-bottom: 14px; }
+.er-legend { margin-left: auto; font-size: 15px; color: var(--er-muted); s { color: #6f7480; } }
+/* in-page tabs: the game's segmented look */
+.er-tabs { display: flex; gap: 4px; background: rgba(0, 0, 0, 0.45); border-radius: 0.25rem; padding: 4px;
+  span { padding: 8px 22px; border-radius: 3px; font-size: 18px; font-weight: 600; color: var(--er-muted); cursor: pointer; }
+  span.on { background: var(--er-orange-500); color: #fff; } }
+.er-rules { max-width: 760px; padding: 12px 0; }
+.er-rule { display: grid; grid-template-columns: 1fr auto; padding: 18px 30px; font-size: 22px; align-items: center;
+  & + .er-rule { border-top: 1px solid rgba(255, 255, 255, 0.06); }
+  .er-rv { font-family: "Overpass Mono", monospace; font-weight: 700; }
+  .er-in { font-size: 13px; font-weight: 700; letter-spacing: 0.06em; padding: 2px 8px; margin-left: 12px; border-radius: 3px; background: var(--er-blue); vertical-align: 3px; } }
 .er-stages { padding: 8px 0; }
 /* Seven tracks: the action column comes out of Name's 1fr, NOT out of Status -- Status already holds the longest
    pill ("Recce recommended", about 177px) with its 30px padding, and below about 215px that pill overruns the
@@ -491,7 +672,11 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
      pseudo-class against their two, so it holds wherever it sits in the file. Written the other way round (same
      specificity, later in the file) the mark would vanish the moment anyone moved this block, or the pointer. */
   &.er-running, &.er-running.er-click:hover, &.er-running.er-click:focus { border-left-color: var(--er-blue); }
-  .er-ss { font-family: "Overpass Mono", monospace; font-weight: 700; color: var(--er-muted); }
+  .er-ss { font-family: "Overpass Mono", monospace; font-weight: 700; color: var(--er-muted); white-space: nowrap; font-size: 18px;
+    s { color: #6f7480; text-decoration-thickness: 2px; } }
+  .er-notrun { font-family: "Noto Sans", sans-serif; font-weight: 600; font-size: 15px; color: #6f7480; }
+  .er-plc { font-family: "Overpass Mono", monospace; font-weight: 700; text-align: right;
+    small { font-weight: 400; color: var(--er-dim); font-size: 14px; margin-left: 4px; } }
   .er-r { text-align: right; }
   .er-st { padding-left: 30px; }
   .er-none { color: #6f7480; }
@@ -514,7 +699,8 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
   .er-ssx { font-family: "Overpass Mono", monospace; font-weight: 700; margin-right: 6px; }
 }
 
-.er-stage-page { display: grid; grid-template-columns: 1.25fr 1fr; gap: 28px; }
+.er-stage-page { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+.er-rcol { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
 .er-stage-ss { font-family: "Overpass Mono", monospace; font-size: 20px; color: var(--er-orange); font-weight: 700; letter-spacing: 0.05em; }
 .er-stage-name { font-size: 52px; font-weight: 700; line-height: 1.1; }
 .er-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 26px 0; }
@@ -538,5 +724,4 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
   .er-pen { color: #ffd36b; text-align: right; } .er-clean { color: #6fd39a; text-align: right; } }
 
 .er-settings-page { display: grid; grid-template-columns: 1.6fr 1fr; gap: 28px; align-items: start; }
-.er-side { padding: 22px 26px; h3 { margin: 0 0 8px; } }
 </style>

@@ -1,9 +1,9 @@
--- earthRally/dressing: where the stage dressing stands (1.4.0, docs/plan-1.4.0-stage-dressing.md): course tape across
+-- earthRally/dressing: where the stage dressing stands (1.5.0, docs/plan-1.5.0-stage-dressing.md): course tape across
 -- the side roads the stage does not take, direction boards before its turns and forks, junction marshals, radio and
 -- medical points, marshal posts and spectator areas, each one of the game's own rally props. Pure: nothing from the
 -- game (tests/test_dressing.lua runs it offline); props.lua puts the result down.
 --
--- The rules are the mock-up's (docs/mockups-1.4.0/stage.html, agreed with the user 2026-11-14): its script is the
+-- The rules are the mock-up's (docs/mockups-1.5.0/stage.html, agreed with the user 2026-11-14): its script is the
 -- reference, and the constants below carry its names. Where this goes past what the mock-up drew (the spectators'
 -- gazebo and chairs on a corner of any shape, a marshal post from the map away from a junction), it says so.
 --
@@ -172,7 +172,7 @@ local function Line(line, cum, half)
     return x + rx * out * side, y + ry * out * side, z, tx, ty
   end
   -- how far (x, y) is clear of the stage's road (its centre line, less its half width: `h`, else the stage's), over
-  -- the WHOLE line -- a later pass of the stage through the same place is road too (until 1.4.0's review only the
+  -- the WHOLE line -- a later pass of the stage through the same place is road too (until 1.5.0's review only the
   -- line +-70 m along was looked at, and a crossroads the stage came back through had its later pass taped). The
   -- segments are kept in a grid of CLEAR_CELL_M cells, so a look reads the 3 x 3 cells round the point, not the
   -- thousands of points of a stage line; nothing farther than CLEAR_CELL_M is looked for (clear by that much is clear).

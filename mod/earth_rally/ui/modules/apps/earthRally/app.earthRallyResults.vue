@@ -4,7 +4,7 @@
        driving off, or a timeout: runner.lua). The buttons go to earthRally_main.uiResults. -->
   <div v-if="res" class="er-results">
     <div class="er-top">
-      <span class="er-ss">SS{{ stage.ss }}</span><span class="er-name">{{ stage.name }}</span><span class="er-done">Stage complete</span>
+      <span v-if="fmt.ss(stage)" class="er-ss">{{ fmt.ss(stage) }}</span><span class="er-name">{{ stage.name }}</span><span class="er-done">Stage complete</span>
     </div>
     <div class="er-total">
       <span class="er-t">{{ fmt.time(fin.time) }}</span>
@@ -24,7 +24,7 @@
     </div>
     <div class="er-buttons">
       <BngButton v-if="next" class="er-main" :accent="ACCENTS.main" @click="act('next')">
-        Next stage <small>SS{{ next.ss }} {{ next.name }} · {{ fmt.len(next.lengthM, units) }}</small>
+        Next stage <small>{{ fmt.ss(next) ? fmt.ss(next) + " " : "" }}{{ next.name }} · {{ fmt.len(next.lengthM, units) }}</small>
       </BngButton>
       <BngButton :accent="ACCENTS.secondary" @click="act('retry')">Retry</BngButton>
       <BngButton :accent="ACCENTS.secondary" @click="act('menu')">Rally menu</BngButton>

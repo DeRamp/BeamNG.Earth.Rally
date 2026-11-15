@@ -5,7 +5,7 @@
 -- UNSTABLE, and not a gate on a release. It cannot check the co-driver: the game decides whether to call a pacenote
 -- from the car's rigid-body velocity (its drivelineRoute reads getPlayerVehicle(0):getVelocityXYZ()), and the stage
 -- here is walked rather than driven, so no note is ever called and the run always fails on that one check. Everything
--- else it checks is sound. Fixed in 1.4.0 with the co-driver work (docs/plan-1.3.0.md has the findings).
+-- else it checks is sound. Fixed in 1.5.0 with the co-driver work (docs/plan-1.3.0.md has the findings).
 --
 -- Started by:
 --   the request file /earthRally/selftest/request.json in the user folder (tools/selftest.py writes it before it starts

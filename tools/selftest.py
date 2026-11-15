@@ -6,7 +6,7 @@ UNSTABLE -- do not gate a release on this. It cannot check the co-driver: the ga
 pacenote from the car's rigid-body velocity, and this walks the car along the line rather than driving it, so that
 one check fails and the whole run exits 1 every time. The other 22 checks are sound and the report is worth reading,
 but a red result here means "the co-driver check is still missing", not "something broke". Until that is fixed
-(1.4.0, with the co-driver work), the real check on a release is driving it yourself and writing what you find into
+(1.5.0, with the co-driver work), the real check on a release is driving it yourself and writing what you find into
 docs/notes-<next version>.md.
 
     python tools/selftest.py --check-install          only check the installed mod against this repository (read-only:
@@ -301,7 +301,7 @@ class LogTail:
 
 
 UNSTABLE_NOTE = (
-    'NOTE: the self-test is UNSTABLE. It cannot check the co-driver yet (1.4.0), so it exits 1 on every run.\n'
+    'NOTE: the self-test is UNSTABLE. It cannot check the co-driver yet (1.5.0), so it exits 1 on every run.\n'
     '      Read the checks below; do not take the exit code as a verdict on the build.')
 
 
