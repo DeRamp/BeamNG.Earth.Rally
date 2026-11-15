@@ -335,6 +335,11 @@ Proposed: `roadsideMarshal` (`dressing.lua`) table 1 m further out (TENT_OUT 1.5
 only, the chair and flag moving with it), and the chair's yaw turned 180 degrees from round 4's on both sides. The
 junction marshal and the post's TENT are not part of this.
 
+Fixed: `roadsideMarshal` sets its group from the new `ROADSIDE_MARSHAL_OUT` 2.5 m (the table 2.5 m past the edge, the
+chair 0.9 m behind it, the flag beside it; `TENT_OUT` 1.5 stays for the posts); props.lua's push data follow (`eo` from
+the new offset, `eh` and `FOOT` unchanged). The chair's +Y is turned 180 on both sides: against the road's way on the
+right, along it on the left, its +X towards the road. Tests: `test_dressing` (offsets, `eo`, chair on either side).
+
 ## 11. A map marshal near a junction must stand behind the tape (the user, 2026-11-15, on 85c21e4)
 
 "If there is a marshal point near a junction, they need to be behind the tape." Logged, not acted on yet.
@@ -349,3 +354,13 @@ Proposed: match any taped junction (turn, straight, fork) within the window, and
 fork the overrun is the stage road itself, so `junctionMarshal` should take the closed side road furthest from the way
 out. Where a turn's only closed road lies in the overrun, still put the marshal behind that road's tape, further back
 (e.g. 2 x `MARSHAL_BEHIND`) and to the side, rather than on the stage. Tests for each kind.
+
+Fixed: the map marshals' `tapedNear` (was `turnNear`) takes the nearest junction of any kind with tape within
+`MARSHAL_AT_JUNCTION_M`, now 60 m. `junctionMarshal(r, fromMap)`: at a straight or a fork it takes the closed road
+least in line with the way out (`solveJunction` now keeps it: `toutx`, `touty`), with no overrun check; at a turn the
+rule is as before, but for a map marshal (`fromMap`) where the only closed road is in the overrun it stands behind
+that road's tape all the same, `MARSHAL_OVERRUN_BEHIND` (2 x `MARSHAL_BEHIND`, 10 m) back and the road's half width +
+`MARSHAL_SIDE` off its centre, on the side away from the way out. The rule's junction marshals (turns only, none in
+the overrun) and the one-per-junction `used` dedup are unchanged. Two older tests moved their marks clear of the wider
+window (60 m -> 70 m before a turn; the roadside mark on the 300 m-junction stage 2250 -> 2200). Tests: `test_dressing`
+(a straight, a fork, a turn's overrun, a mark 50 m off).

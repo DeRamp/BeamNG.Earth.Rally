@@ -297,8 +297,8 @@ do
   local r1 = ofKind(m1, 'radio')
   T.check(#r1 == 1 and r1[1].source == 'map' and r1[1].along == 7000, 'map radio: replaces the rule')
   T.check(#ofKind(m1, 'marshal') == #ms and #ofKind(m1, 'spectators') == #sp, 'map radio: marshals and spectators still by rule')
-  -- the map marks marshals: none by rule (one near a turn stands behind its tape, one away from any on the roadside)
-  input.marks = { { kind = 'marshal', along = 2110 }, { kind = 'marshal', along = 2250, offLineM = -12 } }
+  -- the map marks marshals: none by rule (one near a turn stands behind its tape, one 100 m from any on the roadside)
+  input.marks = { { kind = 'marshal', along = 2110 }, { kind = 'marshal', along = 2200, offLineM = -12 } }
   local m2 = D.plan(input)
   local ma = ofKind(m2, 'marshal')
   T.check(#ma == 2 and ma[1].source == 'map' and ma[2].source == 'map', 'map marshals: replace the rule')
@@ -306,7 +306,7 @@ do
   local t1 = ma[1] and find(ma[1].objects, 'table')[1]
   T.check(t1 and t1.x < -10, 'map marshal near a turn: behind the closed road\'s tape (the left road)')
   local t2 = ma[2] and find(ma[2].objects, 'table')[1]
-  T.check(t2 and math.abs(t2.x + 3 + D.TENT_OUT) < 1e-6 and math.abs(t2.y - 2250) < 1e-6,
+  T.check(t2 and math.abs(t2.x + 3 + D.ROADSIDE_MARSHAL_OUT) < 1e-6 and math.abs(t2.y - 2200) < 1e-6,
     'map marshal on the road: off the edge, left as marked')
   -- the map's medical point far from any radio point: alone, after its own warning
   input.marks = { { kind = 'medical', along = 8000, name = 'MIV' } }
@@ -393,6 +393,44 @@ do
   T.check(#ofKind(wide, 'marshal') == 1, 'a closed road 50 degrees off the way in: a marshal')
 end
 
+-- 1.6.0's note 11: a map marshal by any taped junction stands behind its tape -- at a straight or a fork the closed
+-- road furthest from the way out; at a turn whose only closed road is the overrun, behind that road's tape all the same,
+-- further back and off it to the side away from the way out (the rule's marshals: still none there, above)
+do
+  local mark = { { kind = 'marshal', along = 300, offLineM = 8 } }
+  local St = { V(0, -300), V(0, 300) }
+  local st = ofKind(D.plan({ line = St, startM = 0, finishM = 600, marks = mark,
+    junctions = { { along = 300, x = 0, y = 0, kind = 'straight', inDeg = 0, outDeg = 0,
+                    sides = { { deg = 315 }, { deg = 250 } } } } }), 'marshal')
+  local t = st[1] and find(st[1].objects, 'table')[1]
+  T.check(#st == 1 and st[1].along == 300 and t and len(t.x, t.y) > 10 and math.abs(bearing(t.x, t.y) - 250) < 10,
+    'map marshal at a straight: behind the tape of the side road furthest from the way out (' ..
+    tostring(t and bearing(t.x, t.y)) .. ')')
+
+  local function unit(x, y) local l = len(x, y) return x / l, y / l end
+  local lx, ly = unit(-0.34, 0.94)
+  local rx, ry = unit(0.36, 0.93)
+  local Sf = { V(0, -92), V(0, 0), V(lx * 60, ly * 60) }
+  local fk = ofKind(D.plan({ line = Sf, marks = { { kind = 'marshal', along = 92, offLineM = 8 } },
+    junctions = { { along = 92, x = 0, y = 0, kind = 'fork', side = 'left',
+                    sides = { { deg = bearing(rx, ry), halfW = 3 } } } } }), 'marshal')
+  local f = fk[1] and find(fk[1].objects, 'table')[1]
+  T.check(#fk == 1 and f and math.abs(bearing(f.x, f.y) - bearing(rx, ry)) < 10 and distTo(Sf, f.x, f.y) - 3 > 1,
+    'map marshal at a fork: behind the closed branch\'s tape, off the kept road')
+
+  local Sr = { V(0, -300), V(0, 0), V(300, 0) }
+  local ov = ofKind(D.plan({ line = Sr, startM = 0, finishM = 600, marks = mark,
+    junctions = { { along = 300, x = 0, y = 0, kind = 'turn', inDeg = 0, outDeg = 90, sides = { { deg = 0 } } } } }),
+    'marshal')
+  local o = ov[1] and find(ov[1].objects, 'table')[1]
+  T.check(#ov == 1 and ov[1].along == 300 and o and math.abs(o.x + (3 + D.MARSHAL_SIDE)) < 1e-6 and
+    math.abs(o.y - (D.TAPE_IN + D.MARSHAL_OVERRUN_BEHIND)) < 1e-6,
+    'map marshal at a turn, the only closed road the overrun: behind its tape 10 m, off it away from the way out (' ..
+    tostring(o and o.x) .. ', ' .. tostring(o and o.y) .. ')')
+  T.check(D.MARSHAL_AT_JUNCTION_M == 60 and D.MARSHAL_OVERRUN_BEHIND == 2 * D.MARSHAL_BEHIND,
+    'map marshals: 60 m from a junction; 2 x MARSHAL_BEHIND back in the overrun')
+end
+
 -- The stage road's half width at a junction (the file's eighth entry): the tape cleared and
 -- the board set against it, not against 3 m; the objects away from the junctions carry their way out for props.lua
 do
@@ -474,7 +512,8 @@ end
 -- 2. A marshal post from the map by the road: table and chair turned 90 degrees right of the road's way (as TENT)
 -- 1.6.0's note 6, then review round 4 (the user: the +Y-out-from-the-road set-up "must rotate"): the table's +Y along
 -- the road on either side, TENT_OUT past the edge; the chair 0.9 m behind it on the far side from the road, facing the
--- road with its -X -- +Y along the road on the right, against it on the left; one group
+-- road with its -X -- +Y along the road on the right, against it on the left; one group. Note 10: the table
+-- ROADSIDE_MARSHAL_OUT (2.5 m) past the edge, the chair turned 180 on both sides (its +X to the road)
 do
   local S = { V(0, 0), V(0, 600) }
   local function marshalAt(off)
@@ -483,21 +522,25 @@ do
   end
   local m = marshalAt(5)
   local tbl, chr = m and find(m.objects, 'table')[1], m and find(m.objects, 'chair')[1]
-  T.check(tbl and tbl.dy > 0.99 and chr and chr.dy > 0.99,
-    'roadside marshal on the right: table and chair with +Y along the road (north), the chair -X to the road')
-  T.check(tbl and math.abs(tbl.x - (3 + D.TENT_OUT)) < 1e-6 and chr and math.abs(chr.x - (tbl.x + 0.9)) < 1e-6 and
-    math.abs(chr.y - tbl.y) < 1e-6, 'roadside marshal on the right: the table TENT_OUT past the edge, the chair ' ..
+  T.check(tbl and tbl.dy > 0.99 and chr and chr.dy < -0.99,
+    'roadside marshal on the right: table +Y along the road (north), the chair turned round, +X to the road')
+  T.check(D.ROADSIDE_MARSHAL_OUT == 2.5 and D.TENT_OUT == 1.5, 'roadside marshal 2.5 m past the edge; posts\' TENT_OUT kept')
+  T.check(tbl and math.abs(tbl.eo - (3 + D.ROADSIDE_MARSHAL_OUT)) < 1e-6 and chr and
+    math.abs(chr.eo - (3 + D.ROADSIDE_MARSHAL_OUT + 0.9)) < 1e-6 and tbl.eh == 3,
+    'roadside marshal: props.lua\'s push data (eo) from the new offset')
+  T.check(tbl and math.abs(tbl.x - (3 + D.ROADSIDE_MARSHAL_OUT)) < 1e-6 and chr and math.abs(chr.x - (tbl.x + 0.9)) < 1e-6 and
+    math.abs(chr.y - tbl.y) < 1e-6, 'roadside marshal on the right: the table 2.5 m past the edge, the chair ' ..
     'behind it, away from the road')
   local flg = m and find(m.objects, 'flag')[1]
   T.check(flg and flg.dy > 0.99, 'roadside marshal: the flag along the road as before')
   local L = marshalAt(-5)
   local lt, lc = L and find(L.objects, 'table')[1], L and find(L.objects, 'chair')[1]
-  T.check(lt and lt.dy > 0.99 and lc and lc.dy < -0.99 and math.abs(lt.x + (3 + D.TENT_OUT)) < 1e-6 and
+  T.check(lt and lt.dy > 0.99 and lc and lc.dy > 0.99 and math.abs(lt.x + (3 + D.ROADSIDE_MARSHAL_OUT)) < 1e-6 and
     math.abs(lc.x - (lt.x - 0.9)) < 1e-6, 'roadside marshal on the left: the table along the road, the chair behind ' ..
     'it on the far side, turned round to face the road (' .. tostring(lc and lc.dy) .. ', ' .. tostring(lc and lc.x) ..
     ')')
-  -- (either side, the chair's -X -- rightOf(+Y) reversed -- points at the road: towards the line, x = 0)
-  local function facesRoad(c) return c and (-c.dy) * (0 - c.x) > 0 end
+  -- (either side, the chair's +X -- rightOf(+Y) -- points at the road: towards the line, x = 0)
+  local function facesRoad(c) return c and c.dy * (0 - c.x) > 0 end
   T.check(facesRoad(chr) and facesRoad(lc), 'roadside marshal: the chair faces the road on either side')
   local grouped = true
   for _, o in ipairs((m and m.objects or {})) do
@@ -874,9 +917,14 @@ do
   -- until now merged into the first, by the road, and the turn left with none -- are a roadside post and the turn's
   local turn = { { along = 2100, x = 0, y = 2100, kind = 'turn', inDeg = 0, outDeg = 90,
                    sides = { { deg = 0, halfW = 3 }, { deg = 270, halfW = 3 } } } }
-  local mt = ofKind(plan({ mar(2040), mar(2110) }, { junctions = turn }), 'marshal')
-  T.check(#mt == 2 and mt[1].along == 2040 and mt[2].along == 2100,
-    'a roadside marshal 60 m before a turn\'s: both stand, the turn\'s behind its tape (' .. #mt .. ')')
+  local mt = ofKind(plan({ mar(2030), mar(2110) }, { junctions = turn }), 'marshal')
+  T.check(#mt == 2 and mt[1].along == 2030 and mt[2].along == 2100,
+    'a roadside marshal 70 m before a turn\'s: both stand, the turn\'s behind its tape (' .. #mt .. ')')
+  -- (1.6.0's note 11: a map marshal 50 m from a junction -- past the 40 m it had -- behind its tape)
+  local m50 = ofKind(plan({ mar(2050) }, { junctions = turn }), 'marshal')
+  local t50 = m50[1] and find(m50[1].objects, 'table')[1]
+  T.check(#m50 == 1 and m50[1].along == 2100 and t50 and t50.x < -10 and t50.eo == nil,
+    'a map marshal 50 m from a junction: behind its tape (' .. #m50 .. ')')
   local m2t = ofKind(plan({ mar(2090), mar(2110) }, { junctions = turn }), 'marshal')
   T.check(#m2t == 1 and m2t[1].along == 2100, 'two map marshals by one turn: its one marshal (' .. #m2t .. ')')
 

@@ -42,6 +42,8 @@ M.BOARD_OUT = 1.0
 M.DIR_BOARD_OUT = 1.0     -- a direction (tulip) board this far beyond the road's edge (the user, 2026-11-14: "a bit
                           -- further off the road")
 M.TENT_OUT = 1.5          -- props.TENT_OUT_M: the gazebo's centre beyond the edge
+M.ROADSIDE_MARSHAL_OUT = 2.5  -- a roadside marshal's table this far beyond the edge (1.6.0's note 10, the user: "an
+                              -- additional meter off" the TENT_OUT it had)
 M.TAPE_IN = 8             -- tape this far into a side road from the junction ...
 M.TAPE_PAST = 0.75        -- ... each end this far past the side road's edge (the user, 2026-11-14: "just past")
 M.TAPE_CLEAR = 1.0        -- ... moved farther in until both its ends clear the stage's road by this much
@@ -64,6 +66,10 @@ M.BALE_OFF = 1.5          -- the spectators' hay bales (their centres) this far 
 M.BALE_CLEAR = 0.7        -- ... and left out where that is less than this clear of every road there
 M.MARSHAL_BEHIND = 5      -- a junction marshal stands on the closed road this far behind its tape ...
 M.MARSHAL_SIDE = 1.5      -- ... this far off that road's centre
+-- (a marshal from the map at a turn whose only closed road is in the overrun: behind that road's tape all the same,
+-- this far behind it and off the road to the side away from the stage's way out -- the road's half width and
+-- MARSHAL_SIDE from its centre; 1.6.0's note 11)
+M.MARSHAL_OVERRUN_BEHIND = 2 * M.MARSHAL_BEHIND
 -- ... and none at all where that road is within this of the way in: the stage turns off a through road and the only
 -- closed road is straight on, where a car that overshoots goes (the user: marshals never where an overshooting car
 -- goes)
@@ -88,7 +94,8 @@ M.SPEC_SPAN_MAX_M = 120   -- ... along at most this much road in all
 M.SPEC_POINT_M = 20       -- a spectator point from the map: tape this far either side of it
 M.MARSHAL_EVERY_M = 1000  -- junction marshals at every turn that can have one, but at most one per ~1 km
 M.MARKS_SPAN_PAD_M = 100  -- the map's points kept from this far before the start to this far past the finish
-M.MARSHAL_AT_JUNCTION_M = 40  -- a marshal from the map this near a turn stands behind its tape
+M.MARSHAL_AT_JUNCTION_M = 60  -- a marshal from the map this near a taped junction (turn, straight or fork) stands
+                              -- behind its tape (1.6.0's note 11: until then 40 m, and turns only)
 -- Points right by each other merged before anything is placed (the user, 2026-11-15: "if two points are right by each
 -- other please merge them, this applies to all things"): points of one kind this close along the line (spectators
 -- and marshals: on one side) are one -- spectators one area over their combined span, a radio, medical or marshal
@@ -333,7 +340,7 @@ local function solveJunction(L, j)
   local inx, iny = wayAt(L, j.inDeg, along - M.LOOK_M, along)
   local outx, outy = wayAt(L, j.outDeg, along, along + M.LOOK_M)
   local res = { along = along, kind = j.kind, side = j.side, jx = jx, jy = jy, jz = pz, tapes = {}, half = jh,
-                tinx = inx, tiny = iny, turnDeg = angle(inx, iny, outx, outy) }
+                tinx = inx, tiny = iny, toutx = outx, touty = outy, turnDeg = angle(inx, iny, outx, outy) }
   for _, sr in ipairs(j.sides or {}) do
     local dx, dy
     if sr.deg ~= nil then dx, dy = bearingToDir(sr.deg) elseif sr.dx then dx, dy = sr.dx, sr.dy end
@@ -382,18 +389,28 @@ end
 
 -- A junction marshal's table, chair and flag: on the closed road furthest from where a car that misses the turn would
 -- go (the one least in line with the way in), MARSHAL_BEHIND m behind its tape, MARSHAL_SIDE off its centre, facing
--- back to the junction (the user, 2026-11-14).
-local function junctionMarshal(r)
+-- back to the junction (the user, 2026-11-14). At a straight or a fork (a map marshal's: 1.6.0's note 11) the overrun
+-- is the stage road itself: the closed road furthest from the way out. fromMap: at a turn whose only closed road is in
+-- the overrun, behind that road's tape all the same, MARSHAL_OVERRUN_BEHIND back and off the road to the side away from
+-- the way out (the rule's marshals: none there).
+local function junctionMarshal(r, fromMap)
   if #r.tapes == 0 then return nil end
+  local turn = r.kind == 'turn'
+  local wx, wy = r.tinx, r.tiny
+  if not turn then wx, wy = r.toutx, r.touty end
   local tp = r.tapes[1]
   for _, x in ipairs(r.tapes) do
-    if x.dx * r.tinx + x.dy * r.tiny < tp.dx * r.tinx + tp.dy * r.tiny then tp = x end
+    if x.dx * wx + x.dy * wy < tp.dx * wx + tp.dy * wy then tp = x end
   end
-  -- (even the least in line is in the overrun: no marshal at this junction)
-  if tp.dx * r.tinx + tp.dy * r.tiny > math.cos(math.rad(M.MARSHAL_OVERRUN_DEG)) then return nil end
   local rx, ry = rightOf(tp.dx, tp.dy)
-  local d = tp.s + M.MARSHAL_BEHIND
-  local cx, cy = r.jx + tp.dx * d + rx * M.MARSHAL_SIDE, r.jy + tp.dy * d + ry * M.MARSHAL_SIDE
+  local d, side = tp.s + M.MARSHAL_BEHIND, M.MARSHAL_SIDE
+  -- (even the least in line is in the overrun: no rule marshal at this junction)
+  if turn and tp.dx * wx + tp.dy * wy > math.cos(math.rad(M.MARSHAL_OVERRUN_DEG)) then
+    if not fromMap then return nil end
+    d, side = tp.s + M.MARSHAL_OVERRUN_BEHIND, tp.halfW + M.MARSHAL_SIDE
+    if rx * r.toutx + ry * r.touty > 0 then side = -side end
+  end
+  local cx, cy = r.jx + tp.dx * d + rx * side, r.jy + tp.dy * d + ry * side
   local tx, ty = -tp.dx, -tp.dy
   local qx, qy = rightOf(tx, ty)
   -- (table and chair turned 90 degrees to the right of the way they face, as props.lua's TENT: the user, 2026-11-14)
@@ -449,19 +466,21 @@ local function post(L, along, radio, medical, nearSpec)
 end
 
 -- A marshal post from the map away from any junction: a table, a chair and a flag off the road's edge (side 1 right,
--- -1 left). The table's long edge along the road, TENT_OUT past the edge; the chair 0.9 m behind it on the far side
--- from the road, facing the road. Review round 4 (the user, 2026-11-15, of the build that set both with +Y out from
+-- -1 left). The table's long edge along the road, ROADSIDE_MARSHAL_OUT past the edge; the chair 0.9 m behind it on the
+-- far side from the road, facing the road. Review round 4 (the user, 2026-11-15, of the build that set both with +Y out from
 -- the road: "needs to rotate"): turned 90 degrees from that, the table's +Y along the road (tx, ty) on either side.
 -- The models' axes taken (as the junction marshal's turn the user approved in note 2 implies: +Y to the right of the
 -- way the marshal faces): the table's long edge along its Y, the chair's seat facing its -X. So the chair faces the
 -- road with its -X towards it -- +Y along (tx, ty) on the right, (-tx, -ty) on the left -- and the table, the same
--- either way round, takes (tx, ty) on both sides.
+-- either way round, takes (tx, ty) on both sides. 1.6.0's note 10 (the user, of that build: "the chair needs to flip
+-- 180"): the chair turned round from that on both sides -- +Y against (tx, ty) on the right, along it on the left, its
+-- +X towards the road -- and the group 1 m further out.
 local function roadsideMarshal(L, along, side)
-  local o = L.half + M.TENT_OUT
+  local o = L.half + M.ROADSIDE_MARSHAL_OUT
   local x, y, z, tx, ty = L.off(along, o, side)
   local nx, ny = outward(tx, ty, side)
-  -- (the chair's +Y: its -X, the way it faces, towards the road -- -X = (-nx, -ny) -- so +Y = (-ny, nx))
-  local cx, cy = -ny, nx
+  -- (the chair's +Y: its +X towards the road -- +X = (-nx, -ny) -- so +Y = (ny, -nx))
+  local cx, cy = ny, -nx
   return {
     edged(upright('table', x, y, z, tx, ty), nx, ny, o, L.half, 'marshal'),
     edged(upright('chair', x + nx * 0.9, y + ny * 0.9, z, cx, cy), nx, ny, o + 0.9, L.half, 'marshal'),
@@ -916,28 +935,28 @@ function M.plan(input)
     return false
   end
 
-  -- marshals: from the map where it marks any on the stage (merged within MERGE_M on one side; behind a turn's tape
-  -- when near one, else by the road -- and none by the road within MARSHAL_NEAR_POST_M of a radio / medical post);
-  -- else at junction turns, at most one per MARSHAL_EVERY_M
-  local function turnNear(along, within)
+  -- marshals: from the map where it marks any on the stage (merged within MERGE_M on one side; behind a taped
+  -- junction's tape when near one, else by the road -- and none by the road within MARSHAL_NEAR_POST_M of a radio /
+  -- medical post); else at junction turns, at most one per MARSHAL_EVERY_M
+  local function tapedNear(along, within)
     local best, bd = nil, within
     for _, r in ipairs(solved) do
-      if r.kind == 'turn' and #r.tapes > 0 and abs(r.along - along) <= bd then best, bd = r, abs(r.along - along) end
+      if #r.tapes > 0 and abs(r.along - along) <= bd then best, bd = r, abs(r.along - along) end
     end
     return best
   end
   if #marks.marshal > 0 then
-    -- (each of the map's marshals first to the turn it is at, if any -- one marshal behind a turn's tape however many
-    -- marks are by it -- and only those left by the road merged: review round 4; until then the marks were merged
+    -- (each of the map's marshals first to the taped junction it is at, if any -- one marshal behind its tape however
+    -- many marks are by it -- and only those left by the road merged: review round 4; until then the marks were merged
     -- first, so a turn's mark could be merged into a roadside one before it, or the other way round)
     local used, roadside = {}, {}
     for _, m in ipairs(marks.marshal) do
-      local r = turnNear(m.along, M.MARSHAL_AT_JUNCTION_M)
+      local r = tapedNear(m.along, M.MARSHAL_AT_JUNCTION_M)
       if r and used[r] then
-        -- (that turn's marshal stands already: this mark is the same one)
+        -- (that junction's marshal stands already: this mark is the same one)
       else
-        -- (a turn whose only closed road is in the overrun: the map's post stands where the map put it, by the road)
-        local jm = r and junctionMarshal(r)
+        -- (a turn whose only closed road is in the overrun: still behind that road's tape, further back, to the side)
+        local jm = r and junctionMarshal(r, true)
         if jm then
           used[r] = true
           add('marshal', 'map', r.along, r.along, r.along, jm, m.name)
