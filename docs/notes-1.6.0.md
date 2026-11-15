@@ -325,3 +325,12 @@ m), and cuts back only the end that the re-centring takes past the plan's maxLen
 
 Left for later: the full-map scans in `nearEdges`, `roadAt` and `roadCovers` (every node within 250 m, per look) want
 a grid index; not done here.
+
+## 10. Roadside marshal: a metre further off, chair turned 180 (the user, 2026-11-15, on 85c21e4)
+
+"The new placement of the side of the road marshals should be an additional meter off, the chair needs to flip 180."
+Logged, not acted on yet (the user: wait until all feedback is in).
+
+Proposed: `roadsideMarshal` (`dressing.lua`) table 1 m further out (TENT_OUT 1.5 -> 2.5 m past the edge for this group
+only, the chair and flag moving with it), and the chair's yaw turned 180 degrees from round 4's on both sides. The
+junction marshal and the post's TENT are not part of this.
