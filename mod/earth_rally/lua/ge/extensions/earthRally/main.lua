@@ -1118,12 +1118,6 @@ function M.selfTestStop() if selftest then selftest.stop('stopped from the conso
 -- call in it is pcall'd and the strips are given back even if something before that throws -- tidy() reaches
 -- layoutOff sixth of nine, so a throw in the traffic or the props would otherwise take the release with it, and a
 -- strip left held outlives the level it was held in.
--- The road map rebuilt (map.reset: BeamNG.Earth's navgraph as roads stream in): the props' index of its nodes
--- is stale (1.6.1).
-function M.onNavgraphReloaded()
-  pcall(require('earthRally/props').mapChanged)
-end
-
 function M.onClientEndMission()
   if selftest then pcall(selftest.onClientEndMission) end
   if recce.active() then pcall(recce.stop, false) end
