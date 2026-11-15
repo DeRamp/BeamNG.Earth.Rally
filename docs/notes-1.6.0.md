@@ -214,3 +214,19 @@ Candidates, to check in this order:
   junction node or the bearing is off the side road's middle, a tape of the right length sits to one side. Fix: take
   the centre from the nearest point on the road `alignedRoad` finds, within a metre or two.
 Test: a two-piece unknown-width tape refit against a road centred on the plan must come out symmetric about it.
+
+## 9. Warning boards too close to the road; merge any points that are right by each other (the user, 2026-11-15)
+
+"Warning signs are also too close to the road, move them further out please. Also if two points are right by each
+other please merge them, this applies to all things." Logged, not acted on yet.
+
+- **Boards:** radio / medical boards and their warnings stand at `BOARD_OUT = -0.3` (`dressing.lua` 39, used in
+  `post()` ~388), 0.3 m *inside* the assumed road edge (copied from props' control boards, where a car stops beside
+  them). On a stage they should be outside it: proposed `BOARD_OUT` +1.0 m like the tulip boards (`DIR_BOARD_OUT`), on
+  top of the real-edge fix from note 6. (Check the spectator board uses the same constant.)
+- **Merge, every kind** (generalises note 7's spectators): before placing, points of the same kind within ~100 m of
+  each other along the line (and on the same side) become one: spectators one area over their combined span; radio,
+  medical and marshal posts one post at the first. Across kinds, radio + medical already share within `SHARE_M` 50 m;
+  add: a marshal post within ~50 m of a radio / medical post is dropped (that post already has its table and chair),
+  and a map marshal near a junction turn already goes behind that turn's tape. Applies to map points and random ones
+  alike. Distances to be judged in game; tests in `test_dressing` for each pairing.
