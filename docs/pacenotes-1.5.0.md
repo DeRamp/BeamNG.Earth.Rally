@@ -32,9 +32,9 @@ from the next run (a retry builds them again).
 | tightens down | a tightening corner 6 % downhill on average | the corner's shape |
 | chicane left / right entry | two tight corners either way, 15 m apart or less, 90 m in all | one note in place of both |
 | twisty | four or more fast corners (radius 60 m+) flicking either way, 40 m apart or less | after the first of them; every corner still called |
-| care, caution, double caution | the corner's speed against the approach since the last corner (40 / 30 / 22 % of it, from 90 km/h); and a corner that tightens over a crest from 72 km/h, a caution at least | slot 1 |
+| care, caution, double caution | the corner's speed against the approach since the last corner (40 / 30 / 22 % of it, from 90 km/h); a care on a corner of 45 degrees or more after 80 m with none; a corner that tightens over a crest from 72 km/h, a caution at least; and, for a voice that cannot say "tightens", a care on a corner that tightens from 72 km/h | slot 1 |
 | crest, small crest, big crest; into crest; over crest | the grade change over 20 m either side: 6 % (8 % on its own), big at 14 % | before / after / in a corner, or its own note |
-| jump, big jump, over jump | a big crest (14 %) the modelled speed cannot follow: 1.4 g over its 10 m radius (big: 2.4 g and 22 %) | before / after a corner, or its own note |
+| jump, big jump, over jump | a big crest (14 %) the modelled speed cannot follow: 1.4 g, its vertical radius measured over 10 m (big: 2.4 g and 22 %) | before / after a corner, or its own note |
 | brake over crest | a crest just before a corner with a caution (and one caution more) | before the corner |
 | dip, bad dip, through dip | the grade change upward: 14 % (18 % on its own), bad at 22 % | before / in / after a corner, or its own note |
 | up, down | 8 % or steeper for 100 m or more, on the first corner that ends on it with 60 m of it still to come | after the corner |
@@ -49,9 +49,11 @@ A note holds two calls before its corner and two after, and one call of each fam
 more apply, the highest in `stageWriter.PRIORITY` are spoken: finish, then a jump, a chicane, a crest, keep left /
 right, a dip, narrows, a bridge, a junction, twisty, a hill.
 
-Heights no road has -- a step between two samples steeper than 60 % (elevation data does that: one matched line
-drops 6 m in 4 m, 150 %) -- are not read: no crest, jump or dip within 20 m of one. A dip's two rims are not crests,
-nor are they when the dip itself gave way to a stronger crest beside it. A jump has to be a big crest as well: most
+Heights no road has -- a step between two samples steeper than 40 % (elevation data does that: one matched line
+drops 6 m in 4 m, 150 %) -- are not read: no crest, jump or dip within 20 m of one. Nor round a bridge (60 m either
+side): the line's heights there are the valley under the deck, which read as "big jump, bad dip". Only a peak of the
+grade change is an event; a dip's two rims are not crests, nor are they when the dip itself gave way to a stronger
+crest beside it. A jump has to be a big crest as well: most
 lifts over 1.4 g are at the speed model's top speed, where a few centimetres of elevation data decide it.
 
 **Speed model** (`pacenotes.lua`): 8 m/s² sideways, 3 m/s² gained, 7 m/s² braking, 40 m/s (144 km/h) top, from a
@@ -71,22 +73,25 @@ the mod's choice, which could change).
 
 - `python tools/pacenote_benchmark.py`: the notes the mod writes on the game's own 15 rally stages (81 km) against
   the game's hand-made ones, per kind of call, within 50 m: found (of the game's) / agreed (of ours). The drivelines
-  are followed as the game's road tools follow them (`--straight`: straight lines between their nodes, as before).
-  Corners 88 % / 97 %; hairpins 86 % / 66 %; square 50 % / 67 %; crests 49 % / 44 %; opens 40 % / 41 %; tightens
-  18 % / 43 %; cautions 10 % / 15 %. The drivelines have a node only every 14-40 m, so a sharp hump between two is
+  are followed across as the game's road tools follow them (centripetal Catmull-Rom; `--straight`: straight lines
+  between their nodes, as before), their heights by a monotone cubic through the nodes -- not as the game does, which
+  takes them off the terrain under each point. Corners 88 % / 97 %; hairpins 86 % / 66 %; square 50 % / 67 %; crests
+  47 % / 44 %; opens 40 % / 41 %; tightens 18 % / 43 %; cautions 26 % / 21 % (a care on every corner: 12 %). The drivelines have a node only every 14-40 m, so a sharp hump between two is
   not in them: the jump and dip rows are a floor, and say little (the game calls 34 jumps, we 2). Hills, which that
   spacing does show, agree 2 of 29.
 - `python tools/pacenote_survey.py <earthRally folder>`: rates per km over the user's matched stages, a line saved
-  under two names counted once (93 stages, 1,299 km): 5.96 notes / km, 4.67 corners / km, cautions on 4.5 % of
-  corners (the game's own stages: 8.1 % of corner notes), crests about 1 / km in all (shapes included), jumps 0.06 / km,
-  dips 0.19 / km, hairpins 0.14 / km, square 0.10 / km, up / down 0.11 / km. `--casual`: as a casual voice hears it
-  (4.94 notes / km; its crests now said after the corner, not lost in a shape it does not say). `--stage <name>`
+  under two names counted once (93 stages, 1,299 km): 5.93 notes / km, 4.67 corners / km, cautions on 12 % of
+  corners (the game's own stages: 8.1 % of corner notes), crests about 1 / km in all (shapes included), jumps 0.03 / km
+  (6 big ones in all), dips 0.13 / km, hairpins 0.14 / km, square 0.10 / km, up / down 0.11 / km. `--casual`: as a
+  casual voice hears it (4.92 notes / km, cautions on 16 % of corners; its crests said after the corner, not lost in
+  a shape it does not say). `--stage <name>`
   lists one stage's notes in order, with where they are.
 
-Cautions were tuned against the game's notes and are still the weakest call: the game puts most of its own on plain
-corners for reasons a line does not show (a blind entry, a drop, a tree). The second review (2026-11-14) took out a
-"care" on every fast tightening corner, which had brought the rate up to the game's but agreed with it 29 % of the
-time.
+Cautions are still the weakest call: the game puts many of its own on plain corners for reasons a line does not show
+(a blind entry, a drop, a tree). What its stages' cautions do follow is the straight before a corner (5 % of corners
+after less than 30 m, 16-17 % after 80 m or more) and its shape (tightens 21 %, square 19 %, a crest 15 %), not the
+radius; hence the care after a straight (the third review, 2026-11-14), which took the benchmark from 10 % / 15 % to
+26 % / 21 %. It is fitted to the same 15 stages it is scored on.
 
 ## To check in game
 
@@ -112,8 +117,12 @@ time.
     benchmark's corners go up a little);
   - up / down: 2 of 29 agree with the game, on data that does show hills;
   - dips: only "bad dip" (22 %), or none -- they cannot be judged offline either way.
-- **Hairpin at 16 m, not 20 m** (the game's own test): the benchmark goes from 84 % found / 63 % agreed to 82 % / 76 %
-  (contrarian, on the straight-line benchmark). It is fitted to the same 15 stages, so a thing to try in game.
+- **Hairpin at 16 m, not 20 m** (the game's own test): the benchmark goes from 86 % found / 66 % agreed to 82 % / 80 %.
+  It is fitted to the same 15 stages, so a thing to try in game.
+- **Jumps at all?** Two thirds of them are where the speed model is at its top speed (144 km/h), so "jump" mostly
+  means "a big crest where the road is fast"; the benchmark cannot judge them (the game calls 34, we 2, on drivelines
+  too coarse for humps). Behind the detail setting, as a big crest, or as they are. A real check would read the
+  game's terrain heights under its own stages.
 - **A voice changed mid-run**: the notes are built for the voice at the start; the game rebuilds them for a new one
   at once, so a casual voice picked mid-run can meet notes it cannot say, until the retry. The developer checks
   could flag it.

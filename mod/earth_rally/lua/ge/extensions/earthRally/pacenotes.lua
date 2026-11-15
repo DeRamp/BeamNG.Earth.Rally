@@ -186,7 +186,9 @@ M.CAUTION_V_MS = 25      -- 90 km/h: the approach at least this fast
 M.CAUTION = { 0.40, 0.30, 0.22 }   -- corner speed / approach speed at or under these
 M.CAUTION_TIGHTENS_V_MS = 20       -- 72 km/h: a corner tightening over a crest on an approach this fast
 
-function M.caution(c, v, step, prevI1, shape)
+M.CARE_DEG = 45                    -- a corner this sharp ...
+M.CARE_STRAIGHT_M = 80             -- ... after this far with no corner: a care
+function M.caution(c, v, step, prevI1, shape, unsaidTightens)
   local vc = huge
   for i = c.i0, c.i1 do if v[i] and v[i] < vc then vc = v[i] end end
   local va = 0
@@ -198,6 +200,13 @@ function M.caution(c, v, step, prevI1, shape)
     for l, t in ipairs(M.CAUTION) do if r <= t then level = l end end
   end
   if shape == 'tightensOverCrest' and va >= M.CAUTION_TIGHTENS_V_MS then level = max(level or 0, 2) end
+  -- (a corner of CARE_DEG or more after CARE_STRAIGHT_M with no corner: a care -- where the game's own stages put
+  --  theirs most, against how long the straight before was)
+  if M.CARE_DEG and c.angleDeg >= M.CARE_DEG and prevI1 and (c.i0 - prevI1) * step >= M.CARE_STRAIGHT_M then
+    level = max(level or 0, 1)
+  end
+  -- (a corner that tightens, for a voice that cannot say so: a care, on a fast approach)
+  if unsaidTightens and va >= M.CAUTION_TIGHTENS_V_MS then level = max(level or 0, 1) end
   return level
 end
 
@@ -206,7 +215,7 @@ end
 -- Crests and dips are where the grade changes: the grade over the GRADE_OVER_M after a point against the one before
 -- it (dg, a fraction: -0.1 is a road going from level to 10 % down). Heights are smoothed over three samples first.
 -- The strongest first, and nothing of the same kind within EVENT_M of one already taken, nor of the other kind
--- within OPPOSITE_M of any stronger one RIM_RATIO times as strong, taken or not: the two rims of a hollow read as
+-- within OPPOSITE_M of any stronger one RIM_RATIO times as strong, taken or not (peaks only, both): the two rims of a hollow read as
 -- crests of about half its strength, and are not (nor are they when the hollow itself gave way to a stronger crest).
 -- A jump is a big crest (JUMP_CREST_DG) the car cannot follow at the speed it gets there: the sharper grade change
 -- over JUMP_OVER_M gives the crest's vertical radius, and v^2 / radius over g is how much of the car's weight it
@@ -218,7 +227,7 @@ M.GRADE_OVER_M = 20
 M.EVENT_M = 40
 M.OPPOSITE_M = 60
 M.RIM_RATIO = 1.3
-M.BAD_GRADE = 0.6       -- (60 %: no road; the matched line's 6 m in 4 m is 150 %)
+M.BAD_GRADE = 0.4       -- (40 % over 5 m: no road; the matched line's 6 m in 4 m is 150 %)
 M.CREST_DG = 0.06        -- a crest
 M.SMALL_CREST_DG = 0.08  -- weaker than this: a small one
 M.BIG_CREST_DG = 0.14    -- this or more: a big one
@@ -288,7 +297,10 @@ function M.heights(pts, step, v)
   local cands = {}
   for i = w + 1, n - w do
     local d = dg[i]
-    if (d <= -M.CREST_DG or d >= M.DIP_DG) and clean(i) then cands[#cands + 1] = i end
+    -- (a peak only: a crest's or a hollow's shoulder samples are not events, nor do they put one out)
+    local peak = abs(d) >= abs(dg[i - 1]) and abs(d) >= abs(dg[i + 1]) and
+                 (dg[i - 1] < 0) == (d < 0) and (dg[i + 1] < 0) == (d < 0)
+    if (d <= -M.CREST_DG or d >= M.DIP_DG) and peak and clean(i) then cands[#cands + 1] = i end
   end
   table.sort(cands, function(x, y)
     if abs(dg[x]) ~= abs(dg[y]) then return abs(dg[x]) > abs(dg[y]) end

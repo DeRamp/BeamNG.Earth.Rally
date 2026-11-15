@@ -185,12 +185,12 @@ do
   -- more calls before a corner than its two slots: the jump and the crest beat the side road
   local line = road({ { 'straight', 600 }, { 'arc', 60, 90 }, { 'straight', 500 } }, hump(565, 30, 2))
   local cum = geo.cumulative(line)
-  local b = build(line, { { s = 578, type = 'overBridge' }, { s = 586, type = 'pastJunction' } })
+  local b = build(line, { { s = 578, type = 'atJunction' }, { s = 586, type = 'pastJunction' } })
   local ns = notes(b)
   local hit
   for _, s in ipairs(ns) do if s:find('4:corner') then hit = s end end
   T.check(hit and (hit:find('jump') or hit:find('Jump')) and not hit:find('pastJunction'),
-    'a jump, a bridge and a side road before a corner: the jump and the bridge are called, the side road is not (' ..
+    'a jump, a turning and a side road before a corner: the jump and the turning are called, the side road is not (' ..
     tostring(hit) .. ')')
   local n2 = 0
   for _ in (hit or ''):gmatch('[23]:') do n2 = n2 + 1 end
@@ -242,6 +242,15 @@ do
     return x * 0.12 end)))
   T.check(has(climb, 'up'), 'a stage that starts on a 12 % climb: "up" after the corner (' .. show(climb) .. ')')
   -- the second reviews' cases (2026-11-14)
+  -- a hump at a bridge is the valley under it: no jump, the bridge called
+  local br = notes(build(road({ { 'straight', 1200 } }, hump(600, 30, 2)), { { s = 610, type = 'overBridge' } }))
+  T.check(has(br, 'overBridge') and not has(br, '[Jj]ump') and not has(br, 'rest'),
+    'a hump at a bridge: "over bridge", no jump or crest (' .. show(br) .. ')')
+  -- a corner that tightens, for a voice that cannot say "tightens", on a fast approach: a care
+  local ttc = notes(writer.build(road({ { 'straight', 500 }, { 'arcs', { { 120, 40 }, { 60, 50 } } },
+    { 'straight', 400 } }), { startM = 0, finishM = 1e9, quatFn = qf, speaks = { finish = true } }))
+  T.check(has(ttc, '1:caution1,4:corner$'), 'a fast tightening corner, a voice with no shapes: a care (' ..
+    show(ttc) .. ')')
   -- a casual voice says no corner shape: a crest inside a corner is "over crest" after it, not a silent shape
   local casualSet = { finish = true, crest = true, overJump = true, overCrest = true, intoCrest = true,
                       bigCrest = true, smallCrest = true, brakeOverCrest = true, keepLeftOverCrest = true,

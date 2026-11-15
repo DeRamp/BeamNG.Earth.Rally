@@ -50,6 +50,7 @@ M.HILL_AHEAD_M = 60         -- "up" / "down" on a corner only with this much of 
 M.ALONE_MERGE_M = 15       -- calls this close together that have no corner share one note
 M.TIGHTENS_DOWN_GRADE = 0.06 -- a tightening corner this steep downhill on average: "tightens down"
 M.FINISH_ON_NOTE_M = 100    -- the last note ending this close to the finish says "over finish" too
+M.BRIDGE_HEIGHTS_M = 60     -- no crest, jump or dip read this close to a bridge (the heights are the valley's)
 -- Which calls are spoken when a note has more than its two slots before (or after) the corner can hold: the highest
 -- here first, then the nearest. A jump or a blind crest can hurt; a side road cannot.
 M.PRIORITY = {
@@ -232,7 +233,8 @@ function M.build(line, opts)
       e.item = item
       -- (the caution reads the corner as it is, said in its shape or not)
       e.caution = pacenotes.caution(c, v, step, corners[ci - 1] and corners[ci - 1].i1,
-                                    over == 'tightensOverCrest' and over or shape)
+                                    over == 'tightensOverCrest' and over or shape,
+                                    (shape == 'tightens' or shape == 'tightensDown') and not item.shape)
       if c.twisty and said('twisty') then e.post[1] = { type = 'twisty', i = c.i1, prio = M.PRIORITY.twisty } end
     end
     entries[#entries + 1] = e
@@ -287,6 +289,14 @@ function M.build(line, opts)
   end
 
   local hb, ha = math.ceil(M.HEIGHT_BEFORE_M / step), math.ceil(M.HEIGHT_AFTER_M / step)
+  -- (no crest, jump or dip read round a bridge: the line's heights there are the valley under the deck)
+  local bridgeN = math.ceil(M.BRIDGE_HEIGHTS_M / step)
+  for _, lm in ipairs(opts.landmarks or {}) do
+    if lm.type == 'overBridge' then
+      local bi = math.floor((lm.s + lead - startM) / step + 0.5) + 1
+      for _, ev in ipairs(events) do if math.abs(ev.i - bi) <= bridgeN then ev.used = true end end
+    end
+  end
   -- (keep left / right: a note of its own, as the game's stages always have it; on a crest, "keep left over crest")
   local lmb, lma = math.ceil(M.LANDMARK_BEFORE_M / step), math.ceil(M.LANDMARK_AFTER_M / step)
   local features = {}
@@ -363,8 +373,9 @@ function M.build(line, opts)
   -- the finish: on the note that ends last when that is close to it, else a note of its own on the line ("over
   -- finish", as the game's own stages have it; no "to stop" after it: the co-driver is off once the finish is crossed)
   local last = nil
-  for _, e in ipairs(entries) do if not e.keep and (not last or e.i1 > last.i1) then last = e end end
-  if last and (np - last.i1) * step <= M.FINISH_ON_NOTE_M then
+  for _, e in ipairs(entries) do if not last or e.i1 > last.i1 then last = e end end
+  -- (not on a keep note: that is a note of its own; the finish then has one of its own after it)
+  if last and not last.keep and (np - last.i1) * step <= M.FINISH_ON_NOTE_M then
     table.insert(last.post, { type = 'finish', i = np, prio = M.PRIORITY.finish })
   else
     entries[#entries + 1] = { i0 = math.max(1, np - 2), i1 = np, at = np, pre = { { type = 'finish', i = np,
