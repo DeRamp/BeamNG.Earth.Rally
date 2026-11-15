@@ -38,7 +38,7 @@ Nothing goes upstream for 1.3.0 (the user, 2026-11-13): the api.hudHide pull req
 dropped -- docs/plan-1.3.0.md, "The strips: no pull request" -- and the mount call Earth Rally already uses stays,
 with the strips now given back on every way out of a run.
 
-Not in 1.3.0: the self-test's co-driver check, which moves to the co-driver version (now 1.6.0) with the rest of
+Not in 1.3.0: the self-test's co-driver check, which moved to the co-driver version (1.5.0, which did not reach it) with the rest of
 that work. Note that
 until it is done `tools/selftest.py` exits 1 on every run, so it is a report to read rather than a gate to trust
 (docs/plan-1.3.0.md says what it would take to make it one meanwhile).
@@ -113,8 +113,8 @@ Done: **released 2026-11-14**, with steps 1, 2 and 5 built and "Quick start on t
 on the way (the user: "drop qikc start on line from settings"). Steps 3, 4 and 6 -- the automatic ATC, the
 late-start penalty and pre-loading before the start -- were not reached, and a 1.3.3 drafted to carry them was
 emptied the same day (the user): the automatic ATC and the start-minute question dropped outright, pre-loading and
-the late-start penalty moved to on the stage (then 1.6.0, now 1.5.0). docs/roadmap.md has both, under Dropped and
-under 1.5.0.
+the late-start penalty moved to on the stage (now 1.6.0). docs/roadmap.md has both, under Dropped and
+under 1.6.0.
 
 What came out of this version that was not in the plan: the no-ATC start's guard turned out not to be
 belt-and-braces over the placement but the whole of the fix at a start inside a hairpin, which is why the trigger
@@ -137,10 +137,31 @@ after it moved up one. The spec is docs/rally-file.md, the approved mock-up docs
 Done: **released 2026-11-14**, with the user's ARA Nationals 2026 pack imported and its menus looked at in game.
 Not yet seen in game: a pack imported from a zip (only a folder was).
 
-## 1.5.0: on the stage
+## 1.5.0: the co-driver
 
-Moved ahead of the co-driver and the rally file (the user, 2026-11-14); it was 1.6.0, then 1.4.0 until the rally
-files took that number. Not yet planned in detail. **Next.**
+Built on the branch `pacenotes` alongside on the stage, and released first (the user, 2026-11-14), so on the stage
+moved up to 1.6.0. Was 1.6.0, 1.5.0 and 1.4.0 before. docs/pacenotes-1.5.0.md has every call, its figures, and what
+the user decided along the way.
+
+1. Agreed with the user what the overhaul covers: 17 note types, the gravel and tunnel calls left out.
+2. Heights along the line: jumps, dips, hills; crests from the driver's sight (the second drive: "Crests should be
+   detected based on driver visibility, not elevation change"); "down" at the top of a downhill from flat road (the
+   third drive).
+3. Corners: hairpin / square, tightens / opens, chicane, twisty, long sweepers (the first drive), cautions; checked
+   against the game's own stages' notebooks (`tools/pacenote_benchmark.py`) and the user's lines
+   (`tools/pacenote_survey.py`).
+4. Bridges for lines matched in the game (`tools/auto_recce.py --bridges-only`; the first drive).
+5. Every call fitted to what the player's co-driver voice says (`rallyAdapter.speaks`).
+
+Done: **released 2026-11-14**, after four drives by the user ("looks great!"), with a debugger's and a contrarian's
+review over every build. Not reached: the self-test's co-driver check (step 0 of the plan:
+`drivelineRoute:setVehicleTracker()` is the lead; docs/plan-1.3.0.md has the findings) and co-driver settings (26),
+both for the user to place.
+
+## 1.6.0: on the stage
+
+Moved ahead of the rally file (the user, 2026-11-14); it was 1.6.0, then 1.4.0 until the rally files took that
+number, then 1.5.0 until the co-driver was released first. Not yet planned in detail. **Next.**
 
 1. Course tape (5) and junction direction signs (6) from the junction data the auto recce finds.
 2. Ghost car and replays (27). Before the rally file now, so where a ghost's run is kept (on this machine, per
@@ -152,22 +173,6 @@ files took that number. Not yet planned in detail. **Next.**
    1.3.2's unreached steps 6 and 4, which say what each is.
 
 Done: a long stage with tape, signs and a ghost, end to end.
-
-## 1.6.0: the co-driver
-
-Was 1.4.0 until on the stage moved ahead of it, then 1.5.0 until the rally files came in as 1.4.0 (the user,
-2026-11-14).
-
-0. The self-test's co-driver check (carried from 1.2, deferred from 1.3.0): `drivelineRoute:setVehicleTracker()` is
-   the lead -- a duck-typed tracker reporting a synthetic speed and position would drive the whole pacenote
-   pipeline with no real vehicle. It belongs here: a test that listens for pacenotes is worth most in the version
-   that changes them, and it gates every change below. docs/plan-1.3.0.md has the findings and what was tried.
-1. Agree with the user what the overhaul covers (call style, which features).
-2. Heights along the matched line: crests, jumps, dips; cautions from tightening corners and narrow sections.
-3. Better corner grading and distance calls, checked against the game's own stages' notebooks.
-4. Co-driver settings (26): call timing, detail, voice (menu mock-up first).
-
-Done: the user drives three known stages and trusts the calls.
 
 ## 1.7.0: make and share stages
 

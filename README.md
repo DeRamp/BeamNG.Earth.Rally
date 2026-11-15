@@ -4,7 +4,7 @@ Drive real rallies on the real roads. Drop in a rally's map — the one its orga
 turns it into timed stages on [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth), with time controls, a
 start tree, penalties, and BeamNG.drive's own co-driver calling pacenotes worked out from the road itself.
 
-**Status: alpha (1.4.0).** It works and it is being played, but things move.
+**Status: alpha (1.5.0).** It works and it is being played, but things move.
 
 ## What you need
 
@@ -87,8 +87,14 @@ only maps in it works too.
 * The clock stops at the **flying finish**; drive on to the **stop control** for the results card — your time, each
   penalty, your best, and **Next stage**.
 
-**Pacenotes** come from the stage's line: corners, their severity and the distance calls, voiced by the game's own
-co-driver. With an auto recce, junctions are called too — *at junction*, *past junction*, *keep left / right*.
+**Pacenotes** come from the stage's line, voiced by the game's own co-driver: every corner with its number and
+length, *hairpin*, *square*, *tightens* / *opens*, *chicane*, long sweepers, and a *caution* where a corner comes up
+faster than it looks. Crests are called where the driver cannot see the road ahead — not wherever the grade changes
+— with *down* at the top of a downhill from flat road, and *jump*, *dip*, *up* / *down* from the heights. With an
+auto recce, junctions are called too — *at junction*, *past junction*, *keep left / right* — and *over bridge*
+where the line has its bridges (the in-game recce cannot see them; `tools/auto_recce.py --bridges-only` adds
+BeamNG.Earth's own). A casual co-driver voice hears only what it can say. All of it, and the figures behind it:
+[`docs/pacenotes-1.5.0.md`](docs/pacenotes-1.5.0.md).
 
 ## Controls
 
@@ -114,7 +120,7 @@ clock's close-up shows.
    * **`attempt to index global 'earthRally_main'`** — the mod is not loaded. Main menu > **Mods** and switch Earth
      Rally on. Not listed? The zip must be directly in `…\current\mods\`, still zipped, one copy only. BeamMP
      switches local mods off when you join a server.
-3. Still nothing: `beamng.log` in `…\current\` should say `Earth Rally 1.4.0 loaded`. Open an issue with the lines
+3. Still nothing: `beamng.log` in `…\current\` should say `Earth Rally 1.5.0 loaded`. Open an issue with the lines
    mentioning `earthRally`.
 
 ## Making your own stage map
@@ -145,8 +151,9 @@ pack on.
 ## More
 
 * What is coming: [`docs/roadmap.md`](docs/roadmap.md)
-* This version: [`docs/release-1.4.0.md`](docs/release-1.4.0.md), and 1.3.2 before it:
-  [`docs/release-1.3.2.md`](docs/release-1.3.2.md)
+* This version: [`docs/release-1.5.0.md`](docs/release-1.5.0.md), and 1.4.0 before it:
+  [`docs/release-1.4.0.md`](docs/release-1.4.0.md)
+* What the co-driver calls, and why: [`docs/pacenotes-1.5.0.md`](docs/pacenotes-1.5.0.md)
 * The rally pack format: [`docs/rally-file.md`](docs/rally-file.md)
 * Building, testing and the design notes: [`docs/`](docs/) — `python tests/run_tests.py` runs the suite,
   `python tools/install.py` installs from this folder.
