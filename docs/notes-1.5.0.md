@@ -1,6 +1,6 @@
 # 1.5.0 notes: the stage dressing in game
 
-Found while the user drove the build (branch `worktree-stage-dressing-1.5.0`, 35d1bb7). Logged, not fixed, while
+Found while the user drove the build (branch `worktree-stage-dressing-1.4.0`, 35d1bb7). Logged, not fixed, while
 testing. Each says where in the code and what the fix would be.
 
 ## 1. Hay bales in the middle of the street at Y-shaped hairpins (the user, 2026-11-14)

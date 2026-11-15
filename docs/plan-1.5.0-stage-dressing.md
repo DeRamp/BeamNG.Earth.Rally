@@ -1,6 +1,6 @@
 # 1.5.0 on the stage: stage dressing (plan)
 
-Drafted 2026-11-14 in its own worktree (branch `worktree-stage-dressing-1.5.0`), alongside the rally-file work and
+Drafted 2026-11-14 in its own worktree (branch `worktree-stage-dressing-1.4.0`), alongside the rally-file work and
 the roadmap edits going on elsewhere; nothing here touches `docs/roadmap.md`, `docs/version-plans.md` or the menus.
 **Renumbered 1.5.0** (2026-11-15): 1.4.0 went to the rally files, released on main first; this branch was drafted as 1.4.0, and its docs were renamed when main was merged in.
 
