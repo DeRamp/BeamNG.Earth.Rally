@@ -334,3 +334,18 @@ Logged, not acted on yet (the user: wait until all feedback is in).
 Proposed: `roadsideMarshal` (`dressing.lua`) table 1 m further out (TENT_OUT 1.5 -> 2.5 m past the edge for this group
 only, the chair and flag moving with it), and the chair's yaw turned 180 degrees from round 4's on both sides. The
 junction marshal and the post's TENT are not part of this.
+
+## 11. A map marshal near a junction must stand behind the tape (the user, 2026-11-15, on 85c21e4)
+
+"If there is a marshal point near a junction, they need to be behind the tape." Logged, not acted on yet.
+
+Why one didn't: a map marshal is put behind a junction's tape only when `turnNear` (`dressing.lua` ~922) finds a junction
+of kind `'turn'` with tape within `MARSHAL_AT_JUNCTION_M` (40 m). A side road the stage goes straight past
+(`'straight'`) or a fork (`'fork'`, `junctions.lua` ~161) is taped but never matched, so the marshal stands by the stage
+road (`roadsideMarshal`). It also falls back to roadside when `junctionMarshal` returns nil (the only closed road lies in
+a turn's overrun), or when the junction is more than 40 m from the mark.
+
+Proposed: match any taped junction (turn, straight, fork) within the window, and widen it to ~60 m. At a straight or a
+fork the overrun is the stage road itself, so `junctionMarshal` should take the closed side road furthest from the way
+out. Where a turn's only closed road lies in the overrun, still put the marshal behind that road's tape, further back
+(e.g. 2 x `MARSHAL_BEHIND`) and to the side, rather than on the stage. Tests for each kind.
