@@ -96,6 +96,13 @@ M.MARSHAL_AT_JUNCTION_M = 40  -- a marshal from the map this near a turn stands 
 -- post has its own table and chair). A radio and a medical point within SHARE_M still share one post.
 M.MERGE_M = 100
 M.MARSHAL_NEAR_POST_M = 50
+-- (review round 4) ... and points of one kind this close on the ground are one whatever lies between along the line
+-- (a hairpin's two legs); a chain merged along the line stops growing at SPEC_SPAN_MAX_M from its first point to its
+-- last (the next starts a group of its own); and a radio / medical post whose tent would stand within POST_NEAR_SPEC_M
+-- of a spectator area on its side (the right) keeps its boards and flag but not its gazebo, table and chair (the
+-- spectators' camp is there)
+M.MERGE_GROUND_M = 50
+M.POST_NEAR_SPEC_M = 50
 
 -- How far each object reaches round its origin (m, in plan): props.lua holds it this clear of every road the game has
 -- there, pushing it out with its group (or leaving the group out) where it is not
@@ -402,7 +409,7 @@ M._junctionMarshal = junctionMarshal
 
 -- A radio point (withMedical: and a medical point sharing its post), or a medical point alone (radio false): the
 -- warning board(s) WARN_BEFORE m before, the board(s) at the point, the post POST_AFTER m after, all on the right.
-local function post(L, along, radio, medical)
+local function post(L, along, radio, medical, nearSpec)
   local objs = {}
   local function board(key, s)
     local x, y, z, tx, ty = L.off(s, L.half + M.BOARD_OUT, 1)
@@ -429,27 +436,35 @@ local function post(L, along, radio, medical)
     local nx, ny = outward(tx, ty, 1)
     objs[#objs + 1] = edged(upright(key, x, y, z, dx, dy), nx, ny, L.half + out, L.half, 'post')
   end
-  at(0, M.TENT_OUT, 0, 'gazeboFrame')
-  at(0, M.TENT_OUT, 0, 'gazeboCover')
-  at(-0.3, M.TENT_OUT - 0.6, 90, 'table')
-  at(-0.3, M.TENT_OUT + 0.3, 90, 'chair')
+  -- (nearSpec(along) true: a spectator area on the right within POST_NEAR_SPEC_M of the tent -- its camp is the
+  -- tent there; the boards and the flag stay)
+  if not (nearSpec and nearSpec(pa)) then
+    at(0, M.TENT_OUT, 0, 'gazeboFrame')
+    at(0, M.TENT_OUT, 0, 'gazeboCover')
+    at(-0.3, M.TENT_OUT - 0.6, 90, 'table')
+    at(-0.3, M.TENT_OUT + 0.3, 90, 'chair')
+  end
   if radio then at(2.4, M.TENT_OUT, 0, 'flag') end
   return objs, w, pa + 3
 end
 
 -- A marshal post from the map away from any junction: a table, a chair and a flag off the road's edge (side 1 right,
--- -1 left), set out as props.lua's TENT is on the right and mirrored on the left (the user, 2026-11-15: "the table
--- and chair for these marshals needs to rotate too"): the table's long edge along the road, TENT_OUT - 0.6 past the
--- edge (TENT's), the chair 0.9 m behind it on the far side from the road, facing the road -- both with their +Y out
--- from the road, which is TENT's yaw 90 on the right. (Until then both took the right of the road's way on either
--- side, and the chair stood between the table and the road.)
+-- -1 left). The table's long edge along the road, TENT_OUT past the edge; the chair 0.9 m behind it on the far side
+-- from the road, facing the road. Review round 4 (the user, 2026-11-15, of the build that set both with +Y out from
+-- the road: "needs to rotate"): turned 90 degrees from that, the table's +Y along the road (tx, ty) on either side.
+-- The models' axes taken (as the junction marshal's turn the user approved in note 2 implies: +Y to the right of the
+-- way the marshal faces): the table's long edge along its Y, the chair's seat facing its -X. So the chair faces the
+-- road with its -X towards it -- +Y along (tx, ty) on the right, (-tx, -ty) on the left -- and the table, the same
+-- either way round, takes (tx, ty) on both sides.
 local function roadsideMarshal(L, along, side)
-  local o = L.half + M.TENT_OUT - 0.6
+  local o = L.half + M.TENT_OUT
   local x, y, z, tx, ty = L.off(along, o, side)
   local nx, ny = outward(tx, ty, side)
+  -- (the chair's +Y: its -X, the way it faces, towards the road -- -X = (-nx, -ny) -- so +Y = (-ny, nx))
+  local cx, cy = -ny, nx
   return {
-    edged(upright('table', x, y, z, nx, ny), nx, ny, o, L.half, 'marshal'),
-    edged(upright('chair', x + nx * 0.9, y + ny * 0.9, z, nx, ny), nx, ny, o + 0.9, L.half, 'marshal'),
+    edged(upright('table', x, y, z, tx, ty), nx, ny, o, L.half, 'marshal'),
+    edged(upright('chair', x + nx * 0.9, y + ny * 0.9, z, cx, cy), nx, ny, o + 0.9, L.half, 'marshal'),
     edged(upright('flag', x + tx * 1.6, y + ty * 1.6, z, tx, ty), nx, ny, o, L.half, 'marshal'),
   }
 end
@@ -493,14 +508,15 @@ local function spectators(L, s0, s1, sApex, side, clearOf)
   run(M.SPEC_OFF, 5, 'specTape', M.SPEC_TAPE_MAX)
   run(M.SPEC_OFF + M.FENCE_BEHIND, 2, 'fence', M.SPEC_FENCE_MAX)
   -- hay bales at the inside edge, at the apex and 12 m either side; one that would stand on a road (at a Y-shaped
-  -- hairpin the inside of the turn is another road, or the hairpin's other leg) left out. Each one on its own:
-  -- props.lua sets it off the game's road edge and pushes it out until it is clear of every road (or leaves it out)
+  -- hairpin the inside of the turn is another road, or the hairpin's other leg) left out. The three one group
+  -- (review round 4): props.lua sets each off the game's road edge and pushes the row out together until all of it
+  -- is clear of every road (or leaves the row out), so they stay in line
   for _, ds in ipairs({ -12, 0, 12 }) do
     local s = sApex + ds
     local x, y, z, tx, ty = L.off(s, half + M.BALE_OFF, side)
     if s >= s0 and s <= s1 and clearOf(x, y) >= M.BALE_CLEAR then
       local nx, ny = outward(tx, ty, side)
-      objs[#objs + 1] = edged(upright('bale', x, y, z, tx, ty), nx, ny, half + M.BALE_OFF, half)
+      objs[#objs + 1] = edged(upright('bale', x, y, z, tx, ty), nx, ny, half + M.BALE_OFF, half, 'bales')
     end
   end
   -- the camp: in from the apex until clear of the road by the fence and a little more
@@ -619,23 +635,40 @@ local function capped(objs, kind)
   return out
 end
 
--- Points of one kind (sorted along the line) merged: each joins the group before it whose last point is within
--- MERGE_M of it -- with sideOf(m) given (-1 / 1), only a group on the same side. Returns the groups, in order:
--- { along (the first point's), first, last, side, name (the first's), offLineM (the first's), n }.
-local function merged(list, sideOf)
+-- Points of one kind (sorted along the line) merged: each joins a group on the same side (with sideOf(m) given: -1 /
+-- 1) whose last point is within MERGE_M of it along the line -- while that keeps the group's first to last within
+-- SPEC_SPAN_MAX_M (a chain stops growing there; the next point starts a group) -- or, with posOf(m) -> x, y given,
+-- any of whose points is within MERGE_GROUND_M of it on the ground when it is further than MERGE_M along (a
+-- hairpin's other leg). Returns the groups, in
+-- order: { along (the first point's), first, last, side, name (the first's), offLineM (the first's), n }.
+local function merged(list, sideOf, posOf)
   local out = {}
   for _, m in ipairs(list) do
     local side = sideOf and sideOf(m) or 1
+    local px, py
+    if posOf then px, py = posOf(m) end
     local hit = nil
     for k = #out, 1, -1 do
       local g = out[k]
-      if m.along - g.last <= M.MERGE_M and g.side == side then hit = g break end
+      if g.side == side then
+        local alongOk = m.along - g.last <= M.MERGE_M and
+          max(g.last, m.along) - min(g.first, m.along) <= M.SPEC_SPAN_MAX_M + 1e-9
+        local groundOk = false
+        -- (on the ground only for a point beyond MERGE_M along: one nearer is the chain's, and held to its span)
+        if px and m.along - g.last > M.MERGE_M then
+          for _, q in ipairs(g.pts) do
+            if (q[1] - px) ^ 2 + (q[2] - py) ^ 2 <= M.MERGE_GROUND_M ^ 2 then groundOk = true break end
+          end
+        end
+        if alongOk or groundOk then hit = g break end
+      end
     end
     if hit then
-      hit.last, hit.n = max(hit.last, m.along), hit.n + 1
+      hit.first, hit.last, hit.n = min(hit.first, m.along), max(hit.last, m.along), hit.n + 1
+      if px then hit.pts[#hit.pts + 1] = { px, py } end
     else
       out[#out + 1] = { along = m.along, first = m.along, last = m.along, side = side, name = m.name,
-                        offLineM = m.offLineM, n = 1 }
+                        offLineM = m.offLineM, n = 1, pts = px and { { px, py } } or {} }
     end
   end
   return out
@@ -654,7 +687,8 @@ local function sideOfMark(m) return (m.offLineM or 0) < 0 and -1 or 1 end
 --   halfWidth (default 3),
 --   seed (the automatic fill's chance: the same seed, the same dressing; default ''),
 --   mapKinds = { radio = true, spectator = true, ... } (the kinds the rally's map marks on ANY of its stages:
---     events.markedKinds; a kind marked there, or in `marks` at all, is never filled in by chance on this stage) }
+--     events.markedKinds, counting only the marks some stage would use; a kind marked there, or in `marks` within this
+--     stage's span, is never filled in by chance on this stage) }
 function M.plan(input)
   local line = input.line
   if not line or #line < 2 then return {} end
@@ -674,8 +708,9 @@ function M.plan(input)
   -- marks from the map, by kind, on the stage (the runner has already dropped those too far off the line driven),
   -- from MARKS_SPAN_PAD_M before the start to as far past the finish (events.stageMarks counts with the same span).
   -- Per kind and per rally (1.6.0's note 5, the user: "if a rally event has spots marked on a map for at least one
-  -- stage, don't assume random on the others, assume zero"): a kind the rally's map marks anywhere -- on another
-  -- stage, or on this one outside its span -- is the map's alone, and a stage without one of them gets none; only a
+  -- stage, don't assume random on the others, assume zero"): a kind the rally's map marks where a stage uses it -- on
+  -- another stage, or on this one -- is the map's alone, and a stage without one of them gets none (review round 4:
+  -- a mark no stage uses, outside every span or too far off every line, no longer counts); only a
   -- kind the rally marks nowhere is filled in by chance (medical never is; the junction marshals at taped turns are
   -- dressing, not map points, and stay either way).
   local marks = { radio = {}, medical = {}, spectator = {}, marshal = {} }
@@ -683,9 +718,9 @@ function M.plan(input)
   for k, v in pairs(input.mapKinds or {}) do if v then rallyMarks[k] = true end end
   local pad = M.MARKS_SPAN_PAD_M
   for _, m in ipairs(input.marks or {}) do
-    if marks[m.kind] then rallyMarks[m.kind] = true end
     if marks[m.kind] and m.along and m.along >= startM - pad and m.along <= finishM + pad then
       marks[m.kind][#marks[m.kind] + 1] = m
+      rallyMarks[m.kind] = true
     end
   end
   for _, list in pairs(marks) do table.sort(list, function(a, b) return a.along < b.along end) end
@@ -746,108 +781,24 @@ function M.plan(input)
     return c
   end
 
-  -- radio and medical points first (a roadside marshal post near one is left out, below). Radio: the map's, merged
-  -- where within MERGE_M of each other (one post at the first); else, where the rally's map marks no radio point
-  -- anywhere, every ~RADIO_EVERY_M (none in the last RADIO_NOT_LAST_M), each moved along until its post is clear of
-  -- the junctions
-  local radios = {}
-  if #marks.radio > 0 then
-    for _, g in ipairs(merged(marks.radio)) do radios[#radios + 1] = { along = g.along, source = 'map', name = g.name } end
-  elseif not rallyMarks.radio then
-    local function clearOfJunctions(s)
-      for _, r in ipairs(solved) do
-        if r.along >= s - M.RADIO_CLEAR_M and r.along <= s + M.POST_AFTER + M.MEDICAL_AFTER + M.RADIO_CLEAR_M then
-          return false
-        end
-      end
-      return true
+  -- (a map point's place on the ground: offLineM to its side of the line at its distance along)
+  local function posOfMark(m)
+    local off = m.offLineM or 0
+    local x, y = L.off(m.along, abs(off), off < 0 and -1 or 1)
+    return x, y
+  end
+  -- (the spectator areas placed, { s0, s1, side }: a radio / medical post near one on its side has no tent of its
+  -- own)
+  local specAreas = {}
+  local function nearSpec(along)
+    for _, a in ipairs(specAreas) do
+      if a.side == 1 and along >= a.s0 - M.POST_NEAR_SPEC_M and along <= a.s1 + M.POST_NEAR_SPEC_M then return true end
     end
-    -- (each the next RADIO_GAP_MIN_M .. RADIO_GAP_MAX_M on from the last, by chance)
-    local rnd = M.rng(input.seed, 'radio')
-    local s = startM + rnd(M.RADIO_GAP_MIN_M, M.RADIO_GAP_MAX_M)
-    while s <= finishM - M.RADIO_NOT_LAST_M do
-      local at = s
-      for k = 0, 12 do
-        local cand = s + (k % 2 == 0 and 1 or -1) * math.ceil(k / 2) * 25
-        if cand <= finishM - M.RADIO_NOT_LAST_M and clearOfJunctions(cand) then at = cand break end
-      end
-      radios[#radios + 1] = { along = at, source = 'rule' }
-      s = at + rnd(M.RADIO_GAP_MIN_M, M.RADIO_GAP_MAX_M)
-    end
-  end
-  -- medical points: only the map's, merged as the radio points; one within SHARE_M of a radio point shares its post
-  local medicals = {}
-  for _, m in ipairs(merged(marks.medical)) do
-    local best, bd = nil, M.SHARE_M
-    for _, r in ipairs(radios) do
-      if not r.medical and abs(r.along - m.along) <= bd then best, bd = r, abs(r.along - m.along) end
-    end
-    if best then best.medical = m
-    else medicals[#medicals + 1] = m end
-  end
-  for _, m in ipairs(medicals) do
-    local objs, from, to = post(L, m.along, false, true)
-    add('medical', 'map', m.along, from, to, objs, m.name)
-  end
-  for _, r in ipairs(radios) do
-    local objs, from, to = post(L, r.along, true, r.medical ~= nil)
-    add('radio', r.source, r.along, from, to, objs, r.name or (r.medical and r.medical.name))
-    if r.medical then sites[#sites].shared = true end
-  end
-  local function nearPost(along)
-    for _, r in ipairs(radios) do if abs(r.along - along) <= M.MARSHAL_NEAR_POST_M then return true end end
-    for _, m in ipairs(medicals) do if abs(m.along - along) <= M.MARSHAL_NEAR_POST_M then return true end end
     return false
   end
 
-  -- marshals: from the map where it marks any on the stage (merged within MERGE_M on one side; behind a turn's tape
-  -- when near one, else by the road -- and none by the road within MARSHAL_NEAR_POST_M of a radio / medical post);
-  -- else at junction turns, at most one per MARSHAL_EVERY_M
-  local function turnNear(along, within)
-    local best, bd = nil, within
-    for _, r in ipairs(solved) do
-      if r.kind == 'turn' and #r.tapes > 0 and abs(r.along - along) <= bd then best, bd = r, abs(r.along - along) end
-    end
-    return best
-  end
-  if #marks.marshal > 0 then
-    local used = {}
-    for _, m in ipairs(merged(marks.marshal, sideOfMark)) do
-      local r = turnNear(m.along, M.MARSHAL_AT_JUNCTION_M)
-      if r and used[r] then r = nil end
-      -- (a turn whose only closed road is in the overrun: the map's post stands where the map put it, by the road)
-      local jm = r and junctionMarshal(r)
-      if jm then
-        used[r] = true
-        add('marshal', 'map', r.along, r.along, r.along, jm, m.name)
-      elseif not nearPost(m.along) then
-        add('marshal', 'map', m.along, m.along, m.along, roadsideMarshal(L, m.along, m.side), m.name)
-      end
-    end
-  else
-    -- (every turn that can have one, but none within MARSHAL_EVERY_M of another: where two are that close, which
-    -- one keeps its marshal is by chance -- the turns taken in an order by chance, each kept unless one already kept
-    -- is too near)
-    local rnd = M.rng(input.seed, 'marshal')
-    local eligible = {}
-    for _, r in ipairs(solved) do
-      if r.kind == 'turn' and #r.tapes > 0 then
-        local jm = junctionMarshal(r)
-        if jm then eligible[#eligible + 1] = { r = r, jm = jm } end
-      end
-    end
-    local standing = {}
-    for _, e in ipairs(shuffled(eligible, rnd)) do
-      local ok = true
-      for _, a in ipairs(standing) do if abs(e.r.along - a) < M.MARSHAL_EVERY_M then ok = false break end end
-      if ok then
-        add('marshal', 'rule', e.r.along, e.r.along, e.r.along, e.jm)
-        standing[#standing + 1] = e.r.along
-      end
-    end
-  end
-
-  -- spectator areas: the map's (points on one side within MERGE_M of each other one area), else -- where the rally's
+  -- spectator areas first (a radio / medical post by one has no tent: below): the map's (points on one side within
+  -- MERGE_M of each other one area), else -- where the rally's
   -- map marks no spectator point anywhere -- at most one per SPEC_EVERY_M at the stage's hairpins and big junction
   -- turns (picked by chance among them), none in the first SPEC_NOT_FIRST_M
   local cStep = input.cornerStepM or 5
@@ -864,7 +815,9 @@ function M.plan(input)
   local function spectatorSite(s0, s1, apex, side, source, name)
     s0, s1 = max(s0, apex - M.SPEC_SPAN_MAX_M / 2), min(s1, apex + M.SPEC_SPAN_MAX_M / 2)
     local objs = spectators(L, s0, s1, apex, side, function(x, y) return clearOf(x, y, apex) end)
+    local n = #sites
     add('spectators', source, apex, s0, s1, objs, name)
+    if #sites > n then specAreas[#specAreas + 1] = { s0 = s0, s1 = s1, side = side } end
   end
   if #marks.spectator > 0 then
     -- each on the inside of the corner it is at, else the side the map put it; those on one side within MERGE_M of
@@ -877,7 +830,7 @@ function M.plan(input)
       end
       return sideOfMark(m)
     end
-    for _, g in ipairs(merged(marks.spectator, sideOf)) do
+    for _, g in ipairs(merged(marks.spectator, sideOf, posOfMark)) do
       spectatorSite(g.first - M.SPEC_POINT_M, g.last + M.SPEC_POINT_M, (g.first + g.last) / 2, g.side, 'map', g.name)
     end
   elseif not rallyMarks.spectator then
@@ -907,6 +860,118 @@ function M.plan(input)
       if ok then kept[#kept + 1] = c end
     end
     for _, c in ipairs(kept) do spectatorSite(c.s0, c.s1, c.apex, c.side, 'rule') end
+  end
+
+  -- radio and medical points first (a roadside marshal post near one is left out, below). Radio: the map's, merged
+  -- where within MERGE_M of each other (one post at the first); else, where the rally's map marks no radio point
+  -- anywhere, every ~RADIO_EVERY_M (none in the last RADIO_NOT_LAST_M), each moved along until its post is clear of
+  -- the junctions
+  local radios = {}
+  if #marks.radio > 0 then
+    for _, g in ipairs(merged(marks.radio, nil, posOfMark)) do radios[#radios + 1] = { along = g.along, source = 'map', name = g.name } end
+  elseif not rallyMarks.radio then
+    local function clearOfJunctions(s)
+      for _, r in ipairs(solved) do
+        if r.along >= s - M.RADIO_CLEAR_M and r.along <= s + M.POST_AFTER + M.MEDICAL_AFTER + M.RADIO_CLEAR_M then
+          return false
+        end
+      end
+      return true
+    end
+    -- (each the next RADIO_GAP_MIN_M .. RADIO_GAP_MAX_M on from the last, by chance)
+    local rnd = M.rng(input.seed, 'radio')
+    local s = startM + rnd(M.RADIO_GAP_MIN_M, M.RADIO_GAP_MAX_M)
+    while s <= finishM - M.RADIO_NOT_LAST_M do
+      local at = s
+      for k = 0, 12 do
+        local cand = s + (k % 2 == 0 and 1 or -1) * math.ceil(k / 2) * 25
+        if cand <= finishM - M.RADIO_NOT_LAST_M and clearOfJunctions(cand) then at = cand break end
+      end
+      radios[#radios + 1] = { along = at, source = 'rule' }
+      s = at + rnd(M.RADIO_GAP_MIN_M, M.RADIO_GAP_MAX_M)
+    end
+  end
+  -- medical points: only the map's, merged as the radio points; one within SHARE_M of a radio point shares its post
+  local medicals = {}
+  for _, m in ipairs(merged(marks.medical, nil, posOfMark)) do
+    local best, bd = nil, M.SHARE_M
+    for _, r in ipairs(radios) do
+      if not r.medical and abs(r.along - m.along) <= bd then best, bd = r, abs(r.along - m.along) end
+    end
+    if best then best.medical = m
+    else medicals[#medicals + 1] = m end
+  end
+  for _, m in ipairs(medicals) do
+    local objs, from, to = post(L, m.along, false, true, nearSpec)
+    add('medical', 'map', m.along, from, to, objs, m.name)
+  end
+  for _, r in ipairs(radios) do
+    local objs, from, to = post(L, r.along, true, r.medical ~= nil, nearSpec)
+    add('radio', r.source, r.along, from, to, objs, r.name or (r.medical and r.medical.name))
+    if r.medical then sites[#sites].shared = true end
+  end
+  local function nearPost(along)
+    for _, r in ipairs(radios) do if abs(r.along - along) <= M.MARSHAL_NEAR_POST_M then return true end end
+    for _, m in ipairs(medicals) do if abs(m.along - along) <= M.MARSHAL_NEAR_POST_M then return true end end
+    return false
+  end
+
+  -- marshals: from the map where it marks any on the stage (merged within MERGE_M on one side; behind a turn's tape
+  -- when near one, else by the road -- and none by the road within MARSHAL_NEAR_POST_M of a radio / medical post);
+  -- else at junction turns, at most one per MARSHAL_EVERY_M
+  local function turnNear(along, within)
+    local best, bd = nil, within
+    for _, r in ipairs(solved) do
+      if r.kind == 'turn' and #r.tapes > 0 and abs(r.along - along) <= bd then best, bd = r, abs(r.along - along) end
+    end
+    return best
+  end
+  if #marks.marshal > 0 then
+    -- (each of the map's marshals first to the turn it is at, if any -- one marshal behind a turn's tape however many
+    -- marks are by it -- and only those left by the road merged: review round 4; until then the marks were merged
+    -- first, so a turn's mark could be merged into a roadside one before it, or the other way round)
+    local used, roadside = {}, {}
+    for _, m in ipairs(marks.marshal) do
+      local r = turnNear(m.along, M.MARSHAL_AT_JUNCTION_M)
+      if r and used[r] then
+        -- (that turn's marshal stands already: this mark is the same one)
+      else
+        -- (a turn whose only closed road is in the overrun: the map's post stands where the map put it, by the road)
+        local jm = r and junctionMarshal(r)
+        if jm then
+          used[r] = true
+          add('marshal', 'map', r.along, r.along, r.along, jm, m.name)
+        else
+          roadside[#roadside + 1] = m
+        end
+      end
+    end
+    for _, m in ipairs(merged(roadside, sideOfMark, posOfMark)) do
+      if not nearPost(m.along) then
+        add('marshal', 'map', m.along, m.along, m.along, roadsideMarshal(L, m.along, m.side), m.name)
+      end
+    end
+  else
+    -- (every turn that can have one, but none within MARSHAL_EVERY_M of another: where two are that close, which
+    -- one keeps its marshal is by chance -- the turns taken in an order by chance, each kept unless one already kept
+    -- is too near)
+    local rnd = M.rng(input.seed, 'marshal')
+    local eligible = {}
+    for _, r in ipairs(solved) do
+      if r.kind == 'turn' and #r.tapes > 0 then
+        local jm = junctionMarshal(r)
+        if jm then eligible[#eligible + 1] = { r = r, jm = jm } end
+      end
+    end
+    local standing = {}
+    for _, e in ipairs(shuffled(eligible, rnd)) do
+      local ok = true
+      for _, a in ipairs(standing) do if abs(e.r.along - a) < M.MARSHAL_EVERY_M then ok = false break end end
+      if ok then
+        add('marshal', 'rule', e.r.along, e.r.along, e.r.along, e.jm)
+        standing[#standing + 1] = e.r.along
+      end
+    end
   end
 
   table.sort(sites, function(a, b) if a.from ~= b.from then return a.from < b.from end return a.along < b.along end)

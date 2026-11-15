@@ -288,17 +288,19 @@ function M.marks(eventId, stageId, stage)
 end
 
 -- The kinds of organisers' point the rally's map marks on ANY of its stages -- { radio = bool, medical = bool,
--- spectator = bool, marshal = bool } -- counted from every stage's stored marks, wherever they lie (1.6.0's note 5:
--- a kind marked anywhere in the rally is never filled in by chance on a stage that has none of it; dressing.plan's
--- mapKinds, and the stage page's None). event: the event's table, if the caller has it (else found by its id).
+-- spectator = bool, marshal = bool } -- counting only the marks some stage would use: within its span and its
+-- off-line limit, stageMarks' own test (1.6.0's note 5: a kind marked anywhere in the rally is never filled in by
+-- chance on a stage that has none of it; dressing.plan's mapKinds, and the stage page's None. Review round 4: a mark
+-- no stage uses -- far off every line, past every finish -- turned the chance off for nothing). event: the event's
+-- table, if the caller has it (else found by its id).
 function M.markedKinds(eventId, event)
   local out = { radio = false, medical = false, spectator = false, marshal = false }
   if not event then
     for _, e in ipairs(M.list()) do if e.id == eventId then event = e break end end
   end
   for _, s in ipairs(event and type(event.stages) == 'table' and event.stages or {}) do
-    for _, m in ipairs(M.marks(eventId, s.id, s)) do
-      if out[m.kind] ~= nil then out[m.kind] = true end
+    for kind, n in pairs(M.stageMarks(eventId, s.id, s)) do
+      if out[kind] ~= nil and n > 0 then out[kind] = true end
     end
   end
   return out

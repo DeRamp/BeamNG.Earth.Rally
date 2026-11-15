@@ -145,21 +145,24 @@ end
 -- The ground under (x, y) near the height z0: looked for a few metres above first, so a tree over the spot is not
 -- taken for the ground; z0 when nothing is found near it. maxAbove (the stage dressing's): a hit more than this above
 -- z0 is not the ground either -- a roof, a bus shelter -- and the first look starts that high only (a control's
--- boards, without it, as they always were: up to ~6 m above).
+-- boards, without it, as they always were: up to ~6 m above). The first look reaches up + 2 below z0 whatever up is
+-- (a dressing object moved off its planned spot looks higher and lower: spawnItem scales maxAbove with the move).
+-- Returns the height and whether ground was found (true without a ray to cast: nothing to tell).
 local TIERS = { { 4, 12 }, { 8, 40 }, { 25, 80 } }
 local function ground(x, y, z0, maxAbove)
   local ray = rawget(_G, 'castRayStatic')
-  if not ray then return z0 end
+  if not ray then return z0, true end
   for k, t in ipairs(TIERS) do
     local up = (maxAbove and k == 1) and maxAbove or t[1]
     local top = z0 + up
-    local d = ray(vec3(x, y, top), vec3(0, 0, -1), t[2])
-    if d and d < t[2] then
+    local len = math.max(t[2], 2 * up + 2)
+    local d = ray(vec3(x, y, top), vec3(0, 0, -1), len)
+    if d and d < len then
       local z = top - d
-      if math.abs(z - z0) <= up + 2 and not (maxAbove and z - z0 > maxAbove) then return z end
+      if math.abs(z - z0) <= up + 2 and not (maxAbove and z - z0 > maxAbove) then return z, true end
     end
   end
-  return z0
+  return z0, false
 end
 M._ground = ground
 M._yawQuat = yawQuat
@@ -450,6 +453,11 @@ M.DRESS_MAX_OBJS = 64        -- every dressing site's budget, whatever it asks f
 -- one spectator area alone is 64 objects)
 M.DRESS_OBJS_PER_UPDATE = 24
 M.DRESS_GROUND_ABOVE_M = 2   -- a dressing object's ground: a hit at most this above its planned height (not a roof)
+-- ... and, for an object moved off its planned spot (the edge shift, the push, the slide below), this much more for
+-- each metre it moved (review round 4: pushed 6 m up a bank, its ground is well above the planned height); one moved
+-- at least DRESS_GROUND_MOVED_M with no ground found within that is left out, not stood at the planned height
+M.DRESS_GROUND_PER_M = 0.7
+M.DRESS_GROUND_MOVED_M = 0.5
 -- An object set from the road's edge (dressing.lua's edged) moved to the same distance from the edge of the road the
 -- game has there as it was planned from the edge it assumed: the road map's road looked for at the object's planned
 -- road centre, aligned with the road, once per DRESS_EDGE_REUSE_M of a site, and the object moved by that road's half
@@ -473,12 +481,16 @@ M.DRESS_EDGE_MAX_DEG = 60
 -- there, whichever way it runs (the stage's own, a side road, a hairpin's other leg): nearer none of their centre
 -- lines than the road's half width + DRESS_CLEAR_MARGIN_M + the object's own reach (dressing.FOOT). Where one is
 -- not, its whole group (dressing.lua's grp: a post's gazebo, table, chair and flag; a roadside marshal's table,
--- chair and flag; the spectators' camp; else the object alone) is pushed further out from the road in
--- DRESS_PUSH_STEP_M steps until all of it is clear, and left out (said once in the log) where DRESS_PUSH_MAX_M does
--- not clear it (the user, 2026-11-15: a marshal "should be OFF the road"). The roads looked at: those within
--- DRESS_PUSH_LOOK_M of the group's first object.
+-- chair and flag; the spectators' camp; the spectators' bales; else the object alone) is pushed in DRESS_PUSH_STEP_M
+-- steps up to DRESS_PUSH_MAX_M until all of it is clear: away from the nearest point of the road that covers it
+-- first (review round 4: a road ending under it, or running across, is not cleared by going further out), then
+-- straight out. Where no push clears it, the group is slid DRESS_SLIDES_M along the stage (each tried with the
+-- pushes again), and left out (said once in the log, a warning) where none of that clears it (the user,
+-- 2026-11-15: a marshal "should be OFF the road"). The roads looked at: those within DRESS_PUSH_LOOK_M of the
+-- group's objects.
 M.DRESS_CLEAR_MARGIN_M = 0.3
 M.DRESS_PUSH_STEP_M, M.DRESS_PUSH_MAX_M = 0.5, 6
+M.DRESS_SLIDES_M = { 5, -5, 10, -10, 15, -15 }
 M.DRESS_PUSH_LOOK_M = 40
 -- An object flagged off the road (dressing.lua: the spectators' tape and fence, laid in runs, so not pushed one by
 -- one) left out where the road map has any road, whichever way it runs, whose surface covers its spot: nearer its
@@ -655,12 +667,14 @@ end
 -- (a tape across a side road of unknown width fitted to the road there: its middle kept, the side road -- square to
 -- the tape -- looked for on the road map, else DEFAULT_HALF_WIDTH_M, and the shortest model reaching refit.past past
 -- each edge, else the longest stretched -- by at most DRESS_TAPE_SY_MAX, beyond that two overlapping pieces from the
--- two ends. Never longer than the plan's maxLen, the longest there that clears the stage's road (dressing.lua's
--- solveJunction): at a fork a wider side road than planned would otherwise take the tape onto the stage. Its origin
--- is its end at +Y (the tape runs along -Y). The plan gives the WHOLE tape as one object (its length rf.len), so it is
--- refit once about its true middle and split into pieces here. Its middle is moved onto the side road's centre line
--- when that is within DRESS_TAPE_CENTRE_M along the tape (1.6.0's note 8), the cap shortened by twice the move so
--- neither end goes further towards the stage's road than maxLen allowed. Returns a list of pieces { x, y, shape, sy })
+-- two ends. Never reaching further from the planned middle than the plan's maxLen / 2 either way, the longest there
+-- that clears the stage's road (dressing.lua's solveJunction): at a fork a wider side road than planned would
+-- otherwise take the tape onto the stage. Its origin is its end at +Y (the tape runs along -Y). The plan gives the
+-- WHOLE tape as one object (its length rf.len), so it is refit once about its true middle and split into pieces here.
+-- Its middle is moved onto the side road's centre line -- where the tape's line crosses it -- when that is within
+-- DRESS_TAPE_CENTRE_M along the tape (1.6.0's note 8); then only the end that the move takes beyond the plan's
+-- maxLen is cut back to it (review round 4: until then the cap was shortened by twice the move, both ends). Returns
+-- a list of pieces { x, y, shape, sy })
 local function refitTape(it, x, y, dx, dy)
   local rf = it.refit
   local l = math.sqrt(dx * dx + dy * dy)
@@ -669,35 +683,46 @@ local function refitTape(it, x, y, dx, dy)
   local cx, cy = x - dx * rf.len / 2, y - dy * rf.len / 2
   local r = alignedRoad(cx, cy, -dy, dx, nil, M.DRESS_TAPE_MAX_DEG)
   local h = (r and type(r.half) == 'number' and r.half > 0) and r.half or M.DEFAULT_HALF_WIDTH_M
-  local cap = type(it.maxLen) == 'number' and it.maxLen > 0 and it.maxLen or math.huge
-  if r and r.x and r.y then
-    local s = (r.x - cx) * dx + (r.y - cy) * dy
-    if math.abs(s) <= M.DRESS_TAPE_CENTRE_M + 1e-9 then
-      cx, cy = cx + dx * s, cy + dy * s
-      cap = cap - 2 * math.abs(s)
+  -- (positions along the tape from the planned middle: the plan allows -A .. A)
+  local A = type(it.maxLen) == 'number' and it.maxLen > 0 and it.maxLen / 2 or math.huge
+  local s = 0
+  if r and r.x and r.y and r.dx and r.dy then
+    -- (the side road's line through r, its normal (r.dy, -r.dx): where the tape's line c + s d meets it)
+    local nrx, nry = r.dy, -r.dx
+    local dn = dx * nrx + dy * nry
+    if math.abs(dn) > 1e-6 then
+      local t = ((r.x - cx) * nrx + (r.y - cy) * nry) / dn
+      if math.abs(t) <= M.DRESS_TAPE_CENTRE_M + 1e-9 then s = t end
     end
   end
-  local need = math.min(2 * h + 2 * (rf.past or 0), cap)
-  -- (the shortest model reaching, if it is no longer than the cap)
+  local want = 2 * h + 2 * (rf.past or 0)
+  local lo, hi = math.max(-A, s - want / 2), math.min(A, s + want / 2)
+  local len = hi - lo
+  local function piece(top, sy, shape) return { cx + dx * top, cy + dy * top, shape, sy } end
+  -- (the shortest model covering lo .. hi that fits in -A .. A: lengthened at whichever end has room)
   for _, m in ipairs(rf.models) do
-    if need <= m[1] + 1e-9 and m[1] <= cap + 1e-9 then return { { cx + dx * m[1] / 2, cy + dy * m[1] / 2, m[2], 1 } } end
+    if m[1] >= len - 1e-9 and m[1] <= 2 * A + 1e-9 then
+      local a0 = math.max(-A, math.min(A - m[1], (lo + hi) / 2 - m[1] / 2))
+      return { piece(a0 + m[1], 1, m[2]) }
+    end
   end
-  -- (else the longest model no longer than need, stretched to it: the smallest when none is)
+  -- (else the longest model no longer than len, stretched to it: the smallest when none is)
   local top = rf.models[1]
-  for _, m in ipairs(rf.models) do if m[1] <= need + 1e-9 and m[1] >= top[1] then top = m end end
-  need = math.min(need, 2 * top[1] * M.DRESS_TAPE_SY_MAX - M.DRESS_TAPE_OVERLAP_M)
-  if need / top[1] <= M.DRESS_TAPE_SY_MAX + 1e-9 then
-    return { { cx + dx * need / 2, cy + dy * need / 2, top[2], need / top[1] } }
+  for _, m in ipairs(rf.models) do if m[1] <= len + 1e-9 and m[1] >= top[1] then top = m end end
+  local most = 2 * top[1] * M.DRESS_TAPE_SY_MAX - M.DRESS_TAPE_OVERLAP_M
+  if len > most then
+    local mid = (lo + hi) / 2
+    lo, hi, len = mid - most / 2, mid + most / 2, most
   end
-  local p = math.min(top[1] * M.DRESS_TAPE_SY_MAX, math.max(top[1], (need + M.DRESS_TAPE_OVERLAP_M) / 2))
-  return { { cx + dx * need / 2, cy + dy * need / 2, top[2], p / top[1] },
-           { cx - dx * (need / 2 - p), cy - dy * (need / 2 - p), top[2], p / top[1] } }
+  if len / top[1] <= M.DRESS_TAPE_SY_MAX + 1e-9 then return { piece(hi, len / top[1], top[2]) } end
+  local p = math.min(top[1] * M.DRESS_TAPE_SY_MAX, math.max(top[1], (len + M.DRESS_TAPE_OVERLAP_M) / 2))
+  return { piece(hi, p / top[1], top[2]), piece(lo + p, p / top[1], top[2]) }
 end
 
 -- (the move out for an object set from the road's edge, at (x, y) with the way out (nx, ny), to stand as far from the
 -- edge of the road map's road as it was planned from the assumed one: that road's half width less the planned one,
 -- less how far the planned stage-line point lies off that road's centre towards the object, over how square the way
--- out is to that road; 0 where the road map has no road there. One look serves a site's objects on the same side
+-- out is to that road -- but never less than the width alone moves it; 0 where the road map has no road there. One look serves a site's objects on the same side
 -- within DRESS_EDGE_REUSE_M of it -- a spectator area is 64 objects -- the stage line's offset from the road's centre
 -- kept, not the road's line, which bends away on a bend)
 local function edgeShift(s, it, x, y, nx, ny)
@@ -718,7 +743,10 @@ local function edgeShift(s, it, x, y, nx, ny)
   end
   if not p.half or p.cos < 1e-3 then return 0 end
   local want = p.half + (it.eo - it.eh)
-  local shift = (want - p.off) / p.cos - it.eo
+  -- (the line's offset taken only to move an object further out, never in: on a bend the road map's chord runs
+  -- inside the curve the road and the line follow, so an object on the outside would be pulled in by the chord's
+  -- sag -- review round 4. The width alone, as before note 6, is the least move)
+  local shift = math.max(p.half - it.eh, (want - p.off) / p.cos - it.eo)
   return math.max(M.DRESS_EDGE_SHIFT_MIN_M, math.min(M.DRESS_EDGE_SHIFT_MAX_M, shift))
 end
 
@@ -748,14 +776,18 @@ local function nearEdges(x, y, within)
   end
   return out
 end
--- (whether any of those roads' surface, plus margin, covers (x, y))
+-- (whether any of those roads' surface, plus margin, covers (x, y): how deep the deepest does (its reach less the
+-- distance) and its centre line's nearest point to (x, y); nil when none does)
 local function covered(edges, x, y, margin)
+  local deep, bx, by = nil
   for _, e in ipairs(edges) do
     local t = e[5] > 1e-6 and math.max(0, math.min(1, ((x - e[1]) * e[3] + (y - e[2]) * e[4]) / e[5])) or 0
-    local d = math.sqrt((e[1] + e[3] * t - x) ^ 2 + (e[2] + e[4] * t - y) ^ 2)
-    if d < e[6] * (1 - t) + e[7] * t + margin then return true end
+    local px, py = e[1] + e[3] * t, e[2] + e[4] * t
+    local d = math.sqrt((px - x) ^ 2 + (py - y) ^ 2)
+    local reach = e[6] * (1 - t) + e[7] * t + margin
+    if d < reach and (not deep or reach - d > deep) then deep, bx, by = reach - d, px, py end
   end
-  return false
+  return deep, bx, by
 end
 M._nearEdges, M._covered = nearEdges, covered
 
@@ -785,39 +817,80 @@ local function placeOf(s, it, toGame)
   return x, y, z, dx, dy, nx, ny
 end
 
--- (how much further out an object's group goes to be clear of every road there: 0 when it already is, or without a
--- road map; false when DRESS_PUSH_MAX_M does not clear it. Worked out once per group, at its first object down)
+-- (how far an object's group moves to be clear of every road there: { x, y }, (0, 0) when it already is, or without
+-- a road map; false when nothing clears it. Pushed DRESS_PUSH_STEP_M at a time up to DRESS_PUSH_MAX_M: first away
+-- from the nearest point of the road covering it most (the centre line's; straight out when that is right under
+-- it), then straight out (nx, ny); where neither clears it, slid DRESS_SLIDES_M along the stage first, each slide
+-- with the pushes again. The whole group by one move, every object of it checked. Worked out once per group, at its
+-- first object down)
 local pushSaid = {}
 local function groupPush(s, it, toGame)
   s.push = s.push or {}
   local key = it.grp or it
   if s.push[key] ~= nil then return s.push[key] end
   local members = {}
+  local cx, cy, reach = 0, 0, 0
   for _, o in ipairs(s.items) do
     if o == it or (it.grp and o.grp == it.grp and not o.offRoad) then
       local x, y, _, _, _, nx, ny = placeOf(s, o, toGame)
-      if x and nx then members[#members + 1] = { x, y, nx, ny, M.DRESS_CLEAR_MARGIN_M + (o.foot or 0) } end
+      if x and nx then
+        members[#members + 1] = { x, y, nx, ny, M.DRESS_CLEAR_MARGIN_M + (o.foot or 0) }
+        cx, cy = cx + x, cy + y
+      end
     end
   end
-  local edges = #members > 0 and nearEdges(members[1][1], members[1][2], M.DRESS_PUSH_LOOK_M)
-  local push = 0
+  local push = { 0, 0 }
+  if #members == 0 then s.push[key] = push return push end
+  cx, cy = cx / #members, cy / #members
+  for _, m in ipairs(members) do reach = math.max(reach, math.sqrt((m[1] - cx) ^ 2 + (m[2] - cy) ^ 2)) end
+  local slideMax = 0
+  for _, d in ipairs(M.DRESS_SLIDES_M) do slideMax = math.max(slideMax, math.abs(d)) end
+  local edges = nearEdges(cx, cy, M.DRESS_PUSH_LOOK_M + reach + slideMax)
   if edges and #edges > 0 then
-    push = false
-    for k = 0, math.floor(M.DRESS_PUSH_MAX_M / M.DRESS_PUSH_STEP_M + 1e-9) do
-      local p = k * M.DRESS_PUSH_STEP_M
-      local ok = true
+    local m1 = members[1]
+    local nx, ny = m1[3], m1[4]
+    local tx, ty = -ny, nx
+    -- (the deepest cover of the group moved by (ox, oy): how deep, and the road's nearest point to that object)
+    local function worst(ox, oy)
+      local deep, wx, wy, px, py = nil
       for _, m in ipairs(members) do
-        if covered(edges, m[1] + m[3] * p, m[2] + m[4] * p, m[5]) then ok = false break end
+        local x, y = m[1] + ox, m[2] + oy
+        local dd, qx, qy = covered(edges, x, y, m[5])
+        if dd and (not deep or dd > deep) then deep, wx, wy, px, py = dd, x, y, qx, qy end
       end
-      if ok then push = p break end
+      return deep, wx, wy, px, py
+    end
+    local steps = math.floor(M.DRESS_PUSH_MAX_M / M.DRESS_PUSH_STEP_M + 1e-9)
+    local function tryFrom(ox, oy)
+      local deep, wx, wy, px, py = worst(ox, oy)
+      if not deep then return { ox, oy } end
+      local dirs = {}
+      local ax, ay = wx - px, wy - py
+      local al = math.sqrt(ax * ax + ay * ay)
+      if al > 0.05 then dirs[#dirs + 1] = { ax / al, ay / al } end
+      if not dirs[1] or dirs[1][1] * nx + dirs[1][2] * ny < 0.985 then dirs[#dirs + 1] = { nx, ny } end
+      for _, dv in ipairs(dirs) do
+        for k = 1, steps do
+          local p = k * M.DRESS_PUSH_STEP_M
+          local qx, qy = ox + dv[1] * p, oy + dv[2] * p
+          if not worst(qx, qy) then return { qx, qy } end
+        end
+      end
+      return nil
+    end
+    push = tryFrom(0, 0)
+    for _, d in ipairs(M.DRESS_SLIDES_M) do
+      if push then break end
+      push = tryFrom(tx * d, ty * d)
     end
     if not push then
+      push = false
       local said = string.format('%s/%s', tostring(s.key), tostring(it.grp or it.shape))
       if not pushSaid[said] then
         pushSaid[said] = true
-        log('I', 'earthRally', string.format('stage dressing: the %s at %.0f m (%s) left out: on the road, and %.1f m'
-          .. ' further out does not clear it', tostring(s.kind), s.along or 0, tostring(it.grp or it.shape),
-          M.DRESS_PUSH_MAX_M))
+        log('W', 'earthRally', string.format('stage dressing: the %s at %.0f m (%s) left out: on the road, and %.1f m'
+          .. ' out or %.0f m along does not clear it', tostring(s.kind), s.along or 0, tostring(it.grp or it.shape),
+          M.DRESS_PUSH_MAX_M, slideMax))
       end
     end
   end
@@ -836,14 +909,25 @@ local function spawnItem(s, it, toGame, carZ)
   if nx and not it.offRoad then
     local p = groupPush(s, it, toGame)
     if not p then return true end
-    x, y = x + nx * p, y + ny * p
+    x, y = x + p[1], y + p[2]
     pieces[1][1], pieces[1][2] = x, y
   end
   -- (off the road, and a road there the plan did not know of: left out)
   if it.offRoad and M.roadCovers(x, y, M.DRESS_OFFROAD_MARGIN_M + (it.foot or 0)) then return true end
-  for _, pc in ipairs(pieces) do
+  -- (its ground: looked for higher and lower the further it was moved off its planned spot -- the edge shift, the
+  -- push -- and left out when a moved one finds none: it would hang in the air or stand in the bank)
+  local x0, y0 = itemNow(it, toGame)
+  local moved = x0 and math.sqrt((x - x0) ^ 2 + (y - y0) ^ 2) or 0
+  local above = M.DRESS_GROUND_ABOVE_M + M.DRESS_GROUND_PER_M * moved
+  local zs = {}
+  for i, pc in ipairs(pieces) do
+    local gz, found = ground(pc[1], pc[2], z or carZ, above)
+    if not found and moved >= M.DRESS_GROUND_MOVED_M then return true end
+    zs[i] = gz
+  end
+  for i, pc in ipairs(pieces) do
     local px, py = pc[1], pc[2]
-    local ok, id = pcall(makeObj, pc[3], px, py, ground(px, py, z or carZ, M.DRESS_GROUND_ABOVE_M), yawQuat(dx, dy),
+    local ok, id = pcall(makeObj, pc[3], px, py, zs[i], yawQuat(dx, dy),
       pc[4])
     if not ok then
       log('W', 'earthRally', 'a dressing prop could not be put down (' .. tostring(id) .. ')')

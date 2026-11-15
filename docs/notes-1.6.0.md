@@ -285,3 +285,43 @@ or medical point (the map's or a random one) is left out; a map marshal at a tur
 the junction marshals at taped turns are not dropped (they stand up the closed road, not at the post). The random
 points need no merging among themselves (radio 4-6 km apart, spectators 4 km, junction marshals 1 km). Tests:
 `test_dressing` (each pairing, a chain, opposite sides, a random radio point).
+
+## Review round 4
+
+Fixed: the roadside marshal's table and chair turned 90 degrees from the +Y-out set-up the user saw: the table's +Y
+along the road on either side, now `TENT_OUT` (1.5 m) past the edge; the chair 0.9 m behind it facing the road, its +Y
+along the road on the right and against it on the left (assumed from note 2's approved turn: the table's long edge on
+its Y, the chair facing its -X); the junction marshal and the post's TENT unchanged (`dressing.lua` `roadsideMarshal`;
+`test_dressing`).
+
+Fixed: `edgeShift` takes the larger of the width-only shift and the line-offset one, so a road-map chord on a bend
+never pulls an object in (`test_props`: an arc of 30 m chords, the object on the outside).
+
+Fixed: `groupPush` pushes the group away from the nearest centre-line point of the road covering it most, then
+straight out; where no push of 6 m clears it, it slides the group 5, 10 or 15 m either way along the stage, with the
+pushes tried again at each slide, before leaving it out (logged at 'W'). The Y-branch cases 2f7e4fa narrowed are back
+at radius 5 / 7 and pass by the push and the slide (`test_props`, plus a side road across a marshal's group).
+
+Fixed: a dressing object's ground is looked for `DRESS_GROUND_ABOVE_M` + 0.7 m per metre it moved above its planned
+height (the first ray reaching as far below), and one moved 0.5 m or more with no ground found is left out, not stood
+at z0 (`test_props`).
+
+Fixed: the map's marshals go to their junction turns one mark at a time (`turnNear` per raw mark, one marshal per
+turn); only the roadside leftovers are merged (`test_dressing`).
+
+Fixed: `merged` also joins points within `MERGE_GROUND_M` 50 m on the ground that are more than `MERGE_M` apart along
+the line (a hairpin's legs); a chain stops growing at `SPEC_SPAN_MAX_M` first to last and the next point starts a
+group; a radio / medical post keeps its boards and flag but loses its gazebo, table and chair when a right-hand
+spectator area is within `POST_NEAR_SPEC_M` 50 m; the bales are one push group (`test_dressing`).
+
+Fixed: `events.markedKinds` counts only marks some stage would use (`stageMarks`' span and off-line test), and
+`dressing.plan` counts only marks within the stage's span for the same reason: a kind marked only outside every span
+is filled in by chance again, so the review round 3 "outside the span: none" case is reversed (`test_hud`,
+`test_dressing`).
+
+Fixed: `refitTape` finds the crossing along the side road's own direction (s = ((r - c)·n_r) / (d·n_r), still within 2
+m), and cuts back only the end that the re-centring takes past the plan's maxLen / 2, not both ends by twice the move
+(`test_props`: the cap cut exercised, a side road 30 degrees off square).
+
+Left for later: the full-map scans in `nearEdges`, `roadAt` and `roadCovers` (every node within 250 m, per look) want
+a grid index; not done here.

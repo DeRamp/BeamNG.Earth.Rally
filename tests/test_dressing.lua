@@ -306,7 +306,7 @@ do
   local t1 = ma[1] and find(ma[1].objects, 'table')[1]
   T.check(t1 and t1.x < -10, 'map marshal near a turn: behind the closed road\'s tape (the left road)')
   local t2 = ma[2] and find(ma[2].objects, 'table')[1]
-  T.check(t2 and math.abs(t2.x + 3 + D.TENT_OUT - 0.6) < 1e-6 and math.abs(t2.y - 2250) < 1e-6,
+  T.check(t2 and math.abs(t2.x + 3 + D.TENT_OUT) < 1e-6 and math.abs(t2.y - 2250) < 1e-6,
     'map marshal on the road: off the edge, left as marked')
   -- the map's medical point far from any radio point: alone, after its own warning
   input.marks = { { kind = 'medical', along = 8000, name = 'MIV' } }
@@ -472,8 +472,9 @@ do
 end
 
 -- 2. A marshal post from the map by the road: table and chair turned 90 degrees right of the road's way (as TENT)
--- 1.6.0's note 6: as TENT on either side -- table and chair with their +Y out from the road (TENT's yaw 90 on the
--- right), the table TENT_OUT - 0.6 past the edge, the chair 0.9 m behind it on the far side from the road; one group
+-- 1.6.0's note 6, then review round 4 (the user: the +Y-out-from-the-road set-up "must rotate"): the table's +Y along
+-- the road on either side, TENT_OUT past the edge; the chair 0.9 m behind it on the far side from the road, facing the
+-- road with its -X -- +Y along the road on the right, against it on the left; one group
 do
   local S = { V(0, 0), V(0, 600) }
   local function marshalAt(off)
@@ -482,16 +483,22 @@ do
   end
   local m = marshalAt(5)
   local tbl, chr = m and find(m.objects, 'table')[1], m and find(m.objects, 'chair')[1]
-  T.check(tbl and tbl.dx > 0.99 and chr and chr.dx > 0.99, 'roadside marshal: table and chair a quarter turn right of north')
-  T.check(tbl and math.abs(tbl.x - (3 + D.TENT_OUT - 0.6)) < 1e-6 and chr and math.abs(chr.x - (tbl.x + 0.9)) < 1e-6 and
-    math.abs(chr.y - tbl.y) < 1e-6, 'roadside marshal on the right: the chair behind the table, away from the road')
+  T.check(tbl and tbl.dy > 0.99 and chr and chr.dy > 0.99,
+    'roadside marshal on the right: table and chair with +Y along the road (north), the chair -X to the road')
+  T.check(tbl and math.abs(tbl.x - (3 + D.TENT_OUT)) < 1e-6 and chr and math.abs(chr.x - (tbl.x + 0.9)) < 1e-6 and
+    math.abs(chr.y - tbl.y) < 1e-6, 'roadside marshal on the right: the table TENT_OUT past the edge, the chair ' ..
+    'behind it, away from the road')
   local flg = m and find(m.objects, 'flag')[1]
   T.check(flg and flg.dy > 0.99, 'roadside marshal: the flag along the road as before')
   local L = marshalAt(-5)
   local lt, lc = L and find(L.objects, 'table')[1], L and find(L.objects, 'chair')[1]
-  T.check(lt and lt.dx < -0.99 and lc and lc.dx < -0.99 and math.abs(lt.x + (3 + D.TENT_OUT - 0.6)) < 1e-6 and
-    math.abs(lc.x - (lt.x - 0.9)) < 1e-6, 'roadside marshal on the left: mirrored, +Y out from the road (west), the ' ..
-    'chair behind the table on the far side (' .. tostring(lt and lt.dx) .. ', ' .. tostring(lc and lc.x) .. ')')
+  T.check(lt and lt.dy > 0.99 and lc and lc.dy < -0.99 and math.abs(lt.x + (3 + D.TENT_OUT)) < 1e-6 and
+    math.abs(lc.x - (lt.x - 0.9)) < 1e-6, 'roadside marshal on the left: the table along the road, the chair behind ' ..
+    'it on the far side, turned round to face the road (' .. tostring(lc and lc.dy) .. ', ' .. tostring(lc and lc.x) ..
+    ')')
+  -- (either side, the chair's -X -- rightOf(+Y) reversed -- points at the road: towards the line, x = 0)
+  local function facesRoad(c) return c and (-c.dy) * (0 - c.x) > 0 end
+  T.check(facesRoad(chr) and facesRoad(lc), 'roadside marshal: the chair faces the road on either side')
   local grouped = true
   for _, o in ipairs((m and m.objects or {})) do
     if o.grp ~= 'marshal' or not o.eo or not o.foot then grouped = false end
@@ -606,7 +613,8 @@ do
 end
 
 -- 3. Spectator tape and fence carry offRoad (props.lua drops one standing on a road it finds there); nothing else
--- does -- since 1.6.0's notes 6 / 7 the hay bales are pushed out from the road one by one instead, as the posts are
+-- does -- since 1.6.0's notes 6 / 7 the hay bales are pushed out from the road instead, as the posts are (review
+-- round 4: the row together, one group)
 do
   local S = {}
   for k = 0, 36 do local a = math.rad(k * 5) S[#S + 1] = V(30 * math.cos(a), 30 * math.sin(a)) end
@@ -620,11 +628,11 @@ do
     if o.offRoad then flagged[o.key] = (flagged[o.key] or 0) + 1 end
     if o.offRoad and not (o.key == 'specTape' or o.key == 'fence') then wrong = wrong + 1 end
     if not o.offRoad and (o.key == 'specTape' or o.key == 'fence') then wrong = wrong + 1 end
-    if o.key == 'bale' and not (o.eo and o.foot == D.FOOT.bale and o.grp == nil) then wrong = wrong + 1 end
+    if o.key == 'bale' and not (o.eo and o.foot == D.FOOT.bale and o.grp == 'bales') then wrong = wrong + 1 end
     if (o.key == 'gazeboFrame' or o.key == 'chair' or o.key == 'tarp') and o.grp ~= 'camp' then wrong = wrong + 1 end
   end
   T.check(sp and (flagged.specTape or 0) > 0 and (flagged.fence or 0) > 0 and wrong == 0 and #find(sp.objects, 'bale') > 0,
-    'spectators: tape and fence flagged offRoad; bales each on their own, the camp one group (' .. wrong .. ')')
+    'spectators: tape and fence flagged offRoad; the bales one group, the camp another (' .. wrong .. ')')
   local b = sp and find(sp.objects, 'bale')[1]
   T.check(b and D.BALE_OFF - D.FOOT.bale >= 0.7 and b.eo == 3 + D.BALE_OFF,
     'bales: BALE_OFF past the edge, clear of it by their reach (' .. tostring(b and b.eo) .. ')')
@@ -738,13 +746,14 @@ do
   T.check(tp and tp.x < 0, 'map spectator left of the line (offLineM < 0): its tape on the left (' .. tostring(tp and tp.x) .. ')')
   T.check(#ofKind(gulf, 'medical') == 0, 'map medical sharing the radio post: no post of its own')
 
-  -- (review round 3, then 1.6.0's note 5) a kind whose every map point lies outside the stage is still a kind the
-  -- rally's map marks: none of it here, not by chance; the junction marshals by rule all the same; medical never
+  -- (review round 3, 1.6.0's note 5, then review round 4) a kind whose every map point lies outside the stage's span
+  -- is one no stage uses (events.markedKinds counts the same way): filled in by chance as with none; the junction
+  -- marshals by rule all the same; medical never
   local outside = plan('rally/ss1', {
     { kind = 'radio', along = -500 }, { kind = 'spectator', along = 30500 }, { kind = 'marshal', along = -300 },
     { kind = 'medical', along = 31000 } })
-  T.check(#ofKind(outside, 'radio') == 0 and #ofKind(outside, 'spectators') == 0,
-    'map radios / spectators all outside the stage: none here, not by chance')
+  T.check(key(outside, 'radio') == key(p1, 'radio') and key(outside, 'spectators') == key(p1, 'spectators') and
+    #ofKind(outside, 'radio') > 0, 'map radios / spectators all outside the stage: by chance, as with none')
   T.check(key(outside, 'marshal') == key(p1, 'marshal'), 'map marshals all outside the stage: the junction marshals as with none')
   T.check(#ofKind(outside, 'medical') == 0, 'a map medical point outside the stage: none, never one made up')
 
@@ -797,10 +806,11 @@ do
     two[1].to >= 1060 + D.SPEC_POINT_M - 1e-6 and two[1].name == 'S1000',
     'spectators 60 m apart: one area from before the first to past the last, apex between (' .. #two .. ')')
   T.check(#find(two[1] and two[1].objects or {}, 'gazeboFrame') == 1, 'spectators merged: one gazebo')
-  -- a chain within 100 m each: one; its span held to SPEC_SPAN_MAX_M round the middle
+  -- a chain within 100 m each (review round 4): stops growing at SPEC_SPAN_MAX_M first to last -- the first two one
+  -- area, the third one of its own
   local chain = ofKind(plan({ spec(1000), spec(1090), spec(1180) }), 'spectators')
-  T.check(#chain == 1 and math.abs(chain[1].along - 1090) < 1e-6 and chain[1].to - chain[1].from <= D.SPEC_SPAN_MAX_M + 1e-6,
-    'spectators in a chain 90 m apart: one area, no longer than SPEC_SPAN_MAX_M (' .. #chain .. ')')
+  T.check(#chain == 2 and math.abs(chain[1].along - 1045) < 1e-6 and math.abs(chain[2].along - 1180) < 1e-6,
+    'spectators in a chain 90 m apart: the chain stops at SPEC_SPAN_MAX_M, a second area after (' .. #chain .. ')')
   T.check(#ofKind(plan({ spec(1000), spec(1250) }), 'spectators') == 2, 'spectators 250 m apart: two areas')
   T.check(#ofKind(plan({ spec(1000, 20), spec(1040, -20) }), 'spectators') == 2,
     'spectators 40 m apart on opposite sides: two areas')
@@ -843,6 +853,46 @@ do
     function(m) return (m.offLineM or 0) < 0 and -1 or 1 end)
   T.check(#g == 3 and g[1].first == 0 and g[1].last == 95 and g[1].n == 2 and g[2].side == -1 and g[3].along == 300,
     'merged: by side, within 100 m of the group\'s last point (' .. #g .. ')')
+
+  -- review round 4. A radio post with a spectator area on its side (the right) within 50 m: its boards and flag, no
+  -- gazebo, table or chair of its own; the area on the left, or 200 m off: the whole post
+  local function tentOf(p)
+    local r = ofKind(p, 'radio')[1]
+    return r and #find(r.objects, 'gazeboFrame') + #find(r.objects, 'table') + #find(r.objects, 'chair'),
+      r and #find(r.objects, 'radio'), r and #find(r.objects, 'flag')
+  end
+  local nt, nb, nf = tentOf(plan({ { kind = 'radio', along = 1000 }, spec(1060, 20) }))
+  T.check(nt == 0 and nb == 1 and nf == 1, 'a radio post by a spectator area on its side: boards and flag, no tent (' ..
+    tostring(nt) .. ')')
+  T.check(tentOf(plan({ { kind = 'radio', along = 1000 }, spec(1060, -20) })) == 3,
+    'the spectator area on the other side: the post\'s tent stays')
+  T.check(tentOf(plan({ { kind = 'radio', along = 1000 }, spec(1300, 20) })) == 3,
+    'the spectator area 200 m on: the post\'s tent stays')
+  T.check(D.MERGE_GROUND_M == 50 and D.POST_NEAR_SPEC_M == 50, 'merging: 50 m on the ground, 50 m post to spectators')
+
+  -- the map's marshals first to their turns, then the roadside ones merged: a mark 60 m before a turn and one by it --
+  -- until now merged into the first, by the road, and the turn left with none -- are a roadside post and the turn's
+  local turn = { { along = 2100, x = 0, y = 2100, kind = 'turn', inDeg = 0, outDeg = 90,
+                   sides = { { deg = 0, halfW = 3 }, { deg = 270, halfW = 3 } } } }
+  local mt = ofKind(plan({ mar(2040), mar(2110) }, { junctions = turn }), 'marshal')
+  T.check(#mt == 2 and mt[1].along == 2040 and mt[2].along == 2100,
+    'a roadside marshal 60 m before a turn\'s: both stand, the turn\'s behind its tape (' .. #mt .. ')')
+  local m2t = ofKind(plan({ mar(2090), mar(2110) }, { junctions = turn }), 'marshal')
+  T.check(#m2t == 1 and m2t[1].along == 2100, 'two map marshals by one turn: its one marshal (' .. #m2t .. ')')
+
+  -- points right by each other on the ground, far apart along the line: a hairpin's two legs 20 m apart, the map's
+  -- spectator points on its inside 250 m apart along -- one area
+  local H = { V(0, 0), V(0, 1000) }
+  for k = 1, 12 do local a = math.rad(k * 15) H[#H + 1] = V(15 - 15 * math.cos(a), 1000 + 15 * math.sin(a)) end
+  H[#H + 1] = V(30, 0)
+  local hcum = geo.cumulative(H)
+  local leg2 = hcum[14] + 100                   -- (100 m down the second leg: y = 900)
+  local hp = D.plan({ line = H, cum = hcum, startM = 0, finishM = hcum[#hcum], mapKinds = { spectator = true },
+    marks = { { kind = 'spectator', along = 900, offLineM = 5 }, { kind = 'spectator', along = leg2, offLineM = 5 } } })
+  T.check(#ofKind(hp, 'spectators') == 1, 'spectator points 20 m apart on the ground, 250 m along: one area (' ..
+    #ofKind(hp, 'spectators') .. ')')
+  local hm = D._merged({ { along = 900, offLineM = 5 }, { along = leg2, offLineM = 5 } })
+  T.check(#hm == 2, 'merged: without their places, 250 m along is two')
 end
 
 T.done('test_dressing')

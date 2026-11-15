@@ -375,6 +375,17 @@ do
   local kz = events.markedKinds('nope')
   T.check(kz.radio == false and kz.medical == false and kz.spectator == false and kz.marshal == false,
     'markedKinds: an unknown rally marks nothing')
+  -- review round 4: only the marks some stage would use count -- a radio point 500 m off the line, a spectator point
+  -- 5 km past the finish: not marked; a marshal on the line within the span: marked
+  files['/earthRally/events/evu.json'] = { format = 1, id = 'evu', name = 'Unused Marks', source = { file = 'U.kml' },
+    stages = { { id = 'u', name = 'U', lengthM = 5000, line = line, controls = {}, marks = {
+      { kind = 'radio', name = 'Far off', lat = 47.002, lon = -123, distM = 2000, offLineM = 500 },
+      { kind = 'spectator', name = 'Past it', lat = 47.002, lon = -123, distM = 10000, offLineM = 5 },
+      { kind = 'marshal', name = 'On it', lat = 47.002, lon = -123, distM = 2500, offLineM = 5 } } } } }
+  events.list(true)
+  local ku = events.markedKinds('evu')
+  T.check(ku.radio == false and ku.spectator == false and ku.marshal == true and ku.medical == false,
+    'markedKinds: a mark no stage would use (too far off the line, past the finish) does not count')
   T.check(menu.stage('ev', 'zzz') == nil and menu.rally('nope') == nil, 'unknown ids: nil')
 end
 
