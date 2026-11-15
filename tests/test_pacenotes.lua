@@ -172,7 +172,8 @@ do
   local oc = notes(build(road({ { 'straight', 500 }, { 'arc', 60, 90 }, { 'straight', 500 } }, hump(547, 60, 2))))
   T.check(has(oc, '4:corner/overCrest'), 'a crest in the middle of a corner: "over crest" (' .. show(oc) .. ')')
   local bc = notes(build(road({ { 'straight', 500 }, { 'arc', 60, 90 }, { 'straight', 500 } }, hump(470, 50, 1.5))))
-  T.check(has(bc, '2:crest,4:corner') or has(bc, '2:smallCrest,4:corner') or has(bc, '2:brakeOverCrest'),
+  T.check(has(bc, '2:crest,4:corner') or has(bc, '2:smallCrest,4:corner') or has(bc, '2:bigCrest,4:corner') or
+          has(bc, '2:brakeOverCrest'),
     'a crest just before a corner: called before it (' .. show(bc) .. ')')
   -- up and down: a long steep hill after a corner
   local hill = notes(build(road({ { 'straight', 400 }, { 'arc', 60, 60 }, { 'straight', 600 } }, function(s)
@@ -285,10 +286,25 @@ do
       return z - g * math.max(0, s - s0 - len)
     end
   end
-  local top = notes(build(road({ { 'straight', 1600 } }, summit(0.15, 650, 300))))
+  local top = notes(build(road({ { 'straight', 1600 } }, summit(0.15, 650, 150))))
   local nTop = 0
   for _, n in ipairs(top) do for _ in n:gmatch('rest') do nTop = nTop + 1 end end
-  T.check(nTop == 1, '+15 % to -15 % over a 300 m top: one crest (' .. show(top) .. ')')
+  T.check(nTop == 1, '+15 % to -15 % over a 150 m top: one crest (' .. show(top) .. ')')
+  -- (the second drive: crests from the sight, not the grade -- a steep climb easing off, or a descent getting
+  --  steeper, that the driver sees right over, is none)
+  local function ease(g1, g2, s0, len)
+    return function(s)
+      if s < s0 then return g1 * s end
+      local d = math.min(s - s0, len)
+      return g1 * s0 + g1 * d + (g2 - g1) / (2 * len) * d * d + g2 * math.max(0, s - s0 - len)
+    end
+  end
+  local easing = notes(build(road({ { 'straight', 1600 } }, ease(0.14, 0.06, 700, 60))))
+  T.check(not has(easing, 'rest'), 'a 14 % climb easing to 6 % over 60 m, the road still in sight: no crest (' ..
+    show(easing) .. ')')
+  local steeper = notes(build(road({ { 'straight', 1600 } }, ease(-0.04, -0.10, 700, 60))))
+  T.check(not has(steeper, 'rest'), 'a descent from 4 % to 10 % over 60 m, the road still in sight: no crest (' ..
+    show(steeper) .. ')')
   local s1, h1 = summit(0.10, 700, 200), hump(800, 40, 0.5)
   local weak = notes(build(road({ { 'straight', 2000 } }, function(s) return s1(s) + h1(s) end)))
   T.check(has(weak, 'rest'), 'a blind top with a small bump on it: a crest (' .. show(weak) .. ')')
