@@ -961,6 +961,20 @@ do
     .. select(1, props.dressingCount()) .. ')')
   for _ = 1, 9 do props.update({ x = 0, y = 0, z = 0 }, toG, 0) end
   T.check(select(1, props.dressingCount()) == 10, 'spawn budget: the rest the next frames, none lost')
+  -- the sites the car has not passed go down first (a whole window after a world shift, out of time each frame)
+  local behind = { kind = 'spectators', along = 100, from = 100, to = 100, objects = {} }
+  local ahead = { kind = 'spectators', along = 400, from = 400, to = 400, objects = {} }
+  for k = 1, 3 do
+    behind.objects[k] = { shape = 'behind.dae', x = k, y = 100, dx = 0, dy = 1 }
+    ahead.objects[k] = { shape = 'ahead.dae', x = k, y = 400, dx = 0, dy = 1 }
+  end
+  props.setDressing({ behind, ahead })
+  local m0 = #made
+  props.update({ x = 0, y = 300, z = 0 }, toG, 300)
+  T.check(#made == m0 + 1 and made[#made].fields.shapeName == 'ahead.dae',
+    'spawn budget: the site ahead of the car first')
+  for _ = 1, 6 do props.update({ x = 0, y = 300, z = 0 }, toG, 300) end
+  T.check(select(1, props.dressingCount()) == 6, 'spawn budget: then the one behind')
   props.DRESS_SPAWN_MS = SPAWN_MS
   T.check(type(SPAWN_MS) == 'number' and SPAWN_MS > 0, 'spawn budget: on as shipped')
   props.clear()

@@ -225,7 +225,7 @@ local function nodeIndex(nodes)
   local cells = {}
   for name, nd in pairs(nodes) do
     local p = nd.pos
-    if p and p.x and p.y then
+    if p and p.x and p.y and p.x == p.x and p.y == p.y then      -- (NaN would be a NaN table key)
       local k = cellKey(math.floor(p.x / IDX_CELL_M), math.floor(p.y / IDX_CELL_M))
       local c = cells[k]
       if not c then c = {} cells[k] = c end
@@ -1024,15 +1024,24 @@ M._spawnDress = spawnDress
 function updateDressing(carPos, toGame, carAlong)
   local budget = M.DRESS_OBJS_PER_UPDATE
   local deadline = M.DRESS_SPAWN_MS and clock() + M.DRESS_SPAWN_MS / 1000 or nil
+  if carAlong then
+    -- (the sites the car has not passed first, then those behind it: with the time budget a whole window -- after a
+    -- world shift -- goes down over several frames, and what is ahead is what the player sees)
+    for pass = 1, 2 do
+      for _, s in ipairs(dress) do
+        local going = s.objs ~= nil and (s.at or 1) <= #s.items
+        local want = carAlong >= s.from - M.DRESS_AHEAD_M and carAlong <= s.to + M.DRESS_BEHIND_M
+        if pass == 1 and s.objs and not want then removeDress(s)
+        elseif want and (going or not s.objs) and budget > 0 and (pass == 1) == (s.to >= carAlong) then
+          budget = spawnDress(s, toGame, carPos.z, budget, deadline)
+        end
+      end
+    end
+    return
+  end
   for _, s in ipairs(dress) do
     local going = s.objs ~= nil and (s.at or 1) <= #s.items
-    if carAlong then
-      local want = carAlong >= s.from - M.DRESS_AHEAD_M and carAlong <= s.to + M.DRESS_BEHIND_M
-      if s.objs and not want then removeDress(s)
-      elseif want and (going or not s.objs) and budget > 0 then
-        budget = spawnDress(s, toGame, carPos.z, budget, deadline)
-      end
-    elseif budget > 0 and (going or not s.objs) then
+    if budget > 0 and (going or not s.objs) then
       local x, y = itemNow(s.items[1], toGame)
       if going or (x and (x - carPos.x) ^ 2 + (y - carPos.y) ^ 2 <= M.DRESS_AHEAD_M ^ 2) then
         budget = spawnDress(s, toGame, carPos.z, budget, deadline)
