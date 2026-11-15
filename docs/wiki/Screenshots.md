@@ -32,6 +32,10 @@ Earth Rally alpha on BeamNG.drive 0.40.5. Stages from the ARA 2026 season and OT
 
 ## Real places
 
+A real photo from Dalles Mountain Road, Washington, and the same corner in Earth Rally:
+
+![Dalles Mountain Road: real photo and Earth Rally](https://raw.githubusercontent.com/wiki/DeRamp/BeamNG.Earth.Rally/images/compare-dalles-mountain.jpg)
+
 ![Weaver Bend, Tennessee](https://raw.githubusercontent.com/wiki/DeRamp/BeamNG.Earth.Rally/images/beauty-weaver-bend.jpg)
 ![Cathedral, Colorado, at sunrise](https://raw.githubusercontent.com/wiki/DeRamp/BeamNG.Earth.Rally/images/beauty-cathedral-sunrise.jpg)
 ![Dalles Mountain, Washington](https://raw.githubusercontent.com/wiki/DeRamp/BeamNG.Earth.Rally/images/beauty-dalles-mountain.jpg)
