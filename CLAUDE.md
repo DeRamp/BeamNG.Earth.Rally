@@ -21,6 +21,8 @@ BeamNG.drive 0.40.5 mod (Lua, `mod/earth_rally/`) that runs real rally stages on
 
 ## Branches and releases
 
+- **Bug fixes only until the alpha MVP is out** (the owner, 2026-11-15); features stay planned in the roadmap.
+  README, wiki and posts carry no version number: they say alpha.
 - Work on `main` (or a worktree branched from it). `v1.2.0`, `v1.1.0`, `auto-test` are history only.
 - Release = tag `vX.Y.Z-alpha` on `main` + GitHub pre-release with `dist/earth_rally-X.Y.Z-alpha.zip`. Use `/release`.
 - Rally data (events, recces, matched lines, times, `Rally Docs/`, KML) is organisers' material: never in git.

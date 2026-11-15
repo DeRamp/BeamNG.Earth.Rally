@@ -12,7 +12,7 @@ Release `$ARGUMENTS` of Earth Rally. Read `docs/writing-standard.md` first; it i
    and the API this release needs. If any is not true, stop and tell the owner.
 2. **CHANGELOG.md:** new entry at the top in the standard's template, `Works with` line included. Patch 150 words at
    most, minor 400. Check with `wc -w`.
-3. **README.md:** bump the version line; update **Known issues** if they changed; stay under 600 words (`wc -w README.md`).
+3. **README.md:** no version number in it (it says Alpha); update **Known issues** if they changed; stay under 600 words (`wc -w README.md`).
 4. **Version bump:** grep for the old version (`M.VERSION` in `mod/`, versioned doc names) and update what should move.
 5. **Show the owner** the CHANGELOG entry and the diff, and wait for OK.
 6. **Commit** `X.Y.Z-alpha: <name>`, tag `vX.Y.Z-alpha`, run `python tools/package.py X.Y.Z-alpha`.

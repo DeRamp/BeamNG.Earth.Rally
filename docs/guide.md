@@ -11,12 +11,12 @@ Until an official release has it, install BeamNG.Earth from
 installer. Report problems with the fork to [Earth Rally's issues](https://github.com/DeRamp/BeamNG.Earth.Rally/issues),
 not to the BeamNG.Earth team.
 
-**With a stock BeamNG.Earth nothing breaks.** Earth Rally asks, gets no for an answer, and simply shows no auto
-recce — you drive a recce instead, as you always could. That is the only thing you lose.
+**With a stock BeamNG.Earth nothing breaks.** Earth Rally asks, gets no for an answer, and greys out **Auto
+recce** with a note saying why — you drive a recce instead, as you always could. That is the only thing you lose.
 
 ## Getting a stage to drive
 
-1. **Add a rally.** In the menu, **Open import folder**, and drop in the rally's `.kml`, `.kmz` or `.gpx`. It is
+1. **Add a rally.** In the menu, **Open folder**, and drop in the rally's `.kml`, `.kmz` or `.gpx`. It is
    imported straight away. Each line becomes a stage; named points beside it become its controls.
 2. **Give the stage a line**, which is what the pacenotes and the timing follow. Either:
    * **Auto recce** — one button. It works out whether BeamNG.Earth has the map data along the stage, tells you how
