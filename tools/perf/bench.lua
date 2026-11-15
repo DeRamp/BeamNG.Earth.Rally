@@ -5,14 +5,23 @@
 --   erBench.run(suite)   suite = { name, steps = { {op = ...}, ... } } (JSON string or table). Runs the steps inside the
 --                        game, one per frame at most, and writes:
 --                          /earthRally/bench/<suite>/<label>.json   one per capture
---                          /earthRally/bench/progress.json          every 0.25 s: step, phase, label, done
+--                          /earthRally/bench/progress.json          step, phase, label, done (4 Hz; every 5 s while
+--                                                                   a capture records, so its own cost stays out)
 --   erBench.stop(why)    stops the suite and puts every switch back
 --
 -- Steps (op): abort | start {event, stage} | spot {alongM} | state {name} | settle {timeout} | set {switch, value} |
---   capture {label, warm, seconds, profile} | arrival {label, seconds, dress} | wait {seconds} | note {text}
+--   capture {label, warm, seconds, profile, optick} | arrival {label, seconds, dress, alongM} | wait {seconds} |
+--   note {text} | dump {label}
 -- Switches: streams (Hz) | layout ('stage'|'plain') | notes (true|false) | props ('shown'|'hidden') |
---   startClock ('loaded'|'unloaded') | traffic ('on'|'off') | dress (objects per update) | fpsCap (0 = off)
-if erBench and erBench.stop then pcall(erBench.stop, 'reloaded') end
+--   startClock ('loaded'|'unloaded') | traffic ('on'|'off', held) | dress (objects per update) | fpsCap (0 = off)
+--
+-- What the states are (as the real steps make them; runner.lua):
+--   waitStart  on the start line: dressing round the start, the start tree and its clock, traffic held at 0
+--   running    the GO block of stepWaitStart: car let go, notes on, clock from 0, traffic held at 0
+--   finished   wrapUp with a time (finalTime 0, nothing written to the results file): the results card and the stage
+--              layout stay up, streams at 2 Hz
+--   none       the run aborted (tidy): the mod idle with BeamNG.Earth's own layout back. Not the mod unloaded.
+if erBench and erBench._quietStop then pcall(erBench._quietStop, 'reloaded') end
 local B = {}
 erBench = B
 
@@ -24,61 +33,74 @@ local rallyA = require('earthRally/rallyAdapter')
 local geo = require('earthRally/geo')
 
 local wall = hptimer()
-local function ms() return wall:stop() end
+local function ms() return wall:stop() end      -- (stop() reads the time since creation; it does not reset)
 local function r2(x) return x and math.floor(x * 100 + 0.5) / 100 or nil end
 
 ------------------------------------------------------------------------------------------ the runner's internals
-local function upv(f, name)
+local function upvIndex(f, name)
   if type(f) ~= 'function' then return nil end
   local i = 1
   while true do
     local n, v = debug.getupvalue(f, i)
     if not n then return nil end
-    if n == name then return v end
+    if n == name then return i, v end
     i = i + 1
   end
 end
+local function upv(f, name) local _, v = upvIndex(f, name) return v end
 local I = {
   setState = upv(runner.wrapUp, 'setState'),
   zoneRelease = upv(runner.wrapUp, 'zoneRelease'),
   tidy = upv(runner.abort, 'tidy'),
+  trafficOff = runner._trafficOff,
 }
 I.trafficOn = upv(I.tidy, 'trafficOn')
 I.systems = upv(I.trafficOn, 'systems')
-B.internals = {}
-for k, v in pairs(I) do B.internals[k] = v ~= nil end
 
 ------------------------------------------------------------------------------------------ hook timers
 -- Each Earth Rally function below is wrapped while a suite runs: time per call (max and total per capture). The mod
--- calls them through their module tables, so the wrap sees every call; put back on stop.
+-- calls them through their module tables, so the wrap sees every call. sendStreams is a local of main.lua: its
+-- upvalue slot in main's onUpdate is swapped instead. All put back on stop. (runner.update includes props.update and
+-- rallyA.status: the hooks are not to be summed.)
 local HOOKS = {
   { 'runner', runner, 'update' }, { 'runner', runner, 'placeClockView' }, { 'runner', runner, 'uiFrame' },
   { 'props', props, 'update' }, { 'earth', earth, 'update' }, { 'rallyA', rallyA, 'status' },
 }
 local hookStats, wrapped = {}, {}
+local function timed(name, orig)
+  return function(...)
+    local t = ms()
+    local a, b, c, d = orig(...)
+    local dt = ms() - t
+    local s = hookStats[name]
+    if s then
+      s.calls, s.total = s.calls + 1, s.total + dt
+      if dt > s.max then s.max = dt end
+      s.frame = s.frame + dt
+    end
+    return a, b, c, d
+  end
+end
 local function wrapHooks()
   for _, h in ipairs(HOOKS) do
     local name, mod, fn = h[1] .. '.' .. h[3], h[2], h[3]
     local orig = mod[fn]
     if type(orig) == 'function' and not wrapped[name] then
       wrapped[name] = { mod = mod, fn = fn, orig = orig }
-      mod[fn] = function(...)
-        local t = ms()
-        local a, b, c, d = orig(...)
-        local dt = ms() - t
-        local s = hookStats[name]
-        if s then
-          s.calls, s.total = s.calls + 1, s.total + dt
-          if dt > s.max then s.max = dt end
-          s.frame = s.frame + dt
-        end
-        return a, b, c, d
-      end
+      mod[fn] = timed(name, orig)
     end
+  end
+  local mainUpdate = rawget(_G, 'earthRally_main') and earthRally_main.onUpdate
+  local idx, orig = upvIndex(mainUpdate, 'sendStreams')
+  if idx and type(orig) == 'function' and not wrapped['main.sendStreams'] then
+    wrapped['main.sendStreams'] = { upvalueOf = mainUpdate, index = idx, orig = orig }
+    debug.setupvalue(mainUpdate, idx, timed('main.sendStreams', orig))
   end
 end
 local function unwrapHooks()
-  for name, w in pairs(wrapped) do w.mod[w.fn] = w.orig end
+  for _, w in pairs(wrapped) do
+    if w.upvalueOf then debug.setupvalue(w.upvalueOf, w.index, w.orig) else w.mod[w.fn] = w.orig end
+  end
   wrapped = {}
 end
 local function resetHookStats()
@@ -86,7 +108,7 @@ local function resetHookStats()
   for name in pairs(wrapped) do hookStats[name] = { calls = 0, total = 0, max = 0, frame = 0 } end
 end
 
------------------------------------------------------------------------------------------- counts (not during a capture)
+------------------------------------------------------------------------------------------ counts (never inside a capture)
 local function staticCount()
   local ok, objs = pcall(scenetree.findClassObjects, 'TSStatic')
   return ok and objs and #objs or -1
@@ -105,6 +127,17 @@ local function propCount()
   local ok, n = pcall(function() return g:size() end)
   return ok and n or -1
 end
+local function layoutNow()
+  local gs = rawget(_G, 'core_gamestate')
+  local ok, st = pcall(function() return gs and gs.getGameState and gs.getGameState() end)
+  return ok and type(st) == 'table' and (st.appLayout or st.state) or nil
+end
+local function counts()
+  local r = runner.current()
+  return { statics = staticCount(), nodes = nodeCount(), props = propCount(),
+    startClock = rawget(_G, runner.CLOCK_EXT) ~= nil, layout = layoutNow(),
+    notesOn = r and r.state == 'running' or nil, streamHz = earthRally_main.STREAM_HZ }
+end
 
 ------------------------------------------------------------------------------------------ state of the run
 local function run() return runner.current() end
@@ -112,6 +145,7 @@ local function runState() local r = run() return r and r.state or 'none' end
 
 local SW = {}           -- the switches as set now
 local swOrig = {}       -- what to put back
+local propsSeen = -1    -- the props count when they were last hidden or shown
 local function setPropsHidden(h)
   local g = scenetree.findObject(props.GROUP)
   if not g then return end
@@ -122,15 +156,42 @@ local function setPropsHidden(h)
     end
   end)
 end
+-- Per frame in every capture, either side of the props A/B: the same count check, and the hide pass only when the
+-- count has changed (a site spawned), so neither side carries a cost the other does not.
+local function propsTick()
+  local n = propCount()
+  if n ~= propsSeen then
+    propsSeen = n
+    if SW.props == 'hidden' then setPropsHidden(true) end
+  end
+end
+
+local function trafficHoldOff()
+  if not I.systems then return end
+  swOrig.traffic = swOrig.traffic or {}
+  for sname, s in pairs(I.systems()) do
+    local ok, cur = pcall(s.get)
+    if ok and cur and cur ~= 0 then
+      if swOrig.traffic[sname] == nil then swOrig.traffic[sname] = cur end
+      pcall(s.set, 0)
+    end
+  end
+end
+local function trafficPutBack()
+  if not (swOrig.traffic and I.systems) then return end
+  for sname, s in pairs(I.systems()) do
+    if swOrig.traffic[sname] then pcall(s.set, swOrig.traffic[sname]) end
+  end
+end
 
 local function setSwitch(name, value)
   if name == 'streams' then
-    swOrig.streams = swOrig.streams or earthRally_main.STREAM_HZ
+    if swOrig.streams == nil then swOrig.streams = earthRally_main.STREAM_HZ end
     earthRally_main.STREAM_HZ = value
   elseif name == 'layout' then
     local gs = rawget(_G, 'core_gamestate')
     if not (gs and gs.setGameState) then return false, 'no core_gamestate' end
-    swOrig.layoutHold = swOrig.layoutHold or runner.LAYOUT_HOLD_S
+    if swOrig.layoutHold == nil then swOrig.layoutHold = runner.LAYOUT_HOLD_S end
     if value == 'plain' then
       runner.LAYOUT_HOLD_S = 1e9
       local r = run()
@@ -142,23 +203,17 @@ local function setSwitch(name, value)
   elseif name == 'notes' then
     rallyA.notesOn(value and true or false)
   elseif name == 'props' then
+    SW.props = value
     setPropsHidden(value == 'hidden')
+    propsSeen = propCount()
   elseif name == 'startClock' then
     if value == 'unloaded' then pcall(extensions.unload, runner.CLOCK_EXT)
     else pcall(extensions.load, runner.CLOCK_EXT) end
   elseif name == 'traffic' then
     if not I.systems then return false, 'no traffic systems' end
-    swOrig.traffic = swOrig.traffic or {}
-    for sname, s in pairs(I.systems()) do
-      local ok, cur = pcall(s.get)
-      if value == 'off' then
-        if ok and cur and cur ~= 0 then swOrig.traffic[sname] = cur pcall(s.set, 0) end
-      elseif swOrig.traffic[sname] then
-        pcall(s.set, swOrig.traffic[sname])
-      end
-    end
+    if value == 'off' then trafficHoldOff() else trafficPutBack() swOrig.traffic = nil end
   elseif name == 'dress' then
-    swOrig.dress = swOrig.dress or props.DRESS_OBJS_PER_UPDATE
+    if swOrig.dress == nil then swOrig.dress = props.DRESS_OBJS_PER_UPDATE end
     props.DRESS_OBJS_PER_UPDATE = value
   elseif name == 'fpsCap' then
     swOrig.fpsCap = swOrig.fpsCap or { settings.getValue('FPSLimiterEnabled'), settings.getValue('FPSLimiter') }
@@ -172,18 +227,16 @@ local function setSwitch(name, value)
 end
 
 local function restoreSwitches()
-  if swOrig.streams then earthRally_main.STREAM_HZ = swOrig.streams end
-  if swOrig.layoutHold then runner.LAYOUT_HOLD_S = swOrig.layoutHold end
-  if swOrig.dress then props.DRESS_OBJS_PER_UPDATE = swOrig.dress end
-  if swOrig.traffic and I.systems then
-    for sname, s in pairs(I.systems()) do if swOrig.traffic[sname] then pcall(s.set, swOrig.traffic[sname]) end end
-  end
+  if swOrig.streams ~= nil then earthRally_main.STREAM_HZ = swOrig.streams end
+  if swOrig.layoutHold ~= nil then runner.LAYOUT_HOLD_S = swOrig.layoutHold end
+  if swOrig.dress ~= nil then props.DRESS_OBJS_PER_UPDATE = swOrig.dress end
+  trafficPutBack()
   if swOrig.fpsCap then
     pcall(settings.setValue, 'FPSLimiter', swOrig.fpsCap[2])
     pcall(settings.setValue, 'FPSLimiterEnabled', swOrig.fpsCap[1])
   end
   if SW.props == 'hidden' then setPropsHidden(false) end
-  swOrig, SW = {}, {}
+  swOrig, SW, propsSeen = {}, {}, -1
 end
 
 ------------------------------------------------------------------------------------------ the frame recorder
@@ -194,7 +247,10 @@ local function frame(dt)
   local w = W
   if not w then return end
   local el = (ms() - w.t0) / 1000
-  if el < w.warm then return end
+  if el < w.warm then
+    for _, s in pairs(hookStats) do s.frame = 0 end
+    return
+  end
   local i = #w.ft + 1
   -- (hook timers and garbage counted from the first recorded frame, not from the warm-up)
   local gc = collectgarbage('count')
@@ -263,6 +319,7 @@ end
 ------------------------------------------------------------------------------------------ the suite
 local S = nil            -- { cfg, co, step, phase, label, captures, log, done }
 local progressT = 0
+local progressKey = nil
 
 local function note(text)
   if S then S.log[#S.log + 1] = string.format('%.1f %s', (ms() - S.t0) / 1000, text) end
@@ -272,21 +329,28 @@ end
 local function writeProgress(force)
   if not S then return end
   local t = ms()
-  if not force and t - progressT < 250 then return end
-  progressT = t
   local w = W
+  local capturing = w ~= nil and (t - w.t0) / 1000 >= w.warm or false
+  local key = tostring(S.step) .. '|' .. tostring(capturing) .. '|' .. tostring(w and w.label)
+  -- (while a capture records: only on a change and every 5 s, to keep the bench's own disk write out of the frames)
+  local every = capturing and 5000 or 250
+  if not force and key == progressKey and t - progressT < every then return end
+  progressT, progressKey = t, key
   pcall(jsonWriteFile, DIR .. 'progress.json', {
     suite = S.cfg.name, step = S.step, of = #S.cfg.steps, op = S.op, phase = S.phase, label = w and w.label or nil,
-    capturing = w ~= nil and (ms() - w.t0) / 1000 >= w.warm or false, state = runState(), done = S.done or false,
+    capturing = capturing, state = runState(), done = S.done or false,
     why = S.why, captures = S.captures, t = r2((t - S.t0) / 1000), err = S.err,
   }, false)
 end
 
+-- Waits on cond() each frame. cond returns true (done), or false, or nil and a message (failed: the suite stops).
 local function waitFrames(cond, timeoutS, what)
   local t0 = ms()
   while true do
-    local ok, v = pcall(cond)
-    if ok and v then return true end
+    local ok, v, fail = pcall(cond)
+    if not ok then error(what .. ': ' .. tostring(v), 0) end
+    if v then return true end
+    if fail then error(what .. ': ' .. tostring(fail), 0) end
     if (ms() - t0) / 1000 > timeoutS then error('timed out (' .. timeoutS .. ' s) waiting for ' .. what, 0) end
     coroutine.yield()
   end
@@ -314,13 +378,14 @@ function B._endCapture(why)
   end
   local r = run()
   local res = {
-    format = 1, suite = S and S.cfg.name, label = w.label, meta = w.meta, why = why,
+    format = 2, suite = S and S.cfg.name, label = w.label, meta = w.meta, why = why,
+    complete = why == 'time' or why == 'arrival',
     startedAt = w.startedAt, quality = settings.getValue('GraphicOverallQuality'),
     frames = n, seconds = r2(sum / 1000), mean = n > 0 and r2(sum / n) or nil,
     p50 = r2(pct(s, 0.5)), p95 = r2(pct(s, 0.95)), p99 = r2(pct(s, 0.99)), max = r2(s[n]),
     over33 = o33, over50 = o50, engine = cats, hooks = hooks, spikes = w.spikes,
     gcKBs = r2((w.gcKB or 0) / math.max(0.001, sum / 1000)),
-    counts = w.counts, state = runState(), along = r and r.along and math.floor(r.along) or nil,
+    counts = w.counts, state = runState(), along = r and r.along and r.startM and math.floor(r.along - r.startM) or nil,
     switches = deepcopy and deepcopy(SW) or SW,
     lua = w.samples and { samples = w.samples, files = topN(w.luaFiles, 20, w.samples),
       lines = topN(w.luaLines, 30, w.samples) } or nil,
@@ -328,20 +393,28 @@ function B._endCapture(why)
   }
   pcall(jsonWriteFile, DIR .. (S and S.cfg.name or 'adhoc') .. '/' .. w.label .. '.json', res, false)
   if S then S.captures = S.captures + 1 end
-  note(string.format('capture %s: %d frames, p50 %.2f p99 %.2f over50 %d', w.label, n, res.p50 or -1, res.p99 or -1, o50))
+  note(string.format('capture %s (%s): %d frames, p50 %.2f p99 %.2f over50 %d', w.label, why, n, res.p50 or -1,
+    res.p99 or -1, o50))
+end
+
+local function newCapture(label, meta, warm, seconds, cnt)
+  resetHookStats()
+  return { label = label, meta = meta, warm = warm, seconds = seconds, ft = {}, cat = {}, spikes = {},
+    startedAt = os.date('!%Y-%m-%dT%H:%M:%SZ'), counts = cnt, t0 = ms() }
 end
 
 local function capture(step, meta)
-  resetHookStats()
-  W = { label = step.label, meta = meta, t0 = ms(), warm = step.warm or 5, seconds = step.seconds or 20, ft = {},
-    cat = {}, spikes = {}, gc0 = collectgarbage('count'), startedAt = os.date('!%Y-%m-%dT%H:%M:%SZ'),
-    counts = { statics = staticCount(), nodes = nodeCount(), props = propCount() } }
+  -- (the counts first: they walk every static and every road node, which must not land in a recorded frame)
+  local cnt = counts()
+  meta.layout, meta.startClock = cnt.layout, cnt.startClock
+  W = newCapture(step.label, meta, step.warm or 5, step.seconds or 20, cnt)
   if step.profile then profStart(W) end
   local optick = step.optick and Engine.Profiler and Engine.Profiler.startCapture
   local optickOn = false
+  propsSeen = -1
   while W do
-    -- (props hidden stays hidden: a site spawned during the capture is hidden too)
-    if SW.props == 'hidden' then setPropsHidden(true) end
+    propsTick()
+    if SW.traffic == 'off' then trafficHoldOff() end
     if optick and not optickOn and (ms() - W.t0) / 1000 >= W.warm then
       pcall(Engine.Profiler.startCapture)
       optickOn = true
@@ -357,40 +430,43 @@ local function capture(step, meta)
   end
 end
 
--- The car set down on the stage line `alongM` past the start, facing along it, by a plain teleport (no BeamNG.Earth
--- teleport, so the world's origin stays where the run anchored it). Waits for ground under the point first.
+-- The car set down on the stage line `alongM` past the start (negative: behind the start line), facing along it, by
+-- a plain move (runner.placeCar, as the self-test does; no BeamNG.Earth teleport, so the world's origin stays where
+-- the run anchored it). Held at the line's height until the ground there has streamed in. Returns the seconds waited.
 local function placeAt(alongM)
   local r = run()
   if not (r and r.line and r.cum and r.startM) then error('no run line to place on', 0) end
   local s = r.startM + alongM
   local veh = getPlayerVehicle(0)
   if not veh then error('no player vehicle', 0) end
+  -- (the run follows from here at once, not by a search of the whole line while the ground loads)
+  r.prevAlong, r.along = s, s
   local function target()
-    local p = geo.pointAt(r.line, r.cum, s)
-    local q = geo.pointAt(r.line, r.cum, s + 8)
+    local p, dir = geo.pointAt(r.line, r.cum, s)
     if not p.z then p.z = veh:getPosition().z end
-    return p, q
+    return p, dir
   end
-  -- (held at the line's own height, from the map's elevation data, until the ground there has streamed in: the
-  -- world loads around the car, so the car has to be there first, and re-placed each frame it cannot fall)
+  local t0 = ms()
   local hitZ
   waitFrames(function()
-    local p, q = target()
-    local d = castRayStatic(vec3(p.x, p.y, p.z + 15), vec3(0, 0, -1), 40)
-    if d and d < 40 then hitZ = p.z + 15 - d return true end
-    runner.placeCar(veh, vec3(p.x, p.y, p.z + 1.5), vec3(q.x - p.x, q.y - p.y, 0))
+    local p, dir = target()
+    local z, found = runner.groundNear(p.x, p.y, p.z)
+    if found then hitZ = z return true end
+    runner.placeCar(veh, vec3(p.x, p.y, p.z + 1.5), vec3(dir.x, dir.y, 0))
     return false
   end, 90, 'ground at ' .. alongM .. ' m')
-  local p, q = target()
-  runner.placeCar(veh, vec3(p.x, p.y, hitZ + 0.3), vec3(q.x - p.x, q.y - p.y, 0))
+  local p, dir = target()
+  runner.placeCar(veh, vec3(p.x, p.y, hitZ + 0.3), vec3(dir.x, dir.y, 0))
   r.prevAlong, r.along = s, s
   pcall(rallyA.resync)
-  note(string.format('placed at %d m (line %.0f m), ground z %.1f', alongM, s, hitZ))
+  local waited = (ms() - t0) / 1000
+  note(string.format('placed at %d m (line %.0f m), ground z %.1f, %.1f s for ground', alongM, s, hitZ, waited))
+  return waited
 end
 
 local function setState(name)
   local r = run()
-  if name == 'none' then pcall(runner.abort, true) return end
+  if name == 'none' then pcall(runner.abort, true) note('state none') return end
   if not r then error('no run for state ' .. name, 0) end
   if name == 'running' then
     if r.state ~= 'running' then
@@ -400,13 +476,17 @@ local function setState(name)
       r.clock = 0
       I.setState('running')
     end
+    I.trafficOff()            -- (as the real path does at the ATC / start line, which the bench does not pass)
   elseif name == 'waitStart' then
     r.startAt = (runner.clock() or 0) + 3600
     r.prevLeft = 3600
     r.staged = nil
     I.setState('waitStart')
+    I.trafficOff()
   elseif name == 'finished' then
-    r.finalTime = nil
+    -- (a time, so the results card and the stage layout stay as after a real finish; wrapUp writes no result:
+    -- addResult is only called from stepRunning)
+    r.finalTime = r.finalTime or 0
     runner.wrapUp()
   else
     error('unknown state ' .. name, 0)
@@ -424,7 +504,8 @@ local function settle(step)
     local t = ms()
     ft[#ft + 1] = t - lastT2
     lastT2 = t
-    if #ft > 2000 then table.remove(ft, 1) end
+    if #ft > 3000 then table.remove(ft, 1) end
+    if SW.traffic == 'off' then trafficHoldOff() end
     if t >= nextCheck then
       nextCheck = t + 1000
       local c = staticCount()
@@ -432,7 +513,6 @@ local function settle(step)
       local loading = earth.loading()
       local el = (t - t0) / 1000
       if not loading and (t - sameSince) >= 5000 and el >= 10 then
-        -- medians of the frames in the last 5 s and the 5 s before
         local a, b, acc = {}, {}, 0
         for i = #ft, 1, -1 do
           acc = acc + ft[i]
@@ -459,32 +539,47 @@ local function check(step)
   local want = step.state
   local r = run()
   local st = runState()
+  if want == 'none' then
+    if r and st ~= 'finished' and st ~= 'failed' then error('state is ' .. st .. ', not none', 0) end
+    return
+  end
   if want and st ~= want then error('state is ' .. st .. ', not ' .. want, 0) end
-  if want == 'running' or want == 'waitStart' then
-    if step.alongM and r and r.along and math.abs((r.along - r.startM) - step.alongM) > 50 then
-      error(string.format('car %.0f m along, not %d', r.along - r.startM, step.alongM), 0)
-    end
+  if (want == 'running' or want == 'waitStart') and step.alongM and r and r.along and r.startM
+    and math.abs((r.along - r.startM) - step.alongM) > 50 then
+    error(string.format('car %.0f m along, not %d', r.along - r.startM, step.alongM), 0)
   end
 end
 
 local OPS = {}
 function OPS.note(st) note(st.text) end
-function OPS.wait(st) local t0 = ms() waitFrames(function() return (ms() - t0) / 1000 >= st.seconds end, st.seconds + 5, 'wait') end
-function OPS.abort() pcall(runner.abort, true) restoreSwitches() waitFrames(function() return runState() == 'none' or runState() == 'idle' or runState() == 'finished' end, 20, 'abort') end
+function OPS.wait(st)
+  local t0 = ms()
+  waitFrames(function()
+    if SW.traffic == 'off' then trafficHoldOff() end
+    return (ms() - t0) / 1000 >= st.seconds
+  end, st.seconds + 5, 'wait')
+end
+function OPS.abort()
+  pcall(runner.abort, true)
+  restoreSwitches()
+  waitFrames(function() local s = runState() return s == 'none' or s == 'idle' or s == 'finished' end, 20, 'abort')
+end
 function OPS.start(st)
   pcall(runner.abort, true)
+  restoreSwitches()          -- (every run starts from the player's own settings: traffic back, nothing switched)
   local res = earthRally_main.uiAction('drive', st.event, st.stage)
   if not (res and res.ok) then error('could not start: ' .. tostring(res and res.message), 0) end
   note('run started: ' .. st.event .. ' / ' .. st.stage)
   waitFrames(function()
-    local s = runState()
-    if s == 'failed' then error('run failed in setup: ' .. tostring(run().error), 0) end
-    return s == 'toAtc' or s == 'toStart' or s == 'waitStart'
+    local r = run()
+    if not r then return nil, 'the run went away' end
+    if r.state == 'failed' then return nil, 'run failed in setup: ' .. tostring(r.error) end
+    return r.state == 'toAtc' or r.state == 'toStart' or r.state == 'waitStart'
   end, st.timeout or 240, 'setup (toAtc/toStart)')
   waitFrames(function() return earth.ready() end, 60, 'BeamNG.Earth ready')
   note('setup done: ' .. runState())
 end
-function OPS.spot(st) placeAt(st.alongM) S.spot = st.alongM end
+function OPS.spot(st) S.groundS = placeAt(st.alongM) S.spot = st.alongM end
 function OPS.state(st) setState(st.name) S.stateName = st.name end
 function OPS.settle(st)
   local ok, el = settle(st)
@@ -501,24 +596,27 @@ function OPS.capture(st)
   if S.skipUntilSpot then note('skipped ' .. st.label .. ' (spot did not settle)') return end
   check(st)
   capture(st, { test = st.test, spot = S.spot, state = runState(), switch = st.switch, value = st.value,
-    pair = st.pair, settleS = S.settleS })
+    pair = st.pair, base = st.base, settleS = S.settleS, groundS = S.groundS })
 end
--- Arriving at a spot: the 10 s after the car is set down, while that stretch's dressing is put down. Recorded from the
--- moment of placing (no warm-up), so the spawn burst is in it.
+-- Arriving at a spot: the `seconds` after the car is set down, while that stretch's dressing is put down. Recorded
+-- from the set-down (the wait for ground is logged, not recorded), so the spawn burst is in it.
 function OPS.arrival(st)
   if st.dress then setSwitch('dress', st.dress) end
-  resetHookStats()
-  W = { label = st.label, t0 = ms(), warm = 0, seconds = 1e9, ft = {}, cat = {}, spikes = {},
-    gc0 = collectgarbage('count'), startedAt = os.date('!%Y-%m-%dT%H:%M:%SZ'), counts = {},
-    meta = { test = st.test, spot = st.alongM, state = runState(), switch = 'dress', value = st.dress, pair = st.pair } }
-  placeAt(st.alongM)
+  local groundS = placeAt(st.alongM)
   S.spot = st.alongM
+  W = newCapture(st.label, { test = st.test, spot = st.alongM, state = runState(), switch = 'dress', value = st.dress,
+    pair = st.pair, base = st.base, groundS = groundS }, 0, 1e9, nil)
   local t0 = ms()
-  while W and (ms() - t0) / 1000 < (st.seconds or 10) do coroutine.yield() end
-  W.counts = { statics = staticCount(), nodes = nodeCount(), props = propCount() }
-  B._endCapture('arrival')
+  while W and (ms() - t0) / 1000 < (st.seconds or 10) do
+    if SW.traffic == 'off' then trafficHoldOff() end
+    coroutine.yield()
+  end
+  if W then
+    B._endCapture('arrival')
+  end
+  local cnt = counts()
+  note(string.format('after arrival: statics %d, nodes %d, props %d', cnt.statics, cnt.nodes, cnt.props))
 end
-
 -- The road graph the game has now (map.getMap()), for the offline timings (T6): nodes with position, radius and links.
 function OPS.dump(st)
   local out, n = { nodes = {} }, 0
@@ -548,7 +646,14 @@ end
 local E = {}
 function E.onUpdate()
   local t = ms()
-  if lastT then frame(t - lastT) end
+  if lastT then
+    local ok, err = pcall(frame, t - lastT)
+    if not ok and S and not S.done then
+      S.err = 'recorder: ' .. tostring(err)
+      note('ERROR: ' .. S.err)
+      B.stop('error')
+    end
+  end
   lastT = t
   if S and S.co and not S.done then
     local ok, err = coroutine.resume(S.co)
@@ -568,28 +673,32 @@ extensions.load('erBenchExt')
 
 function B.run(cfg)
   if type(cfg) == 'string' then cfg = jsonDecode(cfg) end
-  if S and not S.done then return 'a suite is running' end
-  for k, v in pairs(I) do if v == nil then return 'missing runner internal: ' .. k end end
+  if S and not S.done then return 'ERROR: a suite is running' end
+  for k, v in pairs(I) do if v == nil then return 'ERROR: missing runner internal: ' .. k end end
   wrapHooks()
   S = { cfg = cfg, t0 = ms(), step = 0, captures = 0, log = {} }
   S.co = coroutine.create(body)
   FS:directoryCreate(DIR .. cfg.name, true)
+  progressKey = nil
   writeProgress(true)
   return 'running ' .. cfg.name .. ' (' .. #cfg.steps .. ' steps)'
 end
 
-function B.stop(why)
+local function stopAll(why, quiet)
   if W then B._endCapture('stopped') end
   profStop()
   restoreSwitches()
   unwrapHooks()
-  if S then
+  if S and not S.done then
     S.done, S.why = true, why
     pcall(jsonWriteFile, DIR .. S.cfg.name .. '/suite-log.json', { why = why, err = S.err, log = S.log }, false)
-    writeProgress(true)
+    if not quiet then writeProgress(true) end
   end
   return 'stopped: ' .. tostring(why)
 end
+function B.stop(why) return stopAll(why, false) end
+-- (a reload: the old suite stopped and put back, without writing progress.json, which belongs to the next suite)
+function B._quietStop(why) return stopAll(why, true) end
 
 local missing = {}
 for k, v in pairs(I) do if v == nil then missing[#missing + 1] = k end end

@@ -7,48 +7,14 @@ baseline, each A/B comparison with its verdict (inside the spread between pairs 
 goes, the Earth Rally hooks by worst time, and a frame trace of any capture."""
 import json
 import os
-import statistics
+import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-HISTORY = os.path.join(REPO, "perf", "history.jsonl")
+sys.path.insert(0, HERE)
+from perf_report import HISTORY, compare  # noqa: E402  (one verdict rule, shared with the report)
+
 OUT = os.path.join(REPO, "perf", "dashboard.html")
-
-
-def med(xs):
-    xs = [x for x in xs if x is not None]
-    return round(statistics.median(xs), 2) if xs else None
-
-
-def comparisons(rows):
-    """Per suite: each (test, switch) group, every value against the first one seen (the base)."""
-    out = []
-    by_suite = {}
-    for r in rows:
-        by_suite.setdefault(r["suite"], []).append(r)
-    for suite, rs in by_suite.items():
-        groups = {}
-        for r in rs:
-            groups.setdefault((r.get("test"), r.get("switch") or "-"), {}).setdefault(json.dumps(r.get("value")), []).append(r)
-        for (test, sw), vals in groups.items():
-            items = list(vals.items())
-            if len(items) < 2:
-                continue
-            bv, base = items[0]
-            bp99 = med(x["p99"] for x in base)
-            bsp = (max(x["p99"] for x in base) - min(x["p99"] for x in base)) if len(base) > 1 else None
-            for v, xs in items[1:]:
-                p99 = med(x["p99"] for x in xs)
-                sp = (max(x["p99"] for x in xs) - min(x["p99"] for x in xs)) if len(xs) > 1 else None
-                noise = max([s for s in (bsp, sp) if s is not None] or [0])
-                d = round(p99 - bp99, 2)
-                verdict = "nochange" if noise and abs(d) <= noise else ("single" if len(xs) < 2 else (
-                    "faster" if d < 0 else "slower"))
-                out.append({"suite": suite, "label": rs[0].get("label"), "test": test, "switch": sw,
-                            "base": json.loads(bv), "value": json.loads(v), "baseP99": bp99, "p99": p99,
-                            "baseP50": med(x["p50"] for x in base), "p50": med(x["p50"] for x in xs),
-                            "d": d, "noise": round(noise, 2), "n": len(xs), "verdict": verdict})
-    return out
 
 
 def main():
@@ -56,7 +22,9 @@ def main():
     if os.path.exists(HISTORY):
         with open(HISTORY, encoding="utf-8") as fh:
             rows = [json.loads(line) for line in fh if line.strip()]
-    data = {"rows": rows, "comparisons": comparisons(rows)}
+    # (format-1 rows from before the explicit base and the cut-short flag: kept in the file, left off the page)
+    rows = [r for r in rows if "base" in r and r.get("p99") is not None]
+    data = {"rows": rows, "comparisons": compare(rows)}
     html = TEMPLATE.replace("/*DATA*/null", json.dumps(data, separators=(",", ":")))
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w", encoding="utf-8") as fh:
@@ -165,9 +133,9 @@ function ab(){
  const box=$('#ab');const cs=(D.comparisons||[]).filter(c=>c.test===fTest.value||fTest.value==='');
  const all=(D.comparisons||[]);const use=cs.length?cs:all;
  if(!use.length){box.innerHTML='<div class="empty">No A/B pairs yet.</div>';return}
- const V={faster:'faster',slower:'slower',nochange:'no change (inside spread)',single:'one pair only'};
- let h='<table><tr><th class="l">Suite</th><th class="l">Test</th><th class="l">Switch</th><th>Base → value</th><th>p99 base</th><th>p99</th><th>Δ p99</th><th>Spread</th><th>n</th><th class="l">Verdict</th></tr>';
- for(const c of use.slice().reverse())h+=`<tr><td class="l">${c.suite}</td><td class="l">${c.test}</td><td class="l">${c.switch}</td><td>${c.base} → ${c.value}</td><td>${f2(c.baseP99)}</td><td>${f2(c.p99)}</td><td>${c.d>0?'+':''}${f2(c.d)}</td><td>${f2(c.noise)}</td><td>${c.n}</td><td class="l v-${c.verdict}">${V[c.verdict]}</td></tr>`;
+ const V={faster:'faster',slower:'slower',nochange:'no change (pairs disagree or inside spread)',single:'one pair only: indicative'};
+ let h='<table><tr><th class="l">Suite</th><th class="l">Test</th><th class="l">Switch</th><th>Base → value</th><th>p99 base</th><th>p99</th><th>Δ p99 (median)</th><th>Δ range over pairs</th><th>Base spread</th><th>Pairs</th><th class="l">Verdict</th></tr>';
+ for(const c of use.slice().reverse())h+=`<tr><td class="l">${c.suite}</td><td class="l">${c.test}</td><td class="l">${c.switch}</td><td>${c.base} → ${c.value}</td><td>${f2(c.baseP99)}</td><td>${f2(c.p99)}</td><td>${c.d>0?'+':''}${f2(c.d)}</td><td>${f2(c.dMin)} … ${f2(c.dMax)}</td><td>${f2(c.noise)}</td><td>${c.n}</td><td class="l v-${c.verdict}">${V[c.verdict]}</td></tr>`;
  box.innerHTML=h+'</table>';
 }
 

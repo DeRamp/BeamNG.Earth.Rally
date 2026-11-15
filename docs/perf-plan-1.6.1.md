@@ -101,7 +101,11 @@ upvalues of its public functions, so it measures the installed zip exactly as pl
   then, Optick and the engine categories stand in.
 * **Each capture:** 5 s warm-up, then 20 s capture. One change at a time, alternated A B A B, 3 pairs.
 * **Report:** p50, p95 and p99 frame time, frames over 33 and 50 ms, and the spread between pairs.
-* **A cause counts** when removing it gives back more than 20 % of the gap, outside the spread between pairs.
+* **Every A/B has an explicit base** (as shipped), and its pairs alternate A B, B A, A B, so a drift over time cancels.
+* **A change counts** only when there are at least two pairs, every pair's p99 difference has the same sign, and
+  the median difference is larger than the base's own spread over its pairs. Anything else is "no change".
+  The dashboard shows how much of the race-vs-idle gap is left.
+* **Captures cut short** (a stopped suite) are left out of the report and the history.
 * **Controls:** vivace, Low preset, vsync off, background fps limit off, power plan max, camera fixed.
 * **The Python watcher** reads the progress file and has a stall timeout of 60 s and a total timeout of 15 min. It
   says when it ends.
@@ -114,8 +118,12 @@ upvalues of its public functions, so it measures the installed zip exactly as pl
 * Same fall in both: the world is the trend, and the settle gate handles it.
 * Also gives the real settle time, which sets the gate.
 
-**T1b. Which state costs? (about 4 min)** At the 2.3 km spot, settled. `none`, `waitStart`, `running`, `finished`, each
-alternated with `none`, 2 pairs. Names the state where the cost starts.
+**T1b. GO on the start line: the reproduction gate (about 12 min)**
+* The one clean drop seen before: 156 fps waiting on the line, 82 fps once the clock ran, car stopped.
+* On the line: `waitStart` settled (the base), then GO recorded from GO for 20 s with no warm-up and no settle
+  (the start clock is fed until the clock reaches 8 s), then `running` settled, then the mod idle on the same spot.
+* 3 pairs, the idle floor first in the middle pair.
+* **If no gap shows here or in T1, the switch A/Bs (T3, T4) measure noise around zero:** say so, do not chase them.
 
 **T2. Where does a slow frame go? (about 3 min)** At the 2.3 km spot, settled, in `running`:
 * one Optick capture of 10 s with the run;
@@ -154,10 +162,10 @@ Repeat only the winning switch at the 4.6 km spot, to check it holds.
 
 ## Quick check, after every fix (about 5 min)
 
-The same short run each time, so fixes can be compared with each other:
-* Weaver Bend, the 2.3 km spot, settled.
-* `none` vs `running`, 3 pairs.
-* One 10 s arrival for the spawn spike.
+The same short run each time, so fixes can be compared with each other (about 15 min):
+* GO on the start line vs the mod idle, 2 pairs.
+* Weaver Bend, the 2.3 km spot, settled: `running` vs `none`, 3 pairs alternated.
+* One 10 s arrival at 2.3 km in `running` for the spawn spike.
 
 The first quick check runs on `main` before any fix, as the baseline.
 
@@ -212,6 +220,18 @@ Earth Rally performance          Weaver Bend, 2.3 km   [state: running v]  [metr
 * **A result inside the spread between pairs is grey**, marked "no change", so noise is never read as a win.
 
 **When:** built with the recorder, before the first in-game run, so the baseline lands in it.
+
+## Known blind spots (from the review, 2026-11-15)
+
+* **A car standing still** leaves the HUD's progress, speed and distance unchanged and calls no pacenote, so the
+  streams and notes A/Bs read the idle cost of those systems, not their cost while driving.
+* **A settled world** is not what a driving player sees: BeamNG.Earth keeps loading as they go. T1 (no settle) and
+  the arrival captures are the only unsettled measurements.
+* **One spot, reached by a 2.3 km move**, holds less world (statics, road nodes) than a player has built up by
+  driving there. Compare `counts` with a driven run before trusting a spot result.
+* **Low preset on a fast desktop** hides GPU-side costs (draw calls, shadows, lost batching). Run the deciding A/B
+  at the player's preset too.
+* **`none` is the mod idle** (the run aborted, BeamNG.Earth's layout back), not the mod unloaded.
 
 ## Out of scope
 
