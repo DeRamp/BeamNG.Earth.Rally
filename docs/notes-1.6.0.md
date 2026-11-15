@@ -112,3 +112,33 @@ Fixed: `dressing.plan`'s unused `only` and `existingMarshals` options are gone, 
 
 Not changed: the stale comment in events.lua (~224, "the live road map fills those in: junctions.merge") stays --
 another branch has edits there.
+
+## Review round 3
+
+Fixed: which map points are marks (importer.lua `markKinds`, `NAME_RULES` 4 so the rallies already imported are read
+again once). A name is a radio by number only when that is all it is ("R3", "R 3", "Radio 3"), so "Junction R572"
+is not one. A control (start, finish, flying finish, stop, ATC / TC, service, regroup: `isControl`) is never a mark
+unless a `#pt-` tag says so. The description is read for spectators only, and a "closed" / "no spectators" there
+cancels a spectator word only in the same sentence. Spectator facilities (parking, car park, toilets, bus, shuttle,
+camping, entrance, tickets, food) are not spectator areas, in a "Spectator Points" folder or not. A `#pt-` tag that
+names no known kind falls through to the words (the convention is in `docs/rally-file.md`).
+
+Fixed: a point near two stages is kept on the one whose line is nearest (within 100 m, as before); stages whose
+lines are within 10 m of that distance (`MARK_SAME_ROAD_M`: one road drawn twice, a stage and its reverse) all keep it.
+
+Fixed: the page counts the marks with the dressing's span (100 m either side of start .. flying finish) and
+off-line limit (`events.stageMarks`), so a kind whose every map point lies outside the stage shows Random, as the
+dressing fills it (medical still None). The counts are on the map's line, the dressing's on the line driven; menu.lua's
+comment now says that, not "never disagree".
+
+Fixed: `MARSHAL_SHARE` is gone: every junction turn that can have a marshal gets one, at most one per km (which of
+two too close is by chance), and the comment that overstated the per-turn draw with it.
+
+Fixed: the stage page's help says "the map doesn't mark ... on this stage, so they're placed for you where the stage
+has room" (no "this rally's map", no "the same places every time").
+
+Fixed: a bridge's far end is looked for only from its start to 300 m on (`runner.bridgeEnd`, `BRIDGE_MAX_M`), so a
+stage that comes back alongside no longer takes it from the later pass; past 300 m, behind the start or off the
+line, the bridge is kept with no span.
+
+Already right: the `NAME_RULES` comment said 1.6.0 (the renumbering commit fixed it).

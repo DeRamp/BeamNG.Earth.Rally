@@ -706,6 +706,31 @@ do
   local tp = gs[1] and find(gs[1].objects, 'specTape')[1]
   T.check(tp and tp.x < 0, 'map spectator left of the line (offLineM < 0): its tape on the left (' .. tostring(tp and tp.x) .. ')')
   T.check(#ofKind(gulf, 'medical') == 0, 'map medical sharing the radio post: no post of its own')
+
+  -- (review round 3) a kind whose every map point lies outside the stage is filled in as if the map marked none --
+  -- medical still never is
+  local outside = plan('rally/ss1', {
+    { kind = 'radio', along = -500 }, { kind = 'spectator', along = 30500 }, { kind = 'marshal', along = -300 },
+    { kind = 'medical', along = 31000 } })
+  T.check(key(outside, 'radio') == key(p1, 'radio') and ofKind(outside, 'radio')[1].source == 'rule',
+    'map radios all outside the stage: radio by chance, as with none')
+  T.check(key(outside, 'spectators') == key(p1, 'spectators') and key(outside, 'marshal') == key(p1, 'marshal'),
+    'map spectators / marshals all outside the stage: by chance, as with none')
+  T.check(#ofKind(outside, 'medical') == 0, 'a map medical point outside the stage: none, never one made up')
+
+  -- (review round 3) every turn that can have a marshal gets one, when none is within 1 km of another
+  local sparse = {}
+  for s = 1500, 28500, 1500 do
+    sparse[#sparse + 1] = { along = s, x = 0, y = s, kind = 'turn', inDeg = 0, outDeg = 90,
+                            sides = { { deg = 0, halfW = 3 }, { deg = 270, halfW = 3 } } }
+  end
+  local allOk = true
+  for n = 1, 10 do
+    local p = D.plan({ line = S, startM = 0, finishM = 30000, junctions = sparse, corners = corners,
+                       seed = 'rally/ss' .. n })
+    if #ofKind(p, 'marshal') ~= #sparse then allOk = false end
+  end
+  T.check(allOk, 'random fill: a marshal at every turn 1.5 km apart, on every stage (' .. #sparse .. ' turns)')
 end
 
 T.done('test_dressing')

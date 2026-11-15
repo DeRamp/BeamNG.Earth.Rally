@@ -300,6 +300,7 @@ M._pointRole = pointRole
 -- the order a point's kinds are listed.
 M.MARK_KINDS = { 'radio', 'medical', 'spectator', 'marshal' }
 M.MARK_NEAR_M = 100          -- a point this near a stage's line is on that stage; farther (a hospital) it is not
+M.MARK_SAME_ROAD_M = 10      -- (two stages' lines this close to a point as each other: one road, both get it)
 local KIND_RANK = {}
 for i, k in ipairs(M.MARK_KINDS) do KIND_RANK[k] = i end
 
@@ -309,35 +310,89 @@ local MEDICAL_WORDS = { medical = true, ambulance = true, ambulances = true, miv
 local SPECTATOR_WORDS = { spectator = true, spectators = true }
 local RADIO_WORDS = { radio = true, radios = true }
 local MARSHAL_WORDS = { marshal = true, marshals = true }
-local NOT_SPECTATOR_WORDS = { prohibited = true, restricted = true, closed = true, forbidden = true }
+-- (words that say a spectator area is not one: shut to them, or a facility for them rather than a place to stand)
+local NOT_SPECTATOR_WORDS = { prohibited = true, restricted = true, closed = true, forbidden = true,
+                              parking = true, toilet = true, toilets = true, wc = true, bus = true, buses = true,
+                              shuttle = true, camping = true, campsite = true, entrance = true, ticket = true,
+                              tickets = true, food = true, catering = true }
+-- (word pairs that do the same: "car park", "no spectators" -- "no" alone is also "number": "Spectator Area No 2")
+local NOT_SPECTATOR_PAIRS = { { 'car', 'park' }, { 'car', 'parks' }, { 'no', 'spectators' }, { 'no', 'spectator' },
+                              { 'no', 'spectating' }, { 'no', 'access' }, { 'no', 'entry' } }
+-- (words that make a point a control or a service / regroup area rather than one of the organisers' points: with
+-- pointRole's start / finish / flying finish / stop / ATC / TC)
+local CONTROL_WORDS = { service = true, regroup = true, mtc = true, parc = true, refuel = true, refuelling = true,
+                        refueling = true, atc = true, tc = true }
+
+local function notSpectator(ws)
+  if anyWord(ws, NOT_SPECTATOR_WORDS) then return true end
+  for i = 1, #ws - 1 do
+    for _, pr in ipairs(NOT_SPECTATOR_PAIRS) do if ws[i] == pr[1] and ws[i + 1] == pr[2] then return true end end
+  end
+  return false
+end
+
+-- Is this point one of the stage's controls (or a service / regroup area)? Its name says so as the control rules
+-- read it (pointRole), or it has a control's own word in it.
+local function isControl(name)
+  if pointRole(name) then return true end
+  return anyWord(words(name), CONTROL_WORDS)
+end
+M._isControl = isControl
 
 -- What kinds of organisers' point a map point is: a list in M.MARK_KINDS' order, empty for none. pt: { name, folders,
 -- style, description } as parse gives them.
---   A style "#pt-<kinds>" (the rally-pack converter writes exactly this: "#pt-radio-spectator") says so and nothing
---   else is read. Otherwise, from the organisers' own words:
---   radio      "radio" in its folders / style / name / description, or a name tagged "R3"
---   medical    "medical", "ambulance", "MIV", "doctor" in any of them ("Fire and Ambulance" too)
---   spectator  "spectator(s)" in any of them, unless they say the area is prohibited / restricted / closed
+--   A style "#pt-<kind>[-<kind>...]" (the rally-pack converter writes exactly this: "#pt-radio-spectator") says so
+--   and nothing else is read -- when it names at least one kind this knows; one that names none is read as if it
+--   had no tag. Otherwise, from the organisers' own words:
+--   (a control -- start, finish, flying finish, stop, ATC / TC, service, regroup: isControl -- is never a mark)
+--   radio      "radio" in its folders / style / name, or a name that is only a radio's number: "R3", "R 3", "Radio 3"
+--   medical    "medical", "ambulance", "MIV", "doctor" in its folders / style / name ("Fire and Ambulance" too)
+--   spectator  "spectator(s)" in its folders / style / name / description, unless its folders / style / name say
+--              the area is prohibited / restricted / closed or a facility (parking, car park, toilets, bus, shuttle,
+--              camping, entrance, tickets, food); a description's spectator word counts unless the same sentence
+--              says so
 --   marshal    a folder or style with "marshal" in it, a name with "marshal" in it, a name tagged "MP 9", a style
 --              with "police" in it
--- The control rules (ROLE_WORDS / OTHER_WORDS) are not touched: a control stays a control, and this is read beside it.
+-- Only spectator reads the description: it is where the organisers write about a place ("spectators can watch from
+-- the bank"), and a radio or medical word there is as often about something else ("radio 3 is 200 m on").
+-- The control rules (ROLE_WORDS / OTHER_WORDS) are not touched: a control stays a control.
 function M.markKinds(pt)
   local style = type(pt.style) == 'string' and pt.style or ''
   local tagged = style:lower():match('^#?pt%-(.+)$')
   local is = {}
+  local known = false
   if tagged then
-    for k in tagged:gmatch('[a-z]+') do is[k] = true end
-  else
+    for k in tagged:gmatch('[a-z]+') do
+      if KIND_RANK[k] then is[k], known = true, true end
+    end
+  end
+  if not known then
+    is = {}
     local name = pt.name or ''
+    if isControl(name) then return {} end
     local folders = table.concat(type(pt.folders) == 'table' and pt.folders or {}, ' / ')
     local desc = type(pt.description) == 'string' and pt.description or ''
-    local all = words(table.concat({ folders, style, name, desc }, ' \n '))
+    -- (the point's own words: its folders, style and name; the description is read only for spectators)
+    local own = words(table.concat({ folders, style, name }, ' \n '))
     local nameWs = words(name)
     local fl, sl = folders:lower(), style:lower()
-    is.radio = anyWord(all, RADIO_WORDS) or sl:find('radio', 1, true) ~= nil
-    if not is.radio then for _, w in ipairs(nameWs) do if w:match('^r%d+$') then is.radio = true break end end end
-    is.medical = anyWord(all, MEDICAL_WORDS)
-    is.spectator = anyWord(all, SPECTATOR_WORDS) and not anyWord(all, NOT_SPECTATOR_WORDS)
+    local trimmed = name:lower():gsub('^%s+', ''):gsub('%s+$', '')
+    is.radio = anyWord(own, RADIO_WORDS) or sl:find('radio', 1, true) ~= nil
+      or trimmed:match('^r%s*%d+$') ~= nil or trimmed:match('^radio%s*%d+$') ~= nil
+    is.medical = anyWord(own, MEDICAL_WORDS)
+    if anyWord(own, SPECTATOR_WORDS) then
+      is.spectator = not notSpectator(own)
+    else
+      is.spectator = false
+    end
+    if not is.spectator and not notSpectator(own) then
+      -- (the description's sentences: a spectator word in one counts unless that sentence says it is closed / a
+      -- facility)
+      for sentence in (desc .. '.'):gmatch('([^%.!%?;\n]*)[%.!%?;\n]') do
+        local ws = words(sentence)
+        if anyWord(ws, SPECTATOR_WORDS) and not notSpectator(ws) then is.spectator = true break end
+      end
+    end
     -- (a name's "marshal" a word of its own: "Marshall Road" is not one)
     is.marshal = fl:find('marshal', 1, true) ~= nil or sl:find('marshal', 1, true) ~= nil
       or anyWord(nameWs, MARSHAL_WORDS) or sl:find('police', 1, true) ~= nil
@@ -549,7 +604,7 @@ function M.build(parsed, eventId, eventName, sourceFile)
     if #kinds > 0 then markPts[#markPts + 1] = { p = p, kinds = kinds, xy = fr.xy(p.lat, p.lon) } end
   end
 
-  local stages, used = {}, {}
+  local stages, used, stageLines = {}, {}, {}
   for idx, l in ipairs(parsed.lines) do
     local ctl = controls[idx]
     local startXy = ctl.start and fr.xy(ctl.start.lat, ctl.start.lon) or nil
@@ -578,21 +633,7 @@ function M.build(parsed, eventId, eventName, sourceFile)
         warn[#warn + 1] = string.format('its %s control is %.0f m from the line', role == 'ff' and 'flying finish' or role, off)
       end
     end
-    -- the organisers' points on it (within MARK_NEAR_M of its line), one entry per kind, in order along it
-    local marks = {}
-    for _, mp in ipairs(markPts) do
-      local along, off = project(line, mp.xy)
-      if off <= M.MARK_NEAR_M then
-        for _, kind in ipairs(mp.kinds) do
-          marks[#marks + 1] = { kind = kind, name = mp.p.name, lat = round(mp.p.lat, 7), lon = round(mp.p.lon, 7),
-                                distM = round(along, 1), offLineM = round(off, 1) }
-        end
-      end
-    end
-    table.sort(marks, function(a, b)
-      if a.distM ~= b.distM then return a.distM < b.distM end
-      return (KIND_RANK[a.kind] or 9) < (KIND_RANK[b.kind] or 9)
-    end)
+    stageLines[idx] = line
     local circle = enclosingCircle(line)
     local cLat, cLon = fr.latlon(circle[1][1], circle[1][2])
     local sid = M.slug(l.name)
@@ -615,11 +656,43 @@ function M.build(parsed, eventId, eventName, sourceFile)
     stages[#stages + 1] = {
       id = sid, name = l.name, lengthM = round(total, 1),
       centre = { lat = round(cLat, 7), lon = round(cLon, 7) }, radiusM = round(circle[2], 1),
-      pieces = #pieces, gapsM = gapsOut, controls = outCtl, line = ll, marks = #marks > 0 and marks or nil,
+      pieces = #pieces, gapsM = gapsOut, controls = outCtl, line = ll,
     }
     local roles = {}
     for _, r in ipairs({ 'atc', 'start', 'ff', 'stop' }) do if outCtl[r] then roles[#roles + 1] = r end end
     report.stages[#report.stages + 1] = { id = sid, name = l.name, km = total / 1000, controls = roles, warnings = warn }
+  end
+  -- the organisers' points on each stage: each on the one stage whose line is nearest it, when that is within
+  -- MARK_NEAR_M -- two stages that pass near each other do not both get it. (Two that run on the same road -- a stage
+  -- and its reverse, or two lines drawn over one road -- both do: every stage within MARK_SAME_ROAD_M of the nearest
+  -- distance.) One entry per kind, in order along the line.
+  local stageMarks = {}
+  for _, mp in ipairs(markPts) do
+    local hits, nearest = {}, math.huge
+    for i, line in ipairs(stageLines) do
+      local along, off = project(line, mp.xy)
+      if off <= M.MARK_NEAR_M then
+        hits[#hits + 1] = { i = i, along = along, off = off }
+        if off < nearest then nearest = off end
+      end
+    end
+    for _, h in ipairs(hits) do
+      if h.off <= nearest + M.MARK_SAME_ROAD_M then
+        local marks = stageMarks[h.i] or {}
+        stageMarks[h.i] = marks
+        for _, kind in ipairs(mp.kinds) do
+          marks[#marks + 1] = { kind = kind, name = mp.p.name, lat = round(mp.p.lat, 7), lon = round(mp.p.lon, 7),
+                                distM = round(h.along, 1), offLineM = round(h.off, 1) }
+        end
+      end
+    end
+  end
+  for i, marks in pairs(stageMarks) do
+    table.sort(marks, function(a, b)
+      if a.distM ~= b.distM then return a.distM < b.distM end
+      return (KIND_RANK[a.kind] or 9) < (KIND_RANK[b.kind] or 9)
+    end)
+    stages[i].marks = marks
   end
   report.unmatched = unmatched
   local others = {}
@@ -686,8 +759,10 @@ M.readKmz = readKmz
 -- lines and times still belong to it) and only rewrites the event files.
 --   2  the rally's name from the document or the file (1.3.2)
 --   3  the organisers' points kept on each stage as `marks` (1.6.0): the rallies already here gain them
+--   4  which points are marks, tightened (1.6.0, review round 3): road numbers, controls and facilities are not, a
+--      point near two stages is the nearer one's
 -- (A stage's line is read as before, so its matched line and recces still fit it: events.mapKey.)
-M.NAME_RULES = 3
+M.NAME_RULES = 4
 
 local function readIndex()
   local ok, r = pcall(jsonReadFile, M.INDEX)

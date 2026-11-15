@@ -2432,4 +2432,21 @@ do
   events.resetLine('seq', 'near')
 end
 
+-- A bridge's far end (review round 3): looked for only just past its start, so a stage that comes back alongside
+-- (north 1 km, across 5 m, back south) does not take the far end from the return pass, and a far end more than
+-- BRIDGE_MAX_M on, or behind the start, is dropped.
+do
+  local geo = require('earthRally/geo')
+  local L = {}
+  for y = 0, 1000, 10 do L[#L + 1] = { x = 0, y = y, z = 0 } end
+  for y = 1000, 0, -10 do L[#L + 1] = { x = 5, y = y, z = 0 } end
+  local cum = geo.cumulative(L)
+  local e1 = runner.bridgeEnd(L, cum, 200, { x = 4, y = 260 })
+  T.check(e1 and math.abs(e1 - 260) < 1e-6,
+    'bridgeEnd: the far end on this pass, not the return pass it is nearer (' .. tostring(e1) .. ')')
+  T.check(runner.bridgeEnd(L, cum, 200, { x = 0, y = 600 }) == nil, 'bridgeEnd: 400 m on, longer than any bridge: none')
+  T.check(runner.bridgeEnd(L, cum, 200, { x = 0, y = 150 }) == nil, 'bridgeEnd: behind the start: none')
+  T.check(runner.bridgeEnd(L, cum, 200, { x = 40, y = 260 }) == nil, 'bridgeEnd: 40 m off the line: none')
+end
+
 T.done('test_run')

@@ -82,8 +82,8 @@ M.SPEC_MIN_TURN = 60      -- a junction turn counts this sharp
 M.SPEC_LEAD_M = 28        -- the spectators' tape runs this far up each leg of the corner (the mock-up's hairpin) ...
 M.SPEC_SPAN_MAX_M = 120   -- ... along at most this much road in all
 M.SPEC_POINT_M = 20       -- a spectator point from the map: tape this far either side of it
-M.MARSHAL_EVERY_M = 1000  -- junction marshals at most one per ~1 km ...
-M.MARSHAL_SHARE = 0.7     -- ... at about this share of the eligible turns, which ones by chance
+M.MARSHAL_EVERY_M = 1000  -- junction marshals at every turn that can have one, but at most one per ~1 km
+M.MARKS_SPAN_PAD_M = 100  -- the map's points kept from this far before the start to this far past the finish
 M.MARSHAL_AT_JUNCTION_M = 40  -- a marshal from the map this near a turn stands behind its tape
 
 -- each site's object budget (props.lua holds every site to its own DRESS_MAX_OBJS as well)
@@ -624,10 +624,13 @@ function M.plan(input)
                           objects = objs, name = name }
   end
 
-  -- marks from the map, by kind, on the stage
+  -- marks from the map, by kind, on the stage (the runner has already dropped those too far off the line driven). A
+  -- kind whose every mark falls outside the stage is filled in as if the map marked none (medical still never is):
+  -- events.stageMarks counts with the same span, so the page says Random for it too.
   local marks = { radio = {}, medical = {}, spectator = {}, marshal = {} }
+  local pad = M.MARKS_SPAN_PAD_M
   for _, m in ipairs(input.marks or {}) do
-    if marks[m.kind] and m.along and m.along >= startM - 100 and m.along <= finishM + 100 then
+    if marks[m.kind] and m.along and m.along >= startM - pad and m.along <= finishM + pad then
       marks[m.kind][#marks[m.kind] + 1] = m
     end
   end
@@ -706,16 +709,15 @@ function M.plan(input)
       end
     end
   else
-    -- (by chance: about MARSHAL_SHARE of the turns that can have one, taken in an order by chance, none within
-    -- MARSHAL_EVERY_M of another)
+    -- (every turn that can have one, but none within MARSHAL_EVERY_M of another: where two are that close, which
+    -- one keeps its marshal is by chance -- the turns taken in an order by chance, each kept unless one already kept
+    -- is too near)
     local rnd = M.rng(input.seed, 'marshal')
     local eligible = {}
     for _, r in ipairs(solved) do
       if r.kind == 'turn' and #r.tapes > 0 then
         local jm = junctionMarshal(r)
-        -- (the draw made for every eligible turn, kept or not, so one turn's luck does not move the others')
-        local lucky = rnd() < M.MARSHAL_SHARE
-        if jm and lucky then eligible[#eligible + 1] = { r = r, jm = jm } end
+        if jm then eligible[#eligible + 1] = { r = r, jm = jm } end
       end
     end
     local standing = {}

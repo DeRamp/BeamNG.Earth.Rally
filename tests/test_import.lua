@@ -235,9 +235,10 @@ do
   T.check(not imp.genericName('Dalles Mountain'), 'genericName: a real name is not generic')
 end
 
------------------------------------------------------------------------------------------- 1.5.0: the organisers' points
+------------------------------------------------------------------------------------------ 1.6.0: the organisers' points
 -- Each point classified radio / medical / spectator / marshal from the pack converter's "#pt-<kinds>" style, else
--- from the organisers' folders, style, name and description; one within 100 m of a stage's line kept on it as marks.
+-- from the organisers' folders, style and name (and, for spectators only, the description); one within 100 m of a
+-- stage's line kept on it as marks.
 local function marksKml()
   local lat0, lon0 = 47.3, -123.2
   local function at(alongM, eastM)
@@ -292,7 +293,7 @@ do
   T.check(kinds('Junction') == 'marshal', 'a police style: a marshal')
   T.check(kinds('Spectators prohibited') == '', 'a prohibited spectator area: not a spectator point')
   T.check(kinds('Marshall Road') == '', '"Marshall Road": not a marshal')
-  T.check(kinds('Point A') == 'medical', 'a doctor in the description: medical')
+  T.check(kinds('Point A') == '', 'a doctor in the description: not medical (only spectator reads descriptions)')
   T.check(kinds('County Hospital') == 'medical', 'a hospital in the Medical folder: medical (but far off)')
   T.check(kinds('Start - Ridge') == '', 'a control is not a mark')
 
@@ -304,7 +305,7 @@ do
   local list = table.concat(got, ' | ')
   local want = 'radio:Point 3 | spectator:Point 3 | medical:Radio 9 (from the words, but the style says) | ' ..
     'marshal:2000 | radio:Gulf - Radio, Spectator | spectator:Gulf - Radio, Spectator | medical:Fire and Ambulance | ' ..
-    'radio:R3 | marshal:MP 9 | marshal:Junction | medical:Point A'
+    'radio:R3 | marshal:MP 9 | marshal:Junction'
   T.check(list == want, 'marks on the stage, one entry per kind, in order along it (' .. list .. ')')
   local hosp, far = false, false
   for _, m in ipairs(st.marks or {}) do
@@ -317,6 +318,69 @@ do
     'a mark carries lat, lon, its distance along and off the line')
   local none = imp.build(imp.parse(kml, 'kml'), 'test', 'x', 'x.kml')
   T.check(none.stages[1].marks == nil, 'a stage its map marks nothing on: no marks')
+end
+
+-- Review round 3: the rules for what is a mark, tightened.
+do
+  local function k(pt) return table.concat(imp.markKinds(pt), ',') end
+  -- (1) a road number is not a radio; a name that is only a radio's number is
+  T.check(k({ name = 'Junction R572' }) == '', '"Junction R572": a road number, not a radio')
+  T.check(k({ name = 'R3' }) == 'radio' and k({ name = ' R 3 ' }) == 'radio' and k({ name = 'Radio 3' }) == 'radio',
+    '"R3", " R 3 ", "Radio 3": radio')
+  T.check(k({ name = 'Gulf - Radio' }) == 'radio', '"Radio" as a word still counts')
+  -- (2) a control is never a mark, unless the converter's tag says it is
+  for _, n in ipairs({ 'SS1 Start', 'Flying Finish', 'Stop Control', 'ATC 3', 'TC 2A', 'Service Park', 'Regroup',
+                       'Radio Finish' }) do
+    T.check(k({ name = n, folders = { 'Spectator Points' } }) == '', '"' .. n .. '" in Spectator Points: a control, no mark')
+  end
+  T.check(k({ name = 'SS1 Start', style = '#pt-radio' }) == 'radio', 'a control with a #pt- tag: what the tag says')
+  -- (3) the description is read only for spectators, and a "closed" counts only in the spectator word's sentence
+  T.check(k({ name = 'Point B', description = 'Radio and ambulance on site. Marshal briefing at 8.' }) == '',
+    'radio / medical / marshal words in a description: not marks')
+  T.check(k({ name = 'Point C', description = 'Spectators welcome on the bank. The road is closed from 7am.' })
+    == 'spectator', 'a spectator area whose description says the ROAD is closed, in another sentence: spectator')
+  T.check(k({ name = 'Point D', description = 'This spectator area is closed this year.' }) == '',
+    '"spectator area is closed", one sentence: not spectator')
+  T.check(k({ name = 'Point E', description = 'No spectators here' }) == '', '"No spectators": not spectator')
+  T.check(k({ name = 'Spectator Area No 2' }) == 'spectator', '"No 2" is a number: still a spectator area')
+  -- (4) a facility for spectators is not where they stand, folder or not
+  for _, n in ipairs({ 'Spectator Parking', 'Car Park', 'Toilets', 'Shuttle Bus', 'Camping', 'Entrance',
+                       'Tickets', 'Food' }) do
+    T.check(k({ name = n, folders = { 'Spectator Points' } }) == '', '"' .. n .. '" in Spectator Points: not a spectator area')
+  end
+  T.check(k({ name = 'Hairpin', folders = { 'Spectator Points' } }) == 'spectator',
+    'a plain point in Spectator Points: spectator')
+  -- (5) a #pt- tag with no kind known falls through to the words
+  T.check(k({ name = 'Radio 4', style = '#pt-caution' }) == 'radio', '#pt-caution on "Radio 4": the words decide')
+  T.check(k({ name = 'Caution', style = '#pt-caution' }) == '', '#pt-caution on "Caution": nothing')
+  T.check(k({ name = 'Radio 4', style = '#pt-medical-caution' }) == 'medical', 'a tag with a known kind: only that')
+end
+
+-- (6) a point near two stages goes to the nearest one only: two stages 60 m apart, and a third drawn 2 m from the
+-- first (the same road: it gets the first's points too)
+do
+  local lat0, lon0 = 47.4, -123.3
+  local kx = 111195 * math.cos(math.rad(lat0))
+  local function pt(name, alongM, eastM)
+    return '<Placemark><name>' .. name .. '</name><Point><coordinates>' ..
+      string.format('%.7f,%.7f,0', lon0 + eastM / kx, lat0 + alongM / 111195) .. '</coordinates></Point></Placemark>\n'
+  end
+  local function ln(name, eastM)
+    return '<Placemark><name>' .. name .. '</name><LineString><coordinates>' .. northLine(lat0, lon0 + eastM / kx, 21) ..
+      '</coordinates></LineString></Placemark>\n'
+  end
+  local s = '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document>' ..
+    '<name>Two Stages</name>\n' .. ln('SS1 West', 0) .. ln('SS2 East', 60) .. ln('SS3 West Again', -2) ..
+    pt('R1', 300, 15) .. pt('R2', 600, 45) .. '</Document></kml>'
+  local ev = imp.build(imp.parse(s, 'kml'), 'two', 'Two', 'two.kml')
+  local function names(st)
+    local o = {}
+    for _, m in ipairs(st.marks or {}) do o[#o + 1] = m.name end
+    return table.concat(o, ',')
+  end
+  T.check(names(ev.stages[1]) == 'R1' and names(ev.stages[2]) == 'R2',
+    'a point near two stages: on the nearer one only (' .. names(ev.stages[1]) .. ' / ' .. names(ev.stages[2]) .. ')')
+  T.check(names(ev.stages[3]) == 'R1', 'a stage drawn over the same road (2 m over): it gets the point too')
 end
 
 -- The rule bump: rallies imported under the rules before (NAME_RULES 2) are read again once, keeping their ids, and
@@ -332,9 +396,9 @@ do
   files['/earthRally/importIndex.json'].names = 2
   local rr = imp.scan()
   T.check(#rr == 1 and rr[1].ok and rr[1].eventId == id, 'the rules moved on: the map read again')
-  T.check(files[evPath].stages[1].marks and #files[evPath].stages[1].marks == 11
+  T.check(files[evPath].stages[1].marks and #files[evPath].stages[1].marks == 10
     and files['/earthRally/importIndex.json'].files['Marks.kml'].eventId == id,
-    'the rules moved on (3): the unchanged map read again, its rally gains its marks under the same id')
+    'the rules moved on: the unchanged map read again, its rally gains its marks under the same id')
   T.check(#imp.scan() == 0, 'and not again')
 end
 
@@ -344,10 +408,22 @@ do
   local p = imp.parse(marksKml(), 'kml')
   local ev = imp.build(p, 'marks', 'Marks Rally', 'marks.kml')
   local n = events.stageMarks('marks', ev.stages[1].id, ev.stages[1])
-  T.check(n.radio == 3 and n.medical == 3 and n.spectator == 2 and n.marshal == 3,
+  T.check(n.radio == 3 and n.medical == 2 and n.spectator == 2 and n.marshal == 3,
     string.format('stageMarks: radio %d, medical %d, spectator %d, marshal %d', n.radio, n.medical, n.spectator, n.marshal))
   local z = events.stageMarks('marks', 'nope', { id = 'nope' })
   T.check(z.radio == 0 and z.medical == 0 and z.spectator == 0 and z.marshal == 0, 'stageMarks: none marked, all 0')
+  -- (review round 3) counted with the dressing's span (100 m either side of start .. flying finish) and off-line limit
+  local function mk(kind, d, off) return { kind = kind, name = kind, lat = 47, lon = -123, distM = d, offLineM = off or 5 } end
+  local st = { id = 'span', lengthM = 3000,
+    controls = { start = { distM = 500, offLineM = 3 }, ff = { distM = 2500, offLineM = 2 } },
+    marks = { mk('radio', 350), mk('radio', 450), mk('spectator', 2650), mk('medical', 2580), mk('marshal', 1000, 120) } }
+  local c = events.stageMarks('marks', 'span', st)
+  T.check(c.radio == 1 and c.spectator == 0 and c.medical == 1 and c.marshal == 0,
+    string.format('stageMarks: only those the dressing keeps (radio %d, spectator %d, medical %d, marshal %d)',
+      c.radio, c.spectator, c.medical, c.marshal))
+  st.controls = {}
+  c = events.stageMarks('marks', 'span', st)
+  T.check(c.radio == 2 and c.spectator == 1, 'stageMarks: with no controls, the whole line')
 end
 
 T.done('test_import')

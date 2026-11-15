@@ -508,6 +508,21 @@ local function stepAnchor(dt)
   end
 end
 
+-- A bridge's far end on the line (its distance along), or nil: looked for only on the stretch from the bridge's start
+-- s to BRIDGE_MAX_M past it -- a stage that comes back over the same ground later must not take its far end from that
+-- later pass -- and kept only when it is within LANDMARK_OFF_M of the line, past s and no more than BRIDGE_MAX_M on.
+-- p: the far end in game coordinates { x, y }.
+M.BRIDGE_MAX_M = 300
+function M.bridgeEnd(line, cum, s, p)
+  if not (line and cum and s and p) or #line < 2 then return nil end
+  local lo = geo.segAt(cum, s)
+  local hi = geo.segAt(cum, s + M.BRIDGE_MAX_M)
+  local _, _, s2, off2 = geo.locate(line, cum, p, lo, hi)
+  if not (s2 and off2) or off2 > M.LANDMARK_OFF_M then return nil end
+  if s2 <= s or s2 - s > M.BRIDGE_MAX_M then return nil end
+  return s2
+end
+
 local function stepBuild()
   if run.oldRebase then earth.setRebaseDistance(M.MAX_REBASE_M) end
   if not project() then fail('could not put the stage into game coordinates') return end
@@ -543,10 +558,7 @@ local function stepBuild()
         -- (a bridge's far end: the stretch whose heights are the valley's; on the line after its start)
         local ex, ey = nil, nil
         if lm.endLat and lm.endLon then ex, ey = earth.toGame(lm.endLat, lm.endLon, 0) end
-        if ex then
-          local _, _, s2, off2 = geo.locate(run.line, run.cum, { x = ex, y = ey })
-          if s2 and off2 and off2 <= M.LANDMARK_OFF_M and s2 > item.s then item.sEnd = s2 end
-        end
+        if ex then item.sEnd = M.bridgeEnd(run.line, run.cum, item.s, { x = ex, y = ey }) end
         lms[#lms + 1] = item
       end
     end

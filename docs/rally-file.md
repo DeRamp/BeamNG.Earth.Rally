@@ -24,6 +24,15 @@ A `.kmz` inside a `.zip` is refused (put the `.kml` in the pack instead).
 Any field may be missing unless marked **required**. Unknown fields are ignored. A `format` greater than this reader
 knows is refused with a message naming both numbers (a round's own rally manifest too: that round is left out).
 
+### Marking the organisers' points in a map
+
+A KML point can say what kind of organisers' point it is (for the stage dressing, 1.6.0) with its style:
+`<styleUrl>#pt-<kind>[-<kind>...]</styleUrl>`, each kind one of `radio`, `medical`, `spectator`, `marshal` --
+`#pt-radio-spectator` is both. A point so tagged is exactly those kinds, whatever its name, folders or description
+say, and is one even when its name reads as a control. A `#pt-` tag naming none of the four (`#pt-caution`) is
+read as if there were no tag. Untagged points are read from the organisers' words (importer.lua `markKinds`). A point
+is kept on the stage whose line is nearest it, within 100 m.
+
 ## Season (`kind: "season"`)
 
 ```jsonc

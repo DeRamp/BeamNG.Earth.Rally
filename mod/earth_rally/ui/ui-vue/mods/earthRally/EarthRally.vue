@@ -173,7 +173,7 @@
             <div class="er-pts-help">
               <template v-if="ptsHelp.all">All four are where the organisers put them.</template>
               <template v-else>
-                <template v-if="ptsHelp.rnd"><b>Random</b>: this rally's map doesn't mark {{ ptsHelp.rnd }}, so they're placed for you &mdash; the same places every time.</template>
+                <template v-if="ptsHelp.rnd"><b>Random</b>: the map doesn't mark {{ ptsHelp.rnd }} on this stage, so they're placed for you where the stage has room.</template>
                 <template v-if="ptsHelp.rnd && ptsHelp.none">{{ " " }}</template>
                 <template v-if="ptsHelp.none"><b>None</b>: medical points only go where the organisers mark one.</template>
               </template>

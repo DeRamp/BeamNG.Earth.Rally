@@ -289,11 +289,39 @@ end
 
 -- For the stage page: how many of each kind of organisers' point the map marks on a stage --
 -- { radio = n, medical = n, spectator = n, marshal = n } (a kind it marks none of 0: the dressing fills it in, all but
--- medical, by chance).
+-- medical, by chance). Counted with the dressing's own tests, on the map's line: within MARKS_OFF_LINE_M of it
+-- (runner.MARKS_OFF_LINE_M) and from MARKS_SPAN_PAD_M before the start control to as far past the flying finish
+-- (dressing.plan's span; with no start / finish control on the line, its ends). The dressing measures on the line
+-- driven, which can lie a few metres from the map's, so a point right at one of those limits can still count here
+-- and not there.
+M.MARKS_OFF_LINE_M = 100
+M.MARKS_SPAN_PAD_M = 100
 function M.stageMarks(eventId, stageId, stage)
   local n = { radio = 0, medical = 0, spectator = 0, marshal = 0 }
-  for _, m in ipairs(M.marks(eventId, stageId, stage)) do
-    if n[m.kind] then n[m.kind] = n[m.kind] + 1 end
+  local list = M.marks(eventId, stageId, stage)
+  if #list == 0 then return n end
+  if not stage then
+    for _, e in ipairs(M.list()) do
+      if e.id == eventId then
+        for _, s in ipairs(e.stages or {}) do if s.id == stageId then stage = s break end end
+        break
+      end
+    end
+  end
+  local ctl = stage and type(stage.controls) == 'table' and stage.controls or {}
+  local total = stage and tonumber(stage.lengthM) or math.huge
+  local function at(c, default)
+    if type(c) ~= 'table' or type(c.distM) ~= 'number' then return default end
+    if type(c.offLineM) == 'number' and c.offLineM > M.CONTROL_OFF_LINE_M then return default end
+    return c.distM
+  end
+  local s0, s1 = at(ctl.start, 0), at(ctl.ff, total)
+  if s1 <= s0 + 100 then s0, s1 = 0, total end
+  for _, m in ipairs(list) do
+    local d, off = tonumber(m.distM), tonumber(m.offLineM)
+    local onLine = not off or off <= M.MARKS_OFF_LINE_M
+    local inSpan = not d or (d >= s0 - M.MARKS_SPAN_PAD_M and d <= s1 + M.MARKS_SPAN_PAD_M)
+    if n[m.kind] and onLine and inSpan then n[m.kind] = n[m.kind] + 1 end
   end
   return n
 end
