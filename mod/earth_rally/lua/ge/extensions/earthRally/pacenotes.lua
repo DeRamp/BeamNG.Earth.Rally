@@ -186,8 +186,8 @@ M.CAUTION_V_MS = 25      -- 90 km/h: the approach at least this fast
 M.CAUTION = { 0.40, 0.30, 0.22 }   -- corner speed / approach speed at or under these
 M.CAUTION_TIGHTENS_V_MS = 20       -- 72 km/h: a corner tightening over a crest on an approach this fast
 
-M.CARE_DEG = 45                    -- a corner this sharp ...
-M.CARE_STRAIGHT_M = 80             -- ... after this far with no corner: a care
+M.CARE_DEG = 60                    -- a corner this sharp ...
+M.CARE_STRAIGHT_M = 120            -- ... after this far with no corner: a care
 function M.caution(c, v, step, prevI1, shape, unsaidTightens)
   local vc = huge
   for i = c.i0, c.i1 do if v[i] and v[i] < vc then vc = v[i] end end
@@ -299,7 +299,7 @@ function M.heights(pts, step, v)
     local d = dg[i]
     -- (a peak only: a crest's or a hollow's shoulder samples are not events, nor do they put one out)
     local peak = abs(d) >= abs(dg[i - 1]) and abs(d) >= abs(dg[i + 1]) and
-                 (dg[i - 1] < 0) == (d < 0) and (dg[i + 1] < 0) == (d < 0)
+                 (dg[i - 1] == 0 or (dg[i - 1] < 0) == (d < 0)) and (dg[i + 1] == 0 or (dg[i + 1] < 0) == (d < 0))
     if (d <= -M.CREST_DG or d >= M.DIP_DG) and peak and clean(i) then cands[#cands + 1] = i end
   end
   table.sort(cands, function(x, y)

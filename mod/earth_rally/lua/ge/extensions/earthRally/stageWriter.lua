@@ -176,6 +176,17 @@ function M.build(line, opts)
   local _, k = geo.curvature(stagePts, step, opts.corners and opts.corners.smoothM)
   local v = pacenotes.speeds(k, step)
   local events, hills, grade = pacenotes.heights(stagePts, step, v)
+  -- (no crest, jump or dip read round a bridge: the line's heights there are the valley under the deck; before
+  --  anything reads them, a corner's shape and its caution among them)
+  local bridgeN = math.ceil(M.BRIDGE_HEIGHTS_M / step)
+  for _, lm in ipairs(opts.landmarks or {}) do
+    if lm.type == 'overBridge' then
+      -- (from its start to its far end, lm.sEnd, when the recce gave one: a long bridge is all valley)
+      local a = math.floor((math.min(lm.s, lm.sEnd or lm.s) + lead - startM) / step + 0.5) + 1
+      local b = math.floor((math.max(lm.s, lm.sEnd or lm.s) + lead - startM) / step + 0.5) + 1
+      for _, ev in ipairs(events) do if ev.i >= a - bridgeN and ev.i <= b + bridgeN then ev.used = true end end
+    end
+  end
 
   local nid = 0
   local function wp(name, kind, i)
@@ -289,14 +300,6 @@ function M.build(line, opts)
   end
 
   local hb, ha = math.ceil(M.HEIGHT_BEFORE_M / step), math.ceil(M.HEIGHT_AFTER_M / step)
-  -- (no crest, jump or dip read round a bridge: the line's heights there are the valley under the deck)
-  local bridgeN = math.ceil(M.BRIDGE_HEIGHTS_M / step)
-  for _, lm in ipairs(opts.landmarks or {}) do
-    if lm.type == 'overBridge' then
-      local bi = math.floor((lm.s + lead - startM) / step + 0.5) + 1
-      for _, ev in ipairs(events) do if math.abs(ev.i - bi) <= bridgeN then ev.used = true end end
-    end
-  end
   -- (keep left / right: a note of its own, as the game's stages always have it; on a crest, "keep left over crest")
   local lmb, lma = math.ceil(M.LANDMARK_BEFORE_M / step), math.ceil(M.LANDMARK_AFTER_M / step)
   local features = {}
@@ -423,8 +426,9 @@ function M.build(line, opts)
     if e.item and e.item.shape and e.item.shape:find('Crest') then seen.crest = true end
     local pre = pick(e.pre, seen)
     local post = pick(e.post, seen)
-    -- a crest just before a corner with a caution on it: "brake over crest", and one caution more (it is blind)
-    if e.caution then
+    -- a crest just before a corner with a caution on it: "brake over crest", and one caution more (it is blind) --
+    -- a caution, not a care: a care for the straight before it is not a reason to brake
+    if e.caution and e.caution >= 2 then
       for _, it in ipairs(pre) do
         if (it.type == 'crest' or it.type == 'bigCrest' or it.type == 'smallCrest') and said('brakeOverCrest') then
           it.type = 'brakeOverCrest'

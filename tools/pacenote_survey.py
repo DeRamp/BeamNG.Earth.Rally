@@ -74,7 +74,14 @@ def main():
         local lms = {}
         for _, lm in ipairs(landmarks) do
           local _, _, s, off = geo.locate(line, cum, lm)
-          if off <= 15 then lms[#lms + 1] = { s = s, type = lm.type } end
+          if off <= 15 then
+            local item = { s = s, type = lm.type }
+            if lm.endX then
+              local _, _, s2, off2 = geo.locate(line, cum, { x = lm.endX, y = lm.endY })
+              if off2 <= 15 then item.sEnd = s2 end
+            end
+            lms[#lms + 1] = item
+          end
         end
         return writer.build(line, { startM = 0, finishM = cum[#cum], mute = mute, landmarks = lms,
                                     quatFn = function() return 0, 0, 0, 1 end, speaks = speaks })
@@ -110,7 +117,9 @@ def main():
             if t:
                 lms.append(dict(at(j[0], j[1]), type=t))
         for b in m.get('bridges') or []:
-            lms.append(dict(at(b[0], b[1]), type='overBridge'))
+            far = at(b[2], b[3]) if len(b) >= 4 else None
+            lms.append(dict(at(b[0], b[1]), type='overBridge',
+                            **({'endX': far['x'], 'endY': far['y']} if far else {})))
         for n in m.get('narrows') or []:
             lms.append(dict(at(n[0], n[1]), type='narrows'))
         lt = lua.table_from([lua.table_from({k: v for k, v in p.items() if v is not None and v is not False})

@@ -508,7 +508,17 @@ local function stepBuild()
     local x, y = earth.toGame(lm.lat, lm.lon, 0)
     if x then
       local _, _, s, off = geo.locate(run.line, run.cum, { x = x, y = y })
-      if s and off and off <= M.LANDMARK_OFF_M then lms[#lms + 1] = { s = s, type = lm.type } end
+      if s and off and off <= M.LANDMARK_OFF_M then
+        local item = { s = s, type = lm.type }
+        -- (a bridge's far end: the stretch whose heights are the valley's)
+        local ex, ey = nil, nil
+        if lm.endLat and lm.endLon then ex, ey = earth.toGame(lm.endLat, lm.endLon, 0) end
+        if ex then
+          local _, _, s2, off2 = geo.locate(run.line, run.cum, { x = ex, y = ey })
+          if s2 and off2 and off2 <= M.LANDMARK_OFF_M then item.sEnd = s2 end
+        end
+        lms[#lms + 1] = item
+      end
     end
   end
   -- (only the calls the player's voice can say: rallyAdapter.speaks)

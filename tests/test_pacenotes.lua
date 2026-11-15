@@ -246,6 +246,16 @@ do
   local br = notes(build(road({ { 'straight', 1200 } }, hump(600, 30, 2)), { { s = 610, type = 'overBridge' } }))
   T.check(has(br, 'overBridge') and not has(br, '[Jj]ump') and not has(br, 'rest'),
     'a hump at a bridge: "over bridge", no jump or crest (' .. show(br) .. ')')
+  -- ... the whole of a long bridge, start to far end
+  local lb = notes(build(road({ { 'straight', 1400 } }, hump(800, 30, 2)),
+    { { s = 600, sEnd = 900, type = 'overBridge' } }))
+  T.check(has(lb, 'overBridge') and not has(lb, '[Jj]ump'), 'a hump 200 m into a 300 m bridge: no jump (' ..
+    show(lb) .. ')')
+  -- ... nor inside a corner: not its shape, not its caution
+  local brc = notes(build(road({ { 'straight', 600 }, { 'arcs', { { 120, 40 }, { 60, 50 } } }, { 'straight', 400 } },
+    hump(690, 40, 1.5)), { { s = 690, type = 'overBridge' } }))
+  T.check(has(brc, '4:corner/tightens,') and not has(brc, 'Crest') and not has(brc, 'caution2'),
+    'a hump at a bridge inside a tightening corner: "tightens", no crest, no caution (' .. show(brc) .. ')')
   -- a corner that tightens, for a voice that cannot say "tightens", on a fast approach: a care
   local ttc = notes(writer.build(road({ { 'straight', 500 }, { 'arcs', { { 120, 40 }, { 60, 50 } } },
     { 'straight', 400 } }), { startM = 0, finishM = 1e9, quatFn = qf, speaks = { finish = true } }))

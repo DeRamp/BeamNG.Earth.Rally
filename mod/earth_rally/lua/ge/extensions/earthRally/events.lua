@@ -203,7 +203,8 @@ end
 
 -- The junctions, bridges and narrowings along a stage (found by an auto recce on the map's roads, kept with its matched
 -- line, as lat / lon: they hold whichever line the stage runs on). Returns { { lat, lon, type }... } with type a key
--- of stageWriter.LANDMARKS; empty without a matched line made from this map.
+-- of stageWriter.LANDMARKS (a bridge with endLat, endLon too, its far end, when the recce has it); empty without a
+-- matched line made from this map.
 function M.landmarks(eventId, stageId, stage)
   local m = M.matched(eventId, stageId)
   if not m or (stage and m.mapKey and m.mapKey ~= M.mapKey(stage.line)) then return {} end
@@ -214,7 +215,8 @@ function M.landmarks(eventId, stageId, stage)
     if t then out[#out + 1] = { lat = j[1], lon = j[2], type = t } end
   end
   for _, b in ipairs(m.bridges or {}) do
-    out[#out + 1] = { lat = b[1], lon = b[2], type = 'overBridge' }
+    out[#out + 1] = { lat = b[1], lon = b[2], type = 'overBridge',
+                      endLat = tonumber(b[3]), endLon = tonumber(b[4]) }
   end
   for _, nw in ipairs(m.narrows or {}) do
     out[#out + 1] = { lat = nw[1], lon = nw[2], type = 'narrows' }
