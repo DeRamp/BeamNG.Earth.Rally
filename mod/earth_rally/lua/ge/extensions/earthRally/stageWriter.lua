@@ -210,6 +210,9 @@ function M.build(line, opts)
   local function saidShape(t) return t and (not speaks or speaks['shape:' .. t]) and t or nil end
   -- (a crest at the rim of a dip called on its own is left to the dip -- where one of them is said: not on a bridge,
   --  callable, and in the voice -- in a corner's shape, on a fork and on its own alike)
+  -- (a crest at the top of a downhill from flat road is "down" where the voice says it: not a crest, nor a corner's
+  --  crest shape, nor a keep over crest; a voice with no "down" hears the crest)
+  local function asDown(ev) return ev.down and said('down') ~= nil end
   local function rimSaid(ev)
     for _, d in ipairs(ev.rimOf or {}) do
       if not d.bridged and callable(d.i) and said(d.size == 'big' and 'badDip' or 'dip') then return true end
@@ -241,7 +244,7 @@ function M.build(line, opts)
       --  when the voice says corner shapes; one that does not (the casual ones) hears "over crest" after the corner)
       local over = nil
       for _, ev in ipairs(events) do
-        if not ev.used and ev.kind == 'crest' and ev.i >= c.i0 and ev.i <= c.i1 and not rimSaid(ev) then
+        if not ev.used and ev.kind == 'crest' and ev.i >= c.i0 and ev.i <= c.i1 and not rimSaid(ev) and not asDown(ev) then
           over = shape == nil and 'overCrest' or shape == 'tightens' and 'tightensOverCrest' or
                  shape == 'opens' and 'opensOverCrest' or nil
           if over and saidShape(over) then shape, ev.used = over, true end
@@ -329,7 +332,8 @@ function M.build(line, opts)
       if def.keep then
         local t = lm.type
         for _, ev in ipairs(events) do
-          if not ev.used and ev.kind == 'crest' and not rimSaid(ev) and math.abs(ev.i - i) <= mergeN and callable(i) and
+          if not ev.used and ev.kind == 'crest' and not rimSaid(ev) and not asDown(ev) and
+             math.abs(ev.i - i) <= mergeN and callable(i) and
              said(t .. 'OverCrest') then
             f.keepBase, t, ev.used = t, t .. 'OverCrest', true
             break
@@ -351,6 +355,9 @@ function M.build(line, opts)
         f.pre = big and 'bigJump' or 'jump'
         f.post = big and 'bigJump' or 'overJump'
         f.alone = f.pre
+      elseif ev.kind == 'crest' and asDown(ev) then
+        f.prio = M.PRIORITY.crest
+        f.pre, f.within, f.post, f.alone = 'down', 'down', 'down', 'down'
       elseif ev.kind == 'crest' then
         f.prio = M.PRIORITY.crest
         f.pre = big and 'bigCrest' or (ev.size == 'small' and 'smallCrest' or 'crest')
@@ -372,9 +379,11 @@ function M.build(line, opts)
   --  corner's end, and one the stage starts on or that begins in a stretch with no road, alike)
   local ahead = math.ceil(M.HILL_AHEAD_M / step)
   for _, h in ipairs(hills) do
+    -- (a descent already said as "down" at its top: not again)
+    local saidAtTop = h.fromCrest and asDown(h.fromCrest)
     for _, c in ipairs(corners) do
       local i = math.min(math.max(c.i0, h.i0), c.i1)
-      if c.i1 + ha >= h.i0 and c.i1 <= h.i1 - ahead and callable(i) then
+      if not saidAtTop and c.i1 + ha >= h.i0 and c.i1 <= h.i1 - ahead and callable(i) then
         features[#features + 1] = { i = i, post = h.kind, within = h.kind, prio = M.PRIORITY.hill,
                                     before = 0, after = ha }
         break

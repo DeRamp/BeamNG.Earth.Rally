@@ -321,6 +321,12 @@ M.BLIND_EVENT_M = 100    -- one blind crest per this far
 M.BLIND_JOIN_M = 20      -- points that hide the road this close together are one crest (it moves over a long top)
 M.HILL_GRADE = 0.08      -- "up" / "down": at least this steep ...
 M.HILL_M = 100           -- ... for at least this far
+-- A crest that is the top of a downhill from flat road is "down", not a crest (the user's third drive, 2026-11-14):
+-- the road before it within FLAT_GRADE either way over FLAT_M, the road after it falling DOWN_FROM_FLAT_GRADE on
+-- average over HILL_M. Not a big crest (hidden from under SIGHT_BIG_S): that one is a crest to be warned of.
+M.FLAT_GRADE = 0.04
+M.FLAT_M = 60
+M.DOWN_FROM_FLAT_GRADE = 0.06
 M.G = 9.81
 
 local function heightsOf(pts)
@@ -435,7 +441,8 @@ end
 -- pts: the stage's samples (with z), v: M.speeds over them. Returns
 --   events  { { i, kind = 'crest' | 'jump' | 'dip', size = 'small' | 'big' | nil, alone = true when strong enough
 --             to be called on its own }... } in order
---   hills   { { i0, i1, kind = 'up' | 'down' }... }
+--           (a crest at the top of a downhill from flat road has down = true: "down" where the voice says it)
+--   hills   { { i0, i1, kind = 'up' | 'down', fromCrest = that crest's event when it is one's descent }... }
 --   grade   the grade at each sample (fraction, over GRADE_OVER_M either side), or nil
 -- Both lists are empty when the line has no heights (geo.rise's rule: none, or every one the same).
 function M.heights(pts, step, v)
@@ -548,6 +555,24 @@ function M.heights(pts, step, v)
       i = j + 1
     else
       i = i + 1
+    end
+  end
+  -- (a crest at the top of a downhill from flat road: "down")
+  local fb, fa = max(1, floor(M.FLAT_M / step + 0.5)), max(1, floor(M.HILL_M / step + 0.5))
+  local function mean(a, b)
+    local s = 0
+    for j = a, b do s = s + grade[j] end
+    return s / (b - a + 1)
+  end
+  for _, ev in ipairs(events) do
+    if ev.kind == 'crest' and ev.size ~= 'big' and ev.i - fb >= 1 and ev.i + fa <= n then
+      local before, after = mean(ev.i - fb, ev.i - 1), mean(ev.i + 1, ev.i + fa)
+      if abs(before) <= M.FLAT_GRADE and after <= -M.DOWN_FROM_FLAT_GRADE then
+        ev.down = true
+        for _, h in ipairs(hills) do
+          if h.kind == 'down' and h.i1 >= ev.i and h.i0 <= ev.i + fa then h.fromCrest = ev end
+        end
+      end
     end
   end
   return events, hills, grade

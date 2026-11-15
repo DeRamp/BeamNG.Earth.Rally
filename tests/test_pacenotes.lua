@@ -326,7 +326,9 @@ do
   T.check(not has(steep30, 'rest'), 'a descent from 6 % to 14 % over 30 m, the road below in sight: no crest (' ..
     show(steep30) .. ')')
   local brow = notes(build(road({ { 'straight', 1600 } }, ease(0, -0.12, 700, 30))))
-  T.check(has(brow, 'rest'), 'a level road dropping away to 12 % over 30 m: a crest (' .. show(brow) .. ')')
+  T.check(has(brow, '2:down') or has(brow, 'bigCrest'),
+    'a level road dropping away to 12 % over 30 m: called, "down" (the third drive) or a big crest (' ..
+    show(brow) .. ')')
   -- (the review of those: a sharp drop-off on a descent is still a crest; a rounded top levelling out where the road
   --  is hidden is one too)
   local drop = notes(build(road({ { 'straight', 1600 } }, ease(-0.05, -0.17, 700, 30))))
@@ -335,6 +337,23 @@ do
   local plateau = notes(build(road({ { 'straight', 1600 } }, ease(0.2, -0.02, 700, 50))))
   T.check(has(plateau, 'rest') or has(plateau, 'ump'), 'a 20 % climb rounding over to level: called (' ..
     show(plateau) .. ')')
+  -- (the third drive: a downhill from flat road is "down", not a crest -- on a straight and in a corner -- and a
+  --  voice with no "down" hears the crest; a climb over the top into the same descent is still a crest)
+  local flatDown = build(road({ { 'straight', 1600 } }, ease(0, -0.10, 700, 40)))
+  local fd = notes(flatDown)
+  T.check(has(fd, 'down') and not has(fd, 'rest'), 'flat road into a 10 % downhill: "down", no crest (' ..
+    show(fd) .. ')')
+  local fdc = notes(build(road({ { 'straight', 600 }, { 'arc', 150, 40 }, { 'straight', 1000 } },
+    ease(0, -0.10, 700, 40))))
+  T.check(has(fdc, 'down') and not has(fdc, 'rest'), 'flat road into a downhill in a corner: "down", no crest (' ..
+    show(fdc) .. ')')
+  local fdLine = road({ { 'straight', 1600 } }, ease(0, -0.10, 700, 40))
+  local fdCas = notes(writer.build(fdLine, { startM = 0, finishM = 1e9, quatFn = qf, speaks = { finish = true, crest = true, smallCrest = true, bigCrest = true, overCrest = true, intoCrest = true } }))
+  T.check(not has(fdCas, 'down') and has(fdCas, 'rest'), 'the same, a voice with no "down": the crest (' ..
+    show(fdCas) .. ')')
+  local upDown = notes(build(road({ { 'straight', 1600 } }, ease(0.10, -0.10, 700, 80))))
+  T.check(has(upDown, 'rest') or has(upDown, 'ump'), 'a 10 % climb over the top into a 10 % downhill: a crest (' ..
+    show(upDown) .. ')')
   local steeper = notes(build(road({ { 'straight', 1600 } }, ease(-0.04, -0.10, 700, 60))))
   T.check(not has(steeper, 'rest'), 'a descent from 4 % to 10 % over 60 m, the road still in sight: no crest (' ..
     show(steeper) .. ')')
