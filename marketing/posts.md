@@ -30,7 +30,7 @@ Ready to paste. Links assume the 1.6.0 release is out and the wiki is published.
 > * With a results pack (such as ARA 2026): leaderboards against the real crews, rally totals, season standings.
 > * Stages dressed like an event: tape, marshals, radio points, spectators.
 >
-> 1.6.0 is the first supported release: from here it gets bug fixes.
+> 1.6.0 is the first supported release. 1.6.x gets bug fixes; more features are on the way.
 >
 > Download and how-tos: https://github.com/DeRamp/BeamNG.Earth.Rally (needs BeamNG.Earth; Auto recce needs the
 > DeRamp fork of it, see the wiki).
@@ -79,7 +79,7 @@ Ready to paste. Links assume the 1.6.0 release is out and the wiki is published.
 > leaderboards against the real crews.
 > Download: <https://github.com/DeRamp/BeamNG.Earth.Rally/releases/latest>
 > New here? <https://github.com/DeRamp/BeamNG.Earth.Rally/wiki/Your-first-stage>
-> From here 1.6 gets bug fixes only. Found one? <https://github.com/DeRamp/BeamNG.Earth.Rally/issues>
+> More features are on the way. Found a bug? <https://github.com/DeRamp/BeamNG.Earth.Rally/issues>
 
 ## Instagram / Facebook
 

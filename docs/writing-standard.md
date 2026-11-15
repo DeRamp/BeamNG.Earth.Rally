@@ -49,9 +49,10 @@ it links to `CHANGELOG.md`.
 
 ## Supported releases
 
-1.6 is the first supported release (the owner, 2026-11-14). From here, releases are **bug fixes only**: patch
-versions `1.6.1`, `1.6.2`, ... with **Fixed** and **Known issues** sections. No new features, settings or UI
-without the owner deciding otherwise. Keeping up with a new BeamNG.drive or BeamNG.Earth API, and removing a
+1.6.0 is the first supported release: the MVP, launched once the owner's bug testing is done (the owner,
+2026-11-15). Until then the build stays `1.6.0-alpha` and only bug fixes go in. After it, `1.6.1`, `1.6.2`, ... are
+bug fixes, with **Fixed** and **Known issues** sections; new features come in 1.7.0 and later, as the roadmap
+plans. Keeping up with a new BeamNG.drive or BeamNG.Earth API, and removing a
 stopgap such as `earthMenuFix.lua`, count as fixes.
 
 ## CHANGELOG.md

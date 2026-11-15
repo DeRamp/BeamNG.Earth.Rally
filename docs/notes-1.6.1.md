@@ -1,6 +1,6 @@
 # 1.6.1 notes: seen during the 1.6.0 screenshot session
 
-Logged, not fixed (bug fixes only from 1.6; the owner decides what goes into 1.6.1). Found on 2026-11-14 while
+Logged, not fixed (the owner is bug testing; the owner decides which go in before the 1.6.0 launch). Found on 2026-11-14 while
 driving 1.6.0 through BeamNG's in-game MCP server for the marketing screenshots: Weaver Bend (Overmountain), Maryhill
 Up (OTR 2024), Valley of the Gods Eastbound (Colorado).
 

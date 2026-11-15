@@ -35,7 +35,7 @@ Details: [player guide](docs/guide.md#the-auto-recce-and-beamngearth).
 
 * Delete the old Earth Rally zip first. Two copies both load.
 * Your rallies, lines and times are kept. They live in `…\current\earthRally\`, not in the zip.
-* 1.6 is the supported release: updates from here are bug fixes.
+* 1.6.x updates are bug fixes. New features come in 1.7 and later.
 
 ## Quick start
 

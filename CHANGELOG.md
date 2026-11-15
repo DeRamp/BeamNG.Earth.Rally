@@ -8,7 +8,7 @@ Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rall
 Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)
 (official 1.6+ works, without the auto recce).
 
-The same mod as 1.6.0-alpha, now the first supported release. Updates to 1.6 are bug fixes only.
+The first supported release: 1.6.0-alpha plus its bug fixes. 1.6.x updates are bug fixes; new features come in 1.7.
 
 ### Changed
 * Version is `1.6.0`, no longer alpha. Delete `earth_rally-1.6.0-alpha.zip` before adding the new zip.
