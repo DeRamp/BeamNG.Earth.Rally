@@ -10,3 +10,6 @@ __pycache__/
 *.pyc
 .venv/
 dist/
+# Claude Code: per-session worktrees and personal settings
+.claude/worktrees/
+.claude/settings.local.json
