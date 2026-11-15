@@ -63,7 +63,7 @@ straight into the state a capture needs. It runs the same lines the real step do
 |---|---|---|
 | `none` | Mod loaded, no run: the floor | `runner.abort(true)` |
 | `waitStart` | On the line: start tree and its clock, clock view, car held, stage layout | Set `startAt` an hour on, so GO never comes; `setState('waitStart')` |
-| `running` | The race active: stage clock, stage apps, co-driver notes, dressing | The GO block of `stepWaitStart` (`runner.lua:1388`): `zoneRelease()`, `notesOn(true)`, `run.clock = 0`, `setState('running')` |
+| `running` | The race active: stage clock, stage apps, co-driver notes, dressing | The GO block of `stepWaitStart` (`runner.lua:1389`): `zoneRelease()`, `notesOn(true)`, `run.clock = 0`, `setState('running')` |
 | `finished` | After the run: tidied, traffic back | `M.wrapUp()` with no time, so nothing is written to the results file |
 
 * **The run is set up for real first:** started from the stage menu, through travel, anchor, build and place. That is
