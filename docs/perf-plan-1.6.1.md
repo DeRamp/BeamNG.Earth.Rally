@@ -1,6 +1,7 @@
 # Performance test plan, 1.6.1
 
-**Status: draft v4, waiting for approval.** Nothing in this plan runs in the game until it is approved.
+**Status: approved 2026-11-15.** Tools built under `tools/perf/`: run with
+`python tools/perf/run_bench.py <smoke|quick|t1|t1b|t2|t3|t4|t5|full> --label "<build>"`.
 
 **Question:** what takes a player from 60 to 20 fps on a stage, and is it Earth Rally?
 
@@ -44,6 +45,8 @@ No per-run leak was found.
 
 * **Stage:** Overmountain Rally 2026, **Weaver Bend** (6.8 km, 733 points, one piece).
   Fallback if it will not load: **Low Gap** (7.0 km).
+* **Auto recced first** (2026-11-15): matched 6,741 m, no gaps, at most 9.4 m off the map line, 46 corners.
+  Saved to `earthRally/matched/ara26-overmountain__weaver-bend.json`.
 * **Three spots:** the start line (0 m), 2.3 km and 4.6 km.
 * **No driving.** The car stands still at every capture. It moves only by one teleport per spot.
 * **A teleport is never inside a measurement.** After each one, a settle gate must pass before capturing:
@@ -56,8 +59,10 @@ No per-run leak was found.
 
 ## The mod's states
 
-No waiting at the start and no countdown. A test-only hook, `runner.benchState(name, alongM)`, puts the mod
-straight into the state a capture needs. It runs the same lines the real step does, so the same systems come on.
+No waiting at the start and no countdown. The bench (`tools/perf/bench.lua`) puts the mod straight into the state a
+capture needs. It runs the same lines the real step does, so the same systems come on. It is loaded into the running
+game over MCP and changes no mod file: the runner's internals (`setState`, `zoneRelease`, `tidy`) are read from the
+upvalues of its public functions, so it measures the installed zip exactly as players have it.
 
 | State | What is on | How the hook gets there |
 |---|---|---|
@@ -76,7 +81,9 @@ straight into the state a capture needs. It runs the same lines the real step do
   long as the captures need.
 * **The co-driver at a spot:** the hook calls `rallyA.resync()` after the teleport, so the engine picks up from there.
   Check that a note is queued; if not, note it and carry on, since its Lua cost is small.
-* **Not shipped:** the hook lives on the bench branch and is removed after testing.
+* **Not shipped:** the bench is a developer tool under `tools/perf/`; the mod zip does not carry it.
+* **Placing the car:** a plain move with `runner.placeCar`, not a BeamNG.Earth teleport, so the world's origin stays
+  where the run anchored it. The car is held at the line's height until the ground there has streamed in.
 
 ## Method, for every test
 
@@ -89,8 +96,9 @@ straight into the state a capture needs. It runs the same lines the real step do
   * BeamNG.Earth loading status.
 
   It runs the whole scripted test by itself; MCP only starts it, and those frames are dropped. No polling.
-* **PresentMon** runs beside it for CPUBusy and GPUBusy. It is not installed: needs your OK to download.
-  Without it, Optick and the engine categories stand in.
+* **PresentMon 2.6.0** runs beside it for CPUBusy and GPUBusy (`run_bench.py --presentmon <exe>`). Downloaded to
+  `Documents\Claude\tools\PresentMon\` (Intel-signed). It needs admin or the "Performance Log Users" group; until
+  then, Optick and the engine categories stand in.
 * **Each capture:** 5 s warm-up, then 20 s capture. One change at a time, alternated A B A B, 3 pairs.
 * **Report:** p50, p95 and p99 frame time, frames over 33 and 50 ms, and the spread between pairs.
 * **A cause counts** when removing it gives back more than 20 % of the gap, outside the spread between pairs.
