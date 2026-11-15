@@ -22,7 +22,7 @@ local earthMenuFix = require('earthRally/earthMenuFix') -- STOPGAP: remove with 
 
 local M = {}
 local logTag = 'earthRally'
-M.VERSION = '1.5.0-alpha'
+M.VERSION = '1.5.1-alpha'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_HZ = 30                  -- the HUD's streams this often while something moves on it
 M.STREAM_IDLE_HZ = 2              -- ... and this often once the run is over

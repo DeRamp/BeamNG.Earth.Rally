@@ -2,7 +2,7 @@
 
 ## 1. Earth's strips over the pause menu (stopgap, remove when BeamNG.Earth fixes it)
 
-*Built, waiting for the user's test.* **BeamNG.Earth's download status shows over the Escape menu** (the user,
+*Built, tested in game by the user (2026-11-14: "perfect!"), released in 1.5.1-alpha.* **BeamNG.Earth's download status shows over the Escape menu** (the user,
 2026-11-14). The bug is **BeamNG.Earth's**: it happens with BeamNG.Earth alone, and it is still in its `dev` as of
 2026-11-14. Nobody had reported it; its issues and PRs were searched for pause, escape, menu, overlay and loading.
 Earth Rally carries a stopgap until BeamNG.Earth fixes it.

@@ -3,6 +3,20 @@
 Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/writing-standard.md). Downloads:
 [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
 
+## 1.5.1-alpha: the menus clear (2026-11-14)
+
+Works with BeamNG.drive 0.40.5 · BeamNG.Earth modding API 1.6+ (1.9 for the auto recce).
+
+BeamNG.Earth's on-screen text no longer covers the menus.
+
+### Fixed
+* BeamNG.Earth's download line, banner and credits no longer draw over the **Escape** menu.
+* The same over the rally menu, opened from the **Earth Rally** tab or with **Ctrl + Alt + K**.
+* BeamNG.Earth's apps still show in the **HUD apps** editor.
+
+### Known issues
+* BeamNG.Earth's text can flash for one frame as a menu opens.
+
 ## 1.5.0-alpha: the co-driver (2026-11-14)
 
 Works with BeamNG.drive 0.40.5 · BeamNG.Earth modding API 1.6+ (1.9 for the auto recce).
