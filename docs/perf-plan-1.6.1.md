@@ -1,6 +1,6 @@
 # Performance test plan, 1.6.1
 
-**Status: draft v2, waiting for approval.** Nothing in this plan runs in the game until it is approved.
+**Status: draft v3, waiting for approval.** Nothing in this plan runs in the game until it is approved.
 
 **Question:** what takes a player from 60 to 20 fps on a stage, and is it Earth Rally?
 
@@ -54,6 +54,30 @@ No per-run leak was found.
   Gate timeout 120 s. If it times out, the spot is logged as "did not settle" and skipped, not measured.
 * **Every A/B pair is at the same spot**, after the same settle. Spots are never compared with each other.
 
+## The mod's states
+
+No waiting at the start and no countdown. A test-only hook, `runner.benchState(name, alongM)`, puts the mod
+straight into the state a capture needs. It runs the same lines the real step does, so the same systems come on.
+
+| State | What is on | How the hook gets there |
+|---|---|---|
+| `none` | Mod loaded, no run: the floor | `runner.abort(true)` |
+| `waitStart` | On the line: start tree and its clock, clock view, car held, stage layout | Set `startAt` an hour on, so GO never comes; `setState('waitStart')` |
+| `running` | The race active: stage clock, stage apps, co-driver notes, dressing | The GO block of `stepWaitStart` (`runner.lua:1388`): `zoneRelease()`, `notesOn(true)`, `run.clock = 0`, `setState('running')` |
+| `finished` | After the run: tidied, traffic back | `M.wrapUp()` with no time, so nothing is written to the results file |
+
+* **The run is set up for real first:** started from the stage menu, through travel, anchor, build and place. That is
+  setup, not waiting. The hook acts once the state is `toAtc` or `toStart`.
+* **For a spot down the stage**, the hook teleports through BeamNG.Earth and sets `run.prevAlong` and `run.along` to
+  that distance. Progress is only searched 600 m ahead (`FOLLOW_AHEAD_M`), so without this the run is off route.
+* **Before every capture the recorder checks the state**: `run.state`, `run.along` within 50 m of the spot, notes on,
+  and the stage layout active. A wrong state stops the test; it is not measured.
+* **A stopped car stays in `running`.** Only setup errors fail a run (`runner.lua:174`), so the clock can run for as
+  long as the captures need.
+* **The co-driver at a spot:** the hook calls `rallyA.resync()` after the teleport, so the engine picks up from there.
+  Check that a note is queued; if not, note it and carry on, since its Lua cost is small.
+* **Not shipped:** the hook lives on the bench branch and is removed after testing.
+
 ## Method, for every test
 
 * **Recorder in the game** writes JSON to `earthRally/bench/`. It records:
@@ -65,9 +89,6 @@ No per-run leak was found.
   * BeamNG.Earth loading status.
 
   It runs the whole scripted test by itself; MCP only starts it, and those frames are dropped. No polling.
-* **Bench hook (test-only, not shipped):** `benchPlace(alongM)` teleports through BeamNG.Earth and sets
-  `run.prevAlong`, so the run keeps following. Progress is only searched 600 m ahead (`FOLLOW_AHEAD_M`), so a
-  plain teleport would put the run off route.
 * **PresentMon** runs beside it for CPUBusy and GPUBusy. It is not installed: needs your OK to download.
   Without it, Optick and the engine categories stand in.
 * **Each capture:** 5 s warm-up, then 20 s capture. One change at a time, alternated A B A B, 3 pairs.
@@ -80,18 +101,21 @@ No per-run leak was found.
 ## The tests, in order (about 30 min of game time)
 
 **T1. Is it the world or the mod? (about 6 min)** Suspect 1 goes first, because a world still loading looks like a leak.
-* A: teleport to the start line in freeroam, no run. Log for 2 min.
-* B: start a Weaver Bend run from the menu, sit in waitStart. Log for 2 min.
+* A: teleport to the 2.3 km spot in state `none`. Log for 2 min from arrival.
+* B: same teleport, then `benchState('running', 2300)`. Log for 2 min from arrival.
 * Same fall in both: the world is the trend, and the settle gate handles it.
 * Also gives the real settle time, which sets the gate.
 
-**T2. Where does a slow frame go? (about 3 min)** At the 2.3 km spot, settled, clock running:
+**T1b. Which state costs? (about 4 min)** At the 2.3 km spot, settled. `none`, `waitStart`, `running`, `finished`, each
+alternated with `none`, 2 pairs. Names the state where the cost starts.
+
+**T2. Where does a slow frame go? (about 3 min)** At the 2.3 km spot, settled, in `running`:
 * one Optick capture of 10 s with the run;
 * one Optick capture of 10 s with the run aborted, same spot.
 
 Read: main thread vs render vs GPU wait; which Lua extension; whether CEF shows.
 
-**T3. What does GO switch on? (about 12 min)** At the 2.3 km spot, settled, clock running. Take one thing away at a time:
+**T3. What does GO switch on? (about 12 min)** At the 2.3 km spot, settled, in `running`. Take one thing away at a time:
 1. HUD streams: `earthRally_main.STREAM_HZ` 30 vs 1.
 2. Stock stage apps: stage layout vs plain layout.
 3. Co-driver: `rallyAdapter.notesOn(true)` vs `(false)`.
@@ -108,7 +132,7 @@ Repeat only the winning switch at the 4.6 km spot, to check it holds.
 * Line up frames over 50 ms with hook max times and the node count.
 
 **T5. After the run (about 3 min)**
-* At the 4.6 km spot, after aborting the run.
+* At the 4.6 km spot, in `finished` (via `wrapUp`, no result written).
 * Traffic on vs off.
 * Count `stage layout back on` lines in `beamng.log`.
 * Check whether `gameplay_rallyStartClock` is still loaded.
