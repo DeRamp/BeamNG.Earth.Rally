@@ -365,12 +365,17 @@ const cancelledSs = computed(() => {
 // a row's passes (menu.lua: the itinerary's, or SS1, SS2... in map order with none). A line the itinerary never
 // runs has none and says "Not run" (s.notRun): it is never given a made-up SS number.
 const passList = s => arr(s && s.passes)
-// The columns: the SS cell widens for "SS11 · SS15", and Place comes in with real results. The seventh column
-// (Auto recce / Reset) keeps its 210px whatever else changes (see .er-srow).
+// The columns: the SS cell is as wide as the rally's longest label ("SS3 · SS7 · SS11"), and Place comes in with
+// real results. The seventh column (Auto recce / Reset) keeps its 210px whatever else changes (see .er-srow).
+// SS_CH_PX: one character of the cell's 18px Overpass Mono (0.6 em, rounded up); before, the cell was 100 or 170px,
+// and a stage run three times or more ran its label over the name (the user, 2026-11-14).
+const SS_CH_PX = 11
+const ssText = s => passList(s).map(p => p.ss).join(" · ")
 const srowCols = computed(() => {
   const r = rly.value
-  const wide = arr(r && r.list).some(s => arr(s.passes).length > 1)
-  return { gridTemplateColumns: `${wide ? 170 : 100}px minmax(0, 1fr) 130px 260px 210px 150px ${r && r.hasBoard ? "130px " : ""}30px` }
+  const chars = Math.max(0, ...arr(r && r.list).map(s => (s.notRun ? 0 : ssText(s).length)))
+  const ss = Math.max(100, Math.ceil(chars * SS_CH_PX) + 20)
+  return { gridTemplateColumns: `${ss}px minmax(0, 1fr) 130px 260px 210px 150px ${r && r.hasBoard ? "130px " : ""}30px` }
 })
 const rallySub = computed(() => {
   const r = rly.value
