@@ -327,6 +327,14 @@ do
     show(steep30) .. ')')
   local brow = notes(build(road({ { 'straight', 1600 } }, ease(0, -0.12, 700, 30))))
   T.check(has(brow, 'rest'), 'a level road dropping away to 12 % over 30 m: a crest (' .. show(brow) .. ')')
+  -- (the review of those: a sharp drop-off on a descent is still a crest; a rounded top levelling out where the road
+  --  is hidden is one too)
+  local drop = notes(build(road({ { 'straight', 1600 } }, ease(-0.05, -0.17, 700, 30))))
+  T.check(has(drop, 'rest') or has(drop, 'ump'), 'a descent from 5 % dropping to 17 % over 30 m: called (' ..
+    show(drop) .. ')')
+  local plateau = notes(build(road({ { 'straight', 1600 } }, ease(0.2, -0.02, 700, 50))))
+  T.check(has(plateau, 'rest') or has(plateau, 'ump'), 'a 20 % climb rounding over to level: called (' ..
+    show(plateau) .. ')')
   local steeper = notes(build(road({ { 'straight', 1600 } }, ease(-0.04, -0.10, 700, 60))))
   T.check(not has(steeper, 'rest'), 'a descent from 4 % to 10 % over 60 m, the road still in sight: no crest (' ..
     show(steeper) .. ')')

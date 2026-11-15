@@ -303,15 +303,17 @@ M.JUMP_MIN_V_MS = 15
 M.SIGHT_EYE_M = 1.1
 M.SIGHT_TARGET_M = 0.6   -- hidden by this much (the object height of a road's stopping sight distance), not the
                          -- last few centimetres of its surface
--- (the two figures, on the user's 26 lines matched in the game before the review fixes, crest calls / km, and against the game's own stages
+-- (the two figures, on the user's 26 lines matched in the game then (28 now), before the review fixes, crest calls / km, and against the game's own stages
 --  found / agreeing: 0.3 m and any grade 1.45, 59 / 48 %; 0.6 m and any grade 0.96, 46 / 50 %; 0.6 m and 2 %
---  0.84, 42 / 49 %; 0.8 m and 2 % 0.63, 36 / 49 %. The build of the second drive: 1.5 / km. With the review's
---  fixes -- back in view, from the summit, the descent rule -- on 28 lines: 0.69, 32 / 44 %)
+--  0.84, 42 / 49 %; 0.8 m and 2 % 0.63, 36 / 49 %. The build of the second drive: 1.5 / km. With the reviews'
+--  fixes -- back in view, the grade where it is hidden, the descent rule -- on 28 lines: 0.78, 41 / 49 %)
 M.SIGHT_S = 2.0
 M.SIGHT_BIG_S = 1.0
 M.SIGHT_ON_GRADE = 0.02  -- over the top: the road from the summit that hides it to there climbs no more than this
 M.SIGHT_BACK_S = 1.0     -- ... and stays hidden this much further on
-M.SIGHT_DOWN_GRADE = 0.04 -- no crest where the road to the summit already falls more than this
+M.SIGHT_DOWN_GRADE = 0.04 -- no crest where the car's road already falls more than this ...
+M.SIGHT_DOWN_M = 20      -- ... over this far behind it
+M.SIGHT_GRADE_M = 10     -- the grade where the road is hidden (SIGHT_ON_GRADE), over this far
 M.SIGHT_SMALL_S = 1.5    -- a sight this long or more (but under SIGHT_S): a small crest, only just blind
 M.SIGHT_MAX_M = 150      -- (binds only over 75 m/s: the speed model's top is 40)
 M.SIGHT_MIN_V_MS = 12    -- slower than this, a hidden road ahead is no surprise
@@ -363,15 +365,22 @@ function M.blind(z, step, v, clean)
           if s > maxS then maxS, arg = s, j end
         end
         -- blind: the road where the car needs to see it is hidden (the driver sees right over a rise that
-        -- leaves it in view, however much the grade changes), and it is over a top: from the summit that hides
-        -- it, level or going down (SIGHT_ON_GRADE at most -- a steep climb easing off hides the road beyond as it
-        -- goes on up, and is no crest; measured from the summit, not the sample before, so a few centimetres of
-        -- heights do not decide it). (A road hidden is lower than the line to the highest point before it, so that
-        -- point is still the one seen highest: arg, the summit that hides it.)
-        local blind = seen < jn and arg and z[jn] - z[arg] < M.SIGHT_ON_GRADE * (jn - arg) * step
-        -- ... and the same going down: on a descent already steeper than SIGHT_DOWN_GRADE to the summit, the road
-        -- beyond it getting steeper still is one the driver looks down onto, and no crest
-        if blind and z[arg] - z[i] < -M.SIGHT_DOWN_GRADE * (arg - i) * step then blind = false end
+        -- leaves it in view, however much the grade changes), and it is over a top: the road there level or going
+        -- down (SIGHT_ON_GRADE at most, over the SIGHT_GRADE_M before it -- not one sample, so a few centimetres of
+        -- heights do not decide it; nor from arg, the point the sightline grazes, which on a climb is short of the
+        -- top). A steep climb easing off hides the road beyond as it goes on up, and is no crest. (A road hidden is
+        -- lower than the line to the highest point before it, so arg < jn.)
+        local kg = max(arg or i, jn - max(1, floor(M.SIGHT_GRADE_M / step + 0.5)))
+        local blind = seen < jn and arg and z[jn] - z[kg] < M.SIGHT_ON_GRADE * (jn - kg) * step
+        -- ... and the same going down: where the car is on a descent steeper than SIGHT_DOWN_GRADE (over the
+        -- SIGHT_DOWN_M behind it), the road beyond getting a little steeper is one the driver looks down onto --
+        -- only where it is only just hidden (SIGHT_SMALL_S or more of sight): a sharp drop-off on a descent hides
+        -- the road sooner, and is a crest
+        local kb = max(1, i - max(1, floor(M.SIGHT_DOWN_M / step + 0.5)))
+        if blind and kb < i and (seen + 1 - i) * step / vi >= M.SIGHT_SMALL_S and
+           z[i] - z[kb] < -M.SIGHT_DOWN_GRADE * (i - kb) * step then
+          blind = false
+        end
         -- ... and it stays hidden a while on: a road back in view just past it is one the driver sees over
         if blind then
           for j = jn + 1, min(n, jn + floor(vi * M.SIGHT_BACK_S / step)) do
@@ -508,21 +517,20 @@ function M.heights(pts, step, v)
   end
   -- the crests, from the sightline: the road where the car needs to see it hidden behind a rise
   -- (not the rim of a dip called on its own within OPPOSITE_M, RIM_RATIO times as sharp as the crest at its
-  --  sharpest near the summit: the dip's call says it -- a dip not called, the crest is; a hollow the road comes
-  --  back out of in view is no crest at all, M.blind. Nor a jump's summit, within EVENT_M: called as the jump)
+  --  sharpest near the summit: the dip's call says it -- marked `rimOf` that dip, and the writer leaves the crest
+  --  out only where the dip is said; a dip not called, the crest is. A hollow the road comes back out of in view is
+  --  no crest at all, M.blind. Nor a jump's summit, within EVENT_M: called as the jump)
   local ej = max(1, floor(M.BLIND_JOIN_M / step + 0.5))
   for _, sc in ipairs(M.blind(z, step, v, clean)) do
-    local near, sharp = false, 0
+    local near, rimOf, sharp = false, nil, 0
     for j = max(1, sc.i - ej), min(n, sc.i + ej) do if dg[j] < sharp then sharp = dg[j] end end
     for _, ev in ipairs(events) do
       if ev.kind == 'jump' and abs(ev.i - sc.i) <= e then near = true break end
-      if ev.kind == 'dip' and ev.alone and abs(ev.i - sc.i) <= eo and ev.dg >= -sharp * M.RIM_RATIO then
-        near = true
-        break
-      end
+      if ev.kind == 'dip' and ev.alone and abs(ev.i - sc.i) <= eo and ev.dg >= -sharp * M.RIM_RATIO then rimOf = ev end
     end
     if not near then
-      events[#events + 1] = { i = sc.i, kind = 'crest', size = sc.size, alone = true, dg = dg[sc.i], sight = sc.sight }
+      events[#events + 1] = { i = sc.i, kind = 'crest', size = sc.size, alone = true, dg = dg[sc.i], sight = sc.sight,
+                              rimOf = rimOf }
     end
   end
   table.sort(events, function(a, b) return a.i < b.i end)

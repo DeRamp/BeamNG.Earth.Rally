@@ -187,7 +187,9 @@ function M.build(line, opts)
       -- (from its start to its far end, lm.sEnd, when the recce gave one: a long bridge is all valley)
       local a = math.floor((math.min(lm.s, lm.sEnd or lm.s) + lead - startM) / step + 0.5) + 1
       local b = math.floor((math.max(lm.s, lm.sEnd or lm.s) + lead - startM) / step + 0.5) + 1
-      for _, ev in ipairs(events) do if ev.i >= a - bridgeN and ev.i <= b + bridgeN then ev.used = true end end
+      for _, ev in ipairs(events) do
+        if ev.i >= a - bridgeN and ev.i <= b + bridgeN then ev.used, ev.bridged = true, true end
+      end
     end
   end
 
@@ -332,8 +334,13 @@ function M.build(line, opts)
       features[#features + 1] = f
     end
   end
+  -- (a crest at the rim of a dip called on its own is left to the dip -- where the dip is said: not on a bridge,
+  --  callable, and in the voice)
+  local function dipSaid(d)
+    return not d.bridged and callable(d.i) and said(d.size == 'big' and 'badDip' or 'dip') ~= nil
+  end
   for _, ev in ipairs(events) do
-    if not ev.used then
+    if not ev.used and not (ev.rimOf and dipSaid(ev.rimOf)) then
       local big = ev.size == 'big'
       local f = { i = ev.i, before = hb, after = ha, aloneSlot = 'pre' }
       if ev.kind == 'jump' then
