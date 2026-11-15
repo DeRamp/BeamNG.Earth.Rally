@@ -203,7 +203,7 @@ end
 -- another table, after onNavgraphReloaded or a world shift (M.mapChanged), or once it is IDX_MAX_AGE_S old (a node
 -- moved in place, which nothing is known to do).
 local IDX_CELL_M = 64
-local IDX_MAX_AGE_S = 2
+local IDX_MAX_AGE_S = 30
 local clock = rawget(os, 'clockhp') or os.clock
 local idx = nil      -- { nodes, at, cells = { [cell key] = { node name, ... } } }
 local function cellKey(cx, cy) return (cx + 32768) * 65536 + (cy + 32768) end
@@ -491,7 +491,7 @@ end
 -- the shift does), turned back into game coordinates (toGame) each time it is put down. Distances along the line do
 -- not change with a shift (runner.lua's line follows it), so the window needs nothing.
 M.DRESS_AHEAD_M = M.SPAWN_M
-M.DRESS_BEHIND_M = 600
+M.DRESS_BEHIND_M = 200
 M.DRESS_MAX_OBJS = 64        -- every dressing site's budget, whatever it asks for
 -- (objects put down a frame, a site carried on into the next: a whole window at once, after a shift, is a hitch, and
 -- one spectator area alone is 64 objects)

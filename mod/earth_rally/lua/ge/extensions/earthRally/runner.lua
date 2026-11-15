@@ -1569,6 +1569,9 @@ function M.update(dtReal, dtSim)
   end
   if s == 'toAtc' or s == 'toStart' or s == 'waitStart' or (s == 'running' and (run.clock or 0) < 8) then
     feedStartClock()
+  elseif s == 'running' and run.clockExtOwned then
+    -- (1.6.1: no longer fed, and it kept its board and its checks running for the whole stage; ours to unload)
+    startClockOff()
   end
   -- the stage layout held while the run has it on: a car reloaded (Ctrl+R) or replaced mid-stage put the game's own
   -- layout back, and the progress bar, the finish time and the results card were gone (in game, 2026-11-13)
@@ -1822,14 +1825,26 @@ end
 
 -- What the screen shows now: the game's rally apps' stream and ours (hudFrame.lua). main.lua queues them.
 -- Returns rallyLoop (nil: leave that stream alone, the game's own rally mode is running), earthRally.
+-- (1.6.1: BeamNG.Earth's place, banner and loading asked for at most EARTH_ASK_S apart, not on every HUD message --
+-- each builds tables in BeamNG.Earth -- and the constants given as one table, not a new one each time)
+M.EARTH_ASK_S = 0.5
+local uiClock = rawget(os, 'clockhp') or os.clock
+local earthAsked, earthAt = nil, -math.huge
+local uiConsts = nil
 function M.uiFrame()
+  local t = uiClock()
+  if not earthAsked or t - earthAt >= M.EARTH_ASK_S or t < earthAt then
+    earthAsked, earthAt = { place = earth.place(), banner = earth.earthBanner(), loading = earth.loading() }, t
+  end
+  uiConsts = uiConsts or { stoppedMs = M.STOPPED_MS, startZoneBeforeM = M.START_ZONE_BEFORE_M,
+    stopRadiusM = M.STOP_CONTROL_RADIUS_M, jumpStartS = M.JUMP_START_PENALTY_S, resetS = M.RESET_PENALTY_S,
+    missedAtcS = M.MISSED_TC_PENALTY_S }
   return hudFrame.build(run, {
     now = M.clock() or 0, speed = run and speed() or 0, canSkip = M.canSkip(), units = settings.get('units'),
-    uiHidden = M.uiHidden, place = earth.place(), earthBanner = earth.earthBanner(), loading = earth.loading(),
+    uiHidden = M.uiHidden, place = earthAsked.place, earthBanner = earthAsked.banner, loading = earthAsked.loading,
     noRallyLoop = extensions and extensions.isExtensionLoaded and extensions.isExtensionLoaded('gameplay_rallyLoop')
       or false,
-    c = { stoppedMs = M.STOPPED_MS, startZoneBeforeM = M.START_ZONE_BEFORE_M, stopRadiusM = M.STOP_CONTROL_RADIUS_M,
-          jumpStartS = M.JUMP_START_PENALTY_S, resetS = M.RESET_PENALTY_S, missedAtcS = M.MISSED_TC_PENALTY_S },
+    c = uiConsts,
   })
 end
 

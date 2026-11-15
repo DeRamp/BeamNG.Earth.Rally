@@ -26,6 +26,8 @@ M.VERSION = '1.6.0-alpha'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_HZ = 30                  -- the HUD's streams this often while something moves on it
 M.STREAM_IDLE_HZ = 2              -- ... and this often once the run is over
+M.HUD_STREAM_HZ = 10              -- our own HUD's stream (whole seconds, km to 0.1), and the stock apps' outside
+                                  -- waitStart / running (1.6.1: STREAM_HZ is only for the stock clock's tenths)
 M.FAR_FOR_RECCE_M = 300           -- Recce from further than this from the start: taken there first
 
 local show = im.BoolPtr(false)
@@ -917,6 +919,7 @@ function M.uiSet(key, value) return settings.set(key, value) end
 ------------------------------------------------------------------------------------------ the HUD's streams
 
 local streamT, streamOn, inactiveSent = 0, false, true
+local hudT = 0
 local previewT = nil
 local previewLayout = nil
 local unloadNext = false      -- the mod was switched off: stop being a loaded extension next frame (onModDeactivated)
@@ -1002,17 +1005,30 @@ local function sendStreams(dt)
     return
   end
   inactiveSent = false
-  streamT = streamT + dt
-  local hz = (r.state == 'finished' or r.state == 'failed') and M.STREAM_IDLE_HZ or M.STREAM_HZ
-  if streamT < 1 / hz and r.state == streamOn then return end
-  streamT, streamOn = 0, r.state
+  streamT, hudT = streamT + dt, hudT + dt
+  local s = r.state
+  local idle = s == 'finished' or s == 'failed'
+  -- (the stock apps' stream fast only while their clock ticks; ours, the whole-screen app, at HUD_STREAM_HZ: 1.6.1,
+  -- each message re-draws the app, and on a slower PC 30 a second of them cost frames. Both at once on a new state)
+  local rlHz = idle and M.STREAM_IDLE_HZ or ((s == 'waitStart' or s == 'running') and M.STREAM_HZ or M.HUD_STREAM_HZ)
+  local hudHz = idle and M.STREAM_IDLE_HZ or M.HUD_STREAM_HZ
+  local fresh = s ~= streamOn
+  local rlDue, hudDue = fresh or streamT >= 1 / rlHz, fresh or hudT >= 1 / hudHz
+  if not (rlDue or hudDue) then return end
+  streamOn = s
   local rl, ours = runner.uiFrame()
-  if rl then gh.queueStream('rallyLoop', rl) end
-  gh.queueStream('earthRally', ours)
-  local key = M.streamsKey(rl, ours)
-  if key ~= streamLogKey then
-    streamLogKey = key
-    log('I', logTag, M.streamsLine(rl, ours))
+  if rlDue then
+    streamT = 0
+    if rl then gh.queueStream('rallyLoop', rl) end
+  end
+  if hudDue then
+    hudT = 0
+    gh.queueStream('earthRally', ours)
+    local key = M.streamsKey(rl, ours)
+    if key ~= streamLogKey then
+      streamLogKey = key
+      log('I', logTag, M.streamsLine(rl, ours))
+    end
   end
 end
 M._sendStreams = sendStreams

@@ -143,13 +143,13 @@ end
 -- the controls' own count untouched by the dressing
 T.check(props.count() == 0, 'dressing: not counted with the controls\' props')
 
--- 2 km on: everything behind 1400 m gone, everything to 2350 m down
+-- 2 km on: everything more than DRESS_BEHIND_M behind gone, everything to 2350 m down
 car = { x = 0, y = 2000, z = 0 }
 for _ = 1, 20 do props.update(car, toGame, 2000) end
 local _, k = props.dressingCount()
 local want = 0
-for _, s in ipairs(plan) do if s.to >= 1400 and s.from <= 2350 then want = want + 1 end end
-T.check(k == want, 'dressing: the window 600 m behind to 350 m ahead (' .. k .. ' of ' .. want .. ')')
+for _, s in ipairs(plan) do if s.to >= 2000 - props.DRESS_BEHIND_M and s.from <= 2350 then want = want + 1 end end
+T.check(k == want, 'dressing: the window DRESS_BEHIND_M behind to 350 m ahead (' .. k .. ' of ' .. want .. ')')
 T.check(select(1, props.dressingCount()) == liveCount(), 'dressing: those behind really taken away')
 local early = 0
 for _, o in pairs(live) do if o.pos and o.pos[2] < 1300 then early = early + 1 end end
