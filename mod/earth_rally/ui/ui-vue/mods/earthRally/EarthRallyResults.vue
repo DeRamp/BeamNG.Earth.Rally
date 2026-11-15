@@ -3,6 +3,8 @@
        left to drive beside the real top 10; then your total against them. Data: menu.lua, addRallyFiles
        (uiRally's `results`). -->
   <div class="er-res-wrap">
+    <!-- a line mismatch (boards.lua): your total stands, but it is not placed among the crews and scores no points -->
+    <div v-if="mismatchLine" class="er-mis">{{ mismatchLine }}</div>
     <div v-if="!r.complete" class="er-card er-todo">
       <div class="er-head">Drive all {{ r.stages }} stages to get a rally result</div>
       <div class="er-bar"><i :style="{ width: (r.stages ? (100 * r.driven) / r.stages : 0) + '%' }"></i></div>
@@ -13,16 +15,17 @@
     </div>
     <div v-else class="er-card er-todo">
       <h3>Your rally</h3>
-      <div class="er-big">{{ ord(r.you && r.you.pos) }}<small>of {{ r.you && r.you.of }}</small></div>
+      <div v-if="r.you" class="er-big">{{ ord(r.you.pos) }}<small>of {{ r.you.of }}</small></div>
+      <div v-else class="er-big er-nr">Not ranked</div>
       <div class="er-total">{{ longTime(r.totalS) }}</div>
       <div v-if="r.you && r.you.gapS > 0" class="er-muted er-of">{{ gap(r.you.gapS) }} to the winner</div>
       <div v-else-if="r.you" class="er-muted er-of">Ahead of the winner</div>
       <div v-if="r.points !== undefined && r.points !== null" class="er-pts"><b>+{{ r.points }} points</b> <span class="er-muted">in the season</span></div>
-      <div class="er-foot-note">Your best on each stage, once for every pass run.</div>
+      <div class="er-foot-note">Your best on each stage, against the {{ crewsText }} with a time on every stage.</div>
     </div>
 
     <div class="er-card er-table">
-      <div :class="{ 'er-ghosted': !r.complete }">
+      <div :class="{ 'er-ghosted': waiting }">
         <div class="er-trow er-hdr"><span>Pos</span><span>Driver</span><span>Class</span><span class="er-r">Total</span><span class="er-r">Gap</span></div>
         <template v-for="(row, i) in arr(r.rows)" :key="i">
           <div v-if="row.skipped" class="er-trow er-gap"><span>⋮</span></div>
@@ -31,17 +34,34 @@
             <span class="er-t">{{ longTime(row.timeS) }}</span><span class="er-g">{{ gap(row.gapS) }}</span>
           </div>
         </template>
-        <div v-if="!arr(r.rows).length" class="er-muted er-none">No crew in the results ran every stage.</div>
+        <div v-if="!arr(r.rows).length" class="er-muted er-none">No crew has a time on every stage.</div>
       </div>
-      <div v-if="!r.complete" class="er-over"><div class="er-msg">The real top {{ Math.min(arr(r.rows).length, 10) || 10 }} is waiting<div>Your total goes in here once every stage has a time.</div></div></div>
+      <div v-if="waiting" class="er-over"><div class="er-msg">The real top {{ Math.min(arr(r.rows).length, 10) || 10 }} is waiting<div>Your total goes in here once every stage has a time.</div></div></div>
     </div>
   </div>
 </template>
 
 <script setup>
+import { computed } from "vue"
 import { arr, ord, gap, longTime } from "./store.js"
 
-defineProps({ r: { type: Object, required: true } })   // the rally's results
+const props = defineProps({ r: { type: Object, required: true } })   // the rally's results
+// (the table greyed with "your total goes in here" only while a total can still go in: not when it won't be ranked)
+const waiting = computed(() => !props.r.complete && !props.r.notRanked)
+const crewsText = computed(() => {
+  const n = Number(props.r.crews) || 0
+  return `${n} ${n === 1 ? "crew" : "crews"}`
+})
+// "Not ranked: 3 stages on this map aren't the stages as run (Irish Ridge, Kettle Creek, Lost Hill, ...)"
+const mismatchLine = computed(() => {
+  const m = arr(props.r.mismatch)
+  if (!props.r.notRanked || !m.length) return ""
+  const n = m.length
+  const names = n > 3 ? `${m.slice(0, 3).join(", ")}, ...` : m.join(", ")
+  return n === 1
+    ? `Not ranked: 1 stage on this map isn't the stage as run (${names})`
+    : `Not ranked: ${n} stages on this map aren't the stages as run (${names})`
+})
 </script>
 
 <style lang="scss" scoped>
@@ -63,6 +83,8 @@ defineProps({ r: { type: Object, required: true } })   // the rally's results
 .er-total { font: 700 30px "Overpass Mono", monospace; margin-top: 14px; }
 .er-pts { margin-top: 22px; font-size: 20px; b { color: var(--er-orange); } }
 .er-foot-note { margin-top: 14px; font-size: 15px; color: var(--er-muted); }
+.er-mis { grid-column: 1 / -1; font-size: 17px; color: #ffd36b; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.er-nr { font-size: 40px; color: var(--er-muted); }
 .er-table { position: relative; padding: 6px 0; }
 .er-ghosted { opacity: 0.4; filter: saturate(0.4); }
 .er-over { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }

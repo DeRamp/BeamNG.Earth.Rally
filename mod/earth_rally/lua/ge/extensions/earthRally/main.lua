@@ -347,7 +347,8 @@ end
 -- other three wrote nothing, so each has to say what it found and what would change it -- and none of them may
 -- suggest that the auto recce could have downloaded the missing map data, because it never downloads anything.
 local function autoText(a, kind, why, how)
-  local name = string.format('SS%s %s', tostring(a.ss), tostring(a.stageName))
+  -- (the stage's real SS label from the rally file, or its name alone on a stage the itinerary never runs)
+  local name = a.ssLabel and string.format('%s %s', a.ssLabel, tostring(a.stageName)) or tostring(a.stageName)
   if kind == autoRecce.PARTIAL then
     return string.format(
       '%s: %d of %d windows had map data on this computer. The stage is matched nowhere, because %.1f km of it ' ..
@@ -433,7 +434,8 @@ local function autoDone(ok, matched, why, how)
     message = string.format('Auto recce of %s: done.', a.stageName)
   else
     autoLines[autoKey(a.eventId, a.stageId)] =
-      { eventId = a.eventId, stageId = a.stageId, ss = a.ss, kind = kind, text = autoText(a, kind, why, how) }
+      { eventId = a.eventId, stageId = a.stageId, ss = a.ss, ssLabel = a.ssLabel, kind = kind,
+        text = autoText(a, kind, why, how) }
     message = nil
   end
   log('I', logTag, string.format('auto recce of %s: %s (%s)', tostring(a.stageId), kind, tostring(why or 'written')))
@@ -443,7 +445,7 @@ M._autoDone = autoDone
 -- Start the matching leg: the same call the 1.3.0 button made, with the banner and the row mark it sets.
 local function autoStartMatch(ev, stage, ss)
   local key = autoKey(ev.id, stage.id)
-  autoRun = { eventId = ev.id, stageId = stage.id, stageName = stage.name, ss = ss }
+  autoRun = { eventId = ev.id, stageId = stage.id, stageName = stage.name, ss = ss, ssLabel = menu.ssLabel(ev, stage.id) }
   autoLines[key] = nil
   local ok, why = autoRecce.start(ev, stage, autoDone)
   if not ok then
@@ -471,7 +473,7 @@ local function autoSeqEnd(msg, kind)
   if not sq then return end
   if msg then
     autoLines[autoKey(sq.ev.id, sq.stage.id)] = { eventId = sq.ev.id, stageId = sq.stage.id, ss = sq.ss,
-      kind = kind or autoRecce.FAILED, text = msg }
+      ssLabel = menu.ssLabel(sq.ev, sq.stage.id), kind = kind or autoRecce.FAILED, text = msg }
     message = msg                                   -- (the developer panel as well, which reads this one)
   end
   log('I', logTag, 'auto recce sequence of ' .. tostring(sq.stage.id) .. ': ended (' .. tostring(msg or 'reported')
@@ -580,7 +582,8 @@ autoSeqStep = function(what, arg)
       autoSeqEnd(nil)
       return false              -- nothing to add: autoDone reports the stage's own ending, as 1.3.0 does
     end
-    local own = autoText({ ss = sq.ss, stageName = sq.stage.name }, arg, sq.why, sq.how)
+    local own = autoText({ ss = sq.ss, ssLabel = menu.ssLabel(sq.ev, sq.stage.id), stageName = sq.stage.name }, arg,
+      sq.why, sq.how)
     autoSeqEnd((own and (own .. ' ') or '') .. note, arg)
     return true
 
@@ -785,6 +788,7 @@ local function runSummary()
   local out = {}
   if r then
     out.run = { state = r.state, eventId = r.event.id, stageId = r.stage.id, stageName = r.stage.name, ss = r.ss,
+      ssLabel = menu.ssLabel(r.event, r.stage.id),
       busy = r.state ~= 'finished' and r.state ~= 'failed', error = r.error, finalTime = r.finalTime,
       resultsOpen = r.resultsOpen or nil }
   end
@@ -803,7 +807,7 @@ local function runSummary()
   if autoRecce.active() and autoRun then
     local p = autoRecce.progress() or {}
     out.auto = { eventId = autoRun.eventId, stageId = autoRun.stageId, stageName = autoRun.stageName,
-      ss = autoRun.ss, windows = p.windows, done = p.done, phase = 'matching',
+      ss = autoRun.ss, ssLabel = autoRun.ssLabel, windows = p.windows, done = p.done, phase = 'matching',
       -- (the step along the line, for the page's sentence: a window is only trustworthy CORRIDOR_M inside its edge)
       stepM = math.floor(autoRecce.RADIUS_M - autoRecce.CORRIDOR_M) }
   elseif autoSeq then
@@ -811,7 +815,8 @@ local function runSummary()
     -- downloading. The row and the banner follow `phase`, so one press reads as one thing throughout.
     local st = autoSeq.areaId and earth.areaStatus(autoSeq.areaId) or nil
     out.auto = { eventId = autoSeq.ev.id, stageId = autoSeq.stage.id, stageName = autoSeq.stage.name,
-      ss = autoSeq.ss, phase = autoSeq.phase, waitedS = math.floor(autoSeq.t or 0) }
+      ss = autoSeq.ss, ssLabel = menu.ssLabel(autoSeq.ev, autoSeq.stage.id), phase = autoSeq.phase,
+      waitedS = math.floor(autoSeq.t or 0) }
     if autoSeq.phase == M.ASKING and autoSeq.plan then
       out.auto.ask = { bytes = autoSeq.plan.downloadBytes, diskBytes = autoSeq.plan.diskBytes,
         km = autoSeq.plan.km, items = autoSeq.plan.items, missing = autoSeq.plan.missing }

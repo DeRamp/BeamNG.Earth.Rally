@@ -198,6 +198,15 @@ do
   local reg = false
   for _, r in ipairs(st.rows) do if r.name == 'Reg' then reg = true end end
   T.check(not reg and st.entries == 4, 'other championships do not score')
+
+  -- a round whose map is not the stage as run (2 km of line against a 1 km pass): your fastest time scores nothing
+  local mis = B.standings(season, { { event = { id = 'm1', name = 'Mis', stages = { { id = 's', name = 'S',
+    lengthM = 2000 } } }, board = one({ { 100, 'Ann' }, { 102, 'Bob' } }), bestByStage = { s = 90 } } })
+  T.check(mis.you == nil and mis.rows[1].name == 'Ann' and mis.rows[1].points == 10 and mis.rounds[1].scored == 2,
+    'a line mismatch: no place and no points for you in that round; the crews still score')
+  local noB = B.rallyResult({ stages = { { id = 's', name = 'S', lengthM = 12000,
+    controls = { start = { distM = 1000 }, ff = { distM = 11000 } } } } }, nil, { s = 90 })
+  T.check(#noB.lineMismatch == 0 and not noB.notRanked, 'no board: no mismatch (there is no km to set it against)')
   T.check(st.rows[1].perRound[1].points == 10 and st.rows[1].perRound[3].points == 6 and st.rows[1].wins == 1,
     'per round points and wins')
 

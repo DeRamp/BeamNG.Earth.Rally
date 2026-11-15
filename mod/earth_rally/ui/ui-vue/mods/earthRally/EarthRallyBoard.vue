@@ -22,7 +22,7 @@
         <span>{{ b.you.gapS > 0 ? `${gap(b.you.gapS)} to the fastest` : b.you.leadS ? `fastest by ${gap(b.you.leadS).slice(1)}` : "fastest" }}</span>
       </div>
       <div v-else-if="b.reason === 'noTime'" class="er-you-line"><span>{{ b.field }} times on {{ b.pass }}. Drive it to see where you'd place.</span></div>
-      <div v-else-if="b.reason === 'lineMismatch'" class="er-note">Not placed: your line is {{ km(b.lineKm) }}, the stage was {{ km(b.km) }}.</div>
+      <div v-else-if="b.reason === 'lineMismatch'" class="er-note">This map's stage is {{ km(b.lineKm) }}; the real one was {{ km(b.km) }}.</div>
 
       <div class="er-trow er-hdr"><span>Pos</span><span>Driver</span><span>Class</span><span class="er-r">Time</span><span class="er-r">Gap</span></div>
       <template v-for="(r, i) in arr(b.rows)" :key="i">

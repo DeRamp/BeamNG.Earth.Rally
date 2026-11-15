@@ -196,6 +196,12 @@ export const STATUS = {
 // How an auto recce ended (autoRecce.lua's M.PARTIAL / M.NODATA / M.FAILED) -> the colour of the line under the
 // card. No map data anywhere is grey on purpose: it is a normal outcome for ground never driven, not a failure,
 // and the only red line on the page is the one where something actually went wrong.
+// "SS2 · SS4 Wildcat" for the banners: the stage's real SS label from the Lua (menu.ssLabel), or its name alone on
+// a stage the rally's itinerary never runs, or from a file with no label. Never an SS number made up here.
+export function ssName(x) {
+  if (!x) return ""
+  return x.ssLabel ? `${x.ssLabel} ${x.stageName || ""}` : `${x.stageName || ""}`
+}
 export const AUTO_OUTCOME = { partial: "warn", nodata: "flat", failed: "err" }
 export const RUN_WORDS = {
   travel: "going to the stage", anchor: "moving the world to the stage", build: "building the stage",

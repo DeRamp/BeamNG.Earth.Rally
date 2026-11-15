@@ -81,8 +81,8 @@ function M.seasons()
   return seasonsCache
 end
 
--- A rally's leaderboards from its real results: { passes = { { ss, stage, run, km, cancelled, field }... },
--- overall }, or nil when it has none.
+-- A rally's leaderboards from its real results: { passes = { { ss, stage, run, km, cancelled, field }... } }, or
+-- nil when it has none.
 function M.boards(rallyId)
   return readOnce(M.BOARDS_DIR .. tostring(rallyId) .. '.json', function(r) return type(r.passes) == 'table' end)
 end

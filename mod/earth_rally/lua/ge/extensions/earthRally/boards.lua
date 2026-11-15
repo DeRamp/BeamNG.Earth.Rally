@@ -24,8 +24,8 @@
 --     (no place, no points): rallyResult names those stages in `lineMismatch` and sets `notRanked`.
 --   * A rally with no board still gets your total, over its itinerary's counted passes (or each stage once); only
 --     the ranking needs the board. Such a round scores no points in the standings, and is still listed.
---   * The overall table's `classified` is not read: a crew is ranked exactly when it has a time on every counted
---     pass, as the spec says.
+--   * The results' overall table is not read (pack.lua does not keep it): a crew is ranked exactly when it has a
+--     time on every counted pass, as the spec says.
 --   * standings.championship: JSON null cannot be told from missing once decoded, so "all crews" is written as
 --     false, "" or "all" (standingsRules gives false); missing is the default "national". Compared case folded.
 --     standingsRules is the one place the standings block is read: pack.lua writes the season file with it too.
@@ -311,8 +311,10 @@ function M.rallyResult(event, board, bestByStage, opts)
       seenMissing[c.stageId] = true
       out.missing[#out.missing + 1] = c.stageId
     end
+    -- (only against a board's km: with none there is nothing to rank against, and the map-only fallback's km is
+    -- the whole line, which would set a start-to-flying-finish length against itself)
     local s = byId[c.stageId]
-    if not seenStage[c.stageId] and M.isMismatch(M.stageLengthM(s), c.km) then
+    if not out.noBoard and not seenStage[c.stageId] and M.isMismatch(M.stageLengthM(s), c.km) then
       seenStage[c.stageId] = true
       out.lineMismatch[#out.lineMismatch + 1] = c.stageId
     end

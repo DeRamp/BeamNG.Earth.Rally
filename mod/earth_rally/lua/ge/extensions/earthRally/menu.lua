@@ -272,6 +272,17 @@ local function passesOf(e)
   return by, order, notRun
 end
 
+-- A stage's SS label where the page and its banners name it: its passes ('SS2 · SS4'), 'SS3' by map order with no
+-- itinerary, nil for a stage the itinerary never runs (say its name alone; never a made-up SS number).
+function M.ssLabel(e, stageId)
+  if type(e) ~= 'table' then return nil end
+  local by, _, notRun = passesOf(e)
+  if notRun[stageId] then return nil end
+  local l = {}
+  for _, p in ipairs(by[stageId] or {}) do l[#l + 1] = p.ss end
+  return #l > 0 and table.concat(l, ' · ') or nil
+end
+
 -- Your place on a stage: the better of your placings over its passes (the user, 2026-11-14), each from that pass's
 -- leaderboard with your best time and the map's length of the stage (boards.lua's 5% rule, start to flying finish
 -- where the map has both: boards.stageLengthM). Returns { pos, of, pass } or
@@ -410,8 +421,9 @@ end
 --   it), list[i].place = { pos, of, pass } | nil, list[i].placeWhy = 'noTime' | 'lineMismatch' | nil
 --   results (with a board) = { complete, totalS, you = { pos, of, gapS }, winnerS, stages, driven,
 --     chips = { { name, done } }, rows = top 10 and you { pos, name, car, class, timeS, gapS, you, skipped },
---     crews = how many crews have a time on every stage, mismatch = { stage names } (not ranked: these stages on
---     the map are not the stages as run) | nil, points = yours for this round in its season }
+--     crews = how many crews have a time on every stage, notRanked = true | nil (some stage on the map is more
+--     than 5% off the stage as run: no place, no points), mismatch = { those stages' names } | nil,
+--     points = yours for this round in its season }
 --   rules = { { label, value, inGame }... } | nil
 function M.addRallyFiles(out, e)
   if not e then return out end
@@ -461,7 +473,7 @@ function M.addRallyFiles(out, e)
     out.results = { complete = res.complete, totalS = res.totalS,
       you = res.you and { pos = res.you.pos, of = res.you.of, gapS = res.you.gapS } or nil,
       winnerS = winner, stages = #chips, driven = driven, chips = chips, crews = crews,
-      mismatch = res.notRanked and mismatch or nil,
+      notRanked = res.notRanked, mismatch = res.notRanked and mismatch or nil,
       rows = boards.topRows(res.ranked, M.RESULTS_TOP),
       points = (season and res.complete) and roundPoints(season, e.id) or nil }
   end
@@ -555,7 +567,7 @@ end
 -- A season's page, or nil:
 --   { id, name, championship, dates, rallies, finished (rounds with your rally result),
 --     rounds = { { id, round, name, dates, place, stages, driven, media, complete, you = { pos, of } | nil,
---       points } },
+--       notRanked = true | nil (a line mismatch: never placed), points } },
 --     standings = { rows = top 10 { pos, name, points, wins, you, perRound = { { pos, points } | { points = 0 } |
 --       { noBoard = true, points = 0 } } }, you = your row | nil, youShown (you among rows), entries,
 --       points = the scale, best = only the best N count | nil, rounds = { { round, name } } },
@@ -579,7 +591,7 @@ function M.season(seasonId)
       local r = { id = e.id, round = round, name = e.name, dates = datesOf(e.dates), place = e.place,
         stages = #(e.stages or {}), driven = driven, media = mediaOf(e), complete = (res and res.complete) == true,
         you = res and res.you and { pos = res.you.pos, of = res.you.of } or nil,
-        points = pr and pr.pos and pr.points or nil }
+        notRanked = res and res.notRanked or nil, points = pr and pr.pos and pr.points or nil }
       out.rounds[#out.rounds + 1] = r
       if r.complete then
         out.finished = out.finished + 1

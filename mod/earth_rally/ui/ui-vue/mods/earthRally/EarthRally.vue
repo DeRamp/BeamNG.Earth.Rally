@@ -78,7 +78,8 @@
           <div class="er-srow er-hdr" :style="srowCols"><span>Stage</span><span>Name</span><span class="er-r">Length</span><span class="er-st">Status</span><span></span><span class="er-r">Best</span><span v-if="rly.hasBoard" class="er-r">Place</span><span></span></div>
           <div v-for="s in arr(rly.list)" :key="s.id" class="er-srow er-click" :class="{ 'er-running': autoRow(s) }" :style="srowCols" tabindex="0" @click="openStage(rly.id, s.id)" @keydown.enter="rowEnter($event, s)">
             <!-- a stage run twice is one row: SS2 · SS4, a pass cancelled on the day struck out -->
-            <span class="er-ss"><span v-for="(p, k) in passList(s)" :key="k"><s v-if="p.cancelled">{{ p.ss }}</s><template v-else>{{ p.ss }}</template><template v-if="k < passList(s).length - 1"> · </template></span></span>
+            <span v-if="s.notRun" class="er-ss er-notrun">Not run</span>
+            <span v-else class="er-ss"><span v-for="(p, k) in passList(s)" :key="k"><s v-if="p.cancelled">{{ p.ss }}</s><template v-else>{{ p.ss }}</template><template v-if="k < passList(s).length - 1"> · </template></span></span>
             <span class="er-clip">{{ s.name }}</span><span class="er-r er-mono">{{ len(s.lengthM) }}</span>
             <span class="er-st">
               <span v-if="autoRow(s)" class="er-pill working" :style="{ '--er-done': autoPct }">{{ STATUS.working.label }} <span class="er-wn">{{ autoLeg }}</span></span>
@@ -115,7 +116,7 @@
         <!-- how an auto recce ended, one line per stage: the pill only ever says whether the stage can be driven -->
         <div v-if="arr(rly.autoLines).length" class="er-under">
           <div v-for="l in arr(rly.autoLines)" :key="l.stageId" class="er-outcome" :class="outcomeCls(l.kind)">
-            <span class="er-ssx">SS{{ l.ss }}</span>{{ l.text }}
+            <span v-if="l.ssLabel" class="er-ssx">{{ l.ssLabel }}</span>{{ l.text }}
           </div>
         </div>
         <div class="er-muted er-help">
@@ -253,7 +254,7 @@ import EarthRallyResults from "./EarthRallyResults.vue"
 import {
   state, season, rally, stage, busyMsg, action as luaAction, refreshState, takeOpenAt, loadSeason, loadRally, loadStage,
   closeMenu, previewHud,
-  arr, units, len, lenNum, riseNum, riseUnit, time, when, ord, days, STATUS, AUTO_OUTCOME, RUN_WORDS,
+  arr, units, len, lenNum, riseNum, riseUnit, time, when, ord, days, ssName, STATUS, AUTO_OUTCOME, RUN_WORDS,
 } from "./store.js"
 
 const view = ref("rallies")
@@ -352,8 +353,9 @@ const cancelledSs = computed(() => {
   }
   return ""
 })
-// a row's passes; a row from an older Lua with none: its SS number as it always was
-const passList = s => (arr(s.passes).length ? arr(s.passes) : [{ ss: `SS${s.ss}` }])
+// a row's passes (menu.lua: the itinerary's, or SS1, SS2... in map order with none). A line the itinerary never
+// runs has none and says "Not run" (s.notRun): it is never given a made-up SS number.
+const passList = s => arr(s && s.passes)
 // The columns: the SS cell widens for "SS11 · SS15", and Place comes in with real results. The seventh column
 // (Auto recce / Reset) keeps its 210px whatever else changes (see .er-srow).
 const srowCols = computed(() => {
@@ -370,13 +372,14 @@ const rallySub = computed(() => {
 })
 
 // ---- a stage's page
-// "SS2 · SS4 · OLYMPUS RALLY 2026"; "STAGE" for a stage on its own
+// "SS2 · SS4 · OLYMPUS RALLY 2026"; "NOT RUN · ..." for a line the itinerary never runs; "STAGE" for a stage on
+// its own
 const ssLine = computed(() => {
   const s = stg.value
   if (!s) return ""
   if (s.single) return "STAGE"
-  const ss = arr(s.passes).length ? arr(s.passes).map(p => p.ss).join(" · ") : `SS${s.ss}`
-  return `${ss} · ${(s.rally || "").toUpperCase()}`
+  const ss = s.notRun ? "NOT RUN" : arr(s.passes).map(p => p.ss).join(" · ")
+  return [ss, (s.rally || "").toUpperCase()].filter(Boolean).join(" · ")
 })
 const runsShown = computed(() => {
   const runs = arr(stg.value && stg.value.runs)
@@ -386,7 +389,7 @@ const runsShown = computed(() => {
 const banner = computed(() => {
   const s = st.value
   if (s.auto) {
-    const n = `Auto recce of SS${s.auto.ss} ${s.auto.stageName}`
+    const n = `Auto recce of ${ssName(s.auto)}`
     if (s.auto.phase === "going") return `${n}: going to the start, waiting for the world to load`
     if (s.auto.phase === "planning") return `${n}: checking what map data is missing`
     if (s.auto.phase === "asking") return `${n}: ${MB(s.auto.ask && s.auto.ask.bytes)} of map data to download -- your call`
@@ -403,7 +406,7 @@ const banner = computed(() => {
     const pct = Math.round((s.recce.share || 0) * 100)
     return s.recce.started ? `Recce of ${s.recce.stageName}: ${pct} % driven` : `Recce of ${s.recce.stageName}: drive to the start of the stage; recording begins there`
   }
-  if (s.run && s.run.busy) return `SS${s.run.ss || ""} ${s.run.stageName}: ${RUN_WORDS[s.run.state] || s.run.state}`
+  if (s.run && s.run.busy) return `${ssName(s.run)}: ${RUN_WORDS[s.run.state] || s.run.state}`
   if (s.run && s.run.state === "failed") return `${s.run.stageName}: stopped (${s.run.error || ""})`
   return ""
 })
@@ -613,6 +616,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
   &.er-running, &.er-running.er-click:hover, &.er-running.er-click:focus { border-left-color: var(--er-blue); }
   .er-ss { font-family: "Overpass Mono", monospace; font-weight: 700; color: var(--er-muted); white-space: nowrap; font-size: 18px;
     s { color: #6f7480; text-decoration-thickness: 2px; } }
+  .er-notrun { font-family: "Noto Sans", sans-serif; font-weight: 600; font-size: 15px; color: #6f7480; }
   .er-plc { font-family: "Overpass Mono", monospace; font-weight: 700; text-align: right;
     small { font-weight: 400; color: var(--er-dim); font-size: 14px; margin-left: 4px; } }
   .er-r { text-align: right; }

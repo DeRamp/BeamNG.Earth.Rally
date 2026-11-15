@@ -186,4 +186,40 @@ do
     'mediaUrl: the path as it is (unverified in game)')
 end
 
+------------------------------------------------------------------------------------------ not run, not ranked
+do
+  -- Delta's map line is 10 km against a 7 km pass (a mismatch); Echo matches; Fox is in the map but never run
+  files['/earthRally/events/mm.json'] = { format = 1, id = 'mm', name = 'Mismatch Rally',
+    stages = { stage('delta', 'Delta', 10), stage('echo', 'Echo', 5), stage('fox', 'Fox', 3) },
+    itinerary = { { ss = 'SS1', stage = 'delta', run = 1, km = 7 }, { ss = 'SS2', stage = 'echo', run = 1, km = 5 } },
+    media = { cover = '/earthRally/media/mm/cover.png' }, pack = { file = 'MM.zip', fingerprint = '99:00ab12cd34' },
+    boards = 'mm.json' }
+  files['/earthRally/boards/mm.json'] = { format = 1, passes = {
+    { ss = 'SS1', stage = 'delta', run = 1, km = 7, field = { crew(200, 'Ann'), crew(210, 'Bob') } },
+    { ss = 'SS2', stage = 'echo', run = 1, km = 5, field = { crew(100, 'Ann'), crew(90, 'Bob'), crew(95, 'Cy') } },
+  } }
+  files['/earthRally/results/mm__delta.json'] = { runs = { run(150) } }
+  files['/earthRally/results/mm__echo.json'] = { runs = { run(80) } }
+  events.forget()
+  events.list(true)
+  local r = menu.rally('mm')
+  local fox
+  for _, row in ipairs(r.list) do if row.id == 'fox' then fox = row end end
+  T.check(fox and fox.notRun and #fox.passes == 0 and r.list[3].id == 'fox', 'a line never run: notRun, no SS, last')
+  T.check(menu.ssLabel(menu.findEvent('mm'), 'fox') == nil and menu.ssLabel(menu.findEvent('mm'), 'echo') == 'SS2' and
+    menu.ssLabel(menu.findEvent('old'), 'o2') == 'SS2', 'ssLabel: the real SS, map order with no itinerary, nil when not run')
+  local s = menu.stage('mm', 'fox', 'start')
+  T.check(s.notRun and #s.passes == 0, 'stage page: not run')
+  local res = r.results
+  T.check(res.complete and res.totalS == 230 and res.notRanked and res.you == nil and res.points == nil and
+    res.mismatch and #res.mismatch == 1 and res.mismatch[1] == 'Delta' and res.crews == 2,
+    'results: fastest of all, but Delta is not the stage as run: not ranked, named; 2 crews with every stage')
+  for _, row in ipairs(res.rows) do T.check(not row.you, 'results: you not among the ranked rows') end
+  s = menu.stage('mm', 'delta', 'start')
+  T.check(s.board and s.board.reason == 'lineMismatch' and s.board.lineKm == 10 and s.board.km == 7,
+    'stage board: the map\'s km and the real km, for the mismatch line')
+  T.check(r.media.cover == '/earthRally/media/mm/cover.png?v=ab12cd34'
+    and menu.mediaUrl('/x.png', 'abc') == '/x.png?v=abc', 'media: cache-busted with the pack\'s fingerprint')
+end
+
 T.done('test_menu_rally_files')

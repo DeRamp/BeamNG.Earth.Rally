@@ -19,13 +19,13 @@
 <script setup>
 import { computed, onMounted, onUnmounted } from "vue"
 import { BngButton, ACCENTS } from "@/common/components/base"
-import { state, arr, len, action, openMenu, startPolling, stopPolling, RUN_WORDS } from "./store.js"
+import { state, arr, len, action, openMenu, startPolling, stopPolling, ssName, RUN_WORDS } from "./store.js"
 
 const st = computed(() => state.value || {})
 const line = computed(() => {
   const s = st.value
   if (s.recce) return `Recce of ${s.recce.stageName}: ${Math.round((s.recce.share || 0) * 100)} %`
-  if (s.run && s.run.busy) return `SS${s.run.ss || ""} ${s.run.stageName}: ${RUN_WORDS[s.run.state] || s.run.state}`
+  if (s.run && s.run.busy) return `${ssName(s.run)}: ${RUN_WORDS[s.run.state] || s.run.state}`
   return ""
 })
 
