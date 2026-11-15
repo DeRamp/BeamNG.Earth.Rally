@@ -1,0 +1,99 @@
+# Changelog
+
+Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/writing-standard.md). Downloads:
+[Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
+
+## 1.5.0-alpha: the co-driver (2026-11-14)
+
+Works with BeamNG.drive 0.40.5 · BeamNG.Earth modding API 1.6+ (1.9 for the auto recce).
+
+The pacenotes are rebuilt to call what the road does ([full call list](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/pacenotes-1.5.0.md)).
+
+### New
+
+#### Corners
+* **Hairpin**, **tight hairpin** and **square** in place of the corner's number.
+* **Tightens**, **opens**, **opens and tightens**, **tightens down**.
+* **Chicane left / right** for two quick tight corners, one call.
+* **Twisty** for a run of flicks; **long sweepers** are called ("six long").
+* **Care**, **caution**, **double caution** where a corner comes up faster than it looks.
+
+#### Crests
+* Called only where the road ahead is hidden, not wherever the grade changes. **Small** and **big crest**.
+* **Down** at the top of a downhill from flat road.
+* **Jump**, **big jump**, **dip**, **bad dip**, **up** / **down** on long hills.
+* **Into / over crest**, **tightens / opens over crest**, **keep left / right over crest**, **brake over crest**.
+
+#### Bridges, junctions, the finish
+* **Over bridge** on lines with bridges added by `tools/auto_recce.py --bridges-only`.
+* **Keep left / right** comes before the corner when the fork is inside it.
+* **Narrows** where the road gets narrower (drawn roads only so far). **Over finish** on the last note.
+* Casual co-driver voices say calls they lack another way (a chicane as two corners).
+
+### Fixed
+* A second auto recce keeps the bridges added to the line.
+* Crests, jumps and dips are no longer read off bad elevation data.
+
+### Known issues
+* Very broad hilltops are not called.
+* A stepped descent can call **down** several times close together.
+* Co-driver settings (timing, detail, voice) are not in yet.
+
+## 1.4.0-alpha: rally files (2026-11-14)
+
+Works with BeamNG.drive 0.40.5 · BeamNG.Earth modding API 1.6+ (1.9 for the auto recce).
+
+Earth Rally can hold a whole season: drop in a rally pack and get leaderboards against the real crews.
+
+### New
+* **Rally packs**: a folder or `.zip` with maps, itinerary, results, rules and pictures. Format: [`docs/rally-file.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/rally-file.md).
+* Menu is **Rallies > season > rally > stage**, with covers and logos.
+* A stage run twice is one row (*SS2 · SS4*); cancelled passes struck out; unused stages say *Not run*.
+* **Leaderboards** of real stage times: top 10, plus the crews either side of you.
+* **Results**: your rally total, ranked against the finishers.
+* **Standings**: season points from finishing order (25, 20, 16 … by default, or the pack's scale).
+* Times only placed when your line is within 5 % of the official distance.
+
+### Changed
+* The menu opens where you left it. The pause-menu tab is now one **Rally menu** button.
+* **HUD preview** moved from Settings to the developer panel.
+
+### Known issues
+* A pack imported from a `.zip` has not been tested in game yet. Folders work.
+
+## 1.3.2-alpha: the first stage goes right (2026-11-14)
+
+Works with BeamNG.drive 0.40.5 · BeamNG.Earth modding API 1.6+ (1.9 for the auto recce).
+
+### New
+* **Version checks** at startup: game, rally engine and BeamNG.Earth API, in the log and Rallies page.
+
+### Changed
+* **Quick start on the line** removed from Settings.
+
+### Fixed
+* **No-ATC stages** no longer count down on spawn: you are set 25 m before the line and drive up when ready.
+* **Rallies named "Main Route Book"** now take the file's name. Existing rallies are renamed, times kept.
+
+### Known issues
+* The menu can lose its styling after BeamNG.Earth's map page opens. `reloadUI()` in the console fixes it.
+
+## 1.3.1-alpha: one Auto recce button (2026-11-14)
+
+Works with BeamNG.drive 0.40.5 · BeamNG.Earth modding API 1.6+ (1.9 for the auto recce).
+
+### New
+* **Auto recce** downloads the roads along the stage itself, after asking (e.g. `18 MB?` **Download** / **Not now**).
+* **Reset** replaces **Auto recce** once a stage has a line. A driven line asks first.
+* Stage tiles are **Length · Corners · Gain · Loss**.
+
+### Fixed
+* A download that reports success is re-checked for holes.
+
+### Known issues
+* The download estimate can over-ask. **Not now** costs nothing.
+* Where the map has no road, the organisers' line is used and no notes are called.
+
+## Older
+
+1.3.0 and earlier: see their [GitHub releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
