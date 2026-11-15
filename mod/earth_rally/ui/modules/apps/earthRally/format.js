@@ -39,3 +39,13 @@ export function clock(t) {
   const p = n => String(n).padStart(2, "0")
   return `${p(Math.floor(s / 3600))}:${p(Math.floor(s / 60) % 60)}:${p(s % 60)}`
 }
+
+// A stage's SS label as hudFrame.lua sends it ("SS3", "SS2 · SS4", or "" for a stage its rally never runs: its name
+// alone, never a made-up number); "SS<n>" by map order when a stage carries none.
+export function ss(s) {
+  if (!s) return ""
+  if (typeof s.ssLabel === "string") return s.ssLabel
+  return s.ss ? `SS${s.ss}` : ""
+}
+// "SS3 Kuhnle", or "Kuhnle"
+export function ssName(s) { return [ss(s), s && s.name].filter(Boolean).join(" ") }

@@ -30,6 +30,7 @@ local earth = require('earthRally/earthAdapter')
 local rallyA = require('earthRally/rallyAdapter')
 local writer = require('earthRally/stageWriter')
 local events = require('earthRally/events')
+local menu = require('earthRally/menu')
 local settings = require('earthRally/settings')
 local hudFrame = require('earthRally/hudFrame')
 
@@ -47,8 +48,9 @@ M.CAR_BEHIND_LINE_M = 4
 M.Z_BELOW_POSE_M = 0.5         -- the road under the car's reference point
 M.FINISH_OFF_M = 40            -- across the finish this close to the line: finished
 M.FINISH_OFF_GAP_M = 150       -- ... this close where the line there is the organisers' (no road on the map)
-M.TIMING_RUN_OUT_M = 300       -- the timing line carried on past the recce's end (a recce may stop short of the finish)
-M.CONTROL_ON_LINE_M = 60       -- a start / finish control this close to the line is where it is on the line
+-- (shared with events.timedSpan, which measures a line start to flying finish for the menu as this times it)
+M.TIMING_RUN_OUT_M = events.TIMING_RUN_OUT_M   -- the timing line carried on past the recce's end (a recce may stop short of the finish)
+M.CONTROL_ON_LINE_M = events.CONTROL_ON_LINE_M -- a start / finish control this close to the line is where it is on the line
 M.OFF_ROUTE_M = 60
 M.RUNTIME_DIR = '/earthRally/runtime/'
 M.MAX_REBASE_M = 16000
@@ -181,7 +183,7 @@ local function stageLatLon(stage, source)
   local function along(ctl, default)
     if not ctl then return default end
     local _, _, s, off = geo.locate(line, cum, flat(ctl.lat, ctl.lon))
-    if off > 200 then return default end
+    if off > events.CONTROL_OFF_LINE_M then return default end
     return s
   end
   local total = cum[#cum]
@@ -391,15 +393,24 @@ function M.start(event, stage)
     oldRebase = earth.rebaseDistance(),
     clockBase = todNow(), clockRun = 0, realT = 0, resets = 0,
   }
-  -- its SS number (the stage's place in the rally's map) and the next stage
-  run.ssCount = #(event.stages or {})
+  -- the line it is timed on, kept with the time (events.addResult): its start and flying finish on it (a time is
+  -- placed while the stage's line has those within a few metres: events.onLine), and its key as a record
+  run.lineKey = events.lineKey(source, kind)
+  local span = events.timedSpan(source, stage)
+  run.lineStart, run.lineFinish = span and span.start, span and span.finish
+  -- its SS number (the stage's place in the rally's map), its SS label as the menu names it (menu.ssLabel: its
+  -- passes from the itinerary, 'SS3' by map order with none, nil for a stage the itinerary never runs: the HUD
+  -- says its name alone, never a made-up SS number), how many SS the rally has (the itinerary's counted passes, the
+  -- map's stages with none) and the next stage (menu.nextStage: the itinerary's running order, else the map's)
+  run.ssCount = menu.passCount(event) or #(event.stages or {})
+  run.ssLabel = menu.ssLabel(event, stage.id) or false
   for i, st in ipairs(event.stages or {}) do
-    if st == stage or st.id == stage.id then
-      run.ss = i
-      local nx = event.stages[i + 1]
-      if nx then run.nextStage = { id = nx.id, ss = i + 1, name = nx.name, lengthM = nx.lengthM } end
-      break
-    end
+    if st == stage or st.id == stage.id then run.ss = i break end
+  end
+  local nx, ni = menu.nextStage(event, stage.id)
+  if nx then
+    run.nextStage = { id = nx.id, ss = ni, ssLabel = menu.ssLabel(event, nx.id) or false, name = nx.name,
+      lengthM = nx.lengthM }
   end
   run.moveHandle = earth.onMoved(function(info) M._moved(info) end)
 
@@ -1245,6 +1256,8 @@ local function stepRunning(dtSim)
     local best = events.addResult(run.event.id, run.stage.id, { finished = true, timeS = time, stageS = run.clock,
       penaltyS = run.penalty, jumpStart = run.jumpStart == true, lateMinutes = checks.lateMinutes,
       missedAtc = run.missedAtc == true, resets = run.resets or 0, resetPenaltyS = resetPen, line = checks.line,
+      lineKey = run.lineKey, lineM = math.floor(run.finishM - run.startM + 0.5), lineStart = run.lineStart,
+      lineFinish = run.lineFinish,
       startAt = M.formatClock(run.startAt), date = os.date('!%Y-%m-%dT%H:%M:%SZ'), checks = checks })
     run.finalTime, run.best = time, best
     run.sinceFinish = 0

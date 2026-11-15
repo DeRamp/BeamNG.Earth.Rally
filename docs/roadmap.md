@@ -54,12 +54,27 @@ that said nothing when the two projects under it moved on. Release notes in docs
 | ✔ | Version checks at startup, a clear message when BeamNG or BeamNG.Earth changed (23) | built |
 | ✔ | Naming a rally from its map file (4): three of the twelve rallies here came in as "Main Route Book". Written on this roadmap as "maps that group stages in folders import properly" -- the folders were never the problem, the name was | built |
 | ✔ | "Quick start on the line" dropped from Settings (the user, 2026-11-14): it did the thing the no-ATC start was fixed to stop doing, kept as an option, and the sharing of one code path between the two is most of why that bug existed | built |
-| → | The three it did not reach: the automatic ATC **dropped**, pre-loading and the late-start penalty moved to **on the stage** (then 1.6.0, now 1.4.0) (the user, 2026-11-14) | |
+| → | The three it did not reach: the automatic ATC **dropped**, pre-loading and the late-start penalty moved to **on the stage** (then 1.6.0, now 1.5.0) (the user, 2026-11-14) | |
 
-## 1.4.0: on the stage
+## 1.4.0: rally files (released 2026-11-14)
+
+Seasons, rallies and stages in nested menus with cover pictures, real results on every stage's leaderboard, and
+season standings, from a rally pack dropped into the import folder. Built on its own branch alongside on the stage,
+and released first, so every version after it moved up one (the user, 2026-11-14). Release notes in
+docs/release-1.4.0.md; the format in docs/rally-file.md.
+
+| | Item | Size |
+|---|---|---|
+| ✔ | The rally pack: a season, rally or stage manifest with maps, itinerary, results, rules and pictures, in a folder or a zip; ids that survive a rename (the first part of 19) | built |
+| ✔ | Nested menus: Rallies > season > rally > stage, with covers; the menu opens where it was left | built |
+| ✔ | Local leaderboards against the real results (20): the top 10, and the crews either side of you; a time only placed on a line within 5 % of the official distance | built |
+| ✔ | A rally total and its place; season standings from each rally's finishing order (the first part of 28) | built |
+| ✔ | The pause menu's tab down to one **Rally menu** button; the Settings page's HUD preview button gone | built |
+
+## 1.5.0: on the stage
 
 The stage looks and feels like an event. Moved ahead of the co-driver and of making and sharing stages (the user,
-2026-11-14); it was 1.6.0.
+2026-11-14); it was 1.6.0, then 1.4.0 until the rally files took that number.
 
 | Item | Size |
 |---|---|
@@ -72,9 +87,10 @@ The stage looks and feels like an event. Moved ahead of the co-driver and of mak
 | Stage pre-loading *before the start*: the corridor loaded while you wait, a loaded % on screen, start any time (21). The on-demand half shipped in 1.3.1; this is the half that runs as you sit at the control. Moved here from 1.3.3 (the user, 2026-11-14) | M |
 | No penalty for a late start, just a new minute, as a real rally does. Also takes a permanently-zero row off the results card. Moved here from 1.3.3 (the user, 2026-11-14) | S |
 
-## 1.5.0: the co-driver
+## 1.6.0: the co-driver
 
-Pacenotes worth trusting. Was 1.4.0 until on the stage moved ahead of it (the user, 2026-11-14).
+Pacenotes worth trusting. Was 1.4.0 until on the stage moved ahead of it, then 1.5.0 until the rally files
+came in as 1.4.0 (the user, 2026-11-14).
 
 | Item | Size |
 |---|---|
@@ -82,18 +98,18 @@ Pacenotes worth trusting. Was 1.4.0 until on the stage moved ahead of it (the us
 | Co-driver settings: call timing, detail, voice (26) | M |
 | The self-test hears the co-driver (carried from 1.2): a tracker of our own through setVehicleTracker, so a stage walked by the test calls its notes | S |
 
-## 1.6.0: make and share stages
+## 1.7.0: make and share stages
 
 Players build their own stages and pass them around.
 
 | Item | Size |
 |---|---|
-| The Earth Rally file: one shareable file with stages (line, heights, controls, notes), the rally and loops; what imports make and the game loads (19) | M |
+| The Earth Rally file: one shareable file with stages (line, heights, controls, notes), the rally and loops; what imports make and the game loads (19). 1.4.0's rally pack is the reading half: this is the writing half, and lines, heights and notes in it | M |
 | Rally setup mode: recce-drive any roads to make a stage, place your own ATC, start, finish and stop (18) | M |
 | In-game editor, top-down on the map: draw or reroute stages, drag controls, edit existing stages (11) | L |
-| Local leaderboards per rally file, friends' times through shared files (20) | S |
+| Friends' times through shared files (20; local leaderboards against real results came in 1.4.0) | S |
 
-## 1.7.0: the full rally
+## 1.8.0: the full rally
 
 From a single stage to a whole event.
 
@@ -143,22 +159,25 @@ Decided against, with the reason, so they are not proposed again.
 
 - 1.3.0 first because it removes the biggest barrier: before it, every stage needed a recce driven. (The slow
   start seen on SnoDrift was to be fixed by pre-loading and an automatic ATC; the ATC has since been dropped and
-  pre-loading moved to on the stage (now 1.4.0), and 1.3.2's no-ATC start fixed the part of it that hurt.)
+  pre-loading moved to on the stage (now 1.5.0), and 1.3.2's no-ATC start fixed the part of it that hurt.)
 - 1.3.2 before the co-driver (the user, 2026-11-14): contained items, every one something a player meets in their
   first stage -- against the pacenote generator's rewrite, the largest thing left before the rally file.
 - **There is no 1.3.3** (the user, 2026-11-14). It was drafted to carry what 1.3.2 did not reach, and then
   emptied: the automatic ATC and the start-minute question were dropped (see Dropped), and pre-loading and the
-  late-start penalty moved to on the stage. So 1.4.0 is next, and the 1.3 line is finished.
-- 1.4.0 (on the stage) before the co-driver and the rally file (the user, 2026-11-14; it was 1.6.0). Course tape and
+  late-start penalty moved to on the stage. So the 1.3 line is finished.
+- 1.4.0 (rally files) released ahead of on the stage (the user, 2026-11-14): it was built alongside it on a branch
+  of its own and finished first. The menus and the leaderboards are the parts of the rally file a player sees, and
+  1.7.0's writing half builds on the same format.
+- 1.5.0 (on the stage) before the co-driver and the rally file (the user, 2026-11-14; it was 1.6.0). Course tape and
   junction signs stand on the junction data 1.3.0's auto recce already finds, so the heart of it needs nothing from
   later versions. It was first placed after the rally file because it was said to build on that too; in its new
   place, anything here that would have lived in the file (a ghost's run, most likely) has to be kept on this
-  machine per stage until 1.6.0 can carry it -- to settle when 1.4.0 is planned.
-- 1.5.0 is the pacenote overhaul on its own (split from 1.3.0, the user, 2026-11-13; it was 1.4.0): large, and best
+  machine per stage until 1.7.0 can carry it -- to settle when 1.5.0 is planned.
+- 1.6.0 is the pacenote overhaul on its own (split from 1.3.0, the user, 2026-11-13; it was 1.4.0): large, and best
   tested on the matched lines 1.3.0 gives everyone, which 1.3.1 made reachable on ground nobody has driven. The
-  height profile 1.4.0 draws for stage sketches is the same data its crests and jumps are read from.
-- 1.6.0's rally file is the base for the editor, setup mode, leaderboards, the starter pack and full rallies, so it
+  height profile 1.5.0 draws for stage sketches is the same data its crests and jumps are read from.
+- 1.7.0's rally file is the base for the editor, setup mode, leaderboards, the starter pack and full rallies, so it
   comes before them.
 - On the stage before the full rally (the user, 2026-11-13), and now before everything after 1.3 (2026-11-14).
-- 1.7.0 needs the rally file (itineraries, service areas live in it).
+- 1.8.0 needs the rally file (itineraries, service areas live in it).
 - 2.0.0 gathers what a newcomer needs, once the content and tools exist to fill a starter pack.

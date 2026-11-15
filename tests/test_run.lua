@@ -365,6 +365,24 @@ T.check(r.finalTime and r.finalTime > 100 and r.finalTime < 130, 'a time of ~2 m
 T.check(rebaseDistance == 15000, 'the rebase distance back')
 local res = events.results('test', 'hill')
 T.check(#res.runs == 1 and res.runs[1].finished, 'the time saved')
+do
+  local info = events.stageLineInfo('test', event.stages[1].id, event.stages[1])
+  local x = res.runs[1]
+  T.check(info and x.lineKey == info.key and x.line == info.kind and type(x.lineM) == 'number' and
+    math.abs(x.lineM - (r.finishM - r.startM)) <= 1,
+    'the time records the line it was driven on: its identity and its length start to flying finish as timed')
+  -- (the recce stops short of the flying finish: the runner times on to it over its run-out, and so does the menu)
+  T.check(info and math.abs(x.lineM - info.lengthM) <= 5,
+    'and the menu measures the same line, run-out to the flying finish included, to within 5 m (' ..
+    tostring(x.lineM) .. ' vs ' .. tostring(info and info.lengthM) .. ')')
+  local geo = require('earthRally/geo')
+  local function near(a, b) return a and b and geo.metres(a[1], a[2], b[1], b[2]) < 5 end
+  T.check(near(x.lineStart, info and info.start) and near(x.lineFinish, info and info.finish) and
+    near(x.lineFinish, full[2900]), 'the time records where its start and flying finish were on the line')
+  T.check(events.onLine(x, info) and events.bestPlaceable('test', event.stages[1].id, event.stages[1]) == x.timeS,
+    'and it is placed on the line it was driven on')
+  T.check(r.ssLabel == 'SS1', 'an event with no itinerary: the run carries SS1 by map order (' .. tostring(r.ssLabel) .. ')')
+end
 T.check(events.addResult('test', 'hill', { finished = true, timeS = 99 }) == 99 and #events.results('test', 'hill').runs == 2,
   'a second time kept beside the first, the best of both')
 runner.abort(true)

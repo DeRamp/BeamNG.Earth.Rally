@@ -13,7 +13,7 @@
         <div class="er-pink">{{ f.clockText }}</div>
       </div>
       <div class="er-next-what">
-        <span class="er-muted">Next</span> SS{{ stage.ss }} {{ stage.name }}
+        <span class="er-muted">Next</span> {{ fmt.ssName(stage) }}
         <span class="er-sub">· {{ fmt.len(stage.lengthM, units) }}</span>
       </div>
       <div class="er-next-to" v-if="f.control === 'atc'">
@@ -92,7 +92,7 @@
 
     <!-- 5 the flying finish, a few seconds -->
     <div v-if="show.finish && fin" class="er-finish">
-      <div class="er-finish-l">SS{{ stage.ss }} {{ stage.name }} · flying finish</div>
+      <div class="er-finish-l">{{ fmt.ssName(stage) }} · flying finish</div>
       <div class="er-finish-t">{{ fmt.time(fin.time) }}</div>
       <div v-if="fin.newBest" class="er-delta er-best">{{ fin.first ? "FIRST TIME" : fmt.delta(fin.delta) + " · NEW BEST" }}</div>
       <div v-else class="er-delta er-slower">{{ fmt.delta(fin.delta) }}</div>
