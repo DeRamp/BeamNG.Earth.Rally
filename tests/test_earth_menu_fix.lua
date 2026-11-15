@@ -21,9 +21,11 @@ T.check(fix.isPause('pause') and fix.isPause('pause.vehicle') and fix.isPause('p
   'isPause: the Escape menu and its pages')
 T.check(not fix.isPause('menu') and not fix.isPause('play') and not fix.isPause('pauseX') and not fix.isPause(nil),
   'isPause: not the main menu, driving, a lookalike, or nothing')
-T.check(not fix.isPause('pause.hudApps') and not fix.isPause('pause.hudApps.editlayout.transform')
+T.check(not fix.isPause('pause.hudApps') and not fix.isPause('pause.hudApps.editlayout')
+  and not fix.isPause('pause.hudApps.editlayout.transform') and not fix.isPause('pause.photomode.overlay.edit')
   and not fix.isPause('pause.photomode.overlay.edit.adjust') and fix.isPause('pause.photomode'),
   'isPause: not the pages that keep the UI apps on screen')
+T.check(fix.isPause('pause.hudApps.selector'), 'isPause: the app selector takes the apps away (shown: false), so it counts')
 T.check(fix.hides(ROUTE, ROUTE) and not fix.hides(ROUTE, nil) and not fix.hides('play', ROUTE), 'hides: our page too')
 
 -- BeamNG.Earth's hook first, then ours (the order extensions.hook happens to take): hidden at once
@@ -42,9 +44,16 @@ T.check(uiHidden, '... and the next frame hides it')
 said = {}
 fix.update()
 T.check(#said == 0, 'told twice only, not every frame')
--- our page, straight from the pause tab
+-- our page, from the pause tab or from driving (Ctrl+Alt+K)
 earthHook(ROUTE); fix.uiState(ROUTE, ROUTE); fix.update()
-T.check(uiHidden, 'our page: hidden')
+T.check(uiHidden, 'our page from the pause tab: hidden')
+earthHook('play'); fix.uiState('play', ROUTE); fix.update()
+earthHook(ROUTE); fix.uiState(ROUTE, ROUTE); fix.update()
+T.check(uiHidden, 'our page from driving: hidden')
+-- pause and back inside one frame: nothing told by the frame after
+said = {}
+earthHook('pause'); fix.uiState('pause', ROUTE); earthHook('play'); fix.uiState('play', ROUTE); fix.update()
+T.check(#said == 3 and said[3] == 'play' and not uiHidden, 'pause then play in one frame: nothing left told')
 -- the HUD-apps editor: BeamNG.Earth's apps are on screen there, left alone
 earthHook('pause.hudApps'); fix.uiState('pause.hudApps', ROUTE); fix.update()
 T.check(not uiHidden, 'the HUD-apps editor: not touched')

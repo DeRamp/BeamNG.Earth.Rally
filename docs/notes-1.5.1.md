@@ -19,10 +19,11 @@ Earth Rally carries a stopgap until BeamNG.Earth fixes it.
 - Its imgui drawing is meant to step aside for a menu, through `credits.hiddenByUi()`. But the state test behind it,
   `credits.lua` `setUiState`, is `toState:sub(1, 4) == 'menu'`, which never matches `pause`. Its credits.lua comments
   still call the pause menu `menu`, so this most likely came with 0.40's new router.
-- **Our rally menu has the same problem**, and that part is ours to cover. Opened with Ctrl+Alt+K from driving, the
-  apps stay mounted and our full-screen page covers them. But opened from the pause menu's Earth Rally tab, it comes
-  straight from `pause` with the apps still taken away. BeamNG.Earth cannot know our route's name, so its imgui
-  strips draw over our page.
+- **Our rally menu most likely has the same problem**, and that part is ours to cover. Our route sets no `uiApps`
+  meta, and the game's router fills in `shown = false` for that (`ui/router/constants.lua` `UiAppsDefaults`); only
+  `play` shows the apps. So the apps go on our page too, however it is opened, and BeamNG.Earth, which cannot know
+  our route's name, would draw its imgui strips over it. This has not been checked in game, and it may have been
+  happening since 1.4.0 without being noticed: the loading line only shows while the world is arriving.
 
 **The stopgap**, in `mod/.../earthRally/earthMenuFix.lua`: on `pause` / `pause.*` and on our `earthRally` route, it
 calls BeamNG.Earth's own `credits.setUiState('menu')`, the state its test was written for. It does this once in
@@ -31,10 +32,19 @@ calls BeamNG.Earth's own `credits.setUiState('menu')`, the state its test was wr
   hide behind `hiddenByUi()`, which is what its credits.lua header says should happen in the pause menu.
 - **Nothing of ours is left set.** The next state change, for example back to `play`, goes through BeamNG.Earth's
   own hook and puts its state right. That holds even if Earth Rally is reloaded or switched off mid-menu.
-- Two pause pages are left alone: `pause.hudApps*` (the HUD-apps editor) and `pause.photomode.overlay.edit*`. Their
-  meta sets `shown: true`, so BeamNG.Earth's apps are really on screen there.
-- The credits now hide over the pause menu too. That is BeamNG.Earth's own design, not Earth Rally turning
-  attribution off; they stay up while driving, including on a stage.
+- Some pause pages are left alone: `pause.hudApps`, `pause.hudApps.editlayout*` (the HUD-apps editor) and
+  `pause.photomode.overlay.edit*`. Their meta sets `shown: true`, so BeamNG.Earth's apps are really on screen there.
+  `pause.hudApps.selector` is not one of them, because it sets `shown: false`.
+- If BeamNG.Earth's hook runs after ours, the strips can show for **one frame** over the menu before the second
+  telling.
+- In 0.40, `'menu'` means the main menu. Today BeamNG.Earth's `setUiState` only sets a flag, so telling it `'menu'`
+  is harmless. If an update attaches behaviour to `'menu'`, re-check the stopgap. A rename of `setUiState` is caught:
+  `earthAdapter.internals()` probes it, and the version report says so.
+- The credits now hide over the pause menu, including photo mode, which is a `pause.*` page. That is BeamNG.Earth's
+  own design (its credits.lua header), not Earth Rally turning attribution off. They stay up while driving, including
+  on a stage. Screenshots taken in photo mode will not carry the attribution.
+- **On our rally menu, hiding the credits is Earth Rally's choice**, not BeamNG.Earth's. The page has a 72%
+  backdrop, so the world shows faintly behind it. The user is to confirm.
 - `runner.uiHidden` now counts `pause` too, with the same two pages left out. Our check had copied BeamNG.Earth's
   `menu` test. That did no harm, because the pause route takes our HUD app down anyway.
 
@@ -44,21 +54,25 @@ own hold could not be told apart from a real app. So a stage ending in the pause
 HUD-apps editor, left the strips held for the rest of the level. That would have taken BeamNG.Earth's "server not
 running" banner with it. It also missed the update notices and the credits.
 
-**How to tell BeamNG.Earth has fixed it.** Its `credits.lua` `setUiState` (or whatever replaces it) hides on
+**How to tell BeamNG.Earth has fixed it.** (When reporting it, ask for the general fix: hide whenever the route
+does not show the UI apps. Every route without `uiApps` meta defaults to hidden apps, so the radial menu and the
+options have the same problem.) Its `credits.lua` `setUiState` (or whatever replaces it) hides on
 `pause`. To check in game, switch Earth Rally off, press Escape in the BeamNG.Earth level while the world is loading,
-and the loading line should not show over the menu. If only `pause` is fixed, our page from the pause tab still
-needs the stopgap's `earthRally` case. Keep a cut-down version for that, or ask BeamNG.Earth for a way to name
+and the loading line should not show over the menu. If only `pause` is fixed, our page still needs the stopgap's
+`earthRally` case. Keep a cut-down version for that, or ask BeamNG.Earth for a way to name
 routes it should hide for.
 
 **Removing the stopgap:**
 1. Delete `mod/earth_rally/lua/ge/extensions/earthRally/earthMenuFix.lua` and `tests/test_earth_menu_fix.lua`.
 2. In `main.lua`, remove the `earthMenuFix` require, `earthMenuFix.uiState(toState, M.ROUTE)` in
    `onUiChangedState`, and `pcall(earthMenuFix.update)` after `earth.update()` in `onUpdate`.
-3. Keep the `pause` check in `runner.uiHidden`. Inline `earthMenuFix.isPause` there: `pause` / `pause.*`, but not
-   `pause.hudApps*` or `pause.photomode.overlay.edit*`.
-4. In `tests/test_run.lua`, drop the `beamngEarth/credits` stub and the "BeamNG.Earth told" part of the pause-menu
+3. Keep the `pause` check in `runner.uiHidden`. Inline `earthMenuFix.isPause` there, with its list of pages that
+   show apps.
+4. In `earthAdapter.lua`, drop the `setUiState` probe in `internals()` and the "(The one exception ...)" sentence in
+   the holdStrips comment.
+5. In `tests/test_run.lua`, drop the `beamngEarth/credits` stub and the "BeamNG.Earth told" part of the pause-menu
    check. Keep its `runner.uiHidden` part.
 
 **Not reported upstream yet.** The fix for BeamNG.Earth would be one line: `credits.lua` `setUiState` also hides on
-`pause` / `pause.*`, apart from the two pages that show apps. Nothing here sends it; the user decides whether to file
+`pause` / `pause.*`, apart from the pages that show apps. Nothing here sends it; the user decides whether to file
 it.

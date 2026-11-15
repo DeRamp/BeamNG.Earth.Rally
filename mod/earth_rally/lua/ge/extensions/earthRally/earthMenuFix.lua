@@ -16,13 +16,24 @@
 -- pause menu, and the next state change (back to 'play') puts it right by itself -- nothing of ours is left set if
 -- this goes wrong, or if Earth Rally goes away mid-menu.
 --
--- Also our own menu page ('earthRally'): opened from the pause menu's Earth Rally tab it comes straight from 'pause',
--- with the apps still taken away, and BeamNG.Earth cannot know our route's name.
+-- What to re-check when BeamNG.Earth updates: today setUiState only sets a flag, so telling it 'menu' is harmless. But
+-- in 0.40 'menu' means the MAIN menu; if BeamNG.Earth's fix ever attaches behaviour to 'menu' (session or level
+-- handling), this stopgap would set it off over the pause menu. A rename is caught (earthAdapter.internals probes
+-- credits.setUiState); a change of meaning is not. If BeamNG.Earth's hook runs after ours it undoes the first telling,
+-- and the strips can show for one frame before update() tells it again.
+--
+-- Also our own menu page ('earthRally'), however it is opened: BeamNG.Earth cannot know our route's name. Our route sets
+-- no uiApps meta, and the game's router fills in shown = false for that (ui/router/constants.lua UiAppsDefaults; only
+-- 'play' shows the apps), so the apps go here too and BeamNG.Earth's imgui strips would draw over the page. (Not
+-- checked in game. If the apps did stay, the page covers them, so hiding costs nothing but the credits line.)
 local M = {}
 
--- pause sub-pages where the game keeps the UI apps on screen (their meta says shown: true): the HUD-apps editor and
--- photo mode's overlay editor. BeamNG.Earth's apps are really there, so they are left alone.
-M.APPS_SHOWN = { 'pause.hudApps', 'pause.photomode.overlay.edit' }
+-- pause sub-pages where the game keeps the UI apps on screen (their meta says shown: true; ui-vue/src/modules/pause/
+-- routes.js): the HUD-apps editor and photo mode's overlay editor. BeamNG.Earth's apps are really there, so they are
+-- left alone. Exact names, plus the children of the last two -- not 'pause.hudApps.*': its child
+-- 'pause.hudApps.selector' (appSelector/routes.js) says shown: false.
+M.APPS_SHOWN = { 'pause.hudApps' }
+M.APPS_SHOWN_TREE = { 'pause.hudApps.editlayout', 'pause.photomode.overlay.edit' }
 
 local pending = false   -- told once in onUiChangedState; told again next frame (BeamNG.Earth's hook may run after ours)
 
@@ -30,6 +41,9 @@ local pending = false   -- told once in onUiChangedState; told again next frame 
 function M.isPause(toState)
   if type(toState) ~= 'string' or not (toState == 'pause' or toState:sub(1, 6) == 'pause.') then return false end
   for _, p in ipairs(M.APPS_SHOWN) do
+    if toState == p then return false end
+  end
+  for _, p in ipairs(M.APPS_SHOWN_TREE) do
     if toState == p or toState:sub(1, #p + 1) == p .. '.' then return false end
   end
   return true

@@ -1017,8 +1017,8 @@ function M.onUpdate(dtReal, dtSim)
     scanIn = scanIn - (dtReal or 0)
     if scanIn <= 0 then scanIn = nil M.scanImports(false) end
   end
+  pcall(earthMenuFix.update)   -- (ahead of earth.update, which is not pcall'd)
   earth.update()
-  pcall(earthMenuFix.update)
   -- In the BeamNG.Earth level: the version check again, now that the game's rally engine can be looked at without
   -- dragging it in at the main menu (versions.lua says why). Once per level, and quiet unless something changed
   -- since the last time, so this is not a per-frame cost.
