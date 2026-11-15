@@ -34,7 +34,7 @@ from the next run (a retry builds them again).
 | chicane left / right entry | two tight corners either way, 15 m apart or less, 90 m in all | one note in place of both |
 | twisty | four or more fast corners (radius 60 m+) flicking either way, 40 m apart or less | after the first of them; every corner still called |
 | care, caution, double caution | the corner's speed against the approach since the last corner (40 / 30 / 22 % of it, from 90 km/h); a care on a corner of 60 degrees or more after 120 m with none; a corner that tightens over a crest from 72 km/h, a caution at least; and, for a voice that cannot say "tightens", a care on a corner that tightens from 72 km/h | slot 1 |
-| crest, small crest, big crest; into crest; over crest | the driver's sight, not the grade (the user's second drive: the grade changes of a steep climb or descent read as crests the driver sees right over). From the driver's eye (1.1 m up), the road where the car needs to see it -- 2 s ahead at the modelled speed -- is hidden behind a rise by 0.6 m or more (the object height of a road's stopping sight distance), and is over a top: from the highest road before it, level or going down (2 % up at most; a climb easing off hides the road as it goes on up, and is no crest). Big where it is hidden from under 1 s on, small from 1.5 s on; the crest at the summit that hides it, one per 100 m (`pacenotes.blind`) | before / after / in a corner, or its own note |
+| crest, small crest, big crest; into crest; over crest | the driver's sight, not the grade (the user's second drive: the grade changes of a steep climb or descent read as crests the driver sees right over). From the driver's eye (1.1 m up), the road where the car needs to see it -- 2 s ahead at the modelled speed -- is hidden behind a rise by 0.6 m or more (the object height of a road's stopping sight distance), stays hidden 1 s further on (a road back in view just past it -- a hollow, a short dip -- the driver sees over), and is over a top: from the summit that hides it, level or going down (2 % up at most; a climb easing off hides the road as it goes on up, and is no crest), with the road to that summit falling no more than 4 % (a steep descent getting steeper is road the driver looks down onto). A very broad top is not called: over +15 % to -15 % in 300 m a car stays in sight 82 m ahead, more than the 80 m needed at 40 m/s; nor anything slower than 12 m/s. Big where it is hidden from under 1 s on, small from 1.5 s on; the crest at the summit that hides it, one per 100 m (`pacenotes.blind`) | before / after / in a corner, or its own note |
 | jump, big jump, over jump | a big crest (14 %) the modelled speed cannot follow: 1.4 g, its vertical radius measured over 10 m (big: 2.4 g and 22 %) | before / after a corner, or its own note |
 | brake over crest | a crest just before a corner with a caution (not a care; and one caution more) | before the corner |
 | dip, bad dip, through dip | the grade change upward: 14 % (18 % on its own), bad at 22 % | before / in / after a corner, or its own note |
@@ -61,7 +61,8 @@ starts or on Reload, so do one of those after the tool, or the menu and the runn
 Done for the user's stages on 2026-11-14: bridges on otr-2024-final shadow buck, oak flat and nagles revenge, and
 olympus kuhnle. Only a peak of the
 grade change is an event (a jump or a dip; a crest is the sight's, above); a dip's two rims are not crests, nor are they when the dip itself gave way to a stronger
-crest beside it. A jump has to be a big crest as well: before that gate most lifts over 1.4 g were at the speed
+crest beside it. A blind crest gives way to a dip within 60 m only when the dip is called on its own and 1.3 times
+as sharp; a jump takes the place of a blind crest within 40 m. A jump has to be a big crest as well: before that gate most lifts over 1.4 g were at the speed
 model's top speed, where a few centimetres of elevation data decide it.
 
 **Speed model** (`pacenotes.lua`): 8 m/s² sideways, 3 m/s² gained, 7 m/s² braking, 40 m/s (144 km/h) top, from a
@@ -84,18 +85,21 @@ the mod's choice, which could change).
   are followed across as the game's road tools follow them (centripetal Catmull-Rom; `--straight`: straight lines
   between their nodes, as before), their heights by a monotone cubic through the nodes -- not as the game does, which
   takes them off the terrain under each point. Corners 88 % / 97 %; hairpins 86 % / 66 %; square 50 % / 67 %; crests
-  42 % / 49 % (from the sight alone; 65 % / 44 % with the grade's crests and the sight's at 0.3 m, the build of the
+  32 % / 44 % (from the sight alone; 65 % / 44 % with the grade's crests and the sight's at 0.3 m, the build of the
   second drive; 46 % / 43 % from the grade alone); opens 40 % / 41 %; tightens 18 % / 43 %; cautions 19 % / 21 % (a care on every corner: 12 %). The drivelines have a node only every 14-40 m, so a sharp hump between two is
   not in them: the jump and dip rows are a floor, and say little (the game calls 34 jumps, we 2). Hills, which that
   spacing does show: 2 of our 30 where the game has one of its 18.
 - `python tools/pacenote_survey.py <earthRally folder>`: rates per km over the user's matched stages, a line saved
-  under two names counted once (93 stages, 1,299 km): 6.38 notes / km, 4.74 corners / km (long sweepers among
-  them), cautions on 6.9 % of corners (the game's own stages: 8.1 % of corner notes), crests 0.93 / km in all
+  under two names counted once (93 stages, 1,299 km): 6.12 notes / km, 4.74 corners / km (long sweepers among
+  them), cautions on 6.8 % of corners (the game's own stages: 8.1 % of corner notes), crests 0.83 / km in all
   (shapes included; 1.6 / km in the build of the second drive, 1 / km from the grade alone), jumps 0.03 / km (3 big ones in all), dips 0.12 / km, hairpins 0.14 / km, square 0.10 / km, up / down
-  0.11 / km. On the 28 lines the game matched (295 km): crest calls 0.84 / km (the
-  second drive's build: 1.5, "too many ... crests the driver can see right over"; the grade alone: 0.51; the game's
-  own stages: 1.38). Shadow buck: 6 in 7.5 km, from 13. The sight figures: hidden by 0.3 m, any grade, 1.45 / km; 0.6 m,
-  any grade, 0.96; 0.6 m and 2 %, 0.84; 0.8 m and 2 %, 0.63 (benchmark agreeing 48 / 50 / 49 / 49 %). `--casual`: as a casual voice hears it (5.21 notes / km, cautions on 11.5 % of corners; its crests said after the corner, not lost in
+  0.11 / km. On the 28 lines the game matched (295 km): crest calls 0.69 / km (the
+  second drive's build, d13c1f0: 1.5, "too many ... crests the driver can see right over"; the grade alone: 0.51;
+  the game's own stages: 1.38). Shadow buck: 4 in 7.5 km, from 15. The sight figures, before the review's fixes
+  (back in view, measured from the summit, the descent rule): hidden by 0.3 m, any grade, 1.42 / km; 0.6 m, any
+  grade, 0.96; 0.6 m and 2 %, 0.84; 0.8 m and 2 %, 0.63 (benchmark agreeing 48 / 50 / 49 / 49 %). The benchmark's
+  agreement barely moves with any of them -- only how many it finds, with the count -- so it cannot pick them: the
+  drive does. `--casual`: as a casual voice hears it (5.16 notes / km, cautions on 11.5 % of corners; its crests said after the corner, not lost in
   a shape it does not say). `--stage <name>`
   lists one stage's notes in order, with where they are.
 
@@ -122,9 +126,12 @@ game matched.
    1,790 m), the long sweeper at its start (a note from 825 m, "six extra long opens over crest"), and long crests.
    Check those three again there.
 7. **The second drive (2026-11-14) fixed**: too many crests, on rises the driver sees right over. Crests are now
-   the sight alone (the table above): about half as many. A crest still called where the road stays in view is
-   the thing to log (where, and climbing or going down); one missed over a real blind top too. The figures to tune:
-   hidden by 0.6 m, 2 s ahead, 2 % beyond the top.
+   the sight alone (the table above): 0.69 / km on the user's lines, from 1.5. A crest still called where the road
+   stays in view is the thing to log (where, and climbing or going down); one missed over a real blind top too --
+   the first drive asked for long crests, and a very broad top (one a car stays in sight over) is not called now:
+   check shadow buck's long crests again. Most left are
+   "small crest" (1.5-2 s of sight): if still too many, those go first (2 s down to 1.5 s: 0.30 / km). The other
+   figures: hidden by 0.6 m, 2 % beyond the top, 4 % before it going down.
 8. **Narrows**: no matched line in the backup has the `narrows` key yet (it is new), so it has been tried on drawn
    roads only.
 

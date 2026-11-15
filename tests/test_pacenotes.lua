@@ -302,6 +302,31 @@ do
   local easing = notes(build(road({ { 'straight', 1600 } }, ease(0.14, 0.06, 700, 60))))
   T.check(not has(easing, 'rest'), 'a 14 % climb easing to 6 % over 60 m, the road still in sight: no crest (' ..
     show(easing) .. ')')
+  -- (the review of it: the same climb easing off with heights a little rough is still none; a hollow the road
+  --  comes back out of in view is none; a blind top with a dip after it too weak to call is still a crest)
+  local seed = 12345
+  local function rough(f)
+    local nz = {}
+    return function(s)
+      local k = math.floor(s)
+      if not nz[k] then seed = (seed * 1103515245 + 12345) % 2147483648; nz[k] = (seed / 2147483648 - 0.5) * 0.4 end
+      return f(s) + nz[k]
+    end
+  end
+  local roughEase = notes(build(road({ { 'straight', 1600 } }, rough(ease(0.12, 0.03, 700, 30)))))
+  T.check(not has(roughEase, 'rest'), 'a 12 % climb easing to 3 %, heights rough by 0.2 m: no crest (' ..
+    show(roughEase) .. ')')
+  local hollow = notes(build(road({ { 'straight', 1600 } }, hump(800, 40, -1.5))))
+  T.check(not has(hollow, 'rest'), 'a 1.5 m hollow in a level road: no crest at its rim (' .. show(hollow) .. ')')
+  local s2, h2 = summit(0.12, 650, 100), hump(735, 40, -2.5)
+  local topDip = notes(build(road({ { 'straight', 1600 } }, function(s) return s2(s) + h2(s) end)))
+  T.check(has(topDip, 'rest') or has(topDip, 'ump'), 'a blind top with a dip after it: still called (' ..
+    show(topDip) .. ')')
+  local steep30 = notes(build(road({ { 'straight', 1600 } }, ease(-0.06, -0.14, 700, 30))))
+  T.check(not has(steep30, 'rest'), 'a descent from 6 % to 14 % over 30 m, the road below in sight: no crest (' ..
+    show(steep30) .. ')')
+  local brow = notes(build(road({ { 'straight', 1600 } }, ease(0, -0.12, 700, 30))))
+  T.check(has(brow, 'rest'), 'a level road dropping away to 12 % over 30 m: a crest (' .. show(brow) .. ')')
   local steeper = notes(build(road({ { 'straight', 1600 } }, ease(-0.04, -0.10, 700, 60))))
   T.check(not has(steeper, 'rest'), 'a descent from 4 % to 10 % over 60 m, the road still in sight: no crest (' ..
     show(steeper) .. ')')
@@ -332,6 +357,26 @@ do
     for _, e in ipairs(ev) do if e.kind == 'crest' and (e.i - 1) * 5 > 640 then rim = true end end
     T.check(#ev == 1 and not rim, 'a crest, a weaker hollow just after it: the crest alone, not the hollow\'s rim (' ..
       #ev .. ' events)')
+  end
+  -- (the review of the sight's crests: a blind top with a dip after it too weak to be called on its own, at 25 m/s:
+  --  the crest is not given way to that dip, or nothing would be said)
+  do
+    local g, s0, len = 0.12, 650, 100
+    local B = hump(735, 40, -2.5)
+    local pts, vv = {}, {}
+    for i = 1, 320 do
+      local s = (i - 1) * 5
+      local d = math.min(math.max(0, s - s0), len)
+      local z = (s < s0 and g * s or g * s0 + g * d - g / len * d * d - g * math.max(0, s - s0 - len)) + B(s)
+      pts[i] = { x = 0, y = s, z = z }
+      vv[i] = 25
+    end
+    local ev, crest, loneDip = pn.heights(pts, 5, vv), false, false
+    for _, e in ipairs(ev) do
+      if e.kind == 'crest' then crest = true end
+      if e.kind == 'dip' and e.alone then loneDip = true end
+    end
+    T.check(crest or loneDip, 'a blind top, a dip too weak to call after it: the crest kept (' .. #ev .. ' events)')
   end
   -- a sharp hump a road can have (3.5 m over 30 m, 37 % at its steepest) is a jump, not bad heights
   local kick = notes(build(road({ { 'straight', 1200 } }, hump(600, 30, 3.5))))

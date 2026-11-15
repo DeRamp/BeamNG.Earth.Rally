@@ -296,20 +296,24 @@ M.JUMP_MIN_V_MS = 15
 -- Crests are the driver's sight, not the grade (M.blind; the user's second drive, 2026-11-14: the grade changes of a
 -- steep climb or descent read as crests the driver sees right over). From an eye SIGHT_EYE_M over the road, a crest
 -- is where the road SIGHT_S seconds ahead at the modelled speed (SIGHT_MAX_M at most) is hidden behind a rise, by
--- SIGHT_TARGET_M at least; big where it is hidden from under SIGHT_BIG_S on, small from SIGHT_SMALL_S on. The crest
--- is the summit that hides it, one per BLIND_EVENT_M. (The grade change still gives jumps and dips.)
+-- SIGHT_TARGET_M at least, and stays hidden for SIGHT_BACK_S more (a road that comes back into view just past it --
+-- a hollow, a short dip -- the driver sees over); big where it is hidden from under SIGHT_BIG_S on, small from
+-- SIGHT_SMALL_S on. The crest is the summit that hides it, one per BLIND_EVENT_M. (The grade change still gives
+-- jumps and dips.)
 M.SIGHT_EYE_M = 1.1
 M.SIGHT_TARGET_M = 0.6   -- hidden by this much (the object height of a road's stopping sight distance), not the
                          -- last few centimetres of its surface
--- (the two figures, on the user's 26 lines matched in the game, crest calls / km, and against the game's own stages
+-- (the two figures, on the user's 26 lines matched in the game before the review fixes, crest calls / km, and against the game's own stages
 --  found / agreeing: 0.3 m and any grade 1.45, 59 / 48 %; 0.6 m and any grade 0.96, 46 / 50 %; 0.6 m and 2 %
---  0.84, 42 / 49 %; 0.8 m and 2 % 0.63, 36 / 49 %. The build of the second drive: 1.5 / km)
-M.SIGHT_LOOK_M = 300
+--  0.84, 42 / 49 %; 0.8 m and 2 % 0.63, 36 / 49 %. The build of the second drive: 1.5 / km. With the review's
+--  fixes -- back in view, from the summit, the descent rule -- on 28 lines: 0.69, 32 / 44 %)
 M.SIGHT_S = 2.0
 M.SIGHT_BIG_S = 1.0
-M.SIGHT_ON_GRADE = 0.02  -- over the top: the road from it to where it is hidden climbs no more than this
+M.SIGHT_ON_GRADE = 0.02  -- over the top: the road from the summit that hides it to there climbs no more than this
+M.SIGHT_BACK_S = 1.0     -- ... and stays hidden this much further on
+M.SIGHT_DOWN_GRADE = 0.04 -- no crest where the road to the summit already falls more than this
 M.SIGHT_SMALL_S = 1.5    -- a sight this long or more (but under SIGHT_S): a small crest, only just blind
-M.SIGHT_MAX_M = 150
+M.SIGHT_MAX_M = 150      -- (binds only over 75 m/s: the speed model's top is 40)
 M.SIGHT_MIN_V_MS = 12    -- slower than this, a hidden road ahead is no surprise
 M.BLIND_EVENT_M = 100    -- one blind crest per this far
 M.BLIND_JOIN_M = 20      -- points that hide the road this close together are one crest (it moves over a long top)
@@ -341,32 +345,40 @@ end
 -- are a road's (heights' BAD_GRADE test); nil: all are.
 function M.blind(z, step, v, clean)
   local n = #z
-  local look = max(1, floor(M.SIGHT_LOOK_M / step))
   local hits = {}
   for i = 1, n - 1 do
     local vi = v[i] or 0
     if vi >= M.SIGHT_MIN_V_MS then
       local need = min(M.SIGHT_MAX_M, vi * M.SIGHT_S)
-      local jn = min(n, i + min(look, floor(need / step)))
+      local jn = min(n, i + floor(need / step))
       if (jn - i) * step >= need - step then
         -- (from the eye: the road at j is seen when it, SIGHT_TARGET_M over it, is over the highest of the road
         --  between; the sight is from the last one seen on, where the road stays hidden up to the need)
         local eye = z[i] + M.SIGHT_EYE_M
-        local maxS, arg, seen, top, topJ = -huge, nil, i, -huge, i
+        local maxS, arg, seen = -huge, nil, i
         for j = i + 1, jn do
           local d = (j - i) * step
           if not arg or (z[j] + M.SIGHT_TARGET_M - eye) / d >= maxS then seen = j end
           local s = (z[j] - eye) / d
           if s > maxS then maxS, arg = s, j end
-          if j < jn and z[j] > top then top, topJ = z[j], j end
         end
         -- blind: the road where the car needs to see it is hidden (the driver sees right over a rise that
-        -- leaves it in view, however much the grade changes), and it is over a top: from the highest road before
-        -- it, level or going down (SIGHT_ON_GRADE at most). A steep climb easing off hides the road beyond as it
-        -- goes on up, and is no crest
-        -- (a road hidden is lower than the line to the highest point before it, so that point is still the one
-        --  seen highest: arg, the summit that hides it)
-        if seen < jn and arg and z[jn] - top < M.SIGHT_ON_GRADE * (jn - topJ) * step then
+        -- leaves it in view, however much the grade changes), and it is over a top: from the summit that hides
+        -- it, level or going down (SIGHT_ON_GRADE at most -- a steep climb easing off hides the road beyond as it
+        -- goes on up, and is no crest; measured from the summit, not the sample before, so a few centimetres of
+        -- heights do not decide it). (A road hidden is lower than the line to the highest point before it, so that
+        -- point is still the one seen highest: arg, the summit that hides it.)
+        local blind = seen < jn and arg and z[jn] - z[arg] < M.SIGHT_ON_GRADE * (jn - arg) * step
+        -- ... and the same going down: on a descent already steeper than SIGHT_DOWN_GRADE to the summit, the road
+        -- beyond it getting steeper still is one the driver looks down onto, and no crest
+        if blind and z[arg] - z[i] < -M.SIGHT_DOWN_GRADE * (arg - i) * step then blind = false end
+        -- ... and it stays hidden a while on: a road back in view just past it is one the driver sees over
+        if blind then
+          for j = jn + 1, min(n, jn + floor(vi * M.SIGHT_BACK_S / step)) do
+            if (z[j] + M.SIGHT_TARGET_M - eye) / ((j - i) * step) >= maxS then blind = false break end
+          end
+        end
+        if blind then
           local d = (seen + 1 - i) * step
           local t = d / vi
           if not hits[arg] or t < hits[arg].t then hits[arg] = { t = t, sight = d } end
@@ -495,17 +507,19 @@ function M.heights(pts, step, v)
     end
   end
   -- the crests, from the sightline: the road where the car needs to see it hidden behind a rise
-  -- (not the rim of a hollow, which hides the hollow's bottom: that is a dip, called as one or given way to a
-  --  stronger crest -- any hollow's peak within OPPOSITE_M, taken or not; nor a jump's summit, called as the jump)
-  local eb = max(1, floor(M.BLIND_EVENT_M / step + 0.5))
+  -- (not the rim of a dip called on its own within OPPOSITE_M, RIM_RATIO times as sharp as the crest at its
+  --  sharpest near the summit: the dip's call says it -- a dip not called, the crest is; a hollow the road comes
+  --  back out of in view is no crest at all, M.blind. Nor a jump's summit, within EVENT_M: called as the jump)
+  local ej = max(1, floor(M.BLIND_JOIN_M / step + 0.5))
   for _, sc in ipairs(M.blind(z, step, v, clean)) do
-    local near = false
+    local near, sharp = false, 0
+    for j = max(1, sc.i - ej), min(n, sc.i + ej) do if dg[j] < sharp then sharp = dg[j] end end
     for _, ev in ipairs(events) do
-      if ev.kind == 'jump' and abs(ev.i - sc.i) <= eb then near = true break end
-    end
-    for _, ci in ipairs(cands) do
-      if near then break end
-      if dg[ci] > 0 and abs(ci - sc.i) <= eo and dg[ci] >= -min(0, dg[sc.i]) * M.RIM_RATIO then near = true end
+      if ev.kind == 'jump' and abs(ev.i - sc.i) <= e then near = true break end
+      if ev.kind == 'dip' and ev.alone and abs(ev.i - sc.i) <= eo and ev.dg >= -sharp * M.RIM_RATIO then
+        near = true
+        break
+      end
     end
     if not near then
       events[#events + 1] = { i = sc.i, kind = 'crest', size = sc.size, alone = true, dg = dg[sc.i], sight = sc.sight }

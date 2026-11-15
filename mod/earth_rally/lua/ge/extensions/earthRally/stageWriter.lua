@@ -346,8 +346,8 @@ function M.build(line, opts)
         f.pre = big and 'bigCrest' or (ev.size == 'small' and 'smallCrest' or 'crest')
         f.within = 'overCrest'
         f.post = 'intoCrest'
-        -- (a small one on its own is a blind crest only just blind: a grade-change crest that small is never alone)
-        f.alone = ev.alone and f.pre or nil
+        -- (every crest is the driver's sight, and called on its own as well as on a corner)
+        f.alone = f.pre
       else
         f.prio = M.PRIORITY.dip
         f.pre = big and 'badDip' or 'dip'
