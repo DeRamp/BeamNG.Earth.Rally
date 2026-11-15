@@ -32,8 +32,15 @@ Earth Rally alpha on BeamNG.drive 0.40.5. Stages from the ARA 2026 season and OT
 
 ## Real places
 
-![Weaver Bend, Tennessee](https://raw.githubusercontent.com/wiki/DeRamp/BeamNG.Earth.Rally/images/beauty-forest-front.jpg)
-![Weaver Bend, Tennessee](https://raw.githubusercontent.com/wiki/DeRamp/BeamNG.Earth.Rally/images/beauty-forest-rear.jpg)
+![Weaver Bend, Tennessee](https://raw.githubusercontent.com/wiki/DeRamp/BeamNG.Earth.Rally/images/beauty-weaver-bend.jpg)
+![Cathedral, Colorado, at sunrise](https://raw.githubusercontent.com/wiki/DeRamp/BeamNG.Earth.Rally/images/beauty-cathedral-sunrise.jpg)
+![Dalles Mountain, Washington](https://raw.githubusercontent.com/wiki/DeRamp/BeamNG.Earth.Rally/images/beauty-dalles-mountain.jpg)
+![Low Gap, Tennessee](https://raw.githubusercontent.com/wiki/DeRamp/BeamNG.Earth.Rally/images/beauty-low-gap.jpg)
+![Sno*Drift, Michigan](https://raw.githubusercontent.com/wiki/DeRamp/BeamNG.Earth.Rally/images/beauty-snodrift-golden.jpg)
+![Wildcat, Olympus, Washington](https://raw.githubusercontent.com/wiki/DeRamp/BeamNG.Earth.Rally/images/beauty-olympus-mist.jpg)
+![Wildcat from above](https://raw.githubusercontent.com/wiki/DeRamp/BeamNG.Earth.Rally/images/beauty-olympus-above.jpg)
+![100 Acre Wood, Missouri, in the rain](https://raw.githubusercontent.com/wiki/DeRamp/BeamNG.Earth.Rally/images/beauty-100-acre-wood-rain.jpg)
+![Mt. Marquette, Michigan, by night](https://raw.githubusercontent.com/wiki/DeRamp/BeamNG.Earth.Rally/images/beauty-marquette-night.jpg)
 ![Maryhill, Washington](https://raw.githubusercontent.com/wiki/DeRamp/BeamNG.Earth.Rally/images/beauty-maryhill-turbines.jpg)
 ![Maryhill, Washington](https://raw.githubusercontent.com/wiki/DeRamp/BeamNG.Earth.Rally/images/beauty-maryhill-front.jpg)
 ![Maryhill Loops from above](https://raw.githubusercontent.com/wiki/DeRamp/BeamNG.Earth.Rally/images/aerial-maryhill-loops.jpg)
