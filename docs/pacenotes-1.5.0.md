@@ -27,7 +27,7 @@ from the next run (a retry builds them again).
 |---|---|---|
 | hairpin, tight hairpin | 135 degrees or more, tightest radius 20 / 11 m or less (the game's own hairpin test) | in place of the number |
 | square | 70 to 115 degrees, radius 18 m or less, 45 m or shorter | in place of the number |
-| a long sweeper (as any corner: "six long") | a bend too open for a corner (wider than 200 m radius), tighter than 1,000 m, one way for 100 m or more and 30 degrees or more in all, where no corner was found (`pacenotes.sweepers`) | a note of its own |
+| a long sweeper (as any corner: "six long") | a bend no corner was found on, curving one way tighter than 1,000 m radius (smoothed over 40 m) for 100 m or more and 30 degrees or more in all (`pacenotes.sweepers`). In practice it fills in the long bends just too open for the corner finder: their tightest is mostly 160-300 m (63 of 94 in the backup under 200 m, one over 300 m). The open tail of a very wide bend (radius over 1,000 m) has no call, and a bend that runs into a found corner, or has a small one inside it, is left to that corner (45 bends of 200 m and 30 degrees or more in the backup are called only by a smaller corner in them: one to look at after the drive) | a note of its own |
 | tightens, opens, opens and tightens | the curvature over the corner's core, one part 1.6 times tighter (2 for the middle) | after the corner |
 | over crest, tightens over crest, opens over crest | a crest inside the corner | the corner's shape |
 | tightens down | a tightening corner 6 % downhill on average | the corner's shape |
@@ -55,7 +55,9 @@ drops 6 m in 4 m, 150 %) -- are not read: no crest, jump or dip within 20 m of o
 its far end: the line's heights there are the valley under the deck, which read as "big jump, bad dip". A stage
 matched in the game has no bridges until they are added: its recce cannot see them (the road graph has no bridge
 flag). `tools/auto_recce.py --event <id> --bridges-only` adds BeamNG.Earth's own bridges to the lines already matched
-and changes nothing else (the file as it was kept once as `<file>.bak`); a later auto recce in the game keeps them.
+and changes nothing else (the file as it was kept once as `<file>.bak`); a later auto recce in the game keeps them,
+but a Reset removes them with the line: run `--bridges-only` again after one. The game reads the file when it
+starts or on Reload, so do one of those after the tool, or the menu and the runner go on without them.
 Done for the user's stages on 2026-11-14: bridges on otr-2024-final shadow buck, oak flat and nagles revenge, and
 olympus kuhnle. Only a peak of the
 grade change is an event; a dip's two rims are not crests, nor are they when the dip itself gave way to a stronger
@@ -82,14 +84,18 @@ the mod's choice, which could change).
   are followed across as the game's road tools follow them (centripetal Catmull-Rom; `--straight`: straight lines
   between their nodes, as before), their heights by a monotone cubic through the nodes -- not as the game does, which
   takes them off the terrain under each point. Corners 88 % / 97 %; hairpins 86 % / 66 %; square 50 % / 67 %; crests
-  62 % / 44 % (47 % / 44 % before the blind crests); opens 40 % / 41 %; tightens 18 % / 43 %; cautions 19 % / 21 % (a care on every corner: 12 %). The drivelines have a node only every 14-40 m, so a sharp hump between two is
+  65 % / 44 % (46 % / 43 % before the blind crests); opens 40 % / 41 %; tightens 18 % / 43 %; cautions 19 % / 21 % (a care on every corner: 12 %). The drivelines have a node only every 14-40 m, so a sharp hump between two is
   not in them: the jump and dip rows are a floor, and say little (the game calls 34 jumps, we 2). Hills, which that
-  spacing does show, agree 2 of 29.
+  spacing does show: 2 of our 30 where the game has one of its 18.
 - `python tools/pacenote_survey.py <earthRally folder>`: rates per km over the user's matched stages, a line saved
-  under two names counted once (93 stages, 1,299 km): 6.25 notes / km, 4.74 corners / km (long sweepers among them), cautions on 7.4 % of
-  corners (the game's own stages: 8.1 % of corner notes), crests about 1.5 / km in all (shapes included; 1 / km before the blind crests), jumps 0.03 / km
-  (3 big ones in all), dips 0.12 / km, hairpins 0.14 / km, square 0.10 / km, up / down 0.11 / km. `--casual`: as a
-  casual voice hears it (5.31 notes / km, cautions on 11.6 % of corners; its crests said after the corner, not lost in
+  under two names counted once (93 stages, 1,299 km): 6.38 notes / km, 4.74 corners / km (long sweepers among
+  them), cautions on 7.3 % of corners (the game's own stages: 8.1 % of corner notes), crests about 1.6 / km in all
+  (shapes included; 1 / km before the blind crests; a blind crest only just blind, 1.5-2 s of sight, is a "small
+  crest"), jumps 0.03 / km (3 big ones in all), dips 0.12 / km, hairpins 0.14 / km, square 0.10 / km, up / down
+  0.11 / km. On the 26 lines the game matched (281 km) the blind crests change more: crest calls 0.51 / km before,
+  about 1.5 / km with them (the game's own stages: 1.38 / km), mostly on notes of their own ("crest", "small crest"
+  or "big crest" 240 calls, 128 of them small) -- a stepped climb gives one every 150-200 m (shadow buck
+  2,995-3,555 m). `--casual`: as a casual voice hears it (5.44 notes / km, cautions on 11.5 % of corners; its crests said after the corner, not lost in
   a shape it does not say). `--stage <name>`
   lists one stage's notes in order, with where they are.
 
@@ -100,7 +106,8 @@ radius; hence the care after a straight (the third review, 2026-11-14): 10 % / 1
 At 45 degrees / 80 m it found more (26 %) but put a care on one corner in three of 45 degrees or more, four of five
 where the game has none; 60 / 120 m keeps the agreement and the game's rate. Fitted on 7 of the stages and scored on
 the other 8 it still helps, but which thresholds win changes from split to split. "Brake over crest" now needs a
-caution, not a care, and comes out at none in the 1,299 km: a call to listen for, not one to expect.
+caution, not a care: none in the 1,299 km of the backup (2 as a casual voice hears it), 1 on the lines the game
+matched (nagles revenge 5,465 m, a hairpin: a caution 3 with the blind crests, a caution 2 without).
 
 ## To check in game
 
@@ -112,7 +119,10 @@ caution, not a care, and comes out at none in the 1,299 km: a call to listen for
 4. **Chicane**: whether one call in place of the two corners is clear enough.
 5. **A casual voice** (Options, rally co-driver): no note goes by in silence, and the crests in corners are said.
 6. **The user's first drive (2026-11-14) fixed**: the bridge near the start of shadow buck ("over bridge" at
-   1,790 m), the long sweeper at its start (a note from 825 m), and long crests. Check those three again there.
+   1,790 m), the long sweeper at its start (a note from 825 m, "six extra long opens over crest"), and long crests.
+   Check those three again there. Expect many more crest notes than before, most of them "small crest", in runs on
+   a stepped climb (shadow buck 2,995-3,555 m): too many, or on a road that is not blind, is the thing to log; the
+   sight needed (2 s) is the one figure to tune. And the "brake over crest" hairpin: nagles revenge 5,465 m.
 7. **Narrows**: no matched line in the backup has the `narrows` key yet (it is new), so it has been tried on drawn
    roads only.
 

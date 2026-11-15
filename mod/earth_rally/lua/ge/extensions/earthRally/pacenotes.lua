@@ -305,9 +305,11 @@ M.SIGHT_TARGET_M = 0.3
 M.SIGHT_LOOK_M = 300
 M.SIGHT_S = 2.0
 M.SIGHT_BIG_S = 1.0
+M.SIGHT_SMALL_S = 1.5    -- a sight this long or more (but under SIGHT_S): a small crest, only just blind
 M.SIGHT_MAX_M = 150
 M.SIGHT_MIN_V_MS = 12    -- slower than this, a hidden road ahead is no surprise
-M.BLIND_EVENT_M = 100    -- one blind crest per this far (the point that hides the road moves over a long top)
+M.BLIND_EVENT_M = 100    -- one blind crest per this far
+M.BLIND_JOIN_M = 20      -- points that hide the road this close together are one crest (it moves over a long top)
 M.HILL_GRADE = 0.08      -- "up" / "down": at least this steep ...
 M.HILL_M = 100           -- ... for at least this far
 M.G = 9.81
@@ -331,7 +333,7 @@ local function heightsOf(pts)
   return sm, zs
 end
 
--- The blind crests over heights z (smoothed, every `step` m) at speeds v: { { i (the summit), size = 'big' | nil,
+-- The blind crests over heights z (smoothed, every `step` m) at speeds v: { { i (the summit), size = 'big' | 'small' | nil,
 -- sight (m: the shortest sight it leaves) }... }, worst first and one per BLIND_EVENT_M. clean(i): the heights round i
 -- are a road's (heights' BAD_GRADE test); nil: all are.
 function M.blind(z, step, v, clean)
@@ -358,9 +360,25 @@ function M.blind(z, step, v, clean)
       end
     end
   end
-  local list = {}
-  for i, h in pairs(hits) do
-    if not clean or clean(i) then list[#list + 1] = { i = i, t = h.t, sight = h.sight } end
+  -- (the point that hides the road moves along a long top as the car comes up it: the points next to each other
+  --  are one crest, called once, at its highest, as blind as the worst of them)
+  local at = {}
+  for i in pairs(hits) do at[#at + 1] = i end
+  table.sort(at)
+  local gap = max(1, floor(M.BLIND_JOIN_M / step + 0.5))
+  local list, k = {}, 1
+  while k <= #at do
+    local top, best, last = at[k], hits[at[k]], at[k]
+    local m = k + 1
+    while m <= #at and at[m] - last <= gap do
+      local h = hits[at[m]]
+      if h.t < best.t then best = h end
+      last = at[m]
+      m = m + 1
+    end
+    for j = at[k], last do if z[j] > z[top] then top = j end end
+    if not clean or clean(top) then list[#list + 1] = { i = top, t = best.t, sight = best.sight } end
+    k = m
   end
   table.sort(list, function(a, b)
     if a.t ~= b.t then return a.t < b.t end
@@ -371,7 +389,10 @@ function M.blind(z, step, v, clean)
   for _, h in ipairs(list) do
     local ok = true
     for _, o in ipairs(out) do if abs(o.i - h.i) <= e then ok = false break end end
-    if ok then out[#out + 1] = { i = h.i, size = h.t < M.SIGHT_BIG_S and 'big' or nil, sight = h.sight } end
+    if ok then
+      local size = h.t < M.SIGHT_BIG_S and 'big' or (h.t >= M.SIGHT_SMALL_S and 'small' or nil)
+      out[#out + 1] = { i = h.i, size = size, sight = h.sight }
+    end
   end
   return out
 end
@@ -465,11 +486,21 @@ function M.heights(pts, step, v)
   -- long crest, a grade easing off at the top of a climb, that the grade change over 20 m is too short to see)
   -- (not the rim of a hollow, which hides the hollow's bottom: that is a dip, called as one or given way to a
   --  stronger crest -- any hollow's peak within OPPOSITE_M, taken or not)
+  -- (a crest the grade change found close by is that crest: one too weak to be called on its own is, now that it is
+  --  blind, and as big as the blind one says)
   local eb = max(1, floor(M.BLIND_EVENT_M / step + 0.5))
+  local RANK = { small = 1, big = 3 }
   for _, sc in ipairs(M.blind(z, step, v, clean)) do
     local near = false
     for _, ev in ipairs(events) do
-      if ev.kind ~= 'dip' and abs(ev.i - sc.i) <= eb then near = true break end
+      if ev.kind ~= 'dip' and abs(ev.i - sc.i) <= eb then
+        near = true
+        if ev.kind == 'crest' and not ev.alone then
+          ev.alone, ev.sight = true, sc.sight
+          if (RANK[sc.size] or 2) > (RANK[ev.size] or 2) then ev.size = sc.size end
+        end
+        break
+      end
     end
     for _, ci in ipairs(cands) do
       if near then break end

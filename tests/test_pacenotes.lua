@@ -275,6 +275,27 @@ do
     show(sw) .. ')')
   local wobble = build(road({ { 'straight', 400 }, { 'arc', 900, 10 }, { 'straight', 400 } }))
   T.check(wobble.corners == 0, 'a 10 degree bend at 900 m: no corner (' .. show(notes(wobble)) .. ')')
+  -- (the second review of it: one call for one long top; a crest too weak for a call of its own is called once it
+  --  is blind; a sweeper is not the corner before for the next one's caution)
+  local function summit(g, s0, len)
+    return function(s)
+      if s < s0 then return g * s end
+      local d = math.min(s - s0, len)
+      local z = g * s0 + g * d - g / len * d * d
+      return z - g * math.max(0, s - s0 - len)
+    end
+  end
+  local top = notes(build(road({ { 'straight', 1600 } }, summit(0.15, 650, 300))))
+  local nTop = 0
+  for _, n in ipairs(top) do for _ in n:gmatch('rest') do nTop = nTop + 1 end end
+  T.check(nTop == 1, '+15 % to -15 % over a 300 m top: one crest (' .. show(top) .. ')')
+  local s1, h1 = summit(0.10, 700, 200), hump(800, 40, 0.5)
+  local weak = notes(build(road({ { 'straight', 2000 } }, function(s) return s1(s) + h1(s) end)))
+  T.check(has(weak, 'rest'), 'a blind top with a small bump on it: a crest (' .. show(weak) .. ')')
+  local afterSw = notes(build(road({ { 'straight', 600 }, { 'arc', 400, -40 }, { 'straight', 60 }, { 'arc', 15, 90 },
+                                    { 'straight', 400 } })))
+  T.check(has(afterSw, '^1:caution2,4:corner/square'), 'a square after a sweeper: its caution as after a straight (' ..
+    show(afterSw) .. ')')
   -- a casual voice says no corner shape: a crest inside a corner is "over crest" after it, not a silent shape
   local casualSet = { finish = true, crest = true, overJump = true, overCrest = true, intoCrest = true,
                       bigCrest = true, smallCrest = true, brakeOverCrest = true, keepLeftOverCrest = true,

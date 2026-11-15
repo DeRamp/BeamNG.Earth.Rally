@@ -107,7 +107,9 @@ function M.saveMatched(eventId, stageId, matched)
   local path = M.MATCHED_DIR .. key(eventId, stageId)
   -- (the bridges added to the line matched before -- tools/auto_recce.py --bridges-only, from BeamNG.Earth's level
   --  ranges -- are kept when the game's recce, which cannot see bridges, matches it again: as lat / lon they hold
-  --  the new line too)
+  --  the new line too). Read from disk, not the copy kept here: the tool may have added them after the game read
+  --  the file. (A Reset removes the file, and its bridges with it: --bridges-only adds them again.)
+  files[path] = nil
   local okOld, old = pcall(M.matched, eventId, stageId)
   if type(matched) == 'table' and type(matched.bridges) == 'table' and #matched.bridges == 0 and okOld and
      type(old) == 'table' and type(old.bridges) == 'table' and #old.bridges > 0 then

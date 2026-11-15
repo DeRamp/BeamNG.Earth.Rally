@@ -245,8 +245,13 @@ function M.build(line, opts)
       end
       item.shape = saidShape(shape)
       e.item = item
-      -- (the caution reads the corner as it is, said in its shape or not)
-      e.caution = pacenotes.caution(c, v, step, corners[ci - 1] and corners[ci - 1].i1,
+      -- (the caution reads the corner as it is, said in its shape or not; the straight before it runs back to the
+      --  last corner found, not to a long sweeper, which the car takes at speed -- and a sweeper has none of its own)
+      local prev = nil
+      for pj = ci - 1, 1, -1 do
+        if not corners[pj].sweeper then prev = corners[pj] break end
+      end
+      e.caution = (not c.sweeper) and pacenotes.caution(c, v, step, prev and prev.i1,
                                     over == 'tightensOverCrest' and over or shape,
                                     (shape == 'tightens' or shape == 'tightensDown') and not item.shape)
       if c.twisty and said('twisty') then e.post[1] = { type = 'twisty', i = c.i1, prio = M.PRIORITY.twisty } end
@@ -341,7 +346,8 @@ function M.build(line, opts)
         f.pre = big and 'bigCrest' or (ev.size == 'small' and 'smallCrest' or 'crest')
         f.within = 'overCrest'
         f.post = 'intoCrest'
-        f.alone = ev.alone and (big and 'bigCrest' or 'crest') or nil
+        -- (a small one on its own is a blind crest only just blind: a grade-change crest that small is never alone)
+        f.alone = ev.alone and f.pre or nil
       else
         f.prio = M.PRIORITY.dip
         f.pre = big and 'badDip' or 'dip'
