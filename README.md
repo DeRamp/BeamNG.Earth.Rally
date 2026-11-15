@@ -4,7 +4,7 @@ Drive real rallies on the real roads. Drop in a rally's map — the one its orga
 turns it into timed stages on [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth), with time controls, a
 start tree, penalties, and BeamNG.drive's own co-driver calling pacenotes worked out from the road itself.
 
-**Status: alpha (1.3.2).** It works and it is being played, but things move.
+**Status: alpha (1.4.0).** It works and it is being played, but things move.
 
 ## What you need
 
@@ -28,8 +28,8 @@ Download `earth_rally-<version>.zip` from [Releases](https://github.com/DeRamp/B
 it — still zipped — in `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\mods\`. Updating? Delete the old zip first; two
 copies will both load.
 
-In game: **Freeroam > BeamNG.Earth**, then **Ctrl + Alt + K** for the Earth Rally menu (or the pause menu's **Earth
-Rally** tab).
+In game: **Freeroam > BeamNG.Earth**, then **Ctrl + Alt + K** for the Earth Rally menu (or **Rally menu** on the
+pause menu's **Earth Rally** tab). The menu opens where you left it.
 
 ## Getting a stage to drive
 
@@ -49,6 +49,25 @@ Rally** tab).
 
 Where the map genuinely has no road, the organisers' line is used, no notes are called there, and the stage says a
 recce would be better.
+
+## Seasons, rallies and leaderboards
+
+The menu goes **Rallies > a season > a rally > a stage**. A single map you drop in is a rally of its own; a **rally
+pack** can carry a whole season. A pack is a folder (or a `.zip` of one) in the import folder, with a `season.json`,
+`rally.json` or `stage.json` at its top, and it can bring along:
+
+* **Cover pictures and logos** for the menu.
+* **The itinerary**: which stages run when, so a stage run twice shows as one row, *SS2 · SS4*.
+* **Real results.** Every stage gets a **leaderboard** of the real crews' times, and you are placed among them:
+  the top 10, and below that the crew just ahead of you, you, and the crew just behind. A rally's **Results** tab
+  adds your best on each stage up into a rally total and ranks it against the crews who finished.
+* **Rules**: penalties for a false start, and for arriving late or early at a control.
+* **Season standings**, worked out from each rally's finishing order (25, 20, 16, 13, 11 … points by default).
+
+Times only count on a leaderboard when your line is the real stage. A line more than 5 % off the official
+distance, start to flying finish, still keeps your times under **Your runs**, but they are not placed. The format
+is written down in [`docs/rally-file.md`](docs/rally-file.md), and everything in it is optional, so a pack with
+only maps in it works too.
 
 ## A stage, start to finish
 
@@ -75,7 +94,7 @@ co-driver. With an auto recce, junctions are called too — *at junction*, *past
 
 | what | keyboard | controller |
 |---|---|---|
-| **Open / close the menu** | **Ctrl + Alt + K** (Esc closes) | bind one, or use the pause menu's tab |
+| **Open / close the menu** | **Ctrl + Alt + K** (Esc closes) | bind one, or the pause menu's **Rally menu** |
 | Skip the wait on the start line | **Shift + E** (Interact) | modifier + **Y** |
 | Reset the car (+10 s on a stage) | **R** / **Insert** | the game's own |
 | **Back on the road** where you got to, facing on (+10 s) | **Backspace** | bind one |
@@ -88,14 +107,14 @@ clock's close-up shows.
 
 ## The menu will not open
 
-1. Are you in the BeamNG.Earth level? Try the pause menu's **Earth Rally** tab.
+1. Are you in the BeamNG.Earth level? Try **Rally menu** on the pause menu's **Earth Rally** tab.
 2. Press **`~`** and type `earthRally_main.toggleMenu()`.
    * **It opens** — the mod is fine, the key is not reaching the game. On some layouts Ctrl + Alt is AltGr, and some
      overlays take Ctrl + Alt + K. Bind another key.
    * **`attempt to index global 'earthRally_main'`** — the mod is not loaded. Main menu > **Mods** and switch Earth
      Rally on. Not listed? The zip must be directly in `…\current\mods\`, still zipped, one copy only. BeamMP
      switches local mods off when you join a server.
-3. Still nothing: `beamng.log` in `…\current\` should say `Earth Rally 1.3.2 loaded`. Open an issue with the lines
+3. Still nothing: `beamng.log` in `…\current\` should say `Earth Rally 1.4.0 loaded`. Open an issue with the lines
    mentioning `earthRally`.
 
 ## Making your own stage map
@@ -119,14 +138,16 @@ The rally's **Import report** in the menu lists each stage with its length and c
 ## Your rallies are yours
 
 The maps you import and everything made from them — stages, recces, times — live in your BeamNG.drive user folder
-(`…\current\earthRally\`), not in this repository. Organisers' route books belong to the organisers: don't commit
-them or pass them on.
+(`…\current\earthRally\`), not in this repository. Organisers' route books, photos and results belong to the
+organisers and photographers, and results name real crews: don't commit them, and ask the events before you pass a
+pack on.
 
 ## More
 
 * What is coming: [`docs/roadmap.md`](docs/roadmap.md)
-* This version: [`docs/release-1.3.2.md`](docs/release-1.3.2.md), and 1.3.1 before it:
-  [`docs/release-1.3.1.md`](docs/release-1.3.1.md)
+* This version: [`docs/release-1.4.0.md`](docs/release-1.4.0.md), and 1.3.2 before it:
+  [`docs/release-1.3.2.md`](docs/release-1.3.2.md)
+* The rally pack format: [`docs/rally-file.md`](docs/rally-file.md)
 * Building, testing and the design notes: [`docs/`](docs/) — `python tests/run_tests.py` runs the suite,
   `python tools/install.py` installs from this folder.
 
