@@ -83,3 +83,32 @@ Fixed: `DIR_BOARD_OUT = 1.0` for the direction boards only; control, radio and m
   (boards face the car, tapes run where they should), and item 2 is not a model-axis error but the heading the
   three layouts give table and chair relative to the road: the showcase puts each shape down on its own along the
   row, where 0 degrees looks right; on the stage, beside a road and a gazebo, it is a quarter turn off.
+
+## Review round 2
+
+Fixed: a tape of unknown width carries `maxLen`, the longest that still clears the stage road (both ends and the
+middle, `TAPE_CLEAR`) at the position the walk-in chose, and props.lua's `refitTape` never lays it longer, so at a
+fork a wider side road no longer takes the tape onto the stage (dressing.lua `solveJunction`, props.lua `refitTape`).
+
+Fixed: a tape is stretched by at most 1.25 along its length; beyond that it is laid as two overlapping pieces of the
+10 m model (each at most 12.5 m, still within `maxLen`), in the plan (`dressing.tapePieces`) and at spawn
+(`refitTape`), both pieces with their scale again after a world shift.
+
+Fixed: hay bales, spectator tape and fence carry `offRoad`, and props.lua leaves one out where the road map has any
+road, whichever way it runs, whose surface covers its spot (nearer its centre line than its half width + 0.5 m:
+`props.roadCovers`); no road map there, it is put down.
+
+Fixed: the edge shift takes a road as the stage's own by position: its centre line within 2 m
+(`DRESS_EDGE_NEAR_M`) of the planned stage-line point the object was set from; the angle check is loosened to 45
+degrees (`DRESS_EDGE_MAX_DEG`) as a second test, so a Y branch a few degrees off is not taken for the stage road and
+the stage road at a tight apex is.
+
+Fixed: the setup message says what an old (format 1) auto recce line lacks -- course tape and marshals; its
+junctions still get direction boards from the line -- in the log and once on screen ("Old auto recce line: re-run
+Auto recce for course tape and marshals", runner.say); a format 2 file with no junctions, or junctions that did not
+place on the driven line, is logged as such instead (runner.lua `setupDressing`).
+
+Fixed: `dressing.plan`'s unused `only` and `existingMarshals` options are gone, with their tests.
+
+Not changed: the stale comment in events.lua (~224, "the live road map fills those in: junctions.merge") stays --
+another branch has edits there.

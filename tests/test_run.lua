@@ -1308,31 +1308,60 @@ do
     end
     return { nodes = nodes }
   end }
-  local said = {}
+  -- (review round 2: the log says what is missing -- tape and marshals; the boards still come from the line -- and so
+  -- does the screen, once, through runner.say)
+  local said, other = {}, {}
   local plainLogB = log
   log = function(level, tag, msg)
-    if tostring(msg):find('no side roads for this stage: run Auto recce', 1, true) then said[#said + 1] = msg end
+    local m = tostring(msg)
+    if m:find('no side roads for this stage (an old auto recce line)', 1, true) and
+      m:find('no course tape and no marshals', 1, true) then said[#said + 1] = msg end
+    if m:find('no junctions in this stage\'s matched file', 1, true) or m:find('did not place on the driven line', 1, true)
+    then other[#other + 1] = m end
     plainLogB(level, tag, msg)
   end
+  local function oldLineToasts()
+    local n = 0
+    for _, t in ipairs(toasts) do
+      if t.msg == 'Old auto recce line: re-run Auto recce for course tape and marshals' then n = n + 1 end
+    end
+    return n
+  end
+  local toasts0 = oldLineToasts()
   local rB = toTheLine(evB)
   T.check(runner.state() == 'waitStart', 'format 1: waiting on the line (' .. runner.state() .. ')')
   by = props.dressingSites()
   T.check((by.tape or 0) == 0 and (by.board or 0) == 0 and (by.marshal or 0) == 0,
     'format 1: no tape, board or marshal from its junctions (' .. tostring(rB.checks.dressing) .. ')')
-  T.check(#said == 1, 'format 1: said once at setup (' .. #said .. ')')
+  T.check(#said == 1, 'format 1: said once at setup, naming tape and marshals (' .. #said .. ')')
+  T.check(oldLineToasts() - toasts0 == 1, 'format 1: and on screen once (' .. (oldLineToasts() - toasts0) .. ')')
   go(rB)
   driveTo(11, 436)
   T.check(shapes('s_tape_road_closure') == 0 and (props.dressingSites().tape or 0) == 0,
     'format 1: driving past the junction the road map shows: nothing added')
-  T.check(#said == 1, 'format 1: and not said again as the car goes')
+  T.check(#said == 1 and oldLineToasts() - toasts0 == 1, 'format 1: and not said again as the car goes')
   runner.abort(true)
-  -- a stage line with no junctions in its file (a driven recce's: no auto recce run)
-  said = {}
+  -- a stage line with no junctions in its file (a driven recce's: no auto recce run): not the old line's message, on
+  -- screen or in the log, but its own line in the log
+  said, other, toasts0 = {}, {}, oldLineToasts()
   local evN = evFor('dressNone')
   files['/earthRally/matched/dressNone__hill.json'] = { format = 2, points = recFrom }
   local rN = toTheLine(evN)
-  T.check(runner.state() == 'waitStart' and rN and rN.dress and (props.dressingSites().tape or 0) == 0 and #said == 1,
-    'no junctions in the file: no junction dressing, said once (' .. tostring(rN and rN.checks.dressing) .. ')')
+  T.check(runner.state() == 'waitStart' and rN and rN.dress and (props.dressingSites().tape or 0) == 0 and #said == 0 and
+    oldLineToasts() == toasts0 and #other == 1 and other[1]:find('no junctions', 1, true),
+    'no junctions in a format 2 file: no junction dressing, its own log line, not the old line\'s message (' ..
+    tostring(rN and rN.checks.dressing) .. ')')
+  runner.abort(true)
+  -- a format 2 file whose junction does not place on the line (5 km off it): said as such, not as an old line
+  said, other, toasts0 = {}, {}, oldLineToasts()
+  local evF = evFor('dressFar')
+  files['/earthRally/matched/dressFar__hill.json'] = { format = 2, points = recFrom, junctions = {
+    J.encode({ kind = 'straight', side = '', inDeg = 0, outDeg = 0, sides = { { deg = 90, halfW = 3 } } },
+      full[311][1] + 0.05, full[311][2]) } }
+  local rF = toTheLine(evF)
+  T.check(rF and #said == 0 and oldLineToasts() == toasts0 and #other == 1 and
+    other[1]:find('1 of the file\'s 1 junction(s) did not place', 1, true),
+    'format 2, a junction off the line: logged as not placed, not the old line\'s message (' .. tostring(other[1]) .. ')')
   runner.abort(true)
   log = plainLogB
   map = nil

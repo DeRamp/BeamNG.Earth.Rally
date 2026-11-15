@@ -457,11 +457,21 @@ M.DRESS_GROUND_ABOVE_M = 2   -- a dressing object's ground: a hit at most this a
 M.DRESS_EDGE_SNAP_M = 8
 M.DRESS_EDGE_REUSE_M = 20
 M.DRESS_EDGE_SHIFT_MIN_M, M.DRESS_EDGE_SHIFT_MAX_M = -2, 6
--- ... and not moved at all where the road found there runs more than this off the object's road: not the stage's own
--- road (a Y-shaped hairpin's other branch, a road crossing it), whose width says nothing of the stage's (the user,
--- 2026-11-14: hay bales in the street). A tape of unknown width (dressing.lua's refit) reads its side road the same
--- way, else takes DEFAULT_HALF_WIDTH_M.
-M.DRESS_EDGE_MAX_DEG = 30
+-- ... and not moved at all unless the road found is the stage's own: its centre line within DRESS_EDGE_NEAR_M of the
+-- planned stage-line point the object was set from (its eo back along the way out), and running at most
+-- DRESS_EDGE_MAX_DEG off the object's road. A Y-shaped hairpin's other branch, a road crossing it, says nothing of
+-- the stage's width (the user, 2026-11-14: hay bales in the street); the angle alone could not tell a branch a few
+-- degrees off from the stage road, and at a tight apex the map's coarse segment runs well off the tangent (review
+-- round 2). A tape of unknown width (dressing.lua's refit) reads its side road by the angle, within
+-- DRESS_EDGE_SNAP_M, else takes DEFAULT_HALF_WIDTH_M.
+M.DRESS_EDGE_NEAR_M = 2
+M.DRESS_EDGE_MAX_DEG = 45
+-- An object flagged off the road (dressing.lua: hay bales, spectator tape, fence) left out where the road map has any
+-- road, whichever way it runs, whose surface covers its spot: nearer its centre line than its half width plus this
+-- (a Y-hairpin's branch the plan never knew of). No road map there: put down.
+M.DRESS_OFFROAD_MARGIN_M = 0.5
+-- A tape stretched along its length by at most this; beyond it, two overlapping pieces (dressing.TAPE_SY_MAX)
+M.DRESS_TAPE_SY_MAX, M.DRESS_TAPE_OVERLAP_M = 1.25, 0.5
 local HEAD_M = 10
 
 -- { kind, along, from, to, name, key, objs (ids, when down or going down), at (the next item to put down),
@@ -511,7 +521,8 @@ local function keepDress(site, toGeo, lost)
     local edge = type(o.ex) == 'number' and type(o.eo) == 'number' and type(o.eh) == 'number'
     -- (the way out from the road kept as a second spot, as the heading is: whatever a shift does, it survives)
     local nx, ny = edge and o.x + o.ex * HEAD_M, edge and o.y + o.ey * HEAD_M
-    local it = { shape = o.shape, eo = edge and o.eo or nil, eh = edge and o.eh or nil, sy = o.sy, refit = o.refit }
+    local it = { shape = o.shape, eo = edge and o.eo or nil, eh = edge and o.eh or nil, sy = o.sy, refit = o.refit,
+                 maxLen = o.maxLen, offRoad = o.offRoad }
     if toGeo then
       local la, lo, h = toGeo(o.x, o.y, o.z or 0)
       local hla, hlo = toGeo(hx, hy, o.z or 0)
@@ -584,37 +595,72 @@ local function itemNow(it, toGame)
   return x, y, it.h and z or nil, hx, hy
 end
 
--- (the road map's road at (x, y) running the way (dx, dy) (a unit direction, either sense), within DRESS_EDGE_SNAP_M
--- and DRESS_EDGE_MAX_DEG of it; nil when there is none, or the nearest runs another way)
-local function alignedRoad(x, y, dx, dy)
-  local r = M.roadAt(x, y, { x = dx, y = dy }, M.DRESS_EDGE_SNAP_M)
+-- (the road map's road at (x, y) running the way (dx, dy) (a unit direction, either sense), within snap (default
+-- DRESS_EDGE_SNAP_M) and DRESS_EDGE_MAX_DEG of it; nil when there is none, or the nearest runs another way)
+local function alignedRoad(x, y, dx, dy, snap)
+  local r = M.roadAt(x, y, { x = dx, y = dy }, snap or M.DRESS_EDGE_SNAP_M)
   if not (r and r.dx and r.dy) then return nil end
   if math.abs(r.dx * dx + r.dy * dy) < math.cos(math.rad(M.DRESS_EDGE_MAX_DEG)) then return nil end
   return r
 end
 M._alignedRoad = alignedRoad
 
+-- Any road-map road whose surface covers (x, y): nearer its centre line than its half width (there) + margin,
+-- whichever way it runs. Returns that edge's distance and half width, or nil (no road there, or no road map).
+function M.roadCovers(x, y, margin)
+  local nodes = mapNodes()
+  if not nodes then return nil end
+  margin = margin or 0
+  for _, a in pairs(nodes) do
+    local pa = a.pos
+    if pa and a.links and (pa.x - x) ^ 2 + (pa.y - y) ^ 2 <= 250 ^ 2 then
+      for nb in pairs(a.links) do
+        local b = nodes[nb]
+        local pb = b and b.pos
+        if pb then
+          local dx, dy = pb.x - pa.x, pb.y - pa.y
+          local l2 = dx * dx + dy * dy
+          local t = l2 > 1e-6 and math.max(0, math.min(1, ((x - pa.x) * dx + (y - pa.y) * dy) / l2)) or 0
+          local d = math.sqrt((pa.x + dx * t - x) ^ 2 + (pa.y + dy * t - y) ^ 2)
+          local h = (a.radius or M.DEFAULT_HALF_WIDTH_M) * (1 - t) + (b.radius or M.DEFAULT_HALF_WIDTH_M) * t
+          if d < h + margin then return d, h end
+        end
+      end
+    end
+  end
+  return nil
+end
+
 -- (a tape across a side road of unknown width fitted to the road there: its middle kept, the side road -- square to
 -- the tape -- looked for on the road map, else DEFAULT_HALF_WIDTH_M, and the shortest model reaching refit.past past
--- each edge, else the longest stretched. Its origin is its end at +Y (the tape runs along -Y). Returns x, y, shape, sy)
+-- each edge, else the longest stretched -- by at most DRESS_TAPE_SY_MAX, beyond that two overlapping pieces from the
+-- two ends. Never longer than the plan's maxLen, the longest there that clears the stage's road (dressing.lua's
+-- solveJunction): at a fork a wider side road than planned would otherwise take the tape onto the stage. Its origin
+-- is its end at +Y (the tape runs along -Y). Returns a list of pieces { x, y, shape, sy })
 local function refitTape(it, x, y, dx, dy)
   local rf = it.refit
   local l = math.sqrt(dx * dx + dy * dy)
-  if l < 1e-9 or type(rf.models) ~= 'table' or #rf.models == 0 then return x, y, it.shape, it.sy end
+  if l < 1e-9 or type(rf.models) ~= 'table' or #rf.models == 0 then return { { x, y, it.shape, it.sy } } end
   dx, dy = dx / l, dy / l
   local cx, cy = x - dx * rf.len / 2, y - dy * rf.len / 2
   local r = alignedRoad(cx, cy, -dy, dx)
   local h = (r and type(r.half) == 'number' and r.half > 0) and r.half or M.DEFAULT_HALF_WIDTH_M
-  local need = 2 * h + 2 * (rf.past or 0)
-  local len, shape, sy = nil, nil, 1
+  local cap = type(it.maxLen) == 'number' and it.maxLen > 0 and it.maxLen or math.huge
+  local need = math.min(2 * h + 2 * (rf.past or 0), cap)
+  -- (the shortest model reaching, if it is no longer than the cap)
   for _, m in ipairs(rf.models) do
-    if need <= m[1] + 1e-9 then len, shape = m[1], m[2] break end
+    if need <= m[1] + 1e-9 and m[1] <= cap + 1e-9 then return { { cx + dx * m[1] / 2, cy + dy * m[1] / 2, m[2], 1 } } end
   end
-  if not len then
-    local top = rf.models[#rf.models]
-    len, shape, sy = need, top[2], need / top[1]
+  -- (else the longest model no longer than need, stretched to it: the smallest when none is)
+  local top = rf.models[1]
+  for _, m in ipairs(rf.models) do if m[1] <= need + 1e-9 and m[1] >= top[1] then top = m end end
+  need = math.min(need, 2 * top[1] * M.DRESS_TAPE_SY_MAX - M.DRESS_TAPE_OVERLAP_M)
+  if need / top[1] <= M.DRESS_TAPE_SY_MAX + 1e-9 then
+    return { { cx + dx * need / 2, cy + dy * need / 2, top[2], need / top[1] } }
   end
-  return cx + dx * len / 2, cy + dy * len / 2, shape, sy
+  local p = math.min(top[1] * M.DRESS_TAPE_SY_MAX, math.max(top[1], (need + M.DRESS_TAPE_OVERLAP_M) / 2))
+  return { { cx + dx * need / 2, cy + dy * need / 2, top[2], p / top[1] },
+           { cx - dx * (need / 2 - p), cy - dy * (need / 2 - p), top[2], p / top[1] } }
 end
 
 -- (the move out for an object set from the road's edge, at (x, y) with the way out (nx, ny): the road map's half
@@ -625,7 +671,8 @@ local function edgeShift(s, it, x, y, nx, ny)
   local p = s.probe
   if p and (p.x - cx) ^ 2 + (p.y - cy) ^ 2 <= M.DRESS_EDGE_REUSE_M ^ 2 and p.eh == it.eh then return p.shift end
   local shift = 0
-  local r = alignedRoad(cx, cy, -ny, nx)
+  -- (the stage's own road: found within DRESS_EDGE_NEAR_M of the planned stage-line point)
+  local r = alignedRoad(cx, cy, -ny, nx, M.DRESS_EDGE_NEAR_M)
   if r and type(r.half) == 'number' and r.half > 0 then
     shift = math.max(M.DRESS_EDGE_SHIFT_MIN_M, math.min(M.DRESS_EDGE_SHIFT_MAX_M, r.half - it.eh))
   end
@@ -640,9 +687,8 @@ local function spawnItem(s, it, toGame, carZ)
   if not x then return true end
   local dx, dy = hx - x, hy - y
   if dx * dx + dy * dy < 1e-9 then dx, dy = 0, 1 end
-  local shape, sy = it.shape, it.sy
-  if it.refit then x, y, shape, sy = refitTape(it, x, y, dx, dy) end
-  if not shapeOk(shape) then return true end
+  local pieces = it.refit and refitTape(it, x, y, dx, dy) or { { x, y, it.shape, it.sy } }
+  if not shapeOk(pieces[1][3]) then return true end
   if it.eo then
     local nx, ny
     if it.nx then nx, ny = it.nx - it.x, it.ny - it.y
@@ -655,12 +701,22 @@ local function spawnItem(s, it, toGame, carZ)
       nx, ny = nx / l, ny / l
       local sh = edgeShift(s, it, x, y, nx, ny)
       x, y = x + nx * sh, y + ny * sh
+      pieces[1][1], pieces[1][2] = x, y
     end
   end
-  local ok, id = pcall(makeObj, shape, x, y, ground(x, y, z or carZ, M.DRESS_GROUND_ABOVE_M), yawQuat(dx, dy), sy)
-  if ok then s.objs[#s.objs + 1] = id return true end
-  log('W', 'earthRally', 'a dressing prop could not be put down (' .. tostring(id) .. ')')
-  return false
+  -- (off the road, and a road there the plan did not know of: left out)
+  if it.offRoad and M.roadCovers(x, y, M.DRESS_OFFROAD_MARGIN_M) then return true end
+  for _, pc in ipairs(pieces) do
+    local px, py = pc[1], pc[2]
+    local ok, id = pcall(makeObj, pc[3], px, py, ground(px, py, z or carZ, M.DRESS_GROUND_ABOVE_M), yawQuat(dx, dy),
+      pc[4])
+    if not ok then
+      log('W', 'earthRally', 'a dressing prop could not be put down (' .. tostring(id) .. ')')
+      return false
+    end
+    s.objs[#s.objs + 1] = id
+  end
+  return true
 end
 
 -- A site's objects put down from where it got to, up to `budget` of them. Returns the budget left.

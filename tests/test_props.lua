@@ -423,6 +423,127 @@ do
   createObject = plainCreate
 end
 
+------------------------------------------------------------------------------------------ review round 2
+-- (a straight road-map road through (px, py) running at `deg` (clockwise from north), its nodes in game coordinates
+-- of the moment: they move with a world shift)
+local function straightRoad(px, py, deg, radius)
+  local dx, dy = math.sin(math.rad(deg)), math.cos(math.rad(deg))
+  return function()
+    local nodes = {}
+    for k = 0, 20 do
+      local d = k * 20 - 200
+      nodes['s' .. k] = { pos = { x = px + dx * d - ox, y = py + dy * d - oy, z = 0 }, radius = radius, links = {} }
+      if k > 0 then nodes['s' .. k].links['s' .. (k - 1)] = {} end
+    end
+    return nodes
+  end
+end
+local function mapOf(...)
+  local fs = { ... }
+  map = { getMap = function()
+    -- (node names made unique per road; links follow)
+    local out = {}
+    for _, f in ipairs(fs) do
+      local tag = tostring(f)
+      for k, v in pairs(f()) do
+        local links = {}
+        for l in pairs(v.links) do links[l .. '/' .. tag] = {} end
+        out[k .. '/' .. tag] = { pos = v.pos, radius = v.radius, links = links }
+      end
+    end
+    return { nodes = out }
+  end }
+end
+local models = { { 6, 'tape6.dae' }, { 8, 'tape8.dae' }, { 10, 'tape10.dae' } }
+-- (an 8 m tape of unknown width across a side road running north at x = 0, centred on it: origin at x = 4, +Y east)
+local function unknownTape(extra)
+  local o = { dx = 1, dy = 0, refit = { len = 8, past = 0.75, models = models } }
+  for k, v in pairs(extra or {}) do o[k] = v end
+  return one('tape8', 100, 4, o)
+end
+
+-- 1. refitTape held to the plan's maxLen: a 10 m side road would take 11.5 m, the stage road 9 m allows: the 8 m
+-- model stretched to 9 m, still centred
+do
+  ox, oy = 0, 0
+  mapOf(straightRoad(0, 100, 0, 5))
+  props.setDressing({ unknownTape({ maxLen = 9 }) })
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+  local t = shapesLive('tape8.dae')[1]
+  T.check(t and #shapesLive('tape10.dae') == 0 and t.fields.scale == '1 1.1250 1' and math.abs(t.pos[1] - 4.5) < 1e-6,
+    'refit: held to maxLen 9 m, the 8 m model stretched to it, centred (' .. tostring(t and t.fields.scale) .. ', ' ..
+    tostring(t and t.pos[1]) .. ')')
+  props.clear()
+  map = nil
+end
+
+-- 2. refitTape on a 19 m road: 20.5 m of tape, two overlapping 10 m pieces stretched 1.05 (not one stretched 2.05),
+-- both put down again with their scale after a world shift
+do
+  ox, oy = 0, 0
+  mapOf(straightRoad(0, 100, 0, 9.5))
+  props.setDressing({ unknownTape() }, toGeo)
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+  local function check(how, shift)
+    local ts = shapesLive('tape10.dae')
+    table.sort(ts, function(a, b) return a.pos[1] < b.pos[1] end)
+    T.check(#ts == 2 and ts[1].fields.scale == '1 1.0500 1' and ts[2].fields.scale == '1 1.0500 1' and
+      math.abs(ts[1].pos[1] - (0.25 - shift)) < 1e-6 and math.abs(ts[2].pos[1] - (10.25 - shift)) < 1e-6,
+      how .. ': two pieces of the 10 m tape, each stretched 1.05, from either end (' .. #ts .. ', ' ..
+      tostring(ts[1] and ts[1].fields.scale) .. ')')
+  end
+  check('refit on a 19 m road', 0)
+  ox = 500
+  props.reset()
+  props.update({ x = -500, y = 0, z = 0 }, toGame, 0)
+  check('after a world shift', 500)
+  props.clear()
+  ox = 0
+  map = nil
+end
+
+-- 3. An object flagged offRoad (a bale, spectator tape, fence) left out where the road map has a road under it,
+-- whichever way it runs; kept beside it, with nothing flagged, and with no road map
+do
+  ox, oy = 0, 0
+  mapOf(straightRoad(0, 100, 90, 3))      -- (a road running east along y = 100, 3 m half wide)
+  props.setDressing({ one('bale', 101, 10, { offRoad = true }), one('fence', 105, 10, { offRoad = true }),
+    one('table', 101, 20) })
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+  T.check(#shapesLive('bale.dae') == 0, 'offRoad: a bale on a road the plan did not know: left out')
+  T.check(#shapesLive('fence.dae') == 1, 'offRoad: 5 m off a 3 m half wide road: put down')
+  T.check(#shapesLive('table.dae') == 1, 'offRoad: an object not flagged: put down')
+  props.clear()
+  map = nil
+  props.setDressing({ one('bale', 101, 10, { offRoad = true }) })
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+  T.check(#shapesLive('bale.dae') == 1, 'offRoad: no road map: put down')
+  props.clear()
+end
+
+-- 4. The edge shift only from the stage's own road, found by position: a Y branch 15 degrees off whose centre line
+-- is 6 m from the planned stage-line point moves nothing; the stage road at a tight apex, 40 degrees off the
+-- tangent but through the point, does
+do
+  ox, oy = 0, 0
+  local function board() return one('board', 100, 2.7, { ex = 1, ey = 0, eo = 2.7, eh = 3 }) end
+  mapOf(straightRoad(6 / math.cos(math.rad(15)), 100, 15, 5))
+  props.setDressing({ board() })
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+  local b = shapesLive('board.dae')[1]
+  T.check(b and math.abs(b.pos[1] - 2.7) < 1e-6, 'edge: a Y branch 15 degrees off, 6 m away: not moved (' ..
+    tostring(b and b.pos[1]) .. ')')
+  props.clear()
+  mapOf(straightRoad(0, 100, 40, 5))
+  props.setDressing({ board() })
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 0)
+  b = shapesLive('board.dae')[1]
+  T.check(b and math.abs(b.pos[1] - 4.7) < 1e-6, 'edge: the stage road at a tight apex, 40 degrees off: moved out 2 m (' ..
+    tostring(b and b.pos[1]) .. ')')
+  props.clear()
+  map = nil
+end
+
 -- the showcase: one of each dressing shape, in order, through the real sites' code; taken away again
 do
   local D2 = require('earthRally/dressing')

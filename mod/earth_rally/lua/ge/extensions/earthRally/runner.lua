@@ -633,9 +633,11 @@ end
 
 -- The stage dressing planned once, as the stage is set out: the matched file's junctions placed on the line the stage
 -- runs on (as stepBuild places its landmarks), the corners the co-driver calls (for the spectator areas), and the
--- radio points by the rule. Only the file's junctions with their side roads (format 2, from the auto recce) get tape,
--- boards and marshals; with no file, or a format 1 file, the radio points and spectator areas still go up (they need
--- only the line and its corners), and the log says why the junctions have none.
+-- radio points by the rule. Only the file's junctions with their side roads (format 2, from the auto recce) get tape
+-- and marshals; a format 1 file's junctions still get direction boards (from the line), and with no file the radio
+-- points and spectator areas still go up (they need only the line and its corners). The log says why the junctions
+-- have no tape -- and an old (format 1) auto recce line says so on screen too, once as the stage is set out: re-run
+-- Auto recce (review round 2).
 local function setupDressing()
   if not M.DRESSING then
     run.checks.dressing = 'off (runner.DRESSING)'
@@ -665,8 +667,21 @@ local function setupDressing()
       d.known[#d.known + 1] = { along = s, file = j }
     end
   end
-  if withSides == 0 then
-    log('I', logTag, 'stage dressing: no side roads for this stage: run Auto recce to dress its junctions')
+  local m = events.matched and events.matched(run.event.id, run.stage.id)
+  -- (the file's own junctions with side roads, placed on the line or not)
+  local fileSides = 0
+  for _, j in ipairs(fromFile or {}) do if type(j.sides) == 'table' then fileSides = fileSides + 1 end end
+  if not fromFile then
+    log('I', logTag, 'stage dressing: no matched line for this stage: no junction dressing')
+  elseif (type(m) == 'table' and m.format == 1) or (#fromFile > 0 and fileSides == 0) then
+    log('I', logTag, 'stage dressing: no side roads for this stage (an old auto recce line): its junctions get '
+      .. 'direction boards from the line, but no course tape and no marshals: re-run Auto recce for them')
+    say('Old auto recce line: re-run Auto recce for course tape and marshals', 6, 'info')
+  elseif #fromFile == 0 then
+    log('I', logTag, 'stage dressing: no junctions in this stage\'s matched file: no junction dressing')
+  elseif #js < #fromFile then
+    log('I', logTag, string.format('stage dressing: %d of the file\'s %d junction(s) did not place on the driven line',
+      #fromFile - #js, #fromFile))
   end
   -- (the organisers' points: 1.4.0 step 3, none yet)
   local marks = {}

@@ -312,10 +312,8 @@ do
   T.check(#md == 1 and #md[1].objects == 6 and #find(md[1].objects, 'radio') == 0, 'map medical alone: its own boards and gazebo')
 end
 
------------------------------------------------------------------------------------------- planning part of a stage again
--- runner.lua plans the whole stage once, then only the junction kinds for junctions the live road map shows later:
--- `only` gives those kinds and no others, the same as the whole plan gives them, and `existingMarshals` keeps the
--- one-per-km spacing across the two plans.
+------------------------------------------------------------------------------------------ the whole stage at once
+-- runner.lua plans the whole stage once, at its start (review round 2: plan's `only` and `existingMarshals` are gone)
 do
   local line = {}
   for k = 0, 120 do line[#line + 1] = V(0, k * 100) end
@@ -323,45 +321,15 @@ do
   for _, s in ipairs({ 1000, 1500, 3000 }) do
     js[#js + 1] = { along = s, x = 0, y = s, kind = 'turn', inDeg = 0, outDeg = 90, sides = { { deg = 0 }, { deg = 270 } } }
   end
-  local function plan(o)
-    o.line, o.startM, o.finishM = line, 0, 12000
-    o.junctions = o.junctions or js
-    return D.plan(o)
-  end
-  local all = plan({})
+  local all = D.plan({ line = line, startM = 0, finishM = 12000, junctions = js })
   T.check(#ofKind(all, 'radio') == 2 and #ofKind(all, 'spectators') == 1,
     'whole stage: radio points and a spectator area (' .. #ofKind(all, 'radio') .. ', ' .. #ofKind(all, 'spectators') .. ')')
   T.check(#ofKind(all, 'marshal') == 2 and ofKind(all, 'marshal')[1].along == 1000 and ofKind(all, 'marshal')[2].along == 3000,
     'whole stage: marshals at 1 km and 3 km, none at 1.5 km')
-  local part = plan({ only = { tape = true, board = true, marshal = true } })
-  T.check(#ofKind(part, 'radio') == 0 and #ofKind(part, 'medical') == 0 and #ofKind(part, 'spectators') == 0,
-    'only: no radio points, medical points or spectators')
-  T.check(#ofKind(part, 'tape') == 3 and #ofKind(part, 'board') == 3 and #ofKind(part, 'marshal') == 2,
-    'only: every junction\'s tape, board and marshal (' .. #part .. ' sites)')
-  local same = true
-  for _, kind in ipairs({ 'tape', 'board', 'marshal' }) do
-    local a, b = ofKind(all, kind), ofKind(part, kind)
-    for i = 1, math.max(#a, #b) do
-      local x, y = a[i], b[i]
-      if not (x and y) or x.along ~= y.along or #x.objects ~= #y.objects then same = false
-      else
-        for k, o in ipairs(x.objects) do
-          local p = y.objects[k]
-          if o.key ~= p.key or math.abs(o.x - p.x) > 1e-9 or math.abs(o.y - p.y) > 1e-9 then same = false end
-        end
-      end
-    end
-  end
-  T.check(same, 'only: the same sites, object for object, as the whole plan gives')
-  local tapes = plan({ only = { tape = true } })
-  T.check(#tapes == 3 and #ofKind(tapes, 'tape') == 3, 'only tape: tape and nothing else')
-  -- the junction at 1.5 km planned on its own: no marshal there with one standing at 1 km, one without
-  T.check(#ofKind(plan({ junctions = { js[2] }, only = { marshal = true }, existingMarshals = { 1000 } }), 'marshal') == 0,
-    'existing marshals: none within 1 km of one standing')
-  T.check(#ofKind(plan({ junctions = { js[2] }, only = { marshal = true }, existingMarshals = {} }), 'marshal') == 1,
-    'existing marshals: one where none stands')
-  T.check(#ofKind(plan({ junctions = { js[3] }, only = { marshal = true }, existingMarshals = { 1000, 1500 } }), 'marshal') == 1,
-    'existing marshals: one 1.5 km from the nearest standing')
+  -- (the options gone: passing them changes nothing)
+  local o = D.plan({ line = line, startM = 0, finishM = 12000, junctions = { js[2] }, only = { tape = true },
+    existingMarshals = { 1000 } })
+  T.check(#ofKind(o, 'marshal') == 1 and #ofKind(o, 'radio') == 2, 'only / existingMarshals: no longer read by plan')
 end
 
 ------------------------------------------------------------------------------------------ 1.4.0's review
@@ -541,6 +509,87 @@ do
   T.check(rb and math.abs(rb.x - (3 + D.BOARD_OUT)) < 1e-6, 'a radio board still just inside the edge (' ..
     tostring(rb and rb.x) .. ')')
   T.check(D.DIR_BOARD_OUT == 1.0 and D.BOARD_OUT == -0.3, 'DIR_BOARD_OUT 1 m; BOARD_OUT unchanged')
+end
+
+------------------------------------------------------------------------------------------ review round 2
+
+-- 1. A tape of unknown width carries maxLen: the longest that still clears the stage road at the chosen position.
+-- A fork: the stage north along x = 0, a side road leaving at the junction 20 degrees off it (bearing 20): its tape
+-- 8 m in can grow only until an end reaches the stage road; on a lone side road square to the stage, much longer.
+do
+  local S = { V(0, -200), V(0, 200) }
+  local function tapeAt(deg)
+    local t = ofKind(D.plan({ line = S, startM = 0, finishM = 400, junctions = { { along = 200, x = 0, y = 0,
+      kind = 'fork', side = 'left', inDeg = 0, outDeg = 0, sides = { { deg = deg } } } } }), 'tape')[1]
+    return t and t.objects[1]
+  end
+  local f = tapeAt(20)
+  T.check(f and type(f.maxLen) == 'number' and f.maxLen >= 8 - 1e-9, 'fork, unknown width: the tape carries maxLen (' ..
+    tostring(f and f.maxLen) .. ')')
+  if f and f.maxLen then
+    -- (the tape's middle and its way across, from its origin and heading; both ends at maxLen clear the stage road)
+    local ax, ay, bx, by = ends(f)
+    local cx, cy = (ax + bx) / 2, (ay + by) / 2
+    local h = f.maxLen / 2
+    local e1 = distTo(S, cx + f.dx * h, cy + f.dy * h) - D.HALF
+    local e2 = distTo(S, cx - f.dx * h, cy - f.dy * h) - D.HALF
+    T.check(e1 >= D.TAPE_CLEAR - 1e-6 and e2 >= D.TAPE_CLEAR - 1e-6, string.format(
+      'fork: at maxLen both ends still clear the stage road (%.2f, %.2f)', e1, e2))
+    local g = f.maxLen / 2 + D.TAPE_GROW_STEP
+    local n1 = math.min(distTo(S, cx + f.dx * g, cy + f.dy * g), distTo(S, cx - f.dx * g, cy - f.dy * g)) - D.HALF
+    T.check(f.maxLen >= D.TAPE_LEN_MAX - 1e-9 or n1 < D.TAPE_CLEAR, 'fork: and a step longer would not')
+  end
+  local sq = tapeAt(270)
+  T.check(sq and sq.maxLen and f and f.maxLen and sq.maxLen > f.maxLen,
+    'a side road square to the stage: a longer maxLen than the fork\'s (' .. tostring(sq and sq.maxLen) .. ')')
+  local k = ofKind(D.plan({ line = S, startM = 0, finishM = 400, junctions = { { along = 200, x = 0, y = 0,
+    kind = 'straight', inDeg = 0, outDeg = 0, sides = { { deg = 270, halfW = 3 } } } } }), 'tape')[1]
+  T.check(k and k.objects[1].maxLen == nil, 'a known width: no maxLen (nothing refitted)')
+end
+
+-- 2. A tape beyond 1.25 x its model laid as two overlapping pieces, each at most 1.25 x 10 m, spanning the whole
+-- width; at 11.5 m still one
+do
+  local S = { V(0, -100), V(0, 100) }
+  local t = ofKind(D.plan({ line = S, startM = 0, finishM = 200, junctions = { { along = 100, x = 0, y = 0,
+    kind = 'straight', inDeg = 0, outDeg = 0, sides = { { deg = 270, halfW = 7 } } } } }), 'tape')[1]
+  T.check(t and #t.objects == 2, 'a 14 m road: two tape pieces (' .. tostring(t and #t.objects) .. ')')
+  if t and #t.objects == 2 then
+    local lo, hi, ok = math.huge, -math.huge, true
+    for _, o in ipairs(t.objects) do
+      if not (o.key == 'tape10' and (o.sy or 1) <= D.TAPE_SY_MAX + 1e-9 and (o.sy or 1) >= 1) then ok = false end
+      local ax, ay, bx, by = ends(o)
+      lo, hi = math.min(lo, ay, by), math.max(hi, ay, by)
+    end
+    T.check(ok, 'each piece the 10 m model, stretched by at most 1.25')
+    T.check(math.abs(hi - lo - 15.5) < 1e-6, string.format('together 15.5 m across (%.2f)', hi - lo))
+    local a1, b1 = select(2, ends(t.objects[1])), t.objects[1].y
+    local a2, b2 = select(2, ends(t.objects[2])), t.objects[2].y
+    local overlap = math.min(math.max(a1, b1), math.max(a2, b2)) - math.max(math.min(a1, b1), math.min(a2, b2))
+    T.check(overlap >= D.TAPE_OVERLAP - 1e-6, string.format('overlapping (%.2f m)', overlap))
+  end
+  T.check(#D.tapePieces(0, 0, 11.5, 0, 11.5, 10) == 1 and #D.tapePieces(0, 0, 13, 0, 13, 10) == 2,
+    'tapePieces: one to 12.5 m, two beyond')
+end
+
+-- 3. Hay bales, spectator tape and fence carry offRoad (props.lua drops one standing on a road it finds there);
+-- nothing else does
+do
+  local S = {}
+  for k = 0, 36 do local a = math.rad(k * 5) S[#S + 1] = V(30 * math.cos(a), 30 * math.sin(a)) end
+  table.insert(S, 1, V(30, -200))
+  S[#S + 1] = V(-30, -200)
+  local cum = geo.cumulative(S)
+  local sp = ofKind(D.plan({ line = S, cum = cum, startM = 0, finishM = cum[#cum],
+    marks = { { kind = 'spectator', along = cum[#cum] / 2, offLineM = -5 } } }), 'spectators')[1]
+  local flagged, wrong = {}, 0
+  for _, o in ipairs(sp and sp.objects or {}) do
+    if o.offRoad then flagged[o.key] = (flagged[o.key] or 0) + 1 end
+    if o.offRoad and not (o.key == 'bale' or o.key == 'specTape' or o.key == 'fence') then wrong = wrong + 1 end
+    if not o.offRoad and (o.key == 'bale' or o.key == 'specTape' or o.key == 'fence') then wrong = wrong + 1 end
+  end
+  T.check(sp and (flagged.bale or 0) > 0 and (flagged.specTape or 0) > 0 and (flagged.fence or 0) > 0 and wrong == 0,
+    'spectators: bales, tape and fence flagged offRoad, nothing else (' .. wrong .. ')')
 end
 
 T.done('test_dressing')

@@ -45,6 +45,10 @@ M.TAPE_PAST = 0.75        -- ... each end this far past the side road's edge (th
 M.TAPE_CLEAR = 1.0        -- ... moved farther in until both its ends clear the stage's road by this much
 M.TAPE_IN_MAX = 30        -- (and no farther: a tape that never clears is left out -- the side road is the stage's
                           -- own later pass, or runs beside it -- and said so once in the log)
+M.TAPE_SY_MAX = 1.25      -- a tape model stretched along its length by at most this (review round 2) ...
+M.TAPE_OVERLAP = 0.5      -- ... beyond it two pieces of the longest model, overlapping by at least this
+M.TAPE_LEN_MAX = 2 * 1.25 * 10 - 0.5  -- (so no tape is longer than two of them: 24.5 m)
+M.TAPE_GROW_STEP = 0.25   -- (a tape's maxLen, the longest that still clears the stage's road, found in these steps)
 M.CLEAR_CELL_M = 50       -- (the whole line's clearance looked up in cells of this size)
 M.BOARD_BEFORE = 75       -- direction board before a turn / fork
 M.WARN_BEFORE = 100       -- radio / medical warning board
@@ -229,8 +233,9 @@ function M.dirBoard(turnDeg, kind, keepSide)
 end
 
 -- The tape for a side road of half width halfW (HALF when not known: nil or 0), each end TAPE_PAST beyond its edge:
--- the shortest of the 6 / 8 / 10 m models that reaches, else the 10 m one stretched along its length. Returns key,
--- the length laid (m) and the model's scale along it (its Y: 1 for a model at its own length).
+-- the shortest of the 6 / 8 / 10 m models that reaches, else the 10 m one stretched along its length (no longer than
+-- TAPE_LEN_MAX). Returns key, the length laid (m) and that length over the model's (1 for a model at its own length;
+-- over TAPE_SY_MAX the plan lays it as two pieces: tapePieces).
 M.TAPES = { { 'tape6', 6 }, { 'tape8', 8 }, { 'tape10', 10 } }
 function M.tapeFor(halfW)
   local h = (type(halfW) == 'number' and halfW > 0) and halfW or M.HALF
@@ -239,7 +244,17 @@ function M.tapeFor(halfW)
     if need <= t[2] + 1e-9 then return t[1], t[2], 1 end
   end
   local top = M.TAPES[#M.TAPES]
+  need = min(need, M.TAPE_LEN_MAX)
   return top[1], need, need / top[2]
+end
+-- A tape of `len` m of the model `top` m long from (ax, ay) to (bx, by), as pieces { ax, ay, bx, by, sy }: one, its
+-- scale len / top, while that is at most TAPE_SY_MAX; else two, one from each end, each at most TAPE_SY_MAX x top
+-- and overlapping by TAPE_OVERLAP or more (props.lua's refitTape lays its tapes the same way).
+function M.tapePieces(ax, ay, bx, by, len, top)
+  if len / top <= M.TAPE_SY_MAX + 1e-9 then return { { ax, ay, bx, by, len / top } } end
+  local p = min(top * M.TAPE_SY_MAX, max(top, (len + M.TAPE_OVERLAP) / 2))
+  local ux, uy = norm(bx - ax, by - ay)
+  return { { ax, ay, ax + ux * p, ay + uy * p, p / top }, { bx - ux * p, by - uy * p, bx, by, p / top } }
 end
 -- (what props.lua needs to fit a tape of unknown width to the road it finds there when it puts it down)
 local function refit(len)
@@ -311,9 +326,22 @@ local function solveJunction(L, j)
           L.clear(cx, cy, jh) >= M.TAPE_CLEAR then clear = true break end
         s = s + 0.5
       end
+      -- (a side road of unknown width: the longest tape there that still clears the stage's road at both ends --
+      -- its middle is where it was -- grown in TAPE_GROW_STEP steps, each step's ends checked: props.lua's refitTape
+      -- holds the tape it fits to the road map to this, so a wide side road at a fork does not take it onto the stage)
+      local maxLen = len
+      if clear and not known then
+        local cx, cy = jx + dx * s, jy + dy * s
+        while maxLen + M.TAPE_GROW_STEP <= M.TAPE_LEN_MAX + 1e-9 do
+          local h2 = (maxLen + M.TAPE_GROW_STEP) / 2
+          if L.clear(cx + rx * h2, cy + ry * h2, jh) >= M.TAPE_CLEAR and
+            L.clear(cx - rx * h2, cy - ry * h2, jh) >= M.TAPE_CLEAR then maxLen = maxLen + M.TAPE_GROW_STEP
+          else break end
+        end
+      end
       if clear then
         res.tapes[#res.tapes + 1] = { key = key, L = len, sy = sy, known = known, s = s, dx = dx, dy = dy, ax = ax,
-                                      ay = ay, bx = bx, by = by, halfW = known and sr.halfW or M.HALF }
+                                      ay = ay, bx = bx, by = by, halfW = known and sr.halfW or M.HALF, maxLen = maxLen }
       else
         sayDropped(along, sr.deg or J and J.dirToBearing and J.dirToBearing(dx, dy))
       end
@@ -428,7 +456,9 @@ local function spectators(L, s0, s1, sApex, side, clearOf)
       if clearOf(ax, ay) >= off - 1 and clearOf(bx, by) >= off - 1 and clearOf((ax + bx) / 2, (ay + by) / 2) >= off - 1
       then
         local nx, ny = outward(btx, bty, side)
-        objs[#objs + 1] = edged(linear(key, ax, ay, bx, by, az), nx, ny, half + off, half)
+        local o = edged(linear(key, ax, ay, bx, by, az), nx, ny, half + off, half)
+        o.offRoad = true      -- (props.lua leaves it out where the road map has a road under it: a branch not planned)
+        objs[#objs + 1] = o
         n = n + 1
       end
       s = e
@@ -444,7 +474,9 @@ local function spectators(L, s0, s1, sApex, side, clearOf)
     local x, y, z, tx, ty = L.off(s, half + M.BALE_OFF, side)
     if s >= s0 and s <= s1 and clearOf(x, y) >= M.BALE_CLEAR then
       local nx, ny = outward(tx, ty, side)
-      objs[#objs + 1] = edged(upright('bale', x, y, z, tx, ty), nx, ny, half + M.BALE_OFF, half)
+      local o = edged(upright('bale', x, y, z, tx, ty), nx, ny, half + M.BALE_OFF, half)
+      o.offRoad = true
+      objs[#objs + 1] = o
     end
   end
   -- the camp: in from the apex until clear of the road by the fence and a little more
@@ -539,11 +571,7 @@ end
 --   corners = (stageWriter.stageCorners' list: { i0, i1, dir, angleDeg, minRadius }, its indices samples every
 --     cornerStepM (default 5, stageWriter.NOTE_STEP_M) from cornerStartM (default startM); or corners carrying their
 --     own `from` / `to` along the line),
---   halfWidth (default 3),
---   only (nil: every kind) = { tape = true, board = true, ... }: only these kinds planned (runner.lua plans the
---     whole stage once, at its start, from the matched file's junctions),
---   existingMarshals = { along... }: junction marshals already standing (from an earlier plan of the same stage),
---     which the one-per-MARSHAL_EVERY_M spacing counts as its own }
+--   halfWidth (default 3) }
 function M.plan(input)
   local line = input.line
   if not line or #line < 2 then return {} end
@@ -553,10 +581,7 @@ function M.plan(input)
   local startM = input.startM or 0
   local finishM = input.finishM or L.total
   local sites = {}
-  local only = input.only
-  local function want(kind) return only == nil or only[kind] == true end
   local function add(kind, source, along, from, to, objs, name)
-    if not want(kind) then return end
     objs = capped(objs, kind)
     if #objs == 0 then return end
     sites[#sites + 1] = { kind = kind, source = source, along = along, from = min(from, to), to = max(from, to),
@@ -584,11 +609,14 @@ function M.plan(input)
     solved[#solved + 1] = r
     local objs = {}
     for _, tp in ipairs(r.tapes) do
-      local o = linear(tp.key, tp.ax, tp.ay, tp.bx, tp.by, r.jz)
-      if tp.sy ~= 1 then o.sy = tp.sy end
-      -- (a side road of unknown width: props.lua reads it off the road map where the tape goes down)
-      if not tp.known then o.refit = refit(tp.L) end
-      objs[#objs + 1] = o
+      for _, pc in ipairs(M.tapePieces(tp.ax, tp.ay, tp.bx, tp.by, tp.L, tp.L / tp.sy)) do
+        local o = linear(tp.key, pc[1], pc[2], pc[3], pc[4], r.jz)
+        if abs(pc[5] - 1) > 1e-9 then o.sy = pc[5] end
+        -- (a side road of unknown width: props.lua reads it off the road map where the tape goes down, no longer
+        -- than maxLen)
+        if not tp.known then o.refit, o.maxLen = refit(tp.L), tp.maxLen end
+        objs[#objs + 1] = o
+      end
     end
     add('tape', 'rule', j.along, j.along, j.along, objs, j.kind)
     local key, side = M.dirBoard(r.turnDeg, j.kind, j.side)
@@ -626,9 +654,7 @@ function M.plan(input)
     end
     return best
   end
-  if not want('marshal') then
-    -- (none asked for)
-  elseif #marks.marshal > 0 then
+  if #marks.marshal > 0 then
     local used = {}
     for _, m in ipairs(marks.marshal) do
       local r = turnNear(m.along, M.MARSHAL_AT_JUNCTION_M)
@@ -644,12 +670,8 @@ function M.plan(input)
       end
     end
   else
-    -- (every marshal standing, this plan's and the earlier ones': none within MARSHAL_EVERY_M of another. Taken in
-    -- order along the stage with nothing standing before, it is the same as "MARSHAL_EVERY_M on from the last one")
+    -- (none within MARSHAL_EVERY_M of another, taken in order along the stage: "MARSHAL_EVERY_M on from the last one")
     local standing = {}
-    for _, a in ipairs(input.existingMarshals or {}) do
-      if type(a) == 'number' then standing[#standing + 1] = a end
-    end
     for _, r in ipairs(solved) do
       if r.kind == 'turn' and #r.tapes > 0 then
         local ok = true
@@ -666,9 +688,7 @@ function M.plan(input)
   -- radio points: the map's, else every RADIO_EVERY_M (none in the last RADIO_NOT_LAST_M), each moved along until
   -- its post is clear of the junctions
   local radios = {}
-  if not (want('radio') or want('medical')) then
-    -- (none asked for)
-  elseif #marks.radio > 0 then
+  if #marks.radio > 0 then
     for _, m in ipairs(marks.radio) do radios[#radios + 1] = { along = m.along, source = 'map', name = m.name } end
   else
     local function clearOfJunctions(s)
@@ -691,7 +711,7 @@ function M.plan(input)
     end
   end
   -- medical points: only the map's; one within SHARE_M of a radio point shares its post
-  for _, m in ipairs((want('radio') or want('medical')) and marks.medical or {}) do
+  for _, m in ipairs(marks.medical) do
     local best, bd = nil, M.SHARE_M
     for _, r in ipairs(radios) do
       if not r.medical and abs(r.along - m.along) <= bd then best, bd = r, abs(r.along - m.along) end
@@ -726,9 +746,7 @@ function M.plan(input)
     local objs = spectators(L, s0, s1, apex, side, function(x, y) return clearOf(x, y, apex) end)
     add('spectators', source, apex, s0, s1, objs, name)
   end
-  if not want('spectators') then
-    -- (none asked for)
-  elseif #marks.spectator > 0 then
+  if #marks.spectator > 0 then
     for _, m in ipairs(marks.spectator) do
       -- the inside of the corner it is at, else the side the map put it
       local side = (m.offLineM or 0) < 0 and -1 or 1
