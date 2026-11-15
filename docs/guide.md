@@ -6,8 +6,10 @@ Everything the [README](../README.md) leaves out. What changed in each version: 
 
 The auto recce works a stage's driving line out from BeamNG.Earth's roads so you never have to drive a recce. It
 needs **modding API 1.9**, which is [one pull request waiting on TecnaGamer](https://github.com/TecnaGamer/BeamNG.Earth/pull/1249).
-Until that is merged, the only BeamNG.Earth that can answer is the fork it lives on:
-**`github.com/DeRamp/BeamNG.Earth`, branch `addon-api-road-graph`**.
+Until an official release has it, install BeamNG.Earth from
+**[the DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)**: BeamNG.Earth with that change added, with the same kind of
+installer. Report problems with the fork to [Earth Rally's issues](https://github.com/DeRamp/BeamNG.Earth.Rally/issues),
+not to the BeamNG.Earth team.
 
 **With a stock BeamNG.Earth nothing breaks.** Earth Rally asks, gets no for an answer, and simply shows no auto
 recce — you drive a recce instead, as you always could. That is the only thing you lose.
