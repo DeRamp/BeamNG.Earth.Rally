@@ -644,6 +644,28 @@ function OPS.arrival(st)
   local cnt = counts()
   note(string.format('after arrival: statics %d, nodes %d, props %d', cnt.statics, cnt.nodes, cnt.props))
 end
+-- While the owner drives (the drive suite): back-to-back windows of `seconds`, nothing set, nothing moved. Each
+-- window's state and distance along are what the run had as it began. Ends `afterS` after the run leaves 'running'
+-- (the after-the-run frames are part of the report), or after `minutes`. The counts walk every static, so they are
+-- taken between windows, in a frame the recorder leaves out.
+function OPS.record(st)
+  local t0, endAt, n, seen = ms(), nil, 0, false
+  local limit = (st.minutes or 20) * 60000
+  while ms() - t0 < limit do
+    local s = runState()
+    if s == 'running' then endAt, seen = nil, true
+    elseif seen and not endAt then endAt = ms() + (st.afterS or 60) * 1000 end
+    if endAt and ms() >= endAt then break end
+    n = n + 1
+    local r = run()
+    local cnt = counts()
+    W = newCapture(string.format('drive-%02d', n), { test = 'drive', state = s, spot = r and r.along and math.floor(r.along),
+      switch = 'drive', value = s }, 0, st.seconds or 20, cnt)
+    while W do coroutine.yield() end
+  end
+  note(string.format('drive: %d windows', n))
+end
+
 -- The road graph the game has now (map.getMap()), for the offline timings (T6): nodes with position, radius and links.
 function OPS.dump(st)
   local out, n = { nodes = {} }, 0

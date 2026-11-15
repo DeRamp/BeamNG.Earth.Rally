@@ -189,9 +189,16 @@ def suite_t5():
     return steps + [{"op": "abort"}]
 
 
+def suite_drive():
+    """The owner drives a stage; the bench only records (20 s windows), until 60 s after the run ends or 20 min.
+    Start it on the stage menu or at the start line: it sets nothing and moves nothing."""
+    return [{"op": "record", "seconds": 20, "afterS": 60, "minutes": 20}]
+
+
 SUITES = {"smoke": suite_smoke, "quick": suite_quick, "t1": suite_t1, "t1b": suite_t1b, "t2": suite_t2,
-          "t3": suite_t3, "t4": suite_t4, "t5": suite_t5}
-LIMIT_S = {"smoke": 600, "quick": 2400, "t1": 1800, "t1b": 2400, "t2": 900, "t3": 2400, "t4": 1200, "t5": 1200}
+          "t3": suite_t3, "t4": suite_t4, "t5": suite_t5, "drive": suite_drive}
+LIMIT_S = {"smoke": 600, "quick": 2400, "t1": 1800, "t1b": 2400, "t2": 900, "t3": 2400, "t4": 1200, "t5": 1200,
+           "drive": 1320}
 
 
 # ------------------------------------------------------------------------------------------------ running one
