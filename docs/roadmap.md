@@ -1,8 +1,5 @@
 # Earth Rally roadmap
 
-**1.6.0 is the MVP launch (the owner, 2026-11-15)**, released once bug testing is done; until then, bug fixes
-only. The versions under "After 1.6.0" are still planned and continue once it is out.
-
 Drafted with the user, 2026-11-13; 1.3.1 and 1.3.2 released 2026-11-14. Each version has one theme; a
 version is done when it has been driven in game.
 Sizes are rough (S: a session, M: a few, L: a week or more of sessions). Numbers in brackets are the roadmap items
@@ -113,11 +110,7 @@ docs/plan-1.6.0-stage-dressing.md.
 | ✔ | Atmosphere: spectators, marshals, radio points (29), from the organisers' map first, placed by rule otherwise | built |
 | → | Not reached, for the user to place: ghost car and replays (27), stage sketches and height profiles (15), stages wider than ~26 km (8), stage pre-loading before the start (21), no penalty for a late start | |
 
-## After 1.6.0
-
-Still planned. Work on them starts once 1.6.0 is out.
-
-### 1.7.0: make and share stages
+## 1.7.0: make and share stages
 
 Players build their own stages and pass them around.
 
@@ -128,7 +121,7 @@ Players build their own stages and pass them around.
 | In-game editor, top-down on the map: draw or reroute stages, drag controls, edit existing stages (11) | L |
 | Friends' times through shared files (20; local leaderboards against real results came in 1.4.0) | S |
 
-### 1.8.0: the full rally
+## 1.8.0: the full rally
 
 From a single stage to a whole event.
 
@@ -141,7 +134,7 @@ From a single stage to a whole event.
 | Weather and time of day per stage (25) | M |
 | Split times (15) | S |
 
-### 2.0.0: public release (1.6.0 is the first public release; this is the polished one)
+## 2.0.0: public release
 
 Ready for players who have never heard of it.
 

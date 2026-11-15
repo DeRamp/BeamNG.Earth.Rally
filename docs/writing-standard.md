@@ -28,8 +28,8 @@ Target **400-600 words**. `wc -w README.md` before committing; over 600 means so
 
 <one-sentence pitch>
 
-**vX.Y.Z · BeamNG.drive <ver> · BeamNG.Earth modding API <ver>+ · auto recce: [DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)**
-[Download](…/releases/latest) · [Wiki](…/wiki) · [Changelog](CHANGELOG.md) · [Player guide](docs/guide.md) · [Report a bug](…/issues)
+**Alpha · BeamNG.drive <ver> · BeamNG.Earth modding API <ver>+ · auto recce: [DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)**
+[Download](…/releases) · [Wiki](…/wiki) · [Changelog](CHANGELOG.md) · [Player guide](docs/guide.md) · [Report a bug](…/issues)
 
 <hero screenshot from docs/media/>
 
@@ -47,13 +47,10 @@ Target **400-600 words**. `wc -w README.md` before committing; over 600 means so
 The version line is the only part that changes on every release. The README never names "this version's" notes;
 it links to `CHANGELOG.md`.
 
-## Supported releases
+## No version numbers in public material
 
-1.6.0 is the first supported release: the MVP, launched once the owner's bug testing is done (the owner,
-2026-11-15). Until then the build stays `1.6.0-alpha` and only bug fixes go in. After it, `1.6.1`, `1.6.2`, ... are
-bug fixes, with **Fixed** and **Known issues** sections; new features come in 1.7.0 and later, as the roadmap
-plans. Keeping up with a new BeamNG.drive or BeamNG.Earth API, and removing a
-stopgap such as `earthMenuFix.lua`, count as fixes.
+README, the wiki and posts say **alpha**, never a version number (the owner, 2026-11-15). Version
+numbers stay in the CHANGELOG, tags, release titles, zip names and `M.VERSION`.
 
 ## CHANGELOG.md
 
@@ -80,11 +77,11 @@ Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com
 
 ## GitHub release
 
-* **Tag:** `vX.Y.Z` on `main` (`vX.Y.Z-alpha` for releases before 1.6.0).
-* **Title:** `Earth Rally X.Y.Z: <name>`, the name 2-5 words, lower case (`the co-driver`). A patch can reuse
+* **Tag:** `vX.Y.Z-alpha` on `main`.
+* **Title:** `Earth Rally X.Y.Z-alpha: <name>`, the name 2-5 words, lower case (`the co-driver`). A patch can reuse
   its minor's name or describe the fix (`the first stage goes right`).
-* **Asset:** `earth_rally-X.Y.Z.zip` from `python tools/package.py X.Y.Z`. Nothing else attached.
-* **Latest release**, not pre-release: 1.6.0 is the first supported release. Only an `-alpha` or `-beta` tag is a pre-release.
+* **Asset:** `earth_rally-X.Y.Z-alpha.zip` from `python tools/package.py X.Y.Z-alpha`. Nothing else attached.
+* **Pre-release** box ticked while we are in alpha.
 * **Body:** the CHANGELOG entry, pasted, then this block:
 
 ```markdown
@@ -92,7 +89,7 @@ Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com
 **Install:**
 1. Install BeamNG.Earth from [the DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases), with its installer, as you
    would the official one.
-2. Download `earth_rally-X.Y.Z.zip` below and put it, still zipped, in
+2. Download `earth_rally-X.Y.Z-alpha.zip` below and put it, still zipped, in
    `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\mods\`. Delete the old Earth Rally zip first.
 
 [README](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/README.md) · [Player guide](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/guide.md) · [Full changelog](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/CHANGELOG.md)
@@ -128,8 +125,8 @@ old `docs/release-*.md` files stay as history.
    The fork's latest release has an installer and the API this release needs (see above).
 3. Grep for the old version number (`M.VERSION` in `mod/`, versioned doc names like `pacenotes-X.Y.Z.md`) and
    update what should move.
-4. Commit, tag `vX.Y.Z`, `python tools/package.py X.Y.Z`.
-5. GitHub release (Latest): title, body and asset as above.
+4. Commit, tag `vX.Y.Z-alpha`, `python tools/package.py X.Y.Z-alpha`.
+5. GitHub pre-release: title, body and asset as above.
 
 ## Other docs
 

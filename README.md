@@ -3,8 +3,8 @@
 Drive real rally stages on the real roads of [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth), timed,
 with BeamNG.drive's own co-driver calling pacenotes worked out from the road.
 
-**v1.6.0 · BeamNG.drive 0.40.5 · BeamNG.Earth modding API 1.6+ · auto recce: [DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)**
-[Download](https://github.com/DeRamp/BeamNG.Earth.Rally/releases/latest) · [Wiki](https://github.com/DeRamp/BeamNG.Earth.Rally/wiki) ·
+**Alpha · BeamNG.drive 0.40.5 · BeamNG.Earth modding API 1.6+ · auto recce: [DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)**
+[Download](https://github.com/DeRamp/BeamNG.Earth.Rally/releases) · [Wiki](https://github.com/DeRamp/BeamNG.Earth.Rally/wiki) ·
 [Changelog](CHANGELOG.md) · [Player guide](docs/guide.md) · [Report a bug](https://github.com/DeRamp/BeamNG.Earth.Rally/issues)
 
 ![On a stage: the stage clock, progress and the co-driver's pacenote cards](docs/media/hero-on-stage.jpg)
@@ -35,7 +35,7 @@ Details: [player guide](docs/guide.md#the-auto-recce-and-beamngearth).
 
 * Delete the old Earth Rally zip first. Two copies both load.
 * Your rallies, lines and times are kept. They live in `…\current\earthRally\`, not in the zip.
-* 1.6.x updates are bug fixes. New features come in 1.7 and later.
+* Earth Rally is in alpha: expect bugs, and please report them.
 
 ## Quick start
 
@@ -49,7 +49,7 @@ Details: [player guide](docs/guide.md#the-auto-recce-and-beamngearth).
 * Where the map has no road, the organisers' line is used and no notes are called there.
 * A rally pack imported from a `.zip` is untested in game. Folders work.
 * Very broad hilltops are not called as crests.
-* Stages recced before 1.6.0 get direction boards only: **Reset**, then **Auto recce**, for tape and marshals.
+* Stages recced before stage dressing came in get direction boards only: **Reset**, then **Auto recce**, for tape and marshals.
 
 ## Reporting bugs
 

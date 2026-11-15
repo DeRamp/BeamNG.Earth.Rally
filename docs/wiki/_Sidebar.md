@@ -17,4 +17,4 @@
 * [[Troubleshooting]]
 * [[Screenshots]]
 
-[Download](https://github.com/DeRamp/BeamNG.Earth.Rally/releases/latest)
+[Download](https://github.com/DeRamp/BeamNG.Earth.Rally/releases)

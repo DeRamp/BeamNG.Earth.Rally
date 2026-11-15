@@ -3,8 +3,8 @@
 Drive real rally stages on the real roads of [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth), timed,
 with BeamNG.drive's own co-driver calling pacenotes worked out from the road.
 
-**v1.6.0 · BeamNG.drive 0.40.5 · the first supported release.**
-[Download](https://github.com/DeRamp/BeamNG.Earth.Rally/releases/latest) · [Report a bug](https://github.com/DeRamp/BeamNG.Earth.Rally/issues)
+**Alpha · BeamNG.drive 0.40.5.** Expect bugs, and please report them.
+[Download](https://github.com/DeRamp/BeamNG.Earth.Rally/releases) · [Report a bug](https://github.com/DeRamp/BeamNG.Earth.Rally/issues)
 
 ![On a stage](https://raw.githubusercontent.com/wiki/DeRamp/BeamNG.Earth.Rally/images/hero-on-stage.jpg)
 

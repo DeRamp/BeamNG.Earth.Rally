@@ -1,8 +1,8 @@
-# Earth Rally 1.6.0: posts
+# Earth Rally: posts
 
-Ready to paste. Links assume the 1.6.0 release is out and the wiki is published. Images are in `../Earth Rally 1.6.0 marketing/social/` (beside the repo folder, outside git).
+Ready to paste. Links assume the release is out and the wiki is published. Images are in `../Earth Rally marketing/social/` (beside the repo folder, outside git).
 
-* Download: https://github.com/DeRamp/BeamNG.Earth.Rally/releases/latest
+* Download: https://github.com/DeRamp/BeamNG.Earth.Rally/releases
 * Wiki: https://github.com/DeRamp/BeamNG.Earth.Rally/wiki
 * Repo: https://github.com/DeRamp/BeamNG.Earth.Rally
 
@@ -17,7 +17,7 @@ Ready to paste. Links assume the 1.6.0 release is out and the wiki is published.
 
 ## Reddit (r/BeamNG)
 
-**Title:** Earth Rally 1.6: drive real rally stages on BeamNG.Earth
+**Title:** Earth Rally (alpha): drive real rally stages on BeamNG.Earth
 
 **Image:** `post-01-on-stage-16x9.jpg` (gallery: add `post-02`, `post-03`, `post-04`, `post-05`)
 
@@ -30,7 +30,7 @@ Ready to paste. Links assume the 1.6.0 release is out and the wiki is published.
 > * With a results pack (such as ARA 2026): leaderboards against the real crews, rally totals, season standings.
 > * Stages dressed like an event: tape, marshals, radio points, spectators.
 >
-> 1.6.0 is the first supported release. 1.6.x gets bug fixes; more features are on the way.
+> It is an alpha: expect bugs, and more features are on the way.
 >
 > Download and how-tos: https://github.com/DeRamp/BeamNG.Earth.Rally (needs BeamNG.Earth; Auto recce needs the
 > DeRamp fork of it, see the wiki).
@@ -39,7 +39,7 @@ Ready to paste. Links assume the 1.6.0 release is out and the wiki is published.
 
 ## BeamNG forum (Mods & Skins thread)
 
-**Title:** [RELEASE] Earth Rally 1.6.0: real rally stages on BeamNG.Earth
+**Title:** [ALPHA] Earth Rally: real rally stages on BeamNG.Earth
 
 **Images:** `post-01`, `post-02`, `post-03`, `post-04` (16x9)
 
@@ -53,16 +53,16 @@ Ready to paste. Links assume the 1.6.0 release is out and the wiki is published.
 > * With a results pack (such as ARA 2026): leaderboards against the real crews, rally totals, season standings.
 > * Course tape, marshals, radio points and spectators.
 >
-> **Install:** BeamNG.Earth from the DeRamp fork, then `earth_rally-1.6.0.zip` in your mods folder.
+> **Install:** BeamNG.Earth from the DeRamp fork, then the `earth_rally` zip in your mods folder.
 > Step by step: https://github.com/DeRamp/BeamNG.Earth.Rally/wiki/Install
 >
-> **Download:** https://github.com/DeRamp/BeamNG.Earth.Rally/releases/latest
+> **Download:** https://github.com/DeRamp/BeamNG.Earth.Rally/releases
 >
 > Works with BeamNG.drive 0.40.5. Bugs: https://github.com/DeRamp/BeamNG.Earth.Rally/issues
 
 ## X / Bluesky / Threads (thread of 4)
 
-1. Earth Rally 1.6 is out: real rally stages on the real roads of BeamNG.Earth. Free mod for BeamNG.drive.
+1. Earth Rally is out in alpha: real rally stages on the real roads of BeamNG.Earth. Free mod for BeamNG.drive.
    [`post-01-on-stage-16x9.jpg`]
 2. Drop in a rally's map, press Auto recce (DeRamp fork of BeamNG.Earth), and the co-driver calls pacenotes from the actual road: hairpins,
    crests, junctions. [`post-06-auto-recce-16x9.jpg`]
@@ -74,10 +74,10 @@ Ready to paste. Links assume the 1.6.0 release is out and the wiki is published.
 
 ## Discord announcement
 
-> **Earth Rally 1.6.0 is out: the first supported release** 🏁
+> **Earth Rally is out in alpha** 🏁
 > Real rally stages on BeamNG.Earth's real roads, timed, with pacenotes from the road and, with a results pack,
 > leaderboards against the real crews.
-> Download: <https://github.com/DeRamp/BeamNG.Earth.Rally/releases/latest>
+> Download: <https://github.com/DeRamp/BeamNG.Earth.Rally/releases>
 > New here? <https://github.com/DeRamp/BeamNG.Earth.Rally/wiki/Your-first-stage>
 > More features are on the way. Found a bug? <https://github.com/DeRamp/BeamNG.Earth.Rally/issues>
 
@@ -86,20 +86,20 @@ Ready to paste. Links assume the 1.6.0 release is out and the wiki is published.
 **Images:** `square-01-hero-1x1.jpg`, `square-02-spectators-1x1.jpg`, `square-03-turbines-1x1.jpg`,
 `square-04-hairpin-1x1.jpg` (carousel; `portrait-*-4x5.jpg` for a taller feed post)
 
-> Real rally stages on real roads. Earth Rally 1.6 for BeamNG.drive is out. Link in bio.
+> Real rally stages on real roads. Earth Rally for BeamNG.drive is out in alpha. Link in bio.
 > #BeamNG #BeamNGdrive #rally #simracing #gaming
 
 ## Story / Reels / TikTok cover
 
 **Image:** `story-01-1080x1920.jpg`
 
-> Earth Rally 1.6: real rally stages on BeamNG.Earth. Free mod. Link in bio.
+> Earth Rally (alpha): real rally stages on BeamNG.Earth. Free mod. Link in bio.
 
 ## YouTube video description
 
-> Earth Rally 1.6.0 for BeamNG.drive 0.40.5: real rally stages on the real roads of BeamNG.Earth.
+> Earth Rally (alpha) for BeamNG.drive 0.40.5: real rally stages on the real roads of BeamNG.Earth.
 >
-> Download: https://github.com/DeRamp/BeamNG.Earth.Rally/releases/latest
+> Download: https://github.com/DeRamp/BeamNG.Earth.Rally/releases
 > How-tos: https://github.com/DeRamp/BeamNG.Earth.Rally/wiki
 >
 > Stage: Weaver Bend, Overmountain Rally 2026 (Tennessee). Not affiliated with the ARA or the event.

@@ -1,6 +1,6 @@
 # Screenshots
 
-Earth Rally 1.6.0 on BeamNG.drive 0.40.5. Stages from the ARA 2026 season and OTR 2024.
+Earth Rally alpha on BeamNG.drive 0.40.5. Stages from the ARA 2026 season and OTR 2024.
 
 ## On the stage
 

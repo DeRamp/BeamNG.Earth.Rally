@@ -26,7 +26,7 @@ Each stage page shows, per kind, **on the map**, **Random** or **None**:
 
 ## Good to know
 
-* Dressing comes from **Auto recce** only. Stages recced before 1.6.0 get direction boards until you **Reset** and
+* Dressing comes from **Auto recce** only. Stages recced before stage dressing came in get direction boards until you **Reset** and
   run **Auto recce** again.
 * Props can still land on a road the game's map doesn't have, such as a driveway it is missing.
 * How to mark points in your own map: [map tags](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/rally-file.md#marking-the-organisers-points-in-a-map).
