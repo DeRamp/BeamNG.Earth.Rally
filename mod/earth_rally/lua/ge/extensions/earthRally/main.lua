@@ -1035,7 +1035,14 @@ function M.uiRallyAction(what, eventId, opts)
       local card = okS and rallyRun.uiCard()
       if okS and menuOpen and not (card and card.phase == 'stop') then M.closeMenu() end
       return go(okS, why)
-    elseif what == 'quit' then          -- Leave rally: continue later from the last service
+    elseif what == 'quit' or what == 'abandon' then
+      -- (left while the stages are being got ready: the auto recce under way stops with it)
+      if rallyRun.preparing() then
+        autoSeq = nil
+        if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
+      end
+    end
+    if what == 'quit' then              -- Leave rally: continue later from the last service
       rallyRun.quit()
       return go(true, nil, 'rally')
     elseif what == 'abandon' then       -- Retire: the saved rally deleted

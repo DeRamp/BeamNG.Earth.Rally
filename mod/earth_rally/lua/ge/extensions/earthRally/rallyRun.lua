@@ -45,6 +45,7 @@ M.BLOCKED = {
 M.ARRIVE_M = 150          -- a service driven to: done this close to its place
 M.ARRIVE_POLL_S = 0.5     -- ... looked at this often
 M.MOVE_WAIT_S = 120       -- a move to a stop: the world given this long to load there, then the stop done anyway
+M.ARRIVE_NEAR_M = 500     -- or this close and stopped (a service's point is the venue, not always on a road)
 M.GAP_HOLD_M = 250        -- a stage whose line has more than this of road missing on the map is held out (#30)
 
 M.ui = {}
@@ -475,6 +476,9 @@ function M.start(id, opts)
   if not r then return false, why end
   R, card, recoveredAt, askT, move, toStop = r, nil, nil, nil, nil, nil
   savedResults = nil
+  -- (the rally saved before is replaced now, as the start screen says, not only once the car is at the start)
+  local t0 = M.readFile(id)
+  if t0.current or t0.loop then t0.current, t0.loop = nil, nil writeFile(id, t0) end
   loop = { results = {} }
   M.block(true)
   log('I', logTag, string.format('rally: %s started (%s, %s, cancelled stages %s)', R.name, R.mode, R.class,
@@ -522,9 +526,23 @@ function M.resume(id)
     local it = rally.current(R)
     if it and it.kind ~= 'stage' then goToStop()
     elseif it then
-      -- (left between two stages: the car is not kept, so it goes straight to the next stage's start)
-      local ok, why = startHere(it)
-      if not ok then say(tostring(why), 6, 'warning', R.name) end
+      -- (left between two stages: back at the last stop's place, the transit to the stage driven from there -- a
+      -- leave and continue is no skip of a road section, #33)
+      local from
+      for i = R.pos - 1, 1, -1 do
+        local s = R.order[i]
+        if s.kind ~= 'stage' then from = s.place and s.place.lat and s break end
+      end
+      if from and earth.teleport(from.place.lat, from.place.lon, from.place.name or from.label) then
+        move = { item = from, t = 0, ready = 0, thenDo = function()
+          local okT, whyT = armTransit()
+          if not okT then say(tostring(whyT), 6, 'warning', R.name) end
+          if M.ui.openCard then M.ui.openCard() end
+        end }
+      else
+        local ok, why = startHere(it)
+        if not ok then say(tostring(why), 6, 'warning', R.name) end
+      end
     end
   end)
   return true
@@ -585,16 +603,20 @@ function M.goNext()
     if not rally.isServiced(R) then
       -- (not there yet: a service is driven to, an overnight or a stop with no place is gone to)
       if it.kind == 'service' and it.place and not recoveredAt then
-        if not toStop then driveToStop() end
+        if not toStop then driveToStop()
+        elseif (toStop.distM or math.huge) <= M.ARRIVE_NEAR_M then arrive() end
         return true
       end
       goToStop()
       return true
     end
+    local wasPlaced = it.place and it.place.lat
     rally.serviceOut(R)
     recoveredAt = nil
     it = rally.current(R)
     if not it then return false, 'the rally is over' end
+    -- (a stop with no place on the map was done where the car stood, which may be anywhere: taken to the stage)
+    if not wasPlaced and it.kind == 'stage' then return startHere(it) end
   end
   return armTransit()
 end
@@ -616,7 +638,8 @@ function M.onFinished(res)
   local nx = rally.current(R)
   card = { ss = it.ss, name = stage and stage.name or it.stageId, timeS = res.timeS, stage = st, overall = ov,
     mode = R.mode, canRestart = R.mode == 'casual' and not rally.over(R), last = rally.over(R),
-    next = nx and (nx.kind == 'stage' and (nx.ss .. ' ' .. stageName(nx)) or nx.label) or nil }
+    next = nx and (nx.kind == 'stage' and (nx.ss .. ' ' .. stageName(nx)) or nx.label) or nil,
+    driven = nx and (nx.kind == 'stage' or (nx.kind == 'service' and nx.place ~= nil)) or nil }
   local r = runner.current()
   if r then
     r.rally = { mode = R.mode, card = card }
@@ -642,7 +665,8 @@ function M.recoverKey()
       if it and it.kind == 'stage' then armTransit() end
     end
     local ok = runner.recoverToRoad()
-    if not ok then say('No road found near the car.', 3, 'warning', 'Recovery') end
+    if not ok then say('No road found near the car.', 3, 'warning', 'Recovery')
+    elseif R.mode == 'casual' then M.repair() end      -- (Casual: a car broken on a road section is fixed too)
     return true
   end
   local r = runner.current()
@@ -696,7 +720,8 @@ function M.update(dt)
     move.ready = earth.ready() and move.t > 2 and (move.ready + dt) or 0
     if move.ready >= runner.TELEPORT_SETTLE_S or move.t > M.MOVE_WAIT_S then
       if move.t > M.MOVE_WAIT_S then log('W', logTag, 'rally: the world took long to load at the stop') end
-      arrive()
+      local thenDo = move.thenDo
+      if thenDo then move = nil thenDo() else arrive() end
     end
   elseif toStop then
     toStop.t = toStop.t - dt
@@ -705,7 +730,12 @@ function M.update(dt)
       local p = earth.pose()
       if p and p.lat then
         toStop.distM = geo.metres(p.lat, p.lon, toStop.lat, toStop.lon)
-        if toStop.distM <= M.ARRIVE_M and not runLive() then arrive() end
+        local stopped = (p.speed or 0) < 1
+        local rr = runner.current()
+        local cardUp = rr and rr.resultsOpen       -- (the stage's card read first: arriving takes the run away)
+        if not runLive() and not cardUp and (toStop.distM <= M.ARRIVE_M or (stopped and toStop.distM <= M.ARRIVE_NEAR_M)) then
+          arrive()
+        end
       end
     end
   end

@@ -134,6 +134,7 @@ M.STAGE_APPS = { 'earthRallyHud', 'earthRallyResults', 'rallyCountdown', 'rallyS
   'rallyVisualPacenotes' }
 M.RECOVER_UP_M = 0.5           -- a car put back on the road / upright: this far above the ground
 M.RESULTS_CLOSE_M = 100        -- the results card closes once the car is driven this far from where it stopped ...
+M.RESULTS_RALLY_CLOSE_M = 600  -- a full rally's card: closed once the car is this far from where it opened
 M.RESULTS_TIMEOUT_S = 120      -- ... or after this long
 M.uiHidden = false             -- a game menu is up: the HUD draws nothing (main.lua's onUiChangedState sets it)
 -- The stage dressing (1.4.0: dressing.lua plans it, props.lua puts it down by the car's distance along the line),
@@ -1677,6 +1678,12 @@ resultsUpdate = function(dt)
   if not run.inRally and run.resultsT > M.RESULTS_TIMEOUT_S then M.closeResults() return end
   local p = carPos()
   if not p then return end
+  -- (a rally's card: also put away once the car is well clear of where it opened, stopped there or not -- else a car
+  -- that never stops after the flying finish would keep the next stage from loading)
+  if run.inRally then
+    run.openPos = run.openPos or p
+    if geo.dist2d(p, run.openPos) > M.RESULTS_RALLY_CLOSE_M then M.closeResults() return end
+  end
   if not run.restPos then
     if speed() < M.STOPPED_MS then run.restPos = p end
   elseif geo.dist2d(p, run.restPos) > M.RESULTS_CLOSE_M then
@@ -1735,8 +1742,8 @@ local function stepApproach(dt)
     if run.stage.id == a.stage.id and run.event.id == a.event.id then M.disarmApproach('the stage is already loaded') end
     return
   end
-  -- (a rally's results card, still up at the next stage's time control: put away, the next stage is the way on)
-  if run and run.inRally and run.resultsOpen then M.closeResults() end
+  -- (a rally's results card waits for its answer, or for the car to drive on: resultsUpdate)
+  if run and run.inRally and run.resultsOpen then return end
   approach = nil
   log('I', logTag, 'route to ' .. a.stage.name .. ': near its ' .. a.kind .. ', the stage loads')
   local opts = {}

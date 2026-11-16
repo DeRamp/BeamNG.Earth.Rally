@@ -25,7 +25,7 @@
 -- crew of your class on that pass, the fastest National time of all; with no field at all, NOMINAL_KMH over its km.
 local M = {}
 
-M.FORMAT = 1
+M.FORMAT = 2          -- (2: the start and the stops' places, 1.7.0 revision 2; a 1 save is not continued)
 M.CHAMPIONSHIP = 'national'
 M.SUPER_FIRST_S = 600
 M.SUPER_NEXT_S = 420

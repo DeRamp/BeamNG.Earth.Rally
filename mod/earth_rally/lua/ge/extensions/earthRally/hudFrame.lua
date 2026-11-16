@@ -158,7 +158,11 @@ end
 function M.approachText(a, units)
   if type(a) ~= 'table' then return nil end
   local d = a.distM and (' · ' .. M.lengthText(a.distM, units) .. (units == 'mi' and ' mi' or ' km')) or ''
-  if a.rally then return 'Transit to ' .. tostring(a.name or 'the stage') .. d .. ' · follow the arrows' end
+  -- (the HUD app is not on screen between stages: the Messages line carries the transit's controls, #27)
+  if a.rally then
+    return 'Transit to ' .. tostring(a.name or 'the stage') .. d ..
+      ' · follow the arrows · Recover: Backspace / D-pad → · Time card: Ctrl+Alt+K'
+  end
   return 'Route to ' .. tostring(a.name or 'the stage') .. d .. ' · gets ready as you arrive'
 end
 
