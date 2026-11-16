@@ -347,6 +347,14 @@ T.check(#r7 == 1 and r7[1].removed and r7[1].rallies == 2 and files['/earthRally
 -- the readers
 local evs = require('earthRally/events')
 evs.forget()
+-- (#50) the pack taken out: its rallies off the list, their files kept; the loose map's and Brindle's still there
+do
+  local ids = {}
+  for _, e in ipairs(evs.list(true)) do ids[e.id] = true end
+  T.check(not ids['test-series-2030-fernvale-rally'] and files['/earthRally/events/test-series-2030-fernvale-rally.json'],
+    'a pack taken out: its rallies not listed, their files kept')
+  T.check(ids['loose'] and ids['brindle-rally'], 'the rallies whose files are in the folder: listed')
+end
 T.check(evs.season('test-series-2030') and evs.season('test-series-2030').rounds[2] == 'test-series-2030-quarry-hill-rally',
   'events.season')
 T.check(#evs.seasons() == 2 and evs.seasons()[1].name == 'Half Season', 'events.seasons, by name')

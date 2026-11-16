@@ -331,52 +331,56 @@ local function drawWindow()
   im.SameLine()
   if im.Button('Reload') then events.list(true) selEvent, selStage = 1, 1 end
 
-  local list = events.list()
-  for i, e in ipairs(list) do
-    if im.Selectable1(e.name .. '##ev' .. i, selEvent == i) then selEvent, selStage = i, 1 end
-  end
-  local ev = list[selEvent]
-  if ev then
-    im.Separator()
-    for i, s in ipairs(ev.stages) do
-      local st = menu.stageStatus(ev.id, s, earth.hasRoadGraph())
-      local label = string.format('%s  (%s)  - %s##st%d', s.name, km(s.lengthM), st.note, i)
-      if im.Selectable1(label, selStage == i) then selStage = i end
+  -- The old rally list (rallies, their stages, a stage's buttons), collapsed: the menu does all of it now (#36).
+  -- Nothing below reads selEvent / selStage; the run and rally tools work on what is under way.
+  if im.CollapsingHeader1('Rallies (old)##earthRallyOldList') then
+    local list = events.list()
+    for i, e in ipairs(list) do
+      if im.Selectable1(e.name .. '##ev' .. i, selEvent == i) then selEvent, selStage = i, 1 end
     end
-    local stage = ev.stages[selStage]
-    if stage then
+    local ev = list[selEvent]
+    if ev then
       im.Separator()
-      im.Text(stage.name)
-      im.TextColored(GREY, string.format('%s, fits a %s circle', km(stage.lengthM), km(stage.radiusM)))
-      local busy = recce.active() or (runner.current() and runner.state() ~= 'finished' and runner.state() ~= 'failed')
-      if recce.active() then
-        local share, len, n, off, started = recce.progress()
-        if started then
-          im.TextColored(GREEN, string.format('Recce: %.0f %% (%s, %d points)', share * 100, km(len), n))
-        else
-          im.TextColored(AMBER, 'Recce: drive to the start of the stage; recording begins there')
-        end
-        if off and off > 60 then
-          im.TextColored(AMBER, string.format('%.0f m from the stage line: follow the orange line', off))
-        end
-        if im.Button('Save recce') then message = doAction('recceSave').message end
-        im.SameLine()
-        if im.Button('Save anyway') then message = doAction('recceSaveAnyway').message end
-        im.SameLine()
-        if im.Button('Cancel recce') then message = doAction('recceCancel').message end
-      elseif not busy then
-        if im.Button('Go to start') then message = doAction('goStart', ev.id, stage.id).message end
-        im.SameLine()
-        if im.Button('Route to start') then message = doAction('route', ev.id, stage.id, true).message end
-        im.SameLine()
-        if im.Button('Start recce') then message = doAction('recce', ev.id, stage.id, true).message end
-        if events.stageLine(ev.id, stage.id, stage) then
-          im.SameLine()
-          if im.Button('Run stage') then message = doAction('drive', ev.id, stage.id, true).message end
-        end
+      for i, s in ipairs(ev.stages) do
+        local st = menu.stageStatus(ev.id, s, earth.hasRoadGraph())
+        local label = string.format('%s  (%s)  - %s##st%d', s.name, km(s.lengthM), st.note, i)
+        if im.Selectable1(label, selStage == i) then selStage = i end
       end
-      local best = events.best(ev.id, stage.id)
-      if best then im.Text('Best time: ' .. runner.formatTime(best)) end
+      local stage = ev.stages[selStage]
+      if stage then
+        im.Separator()
+        im.Text(stage.name)
+        im.TextColored(GREY, string.format('%s, fits a %s circle', km(stage.lengthM), km(stage.radiusM)))
+        local busy = recce.active() or (runner.current() and runner.state() ~= 'finished' and runner.state() ~= 'failed')
+        if recce.active() then
+          local share, len, n, off, started = recce.progress()
+          if started then
+            im.TextColored(GREEN, string.format('Recce: %.0f %% (%s, %d points)', share * 100, km(len), n))
+          else
+            im.TextColored(AMBER, 'Recce: drive to the start of the stage; recording begins there')
+          end
+          if off and off > 60 then
+            im.TextColored(AMBER, string.format('%.0f m from the stage line: follow the orange line', off))
+          end
+          if im.Button('Save recce') then message = doAction('recceSave').message end
+          im.SameLine()
+          if im.Button('Save anyway') then message = doAction('recceSaveAnyway').message end
+          im.SameLine()
+          if im.Button('Cancel recce') then message = doAction('recceCancel').message end
+        elseif not busy then
+          if im.Button('Go to start') then message = doAction('goStart', ev.id, stage.id).message end
+          im.SameLine()
+          if im.Button('Route to start') then message = doAction('route', ev.id, stage.id, true).message end
+          im.SameLine()
+          if im.Button('Start recce') then message = doAction('recce', ev.id, stage.id, true).message end
+          if events.stageLine(ev.id, stage.id, stage) then
+            im.SameLine()
+            if im.Button('Run stage') then message = doAction('drive', ev.id, stage.id, true).message end
+          end
+        end
+        local best = events.best(ev.id, stage.id)
+        if best then im.Text('Best time: ' .. runner.formatTime(best)) end
+      end
     end
   end
   if message then im.TextWrapped(message) end

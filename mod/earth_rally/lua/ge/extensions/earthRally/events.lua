@@ -19,6 +19,7 @@ M.MATCHED_DIR = '/earthRally/matched/'
 M.RESULTS_DIR = '/earthRally/results/'
 M.SEASONS_DIR = '/earthRally/seasons/'
 M.BOARDS_DIR = '/earthRally/boards/'
+M.IMPORT_INDEX = '/earthRally/importIndex.json'   -- (importer.INDEX: the import folder's last scan)
 
 local cache = nil
 local seasonsCache = nil
@@ -42,21 +43,58 @@ end
 -- Every file read again from disk next time it is asked for (Reload, an import).
 function M.forget() files, seasonsCache = {}, nil end
 
--- Every event: { { id, name, stages = {...}, points = {...}, file }... }, sorted by name. Re-read when asked.
+-- (#50) Is an event's file still in the import folder, by the importer's last scan (index: importIndex.json, read
+-- once per list)? Only the rallies whose file is there are shown; the rest stay on disk, times, lines and saves and
+-- all, and come back when the file does.
+--   - a pack's rally: while a pack in the index lists its id. A pack taken out, or updated so its rallies have new
+--     ids, no longer lists the old one. (A round its season no longer lists is retired by pack.lua: kept to its pack
+--     while the pack is here, off Home but its page still there, as before.)
+--   - a loose map's rally: hidden once the importer has noted its file gone (index.gone), unless a file in the folder
+--     has its id again.
+--   - a rally the import folder never had (tools/import_kml.py's, the author's own): shown.
+-- No index (nothing scanned yet, or unreadable): everything shown.
+local function folderCheck(index)
+  if type(index) ~= 'table' or type(index.files) ~= 'table' then return function() return true end end
+  local packs = type(index.packs) == 'table' and index.packs or {}
+  local gone = type(index.gone) == 'table' and index.gone or {}
+  local packIds, fileIds = {}, {}
+  for _, p in pairs(packs) do
+    for _, id in ipairs(type(p) == 'table' and type(p.eventIds) == 'table' and p.eventIds or {}) do packIds[id] = true end
+  end
+  for _, f in pairs(index.files) do if type(f) == 'table' and f.eventId then fileIds[f.eventId] = true end end
+  return function(e)
+    if type(e.pack) == 'table' and e.pack.file then
+      if packIds[e.id] then return true end
+      return type(e.retired) == 'table' and packs[e.pack.file] ~= nil
+    end
+    return gone[e.id] == nil or fileIds[e.id] == true or packIds[e.id] == true
+  end
+end
+M._folderCheck = folderCheck
+
+-- Every event whose file is still in the import folder (folderCheck): { { id, name, stages = {...}, points = {...},
+-- file }... }, sorted by name. Re-read when asked.
 function M.list(reload)
   if cache and not reload then return cache end
   if reload then M.forget() end
   cache = {}
+  local okI, index = pcall(function() return FS:fileExists(M.IMPORT_INDEX) and jsonReadFile(M.IMPORT_INDEX) or nil end)
+  local shown = folderCheck(okI and index or nil)
   local found = FS:findFiles(M.EVENTS_DIR, '*.json', 0, false, false) or {}
+  local hidden = 0
   for _, f in ipairs(found) do
     local ok, e = pcall(jsonReadFile, f)
     if ok and type(e) == 'table' and e.format == 1 and type(e.stages) == 'table' then
       e.file = f
       e.id = e.id or f:match('([^/]+)%.json$')
-      cache[#cache + 1] = e
+      if shown(e) then cache[#cache + 1] = e else hidden = hidden + 1 end
     else
       log('W', 'earthRally', 'not an Earth Rally event file: ' .. tostring(f))
     end
+  end
+  if hidden > 0 then
+    log('I', 'earthRally', string.format('%d rall%s not shown: %s file is no longer in the import folder (kept on disk)',
+      hidden, hidden == 1 and 'y' or 'ies', hidden == 1 and 'its' or 'their'))
   end
   table.sort(cache, function(a, b) return tostring(a.name) < tostring(b.name) end)
   return cache
