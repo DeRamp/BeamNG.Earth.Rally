@@ -78,36 +78,47 @@ arrive. Tell the sender "received, reviewing #N" with SendMessage first.
    CI on this repo: this run is the gate.
 4. **Review only what is new** (the owner, 2026-11-15). Nothing is reviewed twice: `/handoff` reviewed the
    handed-off SHA, your earlier rounds reviewed the heads you recorded, and `main`'s own changes were reviewed when
-   they merged. Your review guards `main`, not the design. In every command below, run with
-   `git -C .claude/worktrees/maintainer-review`, `<head>` is `refs/maintainer/pr-<N>` from step 2.
-   - **Reviewed SHA:** `refs/maintainer/reviewed/pr-<N>` if it exists (only you write it, step 6), else the PR body's
-     `Handed off at` SHA. Use it only if `git merge-base --is-ancestor <reviewed> <head>` succeeds. If it fails, or
-     the ref and the handed-off SHA are both missing, there is no reviewed SHA: review the PR's own changes in full
-     (`git diff <merge-base origin/main <head>>..<head>`) and say why in the verdict comment.
-   - **Delta:** the commits on the branch's own line after the reviewed SHA,
-     `git rev-list --first-parent <reviewed>..<head>`. Each ordinary commit goes to the reviewers as its diff. A
-     merge commit whose second parent is on main (`git merge-base --is-ancestor <commit>^2 origin/main`) is a
-     back-merge, whatever the PR body says: only `git show --remerge-diff <commit>` goes to the reviewers, which is
-     what the sender's conflict resolution changed. Any other merge commit goes in full.
-   - **Interaction with main:** let `<base>` be `git merge-base origin/main <head>`. Only if `<base>` is not
-     `origin/main` (main moved since the branch last took it), the debugger also gets the PR's own diff
-     (`git diff <base>..<head>`) and main's diff since then (`git diff <base>..origin/main`), and is asked only how
-     the two interact: what of main's breaks the PR's code, or the PR's breaks main's, in any file. It does not
-     review either side on its own.
-   - **Agents:** the `debugger` over the delta and, if any, the interaction. The `contrarian` in parallel over the
-     delta only, given the PR body's reasoning and not your verdict.
-   - No delta and main has not moved: no agent review. The touched tests are the gate. Say so in the verdict comment.
+   they merged. Your review guards `main`, not the design. Every command below is
+   `git -C .claude/worktrees/maintainer-review ...`, one per call, with no `$(...)`: work out each SHA in its own
+   call and paste it into the next. `HEAD` there is the step 2 merge result; `refs/maintainer/pr-<N>` is the PR head.
+   - **Reviewed SHA `R`:** `rev-parse -q --verify refs/maintainer/reviewed/pr-<N>` (you write it in step 6; the guard
+     hook blocks other sessions from writing `refs/maintainer/`), else the PR body's `Handed off at` SHA. A sender's
+     handed-off SHA is taken on trust: it names what `/handoff` reviewed, and that is accepted (the owner,
+     2026-11-15). Keep `R` only if `merge-base --is-ancestor R refs/maintainer/pr-<N>` succeeds. Without a usable
+     `R`, review the PR's own changes in full, `diff origin/main...refs/maintainer/pr-<N>`, give that to both agents
+     as the delta, skip the next two bullets, and say why in the verdict comment.
+   - **Delta:** `rev-list --first-parent --parents refs/maintainer/pr-<N> ^R ^origin/main`, oldest last. Each line
+     is a commit and its parents. Group them, oldest first:
+     - a run of commits with one parent: one diff for the run, `diff <oldest>^ <newest>`;
+     - a commit with exactly two parents whose second parent is on main (`merge-base --is-ancestor <parent2>
+       origin/main`): a back-merge, whatever the PR body says. Only `show --remerge-diff <commit>`, the sender's
+       conflict resolution (empty for a clean merge, which is fine: the next bullet covers main);
+     - any other merge: `diff <commit>^1 <commit>`.
+   - **Interaction with main:** `B` = `merge-base origin/main R` (the main the reviewed code was written against).
+     If `B` is not `rev-parse origin/main`, main has changed under the PR since it was last reviewed, back-merged or
+     not. Then the debugger also gets the PR's whole effect on the merge result, `diff origin/main HEAD`, and main's
+     change since `B`, `diff B origin/main`, and is asked only how the two interact: what of main's breaks the PR's
+     code, or the PR's breaks main's, in any file. It does not review either side on its own (the owner's choice,
+     2026-11-15).
+   - **Earlier findings:** if an earlier verdict comment of yours on this PR lists CONFIRMED findings, the debugger
+     gets them and checks each against the merge result: fixed or not. One not shown fixed still blocks.
+   - **Agents:** the `debugger` over the delta, the interaction and the earlier findings. The `contrarian` in
+     parallel over the delta only, given the PR body's reasoning and not your verdict.
+   - No delta, `B` is `origin/main`, and no earlier CONFIRMED findings: no agent review. The touched tests are the
+     gate. Say so in the verdict comment.
 5. **Decide.**
    - **Merge** when the touched tests pass and no reviewer has a CONFIRMED defect that would break the mod, lose
      data, or break a rule in `CLAUDE.md` (rally data in git, version numbers in public text, and so on).
    - **Send back** otherwise. You never edit a PR's code yourself.
    - PLAUSIBLE findings and style points do not block. List them in the merge comment so they are not lost.
 6. **Record it on the PR**, every time, with `gh pr comment <N> --body-file <file>`: the verdict, the tests run, and
-   the findings one line each (`path:line: problem. Fix.`), and a line `Reviewed head <full SHA>`: the `<head>` you
-   reviewed. The comment is the record; a message can be lost. Write the file under `$TEMP`, never inside the repo,
-   so the root stays clean. Then record the head for the next round:
+   the findings one line each (`path:line: problem. Fix.`). The comment is the record; a message can be lost. Write
+   the file under `$TEMP`, never inside the repo, so the root stays clean. **Only when step 4 ran to the end** (its
+   agents reported, or it found nothing to review), add a line `Reviewed head <full SHA of refs/maintainer/pr-<N>>`
+   and record it for the next round:
    `git -C .claude/worktrees/maintainer-review update-ref refs/maintainer/reviewed/pr-<N> refs/maintainer/pr-<N>`.
-   Senders never write a `Reviewed head` line or touch `refs/maintainer/`; step 4 reads the ref, not the comment.
+   A send-back from step 1 or 2 (draft, wrong SHA, conflict) reviews nothing: no `Reviewed head` line, and the ref
+   stays as it was. Step 4 reads the ref, not the comment.
 7. **Merge:** `gh pr merge <N> --merge --match-head-commit <SHA>`. A merge commit lands exactly the tree you tested
    and keeps the branch's SHAs. The SHA guard stops a merge of anything pushed after your review. If GitHub
    refuses (not mergeable, head moved), send it back with the reason. Then delete only the remote branch:

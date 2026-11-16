@@ -7,7 +7,7 @@ would change `main` of this repo (origin URL contains REPO) is blocked with exit
 
 - `gh pr merge` (unless `-R`/`--repo` names another repository)
 - `git push` to `main` (named in a refspec, `--all`/`--mirror`, or a bare push while on `main`)
-- `git branch -f/-D/-m/-M ... main`, `git update-ref refs/heads/main`
+- `git branch -f/-D/-m/-M ... main`, `git update-ref refs/heads/main`, `git update-ref refs/maintainer/...`
 - `git commit/merge/rebase/cherry-pick/revert/am/pull/reset` while on `main`, except `pull --ff-only` from
   origin's main, `--abort`/`--quit`, and a `reset` that only unstages paths
 - `tools/release.py` without `--check` (tags, pushes a tag and publishes a release: only the maintainer runs it)
@@ -228,6 +228,8 @@ def git_blocked(args, state):
             return None
         if sub == "update-ref":
             names = [a for a in without_values(rest, {"-m"}) if not a.startswith("-")]
+            if names[:1] and names[0].startswith("refs/maintainer/"):
+                return "git update-ref on refs/maintainer/ (the maintainer's review records)"
             return "git update-ref on main" if names[:1] and names_main(names[0], state) else None
         if state.branch() not in MAIN:
             return None
