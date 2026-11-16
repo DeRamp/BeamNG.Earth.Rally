@@ -119,7 +119,18 @@ b = runOf(2, { finalTime = 200 }) stats.stageStarted(b) stats.stageEnded(b, 'fin
 a = runOf(1, { finalTime = 300 }) stats.stageStarted(a) stats.stageEnded(a, 'finished')
 T.check(count('rally_finished') == 0, 'stage 2 before the attempt started: not counted')
 b = runOf(2, { finalTime = 200 }) stats.stageStarted(b) stats.stageEnded(b, 'finished')
-T.check(count('rally_finished') == 1, 'out of order within the attempt: finished')
+T.check(count('rally_finished') == 1, 'stage 1 then 2 in the attempt: finished')
+-- a rally run in two loops (the itinerary's running order, A B A B): one start and one finish, out of four passes
+fresh()
+local loop = { 's1', 's2', 's1', 's2' }
+for _, sid in ipairs(loop) do
+  local x = runOf(sid == 's1' and 1 or 2, { finalTime = 100, rallyOrder = loop })
+  stats.stageStarted(x) stats.stageEnded(x, 'finished')
+end
+T.check(count('rally_started') == 1 and count('rally_finished') == 1, 'two loops: one rally')
+local fin = nil
+for _, e in ipairs(stats._queue()) do if e.event == 'rally_finished' then fin = e end end
+T.check(fin.stages_total == 4 and fin.stages_done == 4, 'counted in passes')
 T.check(stats._session() ~= session, 'a new session: a new number')
 
 -- sending: nothing with no address; with one, a batch goes in a few frames and the queue empties
@@ -153,6 +164,7 @@ T.check(#stats._queue() == 1, '500: kept for later')
 answer = 'HTTP/1.1 400 Bad Request'
 stats.update(stats.RETRY_S + 1, true) stats.flushSoon() frames()
 T.check(#stats._queue() == 0, '400: dropped, not retried for ever')
+T.check(stats.uiState().last:find('refused', 1, true) ~= nil, '400: what left still goes in the local copy, marked')
 
 -- No while a send is under way: the send is closed and nothing is written as sent
 answer = 'HTTP/1.1 204 No Content'

@@ -429,6 +429,7 @@ function M.start(event, stage, opts)
   -- says its name alone, never a made-up SS number), how many SS the rally has (the itinerary's counted passes, the
   -- map's stages with none) and the next stage (menu.nextStage: the itinerary's running order, else the map's)
   run.ssCount = menu.passCount(event) or #(event.stages or {})
+  run.rallyOrder = menu.runOrder(event)       -- (stats: a rally attempt follows the running order)
   run.ssLabel = menu.ssLabel(event, stage.id) or false
   for i, st in ipairs(event.stages or {}) do
     if st == stage or st.id == stage.id then run.ss = i break end

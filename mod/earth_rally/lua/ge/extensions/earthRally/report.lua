@@ -28,20 +28,35 @@ local function scrubIps(l)
   end))
 end
 
--- (an IPv6 address: hex groups and colons, with a '::' or a hex letter, so a clock time like 12:34:56 is kept)
+-- (an IPv6 address's shape: hex groups of 1 to 4, eight of them, or at least two around one '::')
+local function ip6Shape(m)
+  if m:find(':::', 1, true) then return false end
+  local double = m:find('::', 1, true)
+  if double and m:find('::', double + 1, true) then return false end
+  local groups = 0
+  for g in m:gmatch('[^:]+') do
+    if #g > 4 then return false end
+    groups = groups + 1
+  end
+  if double then return groups >= 2 end
+  return groups == 8
+end
+
+-- (an IPv6 address standing on its own: not inside a word, so 'runner.lua:1476:' and 'Face::Create' are kept, nor a
+-- clock time like 12:34:56)
 local function scrubIp6(l)
-  return (l:gsub('[%x:][%x:][%x:]+', function(m)
-    local _, colons = m:gsub(':', '')
-    if colons < 2 or #m < 6 then return nil end
-    if not (m:find('::', 1, true) or m:find('%a')) then return nil end
-    if m:find('[^:]%x%x%x%x%x') then return nil end         -- (a group longer than 4: a hash, not an address)
+  return (l:gsub('()([%x:]+)()', function(s, m, e)
+    if #m < 6 or not m:find(':', 1, true) then return nil end
+    if l:sub(s - 1, s - 1):match('[%w%.]') or l:sub(e, e):match('%w') then return nil end
+    if not ip6Shape((m:gsub(':$', ''))) then return nil end
     return '<removed>'
   end))
 end
 
--- a pattern matching s in any letter case
+-- a pattern matching s in any letter case, as a whole word (so a user called 'dev' leaves 'device' alone)
 local function anyCase(s)
-  return (s:gsub('[%^%$%(%)%%%.%[%]%*%+%-%?]', '%%%0'):gsub('%a', function(c) return '[' .. c:lower() .. c:upper() .. ']' end))
+  local p = s:gsub('[%^%$%(%)%%%.%[%]%*%+%-%?]', '%%%0'):gsub('%a', function(c) return '[' .. c:lower() .. c:upper() .. ']' end)
+  return '%f[%w]' .. p .. '%f[%W]'
 end
 
 -- The log with the player's details taken out: the user name (in Windows, Mac and Linux paths and anywhere else,

@@ -32,7 +32,13 @@ local more = table.concat(report.clean(table.concat({
   '1.3|I|x| hello JDOE and Jdoe',
   '1.4|I|net| peer fe80::1c2b:3d4e:5f60:7a8b connected, also 2001:db8:85a3::8a2e:370:7334',
   '1.5|I|t| at 12:34:56 and hash deadbeefcafe1234:abc',
+  '1.6|E|lua| lua/ge/extensions/earthRally/runner.lua:1476: attempt to index a nil value',
+  '1.7|E|cpp| in Face::Create and ab::cd()',
+  '1.8|I|x| jdoesworld stays',
 }, '\n'), 'jdoe'), '\n')
+T.check(more:find('runner.lua:1476:', 1, true) ~= nil, 'a Lua error line keeps its file and line')
+T.check(more:find('Face::Create', 1, true) ~= nil, 'a C++ name kept')
+T.check(more:find('jdoesworld', 1, true) ~= nil, 'the user name only as a whole word')
 T.check(not more:find('Contoso', 1, true), 'OneDrive organisation removed')
 T.check(not more:find('janed', 1, true), 'Linux and Mac home folders removed')
 T.check(not more:find('JDOE', 1, true) and not more:find('Jdoe', 1, true), 'user name in any letter case')

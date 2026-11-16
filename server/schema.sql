@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY,
   day TEXT NOT NULL,            -- YYYY-MM-DD, no time of day
   event TEXT NOT NULL,
-  session TEXT NOT NULL,        -- random, new each time the game starts, never saved on the player's PC
+  session TEXT NOT NULL,        -- random, new each time the game starts, never reused
   mod TEXT, game TEXT, earth TEXT,
   rally TEXT, stage TEXT, pass INTEGER, result TEXT, time_s INTEGER, resets INTEGER, line TEXT,
   stages_done INTEGER, stages_total INTEGER,

@@ -326,6 +326,16 @@ function M.passCount(e)
   return n
 end
 
+-- The stage ids of the rally's counted passes in running order (a stage driven twice is in it twice); with no
+-- itinerary, the map's stages. (stats: a rally attempt follows it.)
+function M.runOrder(e)
+  if type(e) ~= 'table' then return {} end
+  local out = {}
+  for _, p in ipairs(runningOrder(e)) do if not p.cancelled then out[#out + 1] = p.stage.id end end
+  if #out == 0 then for _, s in ipairs(e.stages or {}) do out[#out + 1] = s.id end end
+  return out
+end
+
 -- The stage to drive after this one, and its place in the map's order: the stage of the next counted pass after
 -- this stage's first pass in the itinerary's running order (a pass of this same stage skipped); with no itinerary,
 -- or for a stage the itinerary never runs, the next stage in map order that the itinerary does run. nil at the end.

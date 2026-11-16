@@ -5,7 +5,7 @@
 //   GET  /api/summary?days=30             the dashboard's numbers; needs  Authorization: Bearer <DASHBOARD_KEY>
 //   GET  /                                one line saying what this is
 //
-// Each event carries a session number: random, made new each time the game starts, never saved on the PC, so there
+// Each event carries a session number: random, made new each time the game starts, never reused, so there
 // is no install to link sessions by, and nothing to delete by. Never stored: the IP address (never read here),
 // headers, anything not in EVENTS.
 

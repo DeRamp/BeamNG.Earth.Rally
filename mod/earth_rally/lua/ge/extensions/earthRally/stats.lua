@@ -6,9 +6,10 @@
 --   earthRally/telemetry/; every message sent is also written word for word to SENT_FILE, so the player can read
 --   exactly what left their PC.
 --
---   No install number: each game session gets a new random number, kept in memory only, so two sessions of the same
---   player cannot be linked (the owner's choice, 2026-11-16: "fully anonymous"). The price: installs are not counted,
---   only sessions, and there is nothing to "delete my stats" by.
+--   No install number: each game session gets a new random number, never reused (it is in the mod's files only inside
+--   the events waiting and the copy of what was sent), so two sessions of the same player cannot be linked (the
+--   owner's choice, 2026-11-16: "fully anonymous"). The price: installs are not counted, only sessions, and there
+--   is nothing to "delete my stats" by.
 --
 --   Sent over plain HTTP (the game's Lua has no TLS) to the stats Worker (server/), in batches, from a coroutine
 --   stepped by update(): the game never waits on the network, except the one name lookup per session, which is
@@ -45,7 +46,7 @@ M.EVENTS = {
 
 local st = nil              -- { consent = 'ask'|'yes'|'no' }
 local queue = nil
-local session = nil         -- this game session's random number (memory only)
+local session = nil         -- this game session's random number (never reused)
 local modVersion = '?'
 local prompted = false      -- the question has been on screen this session
 local sessionSent = false
@@ -55,7 +56,7 @@ local nextTry = 0
 local clock = 0
 local lastSent = nil        -- the last message sent, as written to SENT_FILE
 local dnsCache, dnsFailed = {}, false
-local attempts = {}         -- event id -> { done = { stageId = true } }: this session's rally attempt
+local attempts = {}         -- event id -> { done = passes finished }: this session's rally attempt
 local wantSend = false
 
 local function lg(level, msg) local f = rawget(_G, 'log') if f then f(level, 'earthRally', 'stats: ' .. msg) end end
@@ -75,7 +76,7 @@ local function encode(t)
   error('no jsonEncode')
 end
 
--- A random number for this session: 32 hex digits. Not tied to anything on the PC, never saved.
+-- A random number for this session: 32 hex digits. Not tied to anything on the PC, never reused.
 local seeded = false
 function M.newSession()
   if not seeded then
@@ -169,21 +170,30 @@ end
 
 -- run: runner's run table. Called when the stage clock starts (GO), so driving to the start and leaving is not a
 -- run. Each run reports one start and, after it, one ending.
---   A rally attempt (this session, in memory): starts when the rally's first stage starts, unless an attempt is
---   open with nothing finished yet (restarting stage 1 is the same attempt); finishes once every stage of the rally
---   has been finished in it, in any order. A one-stage rally is only a stage.
+--   A rally attempt (this session, in memory) follows the rally's running order (run.rallyOrder: the itinerary's
+--   counted passes, so a stage driven in two loops is in it twice; else the map's stages). It starts when the first
+--   pass's stage starts and no attempt is waiting on that stage (restarting stage 1 is the same attempt); each pass
+--   finished in turn moves it on; the last one finishes the rally. A stage out of turn is only a stage. A one-stage
+--   rally is only a stage.
+local function orderOf(run)
+  if type(run.rallyOrder) == 'table' then return run.rallyOrder end
+  local out = {}
+  for _, s in ipairs(run.event.stages or {}) do out[#out + 1] = s.id end
+  return out
+end
+
 function M.stageStarted(run)
   if not (run and run.event and run.stage) or run.statsStarted then return end
   run.statsStarted = true
   local rally, stage = M.names(run.event, run.stage)
   M.record('stage_started', { rally = rally, stage = stage, pass = run.ss, line = run.checks and run.checks.line })
-  local stages, id = run.event.stages or {}, run.event.id or rally
-  if #stages > 1 and stages[1] and stages[1].id == run.stage.id then
-    local a = attempts[id]
-    if not (a and next(a.done) == nil) then
-      attempts[id] = { done = {} }
-      M.record('rally_started', { rally = rally, stages_total = #stages })
-    end
+  local order, id = orderOf(run), run.event.id or rally
+  if #order < 2 then return end
+  local a = attempts[id]
+  if a and order[a.done + 1] == run.stage.id then return end           -- (the next pass of the attempt under way)
+  if order[1] == run.stage.id then
+    attempts[id] = { done = 0 }
+    M.record('rally_started', { rally = rally, stages_total = #order })
   end
 end
 
@@ -195,14 +205,12 @@ function M.stageEnded(run, result)
   M.record('stage_finished', { rally = rally, stage = stage, pass = run.ss, result = result,
     time_s = result == 'finished' and run.finalTime or nil, resets = run.resets or 0,
     line = run.checks and run.checks.line })
-  local stages, id = run.event.stages or {}, run.event.id or rally
+  local order, id = orderOf(run), run.event.id or rally
   local a = attempts[id]
-  if result == 'finished' and a then
-    a.done[run.stage.id] = true
-    local done = 0
-    for _, s in ipairs(stages) do if a.done[s.id] then done = done + 1 end end
-    if done == #stages then
-      M.record('rally_finished', { rally = rally, stages_done = done, stages_total = #stages })
+  if result == 'finished' and a and order[a.done + 1] == run.stage.id then
+    a.done = a.done + 1
+    if a.done >= #order then
+      M.record('rally_finished', { rally = rally, stages_done = a.done, stages_total = #order })
       attempts[id] = nil
     end
   end
@@ -314,8 +322,11 @@ local function nextJob()
     end
     if code and code >= 400 and code < 500 then
       -- refused (bad, too big, over the cap): sending it again would be refused again
+      -- (it did leave the PC, so it goes in the local copy too, marked)
       lg('W', 'the server refused ' .. #batch .. ' events (' .. code .. '); dropped')
       unqueue(batch)
+      for _, e in ipairs(batch) do appendSent(encode(e)) end
+      appendSent(encode({ note = 'the server refused the ' .. #batch .. ' lines above (' .. code .. ')' }))
       return false
     end
     lg('I', 'not sent (' .. tostring(code or why) .. '); kept for later')

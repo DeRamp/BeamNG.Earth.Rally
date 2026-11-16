@@ -9,8 +9,8 @@ Owner and contact for this data: **DeRamp**, through
 ## What is sent, with Yes
 
 - The event: a session started, a stage or rally started or finished, a recce done, an error code.
-- A random session number, made new each time you start the game. It is never saved on your PC, so your sessions
-  cannot be linked to each other or to you.
+- A random session number, made new each time you start the game and never used again, so your sessions cannot
+  be linked to each other or to you.
 - The Earth Rally, BeamNG.drive and BeamNG.Earth versions.
 - The day, with no time of day.
 - For a stage: the rally and stage name, the result, the stage time in whole seconds and the number of resets.
