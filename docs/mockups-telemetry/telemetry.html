@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Earth Rally · stats consent, privacy settings, report a problem</title>
 <!-- Proposal, not built. 1920x1080. Research and decisions behind it: docs/research-telemetry.md.
-     Open with #consent (first load), #settings (Settings > Privacy), #report (Report a problem, sent direct),
-     #reportweb (the same, sent through the browser to GitHub) or #sent; add ?shot for a bare 1920x1080 screen.
+     Open with #consent (first load, when the rally menu first opens), #settings (Settings > Privacy)
+     or #reportweb (Report a problem, through the browser to GitHub); add ?shot for a bare 1920x1080 screen.
      The road and the stock apps are stand-ins; buttons are BngButton, roughly. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700;800&family=Overpass+Mono:wght@400;600;700&display=swap" rel="stylesheet">
@@ -72,9 +72,7 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
 <div class="mock-bar"><b>Earth Rally · stats and reports (proposal)</b>
   <button data-v="consent">First load: ask</button>
   <button data-v="settings">Settings › Privacy</button>
-  <button data-v="report">Report a problem (direct)</button>
-  <button data-v="reportweb">Report a problem (via browser)</button>
-  <button data-v="sent">Report sent</button>
+  <button data-v="reportweb">Report a problem</button>
 </div>
 <div class="stage-wrap"><div class="screen-box"><div class="screen" id="screen">
   <div class="road"></div>
@@ -93,11 +91,11 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
           <li>A random install number</li></ul></div>
         <div class="col no"><h2>Never sent</h2><ul>
           <li>Your name, Steam or BeamNG account</li>
-          <li>Your IP address or location (not kept)</li>
+          <li>Your IP address or location</li>
           <li>Your other mods or your PC</li>
           <li>Logs, unless you send a report</li></ul></div>
       </div>
-      <p class="small">Change your mind any time in <b>Settings › Privacy</b>. Full details: <a>github.com/DeRamp/BeamNG.Earth.Rally/PRIVACY.md</a></p>
+      <p class="small">Change your mind any time in <b>Settings › Privacy</b>. Full details, from DeRamp: <a>github.com/DeRamp/BeamNG.Earth.Rally/PRIVACY.md</a></p>
       <div class="btns"><span class="bng-btn secondary">No thanks</span><span class="bng-btn secondary">Yes, send stats</span></div>
     </div>
     <div class="who"><b>First time the rally menu opens</b>, once. Nothing is sent until the player answers; closing it counts as No. Both buttons look the same on purpose: "No" must be as easy as "Yes" (EU consent rules, and BeamNG's own prompt does the same). Controller: A/B move between them, nothing pre-selected.</div>
@@ -111,7 +109,7 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
       <div class="row"><div class="t"><b>Send anonymous stats</b><span>Stages and rallies run and finished. Nothing personal.</span></div><div class="tog"></div></div>
       <div class="row"><div class="t"><b>See what was sent</b><span>Every message is also saved on your PC, word for word.</span></div><span class="bng-btn outlined">Open file</span></div>
       <div class="row"><div class="t"><b>Delete my stats</b><span>Removes everything sent from this PC and starts a new install number.</span></div><span class="bng-btn outlined">Delete</span></div>
-      <div class="row"><div class="t"><b>Report a problem</b><span>Tell us what went wrong. You choose whether to attach your log.</span></div><span class="bng-btn outlined">Report</span></div>
+      <div class="row"><div class="t"><b>Report a problem</b><span>Opens a bug report on GitHub. You choose whether to add your log.</span></div><span class="bng-btn outlined">Report</span></div>
       <div class="label" style="margin-top:22px">Last message sent</div>
       <div class="code">{ <span class="k">"event"</span>: "stage_finished", <span class="k">"install"</span>: "c41f…9a0e", <span class="k">"mod"</span>: "1.7.0-alpha", <span class="k">"game"</span>: "0.40.5",
   <span class="k">"stage"</span>: "ara2026-ss3", <span class="k">"result"</span>: "finished", <span class="k">"time_s"</span>: 412, <span class="k">"resets"</span>: 1, <span class="k">"day"</span>: "2026-11-16" }</div>
@@ -119,25 +117,7 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
     <div class="who"><b>Settings › Privacy.</b> The toggle shows the player's answer from the first prompt. "Open file" opens <span class="mono">earthRally/telemetry/sent.jsonl</span> in the userfolder. Only the date is sent, not the time of day.</div>
   </div>
 
-  <!-- 3. report, direct -->
-  <div class="view" id="v-report">
-    <div class="dim"></div>
-    <div class="card" style="width:940px">
-      <h1>Report a problem</h1>
-      <div class="label">What happened?</div>
-      <div class="field">The co-driver stopped calling notes halfway through SS3…</div>
-      <div class="check"><span class="box"></span><span>Attach my game log. Your Windows name, Steam ID and PC details are removed first. <a>Preview what is sent</a></span></div>
-      <div class="code">main| loaded <span class="x">C:\Users\&lt;you&gt;</span>\AppData\Local\BeamNG\…\earth_rally.zip
-steam| user <span class="x">&lt;removed&gt;</span>  id <span class="x">&lt;removed&gt;</span>
-earthRally| stage ara2026-ss3 started, 214 notes</div>
-      <div class="label" style="margin-top:16px">Contact (optional, Discord or GitHub name)</div>
-      <div class="field one">so we can ask a follow-up question</div>
-      <div class="btns"><span class="bng-btn secondary">Cancel</span><span class="bng-btn main">Send report</span></div>
-    </div>
-    <div class="who"><b>Report a problem, sent straight to us.</b> Opened from Settings, the Escape rally menu, and offered after a Lua error. Works even with stats turned off: it is a separate yes, every time. Becomes a GitHub issue labelled <span class="mono">player-report</span>, log stored privately and linked for the owner only.</div>
-  </div>
-
-  <!-- 4. report via browser -->
+  <!-- 3. report a problem: through the browser to GitHub -->
   <div class="view" id="v-reportweb">
     <div class="dim"></div>
     <div class="card" style="width:940px">
@@ -145,27 +125,15 @@ earthRally| stage ara2026-ss3 started, 214 notes</div>
       <div class="label">What happened?</div>
       <div class="field">The co-driver stopped calling notes halfway through SS3…</div>
       <div class="check"><span class="box"></span><span>Save my game log for the report (personal details removed). <a>Preview</a></span></div>
-      <p class="small">Your browser opens a new GitHub issue with this text filled in. Drag the log file into it; the folder opens next to it.<br>Needs a free GitHub account.</p>
+      <p class="small">Your browser opens a new issue on <b>github.com/DeRamp/BeamNG.Earth.Rally</b> with this filled in. Drag the log file into it; its folder opens alongside. Needs a free GitHub account.</p>
       <div class="btns"><span class="bng-btn secondary">Cancel</span><span class="bng-btn main">Open GitHub</span></div>
     </div>
-    <div class="who"><b>The fallback if the direct send cannot be made safe.</b> Nothing leaves the game by itself: the browser does the upload over HTTPS. No server, no cost, but the player needs a GitHub account and an extra step, so fewer reports.</div>
+    <div class="who"><b>Report a problem</b>, from Settings, the Escape rally menu, and offered after a Lua error. Works with stats off. Nothing leaves the game by itself: the browser opens <span class="mono">/issues/new</span> with the title, text, mod and game versions and stage filled in, labelled <span class="mono">bug</span>; the player posts it. The cleaned log is saved to <span class="mono">earthRally/reports/</span>.</div>
   </div>
 
-  <!-- 5. sent -->
-  <div class="view" id="v-sent">
-    <div class="dim"></div>
-    <div class="card" style="width:720px; text-align:center">
-      <h1>Thanks, report sent</h1>
-      <p>Your report number:</p>
-      <div class="big-id">ER-4F7K</div>
-      <p class="small">Mention it on GitHub or Discord if you want to follow it up.</p>
-      <div class="btns" style="justify-content:center"><span class="bng-btn main">Back to the rally</span></div>
-    </div>
-    <div class="who"><b>After Send report.</b> If the send fails (offline, server down), the report is kept and sent next time, and this card says so.</div>
-  </div>
 </div></div></div>
 <script>
-const views = ['consent','settings','report','reportweb','sent'];
+const views = ['consent','settings','reportweb'];
 if (location.search.includes('shot')) document.body.classList.add('shot');
 function show(v) {
   if (!views.includes(v)) v = 'consent';

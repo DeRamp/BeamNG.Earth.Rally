@@ -1,6 +1,6 @@
 # Research: player stats, bug reports, log upload
 
-Research only, 2026-11-16. Nothing is built. Mock-up: [`mockups-telemetry/telemetry.html`](mockups-telemetry/telemetry.html).
+Research 2026-11-16; decisions taken the same day (end of page). Planned for **1.9.0**. Nothing is built. Mock-up: [`mockups-telemetry/telemetry.html`](mockups-telemetry/telemetry.html).
 A new system, so it goes in a minor after the alpha MVP (bug fixes only until then).
 
 ## What the owner asked for
@@ -98,8 +98,7 @@ possible or an in-game test shows the UI can reach HTTPS.
 One **Cloudflare Worker** (free tier: 100k requests/day) on a `workers.dev` address:
 
 - `/event` → stores events in **D1** (free SQL database). Rate limited, fixed event names, small bodies only.
-- `/report` (later, if direct reports happen) → creates a GitHub issue with a token **kept on the Worker**, log in
-  **R2** storage, linked privately.
+- No report route: bug reports go through the browser to GitHub (decision 2).
 - A workers.dev address answered plain HTTP without redirecting in a quick test; confirm on our own Worker. A custom
   domain must not have "Always Use HTTPS" on, or the game's plain HTTP is redirected and fails.
 
@@ -121,14 +120,17 @@ mod list, timezone. Before saving or sending:
 - Only our lines plus the last few hundred lines around the error, under 1 MB.
 - A "Preview" shows the exact cleaned text before the player sends or saves it.
 
-## Decisions for the owner
+## Decisions (the owner, 2026-11-16)
 
-1. Stats over plain HTTP (anonymous, readable in transit), or wait for a secure route? Recommended: plain HTTP.
-2. Bug reports through the browser to GitHub (secure, needs an account), or direct send (easier, needs a secure
-   route first)? Recommended: browser now.
-3. Ask on first load of the rally menu (proposed), or at game start?
-4. Which minor this goes in, after the alpha MVP.
-5. Who answers deletion requests and owns `PRIVACY.md`: the owner, as DeRamp.
+1. **Stats over plain HTTP: yes, as long as they are fully anonymous.** So: no IP stored, no account, no hardware,
+   no free text, imported stage names sent as `custom`. The random install number stays (without it installs
+   can't be counted); it is made on the player's PC, tied to nothing, and replaced by "Delete my stats".
+2. **Bug reports go through the browser** to a pre-filled new issue on
+   `https://github.com/DeRamp/BeamNG.Earth.Rally/issues/new`, so they land in GitHub issues. No direct send, no
+   report server: the Worker only takes stats.
+3. **The pop-up appears when the rally menu first opens.**
+4. **Its own feature version: 1.9.0** "player stats and bug reports" (docs/roadmap.md), after the alpha MVP.
+5. **Owner of `PRIVACY.md` and deletion requests: DeRamp.**
 
 ## Unverified
 

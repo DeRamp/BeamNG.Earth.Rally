@@ -147,6 +147,19 @@ From a single stage to a whole event.
 | Weather and time of day per stage (25) | M |
 | Split times (15) | S |
 
+## 1.9.0: player stats and bug reports
+
+Know how many people play and what they drive, and get bug reports on GitHub. Research, rules and the owner's
+decisions (2026-11-16): docs/research-telemetry.md. Mock-up: docs/mockups-telemetry/telemetry.html.
+
+| Item | Size |
+|---|---|
+| Ask once, when the rally menu first opens: fully anonymous stats, yes or no; nothing sent before the answer | S |
+| Stats: stages and rallies started and finished, sent over plain HTTP to a free Cloudflare Worker + D1 | M |
+| Settings › Privacy: the toggle, see what was sent, delete my stats | S |
+| Report a problem: cleaned log saved, browser opens a pre-filled issue on github.com/DeRamp/BeamNG.Earth.Rally | S |
+| `PRIVACY.md` (owner: DeRamp); download counts from the GitHub API | S |
+
 ## 2.0.0: public release
 
 Ready for players who have never heard of it.
