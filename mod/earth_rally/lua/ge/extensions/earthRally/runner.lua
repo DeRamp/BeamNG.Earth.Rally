@@ -386,6 +386,9 @@ end
 -- teleport, and the car is not set down where it arrives (stepPlace).
 function M.start(event, stage, opts)
   local drivenIn = opts and opts.drivenIn
+  -- (Run stage pressed: a Route to start armed for any stage is done with, whether this start goes ahead or not --
+  --  a refused Run stage on another stage must not leave the first one loading itself as the car passes)
+  if not drivenIn then M.disarmApproach('Run stage') end
   if run and run.state ~= 'finished' and run.state ~= 'failed' then return false, 'a run is under way' end
   local ok, why = earth.check()
   if not ok then return false, why end
@@ -450,7 +453,7 @@ function M.start(event, stage, opts)
   local s = run.atc and { run.atc.lat, run.atc.lon } or latlon[1]
   local p = earth.pose()
   if drivenIn then
-    run.drivenIn, run.gpsUntilM = drivenIn, M.GPS_HANDOVER_M
+    run.drivenIn, run.droveIn, run.gpsUntilM = drivenIn, drivenIn, M.GPS_HANDOVER_M
   elseif p and geo.metres(p.lat, p.lon, s[1], s[2]) > M.TRAVEL_IF_FARTHER_M then
     local tok, twhy = earth.teleport(s[1], s[2], stage.name .. (run.atc and ' ATC' or ' start'))
     if not tok then fail('could not go to the start: ' .. tostring(twhy)) return false, twhy end
@@ -514,7 +517,9 @@ local function stepAnchor(dt)
   if la and geo.metres(la, lo, c.lat, c.lon) <= M.ANCHOR_CLOSE_M and not earth.rebasing() and earth.ready() then
     run.checks.originMoved = 'yes'
     earth.originMoved()
-    M.resetCameraSoon()
+    -- (not on a car loaded round as it drove up, Route to start: the reset snaps the camera twice at speed, and
+    --  BeamNG.Earth's camshift carries the camera across the move)
+    if not run.droveIn then M.resetCameraSoon() end
     setState('build')
   elseif run.t > M.ANCHOR_WAIT_S then
     earth.originMoved()
@@ -1075,9 +1080,14 @@ local function stepPlace()
     -- zone, and do not take "stopped on the line" for a start until it has moved since being put there.
     local _, sp = aheadDir(run.line, run.cum, run.startM)
     local d2s = p and ((p.x - sp.x) ^ 2 + (p.y - sp.y) ^ 2)
+    -- Past the start (on the stage, beyond the line, as stepToStart's "back up" test reads it): set down behind
+    -- the line, not asked to reverse back down the stage -- a car that came along the stage road from beyond the
+    -- start, Route to start on a stage with no ATC (the ATC path's `past`, with the line itself as the control).
+    local _, _, along, off = geo.locate(run.line, run.cum, p)
+    local past = along and off and along > run.startM + 2 and off <= M.START_ZONE_OFF_M
     -- (driven here, e.g. by Route to start, and not parked on the line itself: left where the player chose)
-    -- (loaded as the car drove up, Route to start: kept wherever it is; a car over the line is told to back up)
-    if p and not run.teleported and (run.drivenIn ~= nil
+    -- (loaded as the car drove up, Route to start: kept wherever it is short of the line)
+    if p and not run.teleported and not past and (run.drivenIn ~= nil
         or (d2s <= M.NO_SET_DOWN_M ^ 2 and d2s > M.DRIVEN_THERE_MIN_M ^ 2)) then
       run.checks.startSetDown = 'driven there'
       -- (stopped on the line while the stage loaded: not taken for a start until driven, as a car set down there)
@@ -1261,13 +1271,19 @@ end
 
 -- A stage loaded as the car drove up (Route to start): BeamNG.Earth's GPS, which planned the way over its own roads,
 -- keeps leading while the car is more than GPS_HANDOVER_M (straight) from the control `d` and the GPS still has a
--- destination; the run's arrows (routeTo, which clears the GPS) from then on. The game's road map the arrows are
+-- destination and it is still the stage's (GPS_SAME_M); the run's arrows (routeTo, which clears the GPS) from then on. The game's road map the arrows are
 -- planned on may not reach that far yet. (The GPS asked once a second.)
 local function gpsLeads(d, dt)
   if not run.gpsUntilM then return false end
   if d > run.gpsUntilM then
     run.gpsT = (run.gpsT or 0) - (dt or 0)
-    if run.gpsT <= 0 then run.gpsT, run.gpsOn = 1, earth.gps() and true or false end
+    if run.gpsT <= 0 then
+      -- (still ours: a GPS sent somewhere else since leaves the way to the run's own arrows)
+      local g, at = earth.gps(), run.droveIn
+      run.gpsT = 1
+      run.gpsOn = type(g) == 'table' and g.lat ~= nil and g.lon ~= nil and at ~= nil
+        and geo.metres(g.lat, g.lon, at.lat, at.lon) <= M.GPS_SAME_M
+    end
     if run.gpsOn then return true end
   end
   run.gpsUntilM = nil
@@ -1620,6 +1636,9 @@ end
 function M.armApproach(event, stage)
   local lat, lon, kind = M.arrivalPoint(stage)
   if not lat then approach = nil return false end
+  -- (a BeamNG.Earth that cannot say where its GPS goes: a cleared or changed route could not be told, and the stage
+  --  would load whenever the car came by. The route alone then, as before 1.6.2)
+  if earth.gps() == false then approach = nil return false end
   approach = { event = event, stage = stage, lat = lat, lon = lon, kind = kind, t = 0 }
   log('I', logTag, string.format('route to %s: armed, the stage loads %d m from its %s', stage.name, M.APPROACH_M, kind))
   return true
@@ -1638,9 +1657,9 @@ local function stepApproach(dt)
   local p = earth.pose()
   if not (p and p.lat) then return end
   if geo.metres(p.lat, p.lon, a.lat, a.lon) > M.APPROACH_M then
-    -- (false: this BeamNG.Earth cannot say where its GPS goes, and the route is taken to stand)
+    -- (false: this BeamNG.Earth cannot say where its GPS goes any more: not armed without it, armApproach)
     local g = earth.gps()
-    if g == nil or (g and not (g.lat and g.lon and geo.metres(g.lat, g.lon, a.lat, a.lon) <= M.GPS_SAME_M)) then
+    if not (type(g) == 'table' and g.lat and g.lon and geo.metres(g.lat, g.lon, a.lat, a.lon) <= M.GPS_SAME_M) then
       M.disarmApproach('the route was cleared or changed')
     end
     return
@@ -1666,10 +1685,17 @@ local function leftBehind(dt)
   if not (p and p.lat) or geo.metres(p.lat, p.lon, run.drivenIn.lat, run.drivenIn.lon) <= M.APPROACH_LEAVE_M then
     return false
   end
-  local name = run.stage.name
+  local name, ev, st, at = run.stage.name, run.event, run.stage, run.drivenIn
   log('I', logTag, 'route to ' .. name .. ': driven away before checking in, the stage unloaded')
   M.abort(true)
-  say(name .. ' put away: you drove off. Route to start to run it.', 6, 'info', 'Earth Rally')
+  -- (BeamNG.Earth's GPS still showing the way there: armed again, so following its arrows back loads it again)
+  local g = earth.gps()
+  if type(g) == 'table' and g.lat and g.lon and geo.metres(g.lat, g.lon, at.lat, at.lon) <= M.GPS_SAME_M
+      and M.armApproach(ev, st) then
+    say(name .. ' put away: you drove off. Follow the arrows back to run it.', 6, 'info', 'Earth Rally')
+  else
+    say(name .. ' put away: you drove off. Route to start to run it.', 6, 'info', 'Earth Rally')
+  end
   return true
 end
 

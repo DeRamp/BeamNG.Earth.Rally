@@ -20,6 +20,7 @@ local preview = require('earthRally/preview')
 local versions = require('earthRally/versions')
 local earthMenuFix = require('earthRally/earthMenuFix') -- STOPGAP: remove with BeamNG.Earth's fix (the file says)
 local menuPause = require('earthRally/menuPause')     -- the game paused while the menu page is up (1.6.2, #13)
+menuPause.holding = earth.holding                    -- (BeamNG.Earth's own holds: our request waits for them)
 
 local M = {}
 local logTag = 'earthRally'
@@ -710,6 +711,9 @@ doAction = function(what, eventId, stageId, fromPanel)
   end
   -- (a recce or an auto recce takes the car elsewhere or drives the stage: Route to start is not armed through it)
   if what == 'recce' or what == 'goStart' or what == 'autoRecce' then runner.disarmApproach(what) end
+  -- (they move the car or load the world: the menu's pause request taken back for them, BeamNG.Earth's holds take the
+  --  game's plain pause only when it is not paused already, and not put in again until the page is next opened)
+  if what == 'recce' or what == 'goStart' or what == 'autoRecce' or what == 'drive' then pcall(menuPause.suspend) end
   if what == 'reset' then
     -- Behind the same busy and autoRecce.active() guards as an auto recce, and for the same reason: the runner and
     -- the auto recce both read the stage's line while they work, so removing it under either is how a car gets
@@ -769,9 +773,11 @@ doAction = function(what, eventId, stageId, fromPanel)
     local ok, why = false, 'the stage has no start'
     if lat then ok, why = earth.gpsSet(lat, lon, stage.name .. ' ' .. kind) end
     -- (GitHub #19: the stage gets itself ready as the car comes near, runner.armApproach)
-    if ok then runner.armApproach(ev, stage) end
-    if ok then runner.say('Follow the arrows on the road: the stage gets ready as you get near.', 5, 'info',
-      'Route set to ' .. stage.name .. "'s " .. kind) end
+    -- (only for a stage with a line to run on, and a BeamNG.Earth whose GPS can be read back: without it a route
+    --  cleared or changed could not be told, and the stage would load whenever the car came by; the route alone then)
+    local armed = ok and events.stageLine(ev.id, stage.id, stage) ~= nil and runner.armApproach(ev, stage)
+    if ok then runner.say(armed and 'Follow the arrows on the road: the stage gets ready as you get near.'
+      or 'Follow the arrows on the road.', 5, 'info', 'Route set to ' .. stage.name .. "'s " .. kind) end
     return res(ok, ok and ('Route set to ' .. stage.name .. "'s " .. kind .. ': follow the arrows on the road.')
       or ('Could not set a route: ' .. tostring(why)), true)
   elseif what == 'goStart' or what == 'recce' then
@@ -1074,6 +1080,7 @@ function M.onUpdate(dtReal, dtSim)
     if scanIn <= 0 then scanIn = nil M.scanImports(false) end
   end
   pcall(earthMenuFix.update)   -- (ahead of earth.update, which is not pcall'd)
+  pcall(menuPause.update)      -- (a pause request held back while BeamNG.Earth held the game)
   earth.update()
   -- In the BeamNG.Earth level: the version check again, now that the game's rally engine can be looked at without
   -- dragging it in at the main menu (versions.lua says why). Once per level, and quiet unless something changed
@@ -1221,6 +1228,7 @@ end
 -- all -- and BeamNG.Earth leaves its own imgui status bar and banner out while it believes an app holds them, so a
 -- hold left behind takes its "server not running" message with it on any layout without its apps.
 function M.onExtensionUnloaded()
+  pcall(menuPause.release)   -- (the menu's pause request, if the module goes with the page up: a reload)
   if recce.active() then pcall(recce.stop, false) end
   -- An auto recce converts each window through the world's origin, so one still in flight when the level goes
   -- would answer into a world that is not there -- and the page would show a banner for something nothing is
