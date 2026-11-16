@@ -156,7 +156,8 @@ The first drive's findings are now issues #23-#33. This revision answers all of 
    *Fix idea:*
    - On a rally transit, arm the approach to fire on arrival at the ATC (within the arrive distance, or stopped
      near it).
-   - Open a time control card first: "SS1 Low Gap · time control", your time in, Go to the start.
+   - Open a time control card first: "SS1 Low Gap · time control", your time in, and a **Continue** button (the
+     owner: you're just continuing on).
    - Load the stage behind it, and enable Go once the stage is ready.
    - The game runs under the card (`menuPause.suspend`), as Go already does.
    - **The owner: the boards and tents should still appear for the ATC and the start.** So split the load:

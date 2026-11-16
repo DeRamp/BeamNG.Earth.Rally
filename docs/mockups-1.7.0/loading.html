@@ -207,14 +207,14 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
           </ul>
           <div data-m="atcReady"><div class="world"><div class="wt"><b>The world around you</b><span>73% loaded · ready</span></div><div class="wbar"><i class="full" style="width:73%"></i><em></em><u>60%</u></div><div class="ws">The menu can close now.</div></div></div>
           <div class="btn big off" data-m="atcLoad">Loading the stage...</div>
-          <div class="btn big" data-m="atcReady">Go to the start</div>
+          <div class="btn big" data-m="atcReady">Continue</div>
           <div class="hint">Time card: <span style="color:#fff">X</span> · leave the rally from there</div>
         </div>
       </div>
 
     </div>
     <div class="prompts">
-      <span data-m="atcReady"><span class="k a">A</span>Go to the start</span>
+      <span data-m="atcReady"><span class="k a">A</span>Continue</span>
       <span data-m="recce"><span class="k b">B</span>Stop</span>
       <span data-m="atcLoad atcReady"><span class="k x">X</span>Time card</span>
       <span class="paused">Game paused</span>
@@ -229,7 +229,7 @@ const NOTES = {
   loadStage: "<b>#49 · The same panel for a stage.</b> Drive stage, Go to start, Recce, Retry, Next stage and a Casual restart all use it. The kicker line says which mode you're in.",
   recce: "<b>#34 · Getting the stages ready</b>, on Start (and Continue, if a stage still has no line). Every stage that needs its line: done, running (what it's doing and its own bar), waiting, or held out with the reason. The running stage says when it needs a download, and the question comes up in this screen. Stop leaves the rally (with a confirm, as today). When the last is done, the same screen becomes the loading panel: \"Going to the start\".",
   atcLoad: "<b>#40 · At the ATC.</b> On a transit the stage no longer loads 1 km out in view. The ATC and start boards and tents are still put down as you drive up (the owner's call). Arriving at the ATC brings up the time control card: your time in, whether you're on time, your start time and the car's damage. The stage loads behind it. Go is greyed until it's ready, and the last thing it waits for is 60% of the world around the car (its own bar).",
-  atcReady: "<b>#40 · Ready.</b> Go to the start lights up (A on a pad). The card closes, the game unpauses, and you drive the last metres to the start line. X opens the time card for Leave / Retire."
+  atcReady: "<b>#40 · Ready.</b> Continue lights up (A on a pad). The card closes, the game unpauses, and you drive the last metres to the start line. X opens the time card for Leave / Retire."
 };
 const CRUMBS = { load: "Pine Hollow Rally<i>›</i><b>Loading</b>", loadStage: "Drive stage<i>›</i>Pine Hollow Rally<i>›</i><b>Loading</b>",
   recce: "Pine Hollow Rally<i>›</i><b>Getting ready</b>", atcLoad: "Pine Hollow Rally<i>›</i><b>SS2 time control</b>", atcReady: "Pine Hollow Rally<i>›</i><b>SS2 time control</b>" };
