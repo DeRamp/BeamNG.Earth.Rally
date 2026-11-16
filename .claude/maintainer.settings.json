@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "crossSessionInbound": "accept",
+  "permissions": {
+    "allow": [
+      "Bash(gh pr view *)",
+      "Bash(gh pr list *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh pr comment *)",
+      "Bash(gh pr merge *)",
+      "Bash(gh auth status*)",
+      "Bash(git worktree add *)",
+      "Bash(git checkout --detach *)",
+      "Bash(git -C .claude/worktrees/maintainer-review *)",
+      "Bash(git merge *)",
+      "Bash(git pull --ff-only*)",
+      "Bash(git update-ref -d refs/maintainer/*)",
+      "Bash(python tests/run_tests.py *)"
+    ]
+  }
+}

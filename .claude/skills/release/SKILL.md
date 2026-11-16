@@ -7,7 +7,8 @@ argument-hint: <X.Y.Z-alpha> [release name]
 
 Release `$ARGUMENTS` of Earth Rally. Read `docs/writing-standard.md` first; it is the rule for every text below.
 
-1. **Preconditions.** On `main`, clean, up to date with `origin/main`. Everything in the release has been through
+1. **Preconditions.** This is the `maintainer` session (only it may commit and push to `main`; the guard hook blocks
+   other sessions). On `main`, clean, up to date with `origin/main`. Everything in the release has been through
    `/handoff`. The DeRamp fork's latest release (https://github.com/DeRamp/BeamNG.Earth/releases) has an installer
    and the API this release needs. If any is not true, stop and tell the owner.
 2. **CHANGELOG.md:** new entry at the top in the standard's template, `Works with` line included. Patch 150 words at
