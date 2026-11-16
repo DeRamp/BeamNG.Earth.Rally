@@ -1859,6 +1859,7 @@ end
 function M.uiKeys(slow)
   keyCtx.now, keyCtx.uiHidden, keyCtx.units = M.clock() or 0, M.uiHidden, settings.get('units')
   keyCtx.stopped, keyCtx.canSkip = slow and slow.stopped, slow and slow.canSkip
+  keyCtx.stopRadiusM = M.STOP_CONTROL_RADIUS_M
   return hudFrame.streamKeys(run, keyCtx)
 end
 

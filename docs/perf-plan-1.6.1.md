@@ -132,7 +132,7 @@ upvalues of its public functions, so it measures the installed zip exactly as pl
 Read: main thread vs render vs GPU wait; which Lua extension; whether CEF shows.
 
 **T3. What does GO switch on? (about 12 min)** At the 2.3 km spot, settled, in `running`. Take one thing away at a time:
-1. HUD streams: `earthRally_main.STREAM_HZ` 30 vs 1.
+1. HUD streams: `earthRally_main.STREAM_FIXED_HZ` 30 vs 1 (nil: on change).
 2. Stock stage apps: stage layout vs plain layout.
 3. Co-driver: `rallyAdapter.notesOn(true)` vs `(false)`.
 4. Start clock: is `gameplay_rallyStartClock` loaded, and are spikes 1 s apart?

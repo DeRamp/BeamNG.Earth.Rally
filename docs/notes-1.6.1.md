@@ -26,12 +26,22 @@ players' reports are the check.
 
 ## What this build changes
 
-**1. The HUD's streams** (`main.lua` `sendStreams`).
-- Our HUD (the whole-screen app, re-drawn on each message) at 10 Hz (`HUD_STREAM_HZ`), was 30.
-- Kept at 30 Hz: on the line (its countdown numeral moves with the stock lights) and while off route (the arrow).
-- The stock apps' stream at 30 Hz only in waitStart and running (their clock's tenths), 10 Hz in the other states.
-- Both sent at once on any state change. Nothing built when only the stock stream is due and the game's rally mode
-  has it.
+**1. The HUD's streams** (`main.lua` `sendStreams`, `hudFrame.streamKeys`).
+- Each stream is sent when what it shows changes, not on a timer. `streamKeys` turns the run into one string per
+  stream, at the precision the apps draw: stage time in tenths, countdown and clocks in seconds, km done to 0.1,
+  distances to the metre (to 0.01 / 0.1 m within 5 m of the start line / stop, as the stock readout), the arrow to
+  2 degrees, every card.
+- Per second, was then now: on the stage stock 30 then about 10, ours 10 then about 1; on the line 30 + 30 then
+  about 2 + 2, on the second; off route ours stays up to 30 (the arrow has no easing).
+- At least once a second each (`STREAM_FLOOR_S`), which also carries BeamNG.Earth's place, banner and loading.
+- Where a distance moves every frame, at most every 0.1 s (`STREAM_GAP_S`, `HUD_GAP_S`), as before.
+- The car stopped and the skip hint sampled 4 times a second (`SLOW_SAMPLE_S`), every frame in the start zone and
+  near the stop.
+- Both sent at once on a state change or a new run.
+- `test_hud` steps sample runs at 60 fps and fails if what is drawn changes while a key does not: a field added to
+  `build` without its key shows there.
+- `STREAM_FIXED_HZ` (bench switch) puts both back on a timer.
+- Defensive like the rest: the drive recording was of the timer build, so this has no measurement.
 
 **2. Fewer tables a HUD message** (`runner.lua` `uiFrame`).
 - BeamNG.Earth's place, banner and loading asked at most every 0.5 s (`EARTH_ASK_S`), afresh for a new run.
