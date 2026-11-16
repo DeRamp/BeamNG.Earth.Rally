@@ -776,6 +776,8 @@ doAction = function(what, eventId, stageId, fromPanel)
     -- (GitHub #19: the stage gets itself ready as the car comes near, runner.armApproach)
     -- (only for a stage with a line to run on, and a BeamNG.Earth whose GPS can be read back: without it a route
     --  cleared or changed could not be told, and the stage would load whenever the car came by; the route alone then)
+    -- (a new route replaces any stage armed before, even when this one cannot be armed itself)
+    if ok then runner.disarmApproach('route set elsewhere') end
     local armed = ok and events.stageLine(ev.id, stage.id, stage) ~= nil and runner.armApproach(ev, stage)
     if ok then runner.say(armed and 'Follow the arrows on the road: the stage gets ready as you get near.'
       or 'Follow the arrows on the road.', 5, 'info', 'Route set to ' .. stage.name .. "'s " .. kind) end
@@ -998,16 +1000,19 @@ end
 M.ROUTE_MSG_CATEGORY = 'earthRallyRoute'   -- (the Messages app reads a category as a regular expression)
 M.ROUTE_MSG_S = 2
 local routeMsgKey, routeMsgT = nil, 0
+local routeAp, routeApKey = nil, nil
 local function routeMessage(gh, dt, on)
   local ap = on and not runner.uiHidden and runner.approachInfo() or nil
-  local units = ap and settings.get('units') or nil
-  local key = ap and hudFrame.approachKey(ap, units) or nil
+  local units, key
+  if ap and ap == routeAp then key = routeApKey
+  elseif ap then units = settings.get('units'); key = hudFrame.approachKey(ap, units); routeAp, routeApKey = ap, key
+  else routeAp, routeApKey = nil, nil end
   routeMsgT = routeMsgT + (dt or 0)
   if key == routeMsgKey and (not key or routeMsgT < M.ROUTE_MSG_S) then return end
   routeMsgKey, routeMsgT = key, 0
   if not gh.trigger then return end
   if ap then
-    pcall(gh.trigger, 'Message', { msg = hudFrame.approachText(ap, units), ttl = M.ROUTE_MSG_S * 2 + 1,
+    pcall(gh.trigger, 'Message', { msg = hudFrame.approachText(ap, units or settings.get('units')), ttl = M.ROUTE_MSG_S * 2 + 1,
       category = M.ROUTE_MSG_CATEGORY, icon = 'raceFlag' })
   else
     pcall(gh.trigger, 'Message', { msg = '', category = M.ROUTE_MSG_CATEGORY, clear = true })

@@ -1083,7 +1083,8 @@ local function stepPlace()
     -- Past the start (on the stage, beyond the line, as stepToStart's "back up" test reads it): set down behind
     -- the line, not asked to reverse back down the stage -- a car that came along the stage road from beyond the
     -- start, Route to start on a stage with no ATC (the ATC path's `past`, with the line itself as the control).
-    local _, _, along, off = geo.locate(run.line, run.cum, p)
+    local along, off
+    if p then _, _, along, off = geo.locate(run.line, run.cum, p) end
     local past = along and off and along > run.startM + 2 and off <= M.START_ZONE_OFF_M
     -- (driven here, e.g. by Route to start, and not parked on the line itself: left where the player chose)
     -- (loaded as the car drove up, Route to start: kept wherever it is short of the line)

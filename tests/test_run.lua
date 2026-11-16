@@ -1959,6 +1959,9 @@ do
     r = main.uiAction('route', 'test8', 'hill')
     T.check(r.ok and runner.approaching() ~= nil and toasts[#toasts].msg:find('gets ready') ~= nil,
       'Route to start, a line: armed')
+    r = main.uiAction('route', 'test8', 'two')
+    T.check(r.ok and runner.approaching() == nil,
+      'Route to start elsewhere, on a stage that cannot be armed: the stage armed before is disarmed')
     runner.disarmApproach()
     beamngEarth_api.gpsSet, beamngEarth_api.gps = hadSet, hadGps
   end

@@ -112,7 +112,13 @@ function M.holding()
   for _, f in ipairs({ 'heldReason', '_swapLive' }) do
     if type(c[f]) == 'function' then
       local ok, r = pcall(c[f])
-      if ok and r then return true end
+      if ok and r == 'edge' then
+        -- ('edge' is also the guard's hold mode, which is not a pause and can last while the car sits at the
+        --  ground's edge: a hold only while the game is paused)
+        local sta = rawget(_G, 'simTimeAuthority')
+        local pok, paused = pcall(function() return sta and sta.getPause and sta.getPause() end)
+        if pok and paused then return true end
+      elseif ok and r then return true end
     end
   end
   return c._fastPaused == true
