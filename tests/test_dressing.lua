@@ -1058,4 +1058,43 @@ do
     'acute at a turn: the marshal behind the tape, clear of the stage (' .. tostring(tbl and tbl.y) .. ')')
 end
 
+
+------------------------------------------------------------------------------------------ 1.6.2, review of #9
+
+-- A shallow fork (under TAPE_PARALLEL_MIN_DEG): no parallel tape (its mouth is wider along the stage than
+-- TAPE_LEN_MAX, and its line clears the stage only far down the side road); the square tape within TAPE_IN_MAX, or
+-- none. Just above it: parallel, and never past TAPE_IN_MAX either.
+do
+  local S = { V(0, -300), V(0, 300) }
+  local function tapeOf(deg, halfW)
+    local t = ofKind(D.plan({ line = S, startM = 0, finishM = 600, junctions = { { along = 300, x = 0, y = 0,
+      kind = 'fork', side = 'left', inDeg = 0, outDeg = 0, sides = { { deg = deg, halfW = halfW } } } } }), 'tape')[1]
+    return t and t.objects or {}
+  end
+  local ok, far, par = true, 0, 0
+  for _, deg in ipairs({ 5, 10, 14, 346, 190 }) do
+    for _, hw in ipairs({ 1, 2, 3, false }) do
+      local sx, sy = D._bearingToDir(deg)
+      for _, o in ipairs(tapeOf(deg, hw or nil)) do
+        if math.abs(o.dx * sx + o.dy * sy) > 1e-6 then ok = false end       -- (square to the side road)
+        if math.abs(o.dx) < 1e-6 then par = par + 1 end
+        local ax, ay, bx, by = ends(o)
+        far = math.max(far, math.abs((ax + bx) / 2 * sx + (ay + by) / 2 * sy))
+      end
+    end
+  end
+  T.check(ok and par == 0, 'a fork under 15 degrees: no tape parallel with the stage, any tape square to its side road')
+  T.check(far <= D.TAPE_IN_MAX + 1e-6, string.format('and none further in than TAPE_IN_MAX (%.1f m)', far))
+  T.check(D.TAPE_PARALLEL_MIN_DEG == 15 and
+    math.abs(require('earthRally/props').DRESS_TAPE_OBLIQUE_MAX_DEG - (90 - D.TAPE_PARALLEL_MIN_DEG)) < 1e-9,
+    'TAPE_PARALLEL_MIN_DEG 15; props refits to the same angle')
+  local p = tapeOf(16, 3)[1]
+  local sx, sy = D._bearingToDir(16)
+  T.check(p and math.abs(p.dx) < 1e-6, 'at 16 degrees: parallel with the stage')
+  if p then
+    local ax, ay, bx, by = ends(p)
+    local c = math.abs((ax + bx) / 2 * sx + (ay + by) / 2 * sy)
+    T.check(c <= D.TAPE_IN_MAX / math.cos(math.rad(16)) + 1e-6, string.format('and within TAPE_IN_MAX (%.1f m)', c))
+  end
+end
 T.done('test_dressing')

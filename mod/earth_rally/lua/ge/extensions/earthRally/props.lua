@@ -19,6 +19,13 @@
 -- Placement as the game's own rallies (gameplay/missions/*/rallyStage/*/mainPrefab): the model's +Y along the
 -- driving direction, on the right of the road, just off its edge.
 local M = {}
+-- (a compass bearing as a direction in game coordinates: junctions.lua's, as dressing.lua takes it; the same here
+-- when it is not there)
+local okJ, J = pcall(require, 'earthRally/junctions')
+local bearingToDir = (okJ and type(J) == 'table' and J.bearingToDir) or function(deg)
+  local h = math.rad(deg)
+  return math.sin(h), math.cos(h)
+end
 
 local A = '/art/shapes/race/rally/rally_assets/'
 M.SPAWN_M = 350
@@ -61,6 +68,13 @@ M.TURN_MAX_DEG = 60         -- walking the road map: at a junction, the road on 
 -- it arrives: Black River-Camp's ATC, 1.6.2's issue #5, `0 placed by the road map`) are looked at again this often
 -- while the car is within SPAWN_M, and put down again from the road map's road once it has one beside the control.
 M.REDO_EVERY_S = 0.5
+-- ... but not while the car is within REDO_HOLD_M of the control (the runner's check-in zones: CONTROL_RADIUS_M 12 m,
+-- STOP_CONTROL_RADIUS_M 25 m -- the zone's point would move under a car stopped in it), nor when any of the new props
+-- would stand within REDO_CLEAR_M of the car (a tent put down onto it); and given up after REDO_MAX_TRIES looks that
+-- found no road (said once): a control the road map never covers is not looked at every half second for ever.
+M.REDO_HOLD_M = 30
+M.REDO_CLEAR_M = 5
+M.REDO_MAX_TRIES = 240
 local TENT = function(fwd)
   local o = M.TENT_OUT_M
   return {
@@ -450,8 +464,13 @@ local updateDressing        -- (the stage dressing, below)
 -- (a control's road on the road map, aligned with the driving direction and turned the way that leads on: looked for
 -- from (x, y) -- the control's point, or the auto recce's road point beside it -- further out when nothing is near:
 -- a control's point can be well off the road)
+-- With the auto recce's road point (s.onRoad: its road's way) only within SNAP_M of that point, aligned with its road:
+-- the point is on the stage's road, and SNAP_FAR_M along the line to the start could take a neighbouring road
+-- (review of #5); without a road map's road there the props stay along the recce's road.
 local function controlEdge(s, x, y, toGame)
-  local e = M.roadAt(x, y, s.dir) or M.roadAt(x, y, s.dir, M.SNAP_FAR_M)
+  local e
+  if s.onRoad then e = M.roadAt(x, y, s.onRoad)
+  else e = M.roadAt(x, y, s.dir) or M.roadAt(x, y, s.dir, M.SNAP_FAR_M) end
   if not e then return nil end
   local function at(p)
     if not p then return nil end
@@ -470,17 +489,28 @@ local function roadPoint(s, toGame)
   if not x then return nil end
   local dx, dy = s.dir.x, s.dir.y
   if type(r.deg) == 'number' then
-    -- (10 m along the bearing, in lat / lon, then into the game's frame)
-    local h = math.rad(r.deg)
-    local la = r.lat + math.cos(h) * 10 / 111320
-    local lo = r.lon + math.sin(h) * 10 / (111320 * math.max(0.01, math.cos(math.rad(r.lat))))
-    local x2, y2 = toGame(la, lo, 0)
-    if x2 and (x2 - x) ^ 2 + (y2 - y) ^ 2 > 1e-6 then
-      dx, dy = x2 - x, y2 - y
-      if dx * s.dir.x + dy * s.dir.y < 0 then dx, dy = -dx, -dy end
-    end
+    dx, dy = bearingToDir(r.deg)
+    if dx * s.dir.x + dy * s.dir.y < 0 then dx, dy = -dx, -dy end
   end
   return x, y, { x = dx, y = dy }
+end
+
+-- (a site's props, were they put down from edge e, all further than REDO_CLEAR_M from the car)
+local function clearOfCar(s, e, carPos)
+  local keep = s.edge
+  s.edge = e
+  local ok = true
+  for _, it in ipairs(M.LAYOUTS[s.kind] or {}) do
+    local at = placeAlong(s, it[2])
+    local l = math.sqrt(at.dx * at.dx + at.dy * at.dy)
+    local fx, fy = l > 1e-6 and at.dx / l or 0, l > 1e-6 and at.dy / l or 1
+    local side = it[5] or 1
+    local off = (at.half or M.DEFAULT_HALF_WIDTH_M) + it[3]
+    local x, y = at.x + fy * off * side, at.y - fx * off * side
+    if (x - carPos.x) ^ 2 + (y - carPos.y) ^ 2 <= M.REDO_CLEAR_M ^ 2 then ok = false break end
+  end
+  s.edge = keep
+  return ok
 end
 
 local redoAt = -math.huge
@@ -495,7 +525,7 @@ function M.update(carPos, toGame, carAlong)
       local x, y = toGame(s.lat, s.lon, 0)
       local d2 = x and (x - carPos.x) ^ 2 + (y - carPos.y) ^ 2
       if d2 and d2 <= M.SPAWN_M ^ 2 then
-        s.x0, s.y0, s.onRoad = x, y, nil
+        s.x0, s.y0, s.onRoad, s.redoTries = x, y, nil, 0
         -- the road under the control, aligned with the driving direction (sites not on the stage line)
         s.edge = nil
         if not s.path then
@@ -508,17 +538,25 @@ function M.update(carPos, toGame, carAlong)
         -- then near the ground's
         if s.path or s.edge or s.z or d2 <= M.NO_ROAD_SPAWN_M ^ 2 then spawn(s, carPos.z) end
       end
-    elseif redo and s.objs and not s.failed and not s.path and not s.edge and s.x0 then
+    elseif redo and s.objs and not s.failed and not s.path and not s.edge and s.x0
+      and (s.redoTries or 0) < M.REDO_MAX_TRIES then
       -- (put down with no road map there: put down again from the road map's road once it has one beside the
       -- control -- issue #5: the road map comes in after the car arrives, and the props stood where they first went)
-      if (s.x0 - carPos.x) ^ 2 + (s.y0 - carPos.y) ^ 2 <= M.SPAWN_M ^ 2 then
+      local d2 = (s.x0 - carPos.x) ^ 2 + (s.y0 - carPos.y) ^ 2
+      if d2 <= M.SPAWN_M ^ 2 and d2 > M.REDO_HOLD_M ^ 2 then
         local e = controlEdge(s, s.x0, s.y0, toGame)
-        if e then
+        if e and (e.x - carPos.x) ^ 2 + (e.y - carPos.y) ^ 2 > M.REDO_HOLD_M ^ 2 and clearOfCar(s, e, carPos) then
           M.removeSite(s)
           s.edge = e
           log('I', 'earthRally', string.format('props: %s put down again: the road map came in after it went down',
             s.kind))
           spawn(s, carPos.z)
+        elseif not e then
+          s.redoTries = (s.redoTries or 0) + 1
+          if s.redoTries >= M.REDO_MAX_TRIES then
+            log('I', 'earthRally', string.format('props: %s left where it went down: no road map road beside it after '
+              .. '%d looks', s.kind, s.redoTries))
+          end
         end
       end
     end
@@ -635,9 +673,10 @@ M.DRESS_TAPE_MAX_DEG = 45
 -- A tape laid parallel with the stage at an acute junction (dressing.TAPE_PARALLEL_DEG, refit.sin: issue #9) crosses
 -- its side road at that angle, 90 - its degrees off square: the side road looked for up to DRESS_TAPE_SLACK_DEG
 -- beyond that, and never more than DRESS_TAPE_OBLIQUE_MAX_DEG off square (the stage road, running along the tape, is
--- 90 off); the centring window and the length taken along the tape, over the sine of the angle it crosses at.
+-- 90 off); the centring window and the length taken along the tape, over the sine of the angle it crosses at. (75:
+-- 90 less dressing.TAPE_PARALLEL_MIN_DEG, the shallowest angle the plan lays a parallel tape at; 80 until its review)
 M.DRESS_TAPE_SLACK_DEG = 15
-M.DRESS_TAPE_OBLIQUE_MAX_DEG = 80
+M.DRESS_TAPE_OBLIQUE_MAX_DEG = 75
 local HEAD_M = 10
 
 -- { kind, along, from, to, name, key, objs (ids, when down or going down), at (the next item to put down),
