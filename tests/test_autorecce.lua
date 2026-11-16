@@ -667,4 +667,56 @@ do
   T.near(rs[2].w, 2, 1e-9, 'resampled: the width interpolated')
 end
 
+------------------------------------------------------------------------------------------ 1.6.2, issue #5
+
+-- The time controls put on the road beside them when the stage is made, and kept with the line: an ATC 12 m off a
+-- road leading north to the start, a stop 8 m off the stage road past the finish; a control 45 m from any road is
+-- left as it is (the game's road map puts it down then); a stage without controls writes none.
+do
+  reset()
+  -- (the stage east along y = 0; the ATC's road north to the start, x = -10 .. 0 at y from -300; the stage road on past
+  -- the finish to 1500 m)
+  local access = { name = 'atc', pts = {}, names = {} }
+  for k = 0, 15 do access.pts[#access.pts + 1] = at(-10 + k * 10 / 15, -300 + k * 20, 100) end
+  world.roads = { eastRoad('r', 1500, 20, 0), access }
+  local stage = stageOf(lineEast(1200, 100))
+  local atcLat, atcLon = at(-10 + 12, -150, 0)[1], at(-10 + 12, -150, 0)[2]      -- (12 m east of the access road)
+  local stopP = at(1400, -8, 0)
+  stage.controls = { atc = { lat = atcLat, lon = atcLon, name = 'ATC' }, stop = { lat = stopP[1], lon = stopP[2] } }
+  local res = run(EVENT, stage)
+  local m = matchedFile()
+  local c = m and m.controls
+  T.check(res.ok == true and c and c.atc and c.stop, 'controls: the ATC and the stop kept with the line')
+  if c and c.atc and c.stop then
+    -- (the access road at y = -150 is at x = -10 + 150 / 300 * 10 = -5: the ATC 7 m east of it, square to it near enough)
+    local ax, ay = (c.atc.roadLon - LON) * MPD_LON, (c.atc.roadLat - LAT) * MPD_LAT
+    T.check(math.abs(ax + 5) < 0.3 and math.abs(ay + 150) < 0.5,
+      string.format('controls: the ATC on its own road (%.1f, %.1f)', ax, ay))
+    T.check(math.abs(c.atc.offM - 7) < 0.3, 'controls: how far off the road it was (' .. tostring(c.atc.offM) .. ')')
+    T.check(math.abs(((c.atc.deg + 90) % 180) - 90 - 1.9) < 1, 'controls: its road\'s bearing (' .. tostring(c.atc.deg) .. ')')
+    T.check(c.atc.lat == atcLat and c.atc.lon == atcLon, 'controls: the organisers\' point it was made from')
+    local sx, sy = (c.stop.roadLon - LON) * MPD_LON, (c.stop.roadLat - LAT) * MPD_LAT
+    T.check(math.abs(sx - 1400) < 0.5 and math.abs(sy) < 0.3 and math.abs(c.stop.offM - 8) < 0.3,
+      string.format('controls: the stop on the stage road past the finish (%.1f, %.1f)', sx, sy))
+  end
+  -- (events.controlOnRoad: the road point, for the same organisers' point only)
+  local on = events.controlOnRoad('test-event', 'test-stage', 'atc', stage.controls.atc)
+  T.check(on and on.lat == c.atc.roadLat and on.deg == c.atc.deg, 'controls: events hands the road point to the runner')
+  local moved = { lat = atcLat + 0.001, lon = atcLon }
+  T.check(events.controlOnRoad('test-event', 'test-stage', 'atc', moved) == nil,
+    'controls: none when the map\'s control has moved since the auto recce')
+
+  reset()
+  world.roads = { eastRoad('r', 1500, 20, 0) }
+  stage = stageOf(lineEast(1200, 100))
+  local far = at(600, 45, 0)
+  stage.controls = { atc = { lat = far[1], lon = far[2] } }
+  run(EVENT, stage)
+  T.check(matchedFile() and matchedFile().controls == nil, 'controls: one 45 m from any road is left out')
+  reset()
+  world.roads = { eastRoad('r', 1500, 20, 0) }
+  run(EVENT, stageOf(lineEast(1200, 100)))
+  T.check(matchedFile() and matchedFile().controls == nil, 'controls: no controls, none written')
+end
+
 T.done('test_autorecce')

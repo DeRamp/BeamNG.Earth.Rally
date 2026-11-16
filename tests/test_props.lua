@@ -834,6 +834,150 @@ do
   map = nil
 end
 
+------------------------------------------------------------------------------------------ 1.6.2, issue #9
+
+-- A tape planned parallel with the stage at an acute junction (a side road 25 degrees off the stage road, width not
+-- known) refit at spawn to the road map's side road there: still parallel with the stage, centred where the side
+-- road's centre line crosses it, long enough to reach TAPE_PAST beyond both of its edges along the stage's way
+-- (2 x 3 / sin 25 + 1.5 = 15.7 m: two pieces), and not turned square to the side road
+do
+  ox, oy = 0, 0
+  local D2 = require('earthRally/dressing')
+  local S = { { x = 0, y = -300, z = 0 }, { x = 0, y = 300, z = 0 } }
+  local plan = D2.plan({ line = S, startM = 0, finishM = 600, junctions = { { along = 300, x = 0, y = 0,
+    kind = 'straight', inDeg = 0, outDeg = 0, sides = { { deg = 25 } } } } })
+  local site
+  for _, st in ipairs(plan) do if st.kind == 'tape' then site = st end end
+  T.check(site and #site.objects == 1 and site.objects[1].refit and site.objects[1].refit.sin,
+    'acute refit: the plan gives one tape that knows its angle')
+  mapOf(straightRoad(0, 0, 0, 3), straightRoad(0, 0, 25, 3))
+  props.setDressing({ site })
+  props.update({ x = 0, y = 0, z = 0 }, toGame, 300)
+  local pieces = {}
+  for _, o in pairs(live) do
+    local sh = o.fields.shapeName
+    if sh and sh:find('tape_road_closure', 1, true) then pieces[#pieces + 1] = o end
+  end
+  local lo, hi, par = math.huge, -math.huge, true
+  for _, o in ipairs(pieces) do
+    local m = tonumber(o.fields.shapeName:match('closure_(%d+)m'))
+    local sy = o.fields.scale and tonumber(o.fields.scale:match('^1 ([%d%.]+) 1$')) or 1
+    -- (each piece runs from its origin back along -Y: its heading from the quaternion, +Y north or south)
+    local q = o.q
+    local hy = 1 - 2 * (q[1] * q[1] + q[3] * q[3])          -- (the Y axis's y after the turn)
+    if math.abs(math.abs(hy) - 1) > 1e-6 then par = false end
+    local y0, y1 = o.pos[2], o.pos[2] - hy * m * sy
+    lo, hi = math.min(lo, y0, y1), math.max(hi, y0, y1)
+    if math.abs(o.pos[1] - 4) > 1e-6 then par = false end
+  end
+  local yc = 4 / math.tan(math.rad(25))
+  local need = 3 / math.sin(math.rad(25)) + 0.75
+  T.check(#pieces == 2 and par, 'acute refit: two pieces, parallel with the stage, on the line 4 m off its centre (' ..
+    #pieces .. ')')
+  T.check(yc - lo >= need - 1e-3 and hi - yc >= need - 1e-3 and (hi - lo) <= 2 * need + 0.5,
+    string.format('acute refit: past both edges of the side road along the stage (%.2f .. %.2f, its centre %.2f)',
+      lo, hi, yc))
+  props.clear()
+  map = nil
+end
+
+------------------------------------------------------------------------------------------ 1.6.2, issue #5
+
+-- A time control's props (the ATC: boards and a tent) when its point is off the road and the road map comes in late.
+-- The road runs north along x = 0, 3 m half wide; the car drives north to the start beyond.
+do
+  ox, oy = 0, 0
+  local RE = props.REDO_EVERY_S
+  props.REDO_EVERY_S = 0
+  local G = props.SHAPES.gazeboFrame
+  local function tent() return shapesLive(G)[1] end
+  local road = straightRoad(0, 0, 0, 3)
+  -- (the gazebo's centre: TENT_OUT_M past the right edge, x = 3 + 1.5)
+  local edgeX = 3 + props.TENT_OUT_M
+  for _, off in ipairs({ 6, 10, 15 }) do
+    -- 1. the road map there from the start: the tent at the road's edge, never put down again
+    mapOf(road)
+    props.clear()
+    local s = props.setSite('atc', off, 0, { x = 0, y = 1 })
+    s.toward = { lat = 0, lon = 400 }
+    props.update({ x = 0, y = -100, z = 0 }, toGame)
+    local t = tent()
+    local id = t and t.id
+    T.check(t and math.abs(t.pos[1] - edgeX) < 1e-6, string.format('ATC %d m off: the road map there, the tent at the '
+      .. 'road\'s edge (%.2f)', off, t and t.pos[1] or -1))
+    for _ = 1, 3 do props.update({ x = 0, y = -50, z = 0 }, toGame) end
+    T.check(tent() and tent().id == id, string.format('ATC %d m off: and left where it is', off))
+
+    -- 2. the road map late: put down straight from the control at NO_ROAD_SPAWN_M (half off the road, as at Black
+    -- River-Camp), then again at the road's edge once the map comes in
+    map = nil
+    props.clear()
+    logs = {}
+    s = props.setSite('atc', off, 0, { x = 0, y = 1 })
+    s.toward = { lat = 0, lon = 400 }
+    props.update({ x = 0, y = -60, z = 0 }, toGame)
+    t = tent()
+    T.check(t and math.abs(t.pos[1] - (off + edgeX)) < 1e-6 and props.sitePoint('atc') == nil,
+      string.format('ATC %d m off, no road map: straight from the control (%.2f)', off, t and t.pos[1] or -1))
+    mapOf(road)
+    props.update({ x = 0, y = -55, z = 0 }, toGame)
+    t = tent()
+    T.check(t and math.abs(t.pos[1] - edgeX) < 1e-6 and #shapesLive(G) == 1,
+      string.format('ATC %d m off, the road map late: put down again at the road\'s edge, once (%.2f)', off,
+        t and t.pos[1] or -1))
+    local sp = props.sitePoint('atc')
+    T.check(sp and math.abs(sp.x) < 1e-6 and logged('put down again') == 1, 'and the stop zone on the road, said once')
+    id = t and t.id
+    for _ = 1, 3 do props.update({ x = 0, y = -50, z = 0 }, toGame) end
+    T.check(tent() and tent().id == id, string.format('ATC %d m off: not put down again after that', off))
+  end
+
+  -- 3. the auto recce's road point (events.controlOnRoad) and no road map yet: set out from the road point along its
+  -- road, the tent at the edge already; the stop zone there. (A frame of real lat / lon for the road's bearing:
+  -- the road runs 20 degrees east of north here.)
+  local LAT0, LON0, KY = 45.0, -84.0, 111320
+  local KX = KY * math.cos(math.rad(LAT0))
+  local function toG(la, lo, h) return (lo - LON0) * KX, (la - LAT0) * KY, h end
+  local function ll(x, y) return LAT0 + y / KY, LON0 + x / KX end
+  local hx, hy = math.sin(math.rad(20)), math.cos(math.rad(20))
+  local rx, ry = hy, -hx               -- (the road's right)
+  map = nil
+  props.clear()
+  local cla, clo = ll(rx * 12, ry * 12)      -- (the ATC 12 m right of the road)
+  local s = props.setSite('atc', cla, clo, { x = 0.2, y = 1 })   -- (its driving direction: only roughly the road's)
+  local rla, rlo = ll(0, 0)
+  s.road = { lat = rla, lon = rlo, deg = 200, offM = 12 }        -- (the road's bearing, the other way round)
+  props.update({ x = 0, y = -60, z = 0 }, toG)
+  local t = tent()
+  -- (TENT(4): 4 m on along the road, TENT_OUT_M past the edge at the default half width)
+  local want = { x = hx * 4 + rx * (props.DEFAULT_HALF_WIDTH_M + props.TENT_OUT_M),
+                 y = hy * 4 + ry * (props.DEFAULT_HALF_WIDTH_M + props.TENT_OUT_M) }
+  T.check(t and math.abs(t.pos[1] - want.x) < 0.05 and math.abs(t.pos[2] - want.y) < 0.05,
+    string.format('the auto recce\'s road point, no road map: the tent at the road\'s edge (%.2f, %.2f; %.2f, %.2f)',
+      t and t.pos[1] or -1, t and t.pos[2] or -1, want.x, want.y))
+  local sp = props.sitePoint('atc')
+  T.check(sp and math.abs(sp.x) < 1e-6 and math.abs(sp.y) < 1e-6, 'the stop zone on the auto recce\'s road point')
+  -- (then the road map comes in: from its road, found from the road point)
+  map = { getMap = function()
+    local nodes = {}
+    for k = 0, 20 do
+      local d = k * 20 - 200
+      nodes['n' .. k] = { pos = { x = hx * d, y = hy * d, z = 0 }, radius = 4, links = {} }
+      if k > 0 then nodes['n' .. k].links['n' .. (k - 1)] = {} end
+    end
+    return { nodes = nodes }
+  end }
+  props.update({ x = 0, y = -55, z = 0 }, toG)
+  t = tent()
+  want = { x = hx * 4 + rx * (4 + props.TENT_OUT_M), y = hy * 4 + ry * (4 + props.TENT_OUT_M) }
+  T.check(t and math.abs(t.pos[1] - want.x) < 0.05 and math.abs(t.pos[2] - want.y) < 0.05 and #shapesLive(G) == 1,
+    'and again from the road map once it comes in (its own width)')
+  props.clear()
+  map = nil
+  props.REDO_EVERY_S = RE
+  T.check(type(RE) == 'number' and RE > 0, 'REDO_EVERY_S: on as shipped')
+end
+
 -- the showcase: one of each dressing shape, in order, through the real sites' code; taken away again
 do
   local D2 = require('earthRally/dressing')

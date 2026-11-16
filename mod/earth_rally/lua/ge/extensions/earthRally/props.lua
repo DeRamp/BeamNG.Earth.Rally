@@ -57,6 +57,10 @@ M.SNAP_M = 30               -- a site this close to a road is on it ...
 -- finish never have this trouble: they are set out along the stage line, which is on the road.
 M.SNAP_FAR_M = 60
 M.TURN_MAX_DEG = 60         -- walking the road map: at a junction, the road on that turns at most this much
+-- A time control's or stop's props put down with no road map there (BeamNG.Earth loads the roads round the car after
+-- it arrives: Black River-Camp's ATC, 1.6.2's issue #5, `0 placed by the road map`) are looked at again this often
+-- while the car is within SPAWN_M, and put down again from the road map's road once it has one beside the control.
+M.REDO_EVERY_S = 0.5
 local TENT = function(fwd)
   local o = M.TENT_OUT_M
   return {
@@ -386,8 +390,11 @@ local function placeAlong(s, fwd)
     w.road = true
     return w
   end
-  local l = math.sqrt(s.dir.x * s.dir.x + s.dir.y * s.dir.y)
-  local fx, fy = s.dir.x / l, s.dir.y / l
+  -- (no road map: straight from the control -- from the auto recce's road point, along its road, when the matched
+  -- file has one: s.onRoad)
+  local d = s.onRoad or s.dir
+  local l = math.sqrt(d.x * d.x + d.y * d.y)
+  local fx, fy = d.x / l, d.y / l
   return { x = s.x0 + fx * fwd, y = s.y0 + fy * fwd, z = s.z, dx = fx, dy = fy, half = M.DEFAULT_HALF_WIDTH_M }
 end
 
@@ -425,8 +432,11 @@ local function spawn(s, carZ)
     how = string.format(', along the stage line (%s)', r and string.format('road map centre %.1f m off, heading %.0f deg',
       r.d, math.deg(math.atan2(p.dx, p.dy)) % 360) or 'no road map there')
   elseif s.edge then
-    how = string.format(', road map %.1f m from the control, heading %.0f deg', s.edge.d or 0,
-      math.deg(math.atan2(s.edge.dx, s.edge.dy)) % 360)
+    how = string.format(', road map %.1f m from the %s, heading %.0f deg', s.edge.d or 0,
+      s.onRoad and "auto recce's road point" or 'control', math.deg(math.atan2(s.edge.dx, s.edge.dy)) % 360)
+  elseif s.onRoad then
+    how = string.format(", no road map there yet: along the auto recce's road (the control %.1f m off it)",
+      s.road and s.road.offM or 0)
   else
     how = ', no road on the map there: straight from the control'
   end
@@ -437,29 +447,79 @@ local updateDressing        -- (the stage dressing, below)
 
 -- Every frame of a run: sites near enough the car put down (once). carPos in game coordinates; carAlong (optional):
 -- the car's distance along the stage line, which the stage dressing is put down and taken away by.
+-- (a control's road on the road map, aligned with the driving direction and turned the way that leads on: looked for
+-- from (x, y) -- the control's point, or the auto recce's road point beside it -- further out when nothing is near:
+-- a control's point can be well off the road)
+local function controlEdge(s, x, y, toGame)
+  local e = M.roadAt(x, y, s.dir) or M.roadAt(x, y, s.dir, M.SNAP_FAR_M)
+  if not e then return nil end
+  local function at(p)
+    if not p then return nil end
+    local px, py = toGame(p.lat, p.lon, 0)
+    return px and { x = px, y = py } or nil
+  end
+  return M.orient(e, at(s.toward), at(s.away))
+end
+
+-- (the auto recce's road point beside the control (s.road: { lat, lon, deg }, events.controlOnRoad) in game
+-- coordinates now, and its road's way turned to the driving direction s.dir; nil without one)
+local function roadPoint(s, toGame)
+  local r = s.road
+  if type(r) ~= 'table' or type(r.lat) ~= 'number' or type(r.lon) ~= 'number' then return nil end
+  local x, y = toGame(r.lat, r.lon, 0)
+  if not x then return nil end
+  local dx, dy = s.dir.x, s.dir.y
+  if type(r.deg) == 'number' then
+    -- (10 m along the bearing, in lat / lon, then into the game's frame)
+    local h = math.rad(r.deg)
+    local la = r.lat + math.cos(h) * 10 / 111320
+    local lo = r.lon + math.sin(h) * 10 / (111320 * math.max(0.01, math.cos(math.rad(r.lat))))
+    local x2, y2 = toGame(la, lo, 0)
+    if x2 and (x2 - x) ^ 2 + (y2 - y) ^ 2 > 1e-6 then
+      dx, dy = x2 - x, y2 - y
+      if dx * s.dir.x + dy * s.dir.y < 0 then dx, dy = -dx, -dy end
+    end
+  end
+  return x, y, { x = dx, y = dy }
+end
+
+local redoAt = -math.huge
 function M.update(carPos, toGame, carAlong)
   if not carPos then return end
   updateDressing(carPos, toGame, carAlong)
+  local now = clock()
+  local redo = now - redoAt >= M.REDO_EVERY_S or now < redoAt
+  if redo then redoAt = now end
   for _, s in ipairs(sites) do
     if not s.objs and not s.failed then
       local x, y = toGame(s.lat, s.lon, 0)
       local d2 = x and (x - carPos.x) ^ 2 + (y - carPos.y) ^ 2
       if d2 and d2 <= M.SPAWN_M ^ 2 then
-        s.x0, s.y0 = x, y
+        s.x0, s.y0, s.onRoad = x, y, nil
         -- the road under the control, aligned with the driving direction (sites not on the stage line)
         s.edge = nil
         if not s.path then
-          -- (a control's point can be well off the road: looked for further out when nothing is near)
-          local e = M.roadAt(x, y, s.dir) or M.roadAt(x, y, s.dir, M.SNAP_FAR_M)
-          if e then
-            local tw = s.toward and { x = select(1, toGame(s.toward.lat, s.toward.lon, 0)), y = select(2, toGame(s.toward.lat, s.toward.lon, 0)) }
-            local aw = s.away and { x = select(1, toGame(s.away.lat, s.away.lon, 0)), y = select(2, toGame(s.away.lat, s.away.lon, 0)) }
-            s.edge = M.orient(e, tw and tw.x and tw, aw and aw.x and aw)
-          end
+          -- (from the auto recce's road point beside the control when the matched file has one: issue #5)
+          local rx, ry, rdir = roadPoint(s, toGame)
+          if rx then s.x0, s.y0, s.onRoad = rx, ry, rdir end
+          s.edge = controlEdge(s, s.x0, s.y0, toGame)
         end
         -- nothing to tell the height (no stage line, no road map there): only once the car is close, its own height
         -- then near the ground's
         if s.path or s.edge or s.z or d2 <= M.NO_ROAD_SPAWN_M ^ 2 then spawn(s, carPos.z) end
+      end
+    elseif redo and s.objs and not s.failed and not s.path and not s.edge and s.x0 then
+      -- (put down with no road map there: put down again from the road map's road once it has one beside the
+      -- control -- issue #5: the road map comes in after the car arrives, and the props stood where they first went)
+      if (s.x0 - carPos.x) ^ 2 + (s.y0 - carPos.y) ^ 2 <= M.SPAWN_M ^ 2 then
+        local e = controlEdge(s, s.x0, s.y0, toGame)
+        if e then
+          M.removeSite(s)
+          s.edge = e
+          log('I', 'earthRally', string.format('props: %s put down again: the road map came in after it went down',
+            s.kind))
+          spawn(s, carPos.z)
+        end
       end
     end
   end
@@ -468,7 +528,7 @@ end
 -- After a world shift: everything put down again where it belongs (directions re-given by the caller).
 function M.reset()
   M.mapChanged()
-  for _, s in ipairs(sites) do M.removeSite(s) s.edge = nil end
+  for _, s in ipairs(sites) do M.removeSite(s) s.edge, s.onRoad = nil, nil end
   M.resetDressing()
 end
 
@@ -476,7 +536,11 @@ end
 -- props are down and the road map had the road; else nil (the caller uses the control's own spot).
 function M.sitePoint(kind)
   for _, s in ipairs(sites) do
-    if s.kind == kind and s.objs and #s.objs > 0 and s.edge then return { x = s.edge.x, y = s.edge.y } end
+    if s.kind == kind and s.objs and #s.objs > 0 then
+      if s.edge then return { x = s.edge.x, y = s.edge.y } end
+      -- (no road map there yet: the auto recce's road point it was set out from)
+      if s.onRoad then return { x = s.x0, y = s.y0 } end
+    end
   end
 end
 
@@ -568,6 +632,12 @@ M.DRESS_TAPE_SY_MAX, M.DRESS_TAPE_OVERLAP_M = 1.25, 0.5
 -- wider window there could take the stage's own road at a fork for the side road)
 M.DRESS_TAPE_CENTRE_M = 2
 M.DRESS_TAPE_MAX_DEG = 45
+-- A tape laid parallel with the stage at an acute junction (dressing.TAPE_PARALLEL_DEG, refit.sin: issue #9) crosses
+-- its side road at that angle, 90 - its degrees off square: the side road looked for up to DRESS_TAPE_SLACK_DEG
+-- beyond that, and never more than DRESS_TAPE_OBLIQUE_MAX_DEG off square (the stage road, running along the tape, is
+-- 90 off); the centring window and the length taken along the tape, over the sine of the angle it crosses at.
+M.DRESS_TAPE_SLACK_DEG = 15
+M.DRESS_TAPE_OBLIQUE_MAX_DEG = 80
 local HEAD_M = 10
 
 -- { kind, along, from, to, name, key, objs (ids, when down or going down), at (the next item to put down),
@@ -745,8 +815,15 @@ local function refitTape(it, x, y, dx, dy)
   if l < 1e-9 or type(rf.models) ~= 'table' or #rf.models == 0 then return { { x, y, it.shape, it.sy } } end
   dx, dy = dx / l, dy / l
   local cx, cy = x - dx * rf.len / 2, y - dy * rf.len / 2
-  local r = alignedRoad(cx, cy, -dy, dx, nil, M.DRESS_TAPE_MAX_DEG)
+  -- (a parallel tape: the sine of the angle it crosses its side road at, as planned; 1 for a square one)
+  local sin0 = (type(rf.sin) == 'number' and rf.sin > 0 and rf.sin < 1) and rf.sin or nil
+  local maxDeg = M.DRESS_TAPE_MAX_DEG
+  if sin0 then
+    maxDeg = math.min(M.DRESS_TAPE_OBLIQUE_MAX_DEG, math.deg(math.acos(sin0)) + M.DRESS_TAPE_SLACK_DEG)
+  end
+  local r = alignedRoad(cx, cy, -dy, dx, nil, maxDeg)
   local h = (r and type(r.half) == 'number' and r.half > 0) and r.half or M.DEFAULT_HALF_WIDTH_M
+  local sinA = sin0 or 1
   -- (positions along the tape from the planned middle: the plan allows -A .. A)
   local A = type(it.maxLen) == 'number' and it.maxLen > 0 and it.maxLen / 2 or math.huge
   local s = 0
@@ -754,12 +831,13 @@ local function refitTape(it, x, y, dx, dy)
     -- (the side road's line through r, its normal (r.dy, -r.dx): where the tape's line c + s d meets it)
     local nrx, nry = r.dy, -r.dx
     local dn = dx * nrx + dy * nry
+    if sin0 then sinA = math.max(math.cos(math.rad(M.DRESS_TAPE_OBLIQUE_MAX_DEG)), math.abs(dn)) end
     if math.abs(dn) > 1e-6 then
       local t = ((r.x - cx) * nrx + (r.y - cy) * nry) / dn
-      if math.abs(t) <= M.DRESS_TAPE_CENTRE_M + 1e-9 then s = t end
+      if math.abs(t) <= M.DRESS_TAPE_CENTRE_M / sinA + 1e-9 then s = t end
     end
   end
-  local want = 2 * h + 2 * (rf.past or 0)
+  local want = 2 * h / sinA + 2 * (rf.past or 0)
   local lo, hi = math.max(-A, s - want / 2), math.min(A, s + want / 2)
   local len = hi - lo
   local function piece(top, sy, shape) return { cx + dx * top, cy + dy * top, shape, sy } end

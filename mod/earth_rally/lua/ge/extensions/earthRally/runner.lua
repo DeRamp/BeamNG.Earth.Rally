@@ -824,6 +824,7 @@ local function setupProps()
     if a then
       local site = props.setSite('atc', run.atc.lat, run.atc.lon, { x = sp.x - a.x, y = sp.y - a.y })
       site.toward, site.away = { lat = slat, lon = slon }, nil      -- (its road's way: the one leading on to the start)
+      site.road = events.controlOnRoad(run.event.id, run.stage.id, 'atc', run.atc)  -- (on its road: issue #5)
     end
   end
   if run.stopCtl then
@@ -831,6 +832,7 @@ local function setupProps()
     if b then
       local site = props.setSite('stop', run.stopCtl.lat, run.stopCtl.lon, { x = b.x - fp.x, y = b.y - fp.y })
       site.toward, site.away = nil, { lat = flat, lon = flon }      -- (its road's way: the one leading on from the finish)
+      site.road = events.controlOnRoad(run.event.id, run.stage.id, 'stop', run.stopCtl)  -- (on its road: issue #5)
     end
   end
   -- the stage dressing: never allowed to stop a stage starting

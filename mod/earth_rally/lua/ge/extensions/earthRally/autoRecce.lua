@@ -358,6 +358,35 @@ function M.snap(g, p, direction)
            w = (a.w and b.w) and (a.w + (b.w - a.w) * bt) or a.w or b.w }
 end
 
+-- A time control's point (the organisers', dropped on a map by hand: often 6-15 m off the road, sometimes more) put
+-- on the road beside it (1.6.2, issue #5: Black River-Camp's ATC tent stood half off the road): the nearest road
+-- within CONTROL_SNAP_M, whichever way it runs -- the control's own road, not the stage's way. The matched file keeps
+-- it under `controls` (M.match), and props.lua sets the control's boards and tent out from there: the game's road map
+-- round the car can come in after they go down. { lat, lon (the organisers' point, which this was made from),
+-- roadLat, roadLon, offM (how far off the road the point was), deg (the road's bearing there, either way) } or nil
+-- (no road that near, among the roads the recce has: those within CORRIDOR_M of the stage).
+M.CONTROL_SNAP_M = 30.0
+function M.controlOnRoad(gr, fr, ctl)
+  if type(ctl) ~= 'table' or type(ctl.lat) ~= 'number' or type(ctl.lon) ~= 'number' or gr.edges == 0 then return nil end
+  local p = fr.xy(ctl.lat, ctl.lon)
+  local bd, best = M.CONTROL_SNAP_M, nil
+  for i = 1, #gr.ea do
+    local a, b = gr.xy[gr.ea[i]], gr.xy[gr.eb[i]]
+    local dx, dy = b.x - a.x, b.y - a.y
+    local l2 = dx * dx + dy * dy
+    if l2 > 1e-12 then
+      local t = math.max(0, math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2))
+      local qx, qy = a.x + dx * t, a.y + dy * t
+      local d = sqrt((qx - p.x) ^ 2 + (qy - p.y) ^ 2)
+      if d <= bd then bd, best = d, { x = qx, y = qy, dx = dx, dy = dy } end
+    end
+  end
+  if not best then return nil end
+  local la, lo = fr.latlon(best.x, best.y)
+  return { lat = ctl.lat, lon = ctl.lon, roadLat = round(la, 7), roadLon = round(lo, 7), offM = round(bd, 1),
+           deg = round(math.deg(math.atan2(best.dx, best.dy)) % 360, 1) }
+end
+
 -- Cheapest way from snap s to snap g (A*): the polyline (with heights) and its length, or nil.
 -- tools/auto_recce.py's Roads.route, including its two virtual nodes at the snap points.
 function M.route(gr, s, t)
@@ -752,8 +781,19 @@ function M.match(stage, graph, info)
     narrowOut[k] = { la, lo }
   end
 
+  -- (the time control before the start and the stop control after the finish, on their roads: M.controlOnRoad)
+  local ctlOut = nil
+  for _, k in ipairs({ 'atc', 'stop' }) do
+    local c = M.controlOnRoad(gr, fr, (stage.controls or {})[k])
+    if c then
+      ctlOut = ctlOut or {}
+      ctlOut[k] = c
+    end
+  end
+
   -- (format 2: the junctions keep their roads -- junctions.lua. events.lua reads format 1 files as before.)
   return {
+    controls = ctlOut,
     format = 2,
     stage = stage.id,
     source = M.SOURCE,
