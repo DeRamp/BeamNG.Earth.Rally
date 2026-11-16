@@ -91,6 +91,14 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
 .tc .r .btn { width: 100%; margin-top: 24px; }
 .tc .r .hint { color: var(--dim); font-size: 15px; margin-top: 10px; text-align: center; }
 
+.world { margin-top: 26px; padding: 18px 20px; border-radius: 8px; background: rgba(255,255,255,.05); }
+.world .wt { display: flex; justify-content: space-between; font-size: 18px; margin-bottom: 10px; } .world .wt b { font-weight: 600; } .world .wt span { color: var(--muted); }
+.world .wbar { position: relative; height: 14px; border-radius: 7px; background: rgba(255,255,255,.12); }
+.world .wbar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 7px; background: var(--blue); }
+.world .wbar i.full { background: var(--green); }
+.world .wbar em { position: absolute; left: 60%; top: -6px; bottom: -6px; width: 3px; background: #fff; border-radius: 2px; }
+.world .wbar u { position: absolute; left: 60%; top: 20px; transform: translateX(-50%); text-decoration: none; font-size: 14px; color: #fff; white-space: nowrap; }
+.world .ws { margin-top: 26px; color: var(--muted); font-size: 15px; }
 .hidden { display: none !important; }
 </style>
 </head>
@@ -133,8 +141,10 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
           <li class="done"><span class="dot">✓</span>Rally loaded from your save</li>
           <li class="now"><span class="dot"></span>The map around the service</li>
           <li><span class="dot"></span>Your car at the service</li>
+          <li><span class="dot"></span>The world around you: 60%</li>
           <li><span class="dot"></span>The time card</li>
         </ul>
+        <div class="world"><div class="wt"><b>The world around you</b><span>0% loaded · needs 60%</span></div><div class="wbar"><i class="" style="width:0%"></i><em></em><u>60%</u></div><div class="ws">The last step. The menu stays up until BeamNG.Earth has loaded 60% of the world around the car.</div></div>
         <div class="tip">Damage is repaired at service. The game saves here.</div>
       </div>
 
@@ -148,7 +158,9 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
           <li class="done"><span class="dot">✓</span>The map at the time control</li>
           <li class="now"><span class="dot"></span>The stage: line, pacenotes, controls, dressing</li>
           <li><span class="dot"></span>Your car at the ATC</li>
+          <li><span class="dot"></span>The world around you: 60%</li>
         </ul>
+        <div class="world"><div class="wt"><b>The world around you</b><span>0% loaded · needs 60%</span></div><div class="wbar"><i class="" style="width:0%"></i><em></em><u>60%</u></div><div class="ws">The last step. The menu stays up until BeamNG.Earth has loaded 60% of the world around the car.</div></div>
         <div class="tip">The same panel for Drive, Go to start, Recce, Retry, Next stage and a Casual restart.</div>
       </div>
 
@@ -183,13 +195,17 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
             <li class="now"><span class="dot"></span>Line, pacenotes, controls</li>
             <li><span class="dot"></span>Junctions taped, stage dressed</li>
             <li><span class="dot"></span>Start control ready</li>
+            <li class="now"><span class="dot"></span>The world around you: 60%</li>
           </ul>
+          <div data-m="atcLoad"><div class="world"><div class="wt"><b>The world around you</b><span>41% loaded · needs 60%</span></div><div class="wbar"><i class="" style="width:41%"></i><em></em><u>60%</u></div><div class="ws">The last step. The menu stays up until BeamNG.Earth has loaded 60% of the world around the car.</div></div></div>
           <ul class="steps" data-m="atcReady">
             <li class="done"><span class="dot">✓</span>Map at the start</li>
             <li class="done"><span class="dot">✓</span>Line, pacenotes, controls</li>
             <li class="done"><span class="dot">✓</span>Junctions taped, stage dressed</li>
             <li class="done"><span class="dot">✓</span>Start control ready</li>
+            <li class="done"><span class="dot">✓</span>The world around you: 60%</li>
           </ul>
+          <div data-m="atcReady"><div class="world"><div class="wt"><b>The world around you</b><span>73% loaded · ready</span></div><div class="wbar"><i class="full" style="width:73%"></i><em></em><u>60%</u></div><div class="ws">The menu can close now.</div></div></div>
           <div class="btn big off" data-m="atcLoad">Loading the stage...</div>
           <div class="btn big" data-m="atcReady">Go to the start</div>
           <div class="hint">Time card: <span style="color:#fff">X</span> · leave the rally from there</div>
@@ -209,10 +225,10 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
 <script>
 const NOTES = {
   now: "<b>Now.</b> Continue, Start, Go, Drive, Recce and the rest close the menu at once. The world loads in view for up to a minute (the car frozen or teleporting, the scenery popping in), with one message in the corner. Then the time card pops back up. With the auto recce on Start, this goes on for several minutes per stage.",
-  load: "<b>#49 · One loading panel, Continue.</b> The menu stays up (the game paused: it loads fine paused) and says what is loading, where you're going and what comes next. The bar is BeamNG.Earth's own progress where it reports one (terrain, downloads), otherwise the steps. It turns into the next screen (here the time card at the service) once the car is placed. No buttons: nothing to do while it loads.",
+  load: "<b>#49 · One loading panel, Continue.</b> The menu stays up (the game paused: it loads fine paused) and says what is loading, where you're going and what comes next. The bar is BeamNG.Earth's own progress where it reports one (terrain, downloads), otherwise the steps. <b>The last step (the owner): the world around you.</b> The panel doesn't close until BeamNG.Earth has loaded at least 60% of the world around the car, shown as its own bar with the 60% mark. Then it turns into the next screen (here the time card at the service). No buttons: nothing to do while it loads.",
   loadStage: "<b>#49 · The same panel for a stage.</b> Drive stage, Go to start, Recce, Retry, Next stage and a Casual restart all use it. The kicker line says which mode you're in.",
   recce: "<b>#34 · Getting the stages ready</b>, on Start (and Continue, if a stage still has no line). Every stage that needs its line: done, running (what it's doing and its own bar), waiting, or held out with the reason. The running stage says when it needs a download, and the question comes up in this screen. Stop leaves the rally (with a confirm, as today). When the last is done, the same screen becomes the loading panel: \"Going to the start\".",
-  atcLoad: "<b>#40 · At the ATC.</b> On a transit the stage no longer loads 1 km out in view. The ATC and start boards and tents are still put down as you drive up (the owner's call). Arriving at the ATC brings up the time control card: your time in, whether you're on time, your start time and the car's damage. The stage loads behind it. Go is greyed until it's ready.",
+  atcLoad: "<b>#40 · At the ATC.</b> On a transit the stage no longer loads 1 km out in view. The ATC and start boards and tents are still put down as you drive up (the owner's call). Arriving at the ATC brings up the time control card: your time in, whether you're on time, your start time and the car's damage. The stage loads behind it. Go is greyed until it's ready, and the last thing it waits for is 60% of the world around the car (its own bar).",
   atcReady: "<b>#40 · Ready.</b> Go to the start lights up (A on a pad). The card closes, the game unpauses, and you drive the last metres to the start line. X opens the time card for Leave / Retire."
 };
 const CRUMBS = { load: "Pine Hollow Rally<i>›</i><b>Loading</b>", loadStage: "Drive stage<i>›</i>Pine Hollow Rally<i>›</i><b>Loading</b>",

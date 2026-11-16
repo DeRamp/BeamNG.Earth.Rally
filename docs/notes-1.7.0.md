@@ -340,6 +340,11 @@ The first drive's findings are now issues #23-#33. This revision answers all of 
       `ui.loaded()`.
     - Mock-up: `docs/mockups-1.7.0/loading.html` (with #34 and #40), awaiting OK. The owner: all the loading
       screens are built together.
+    - **The owner: the loading screen doesn't close until BeamNG.Earth has loaded at least 60% of the world around
+      the car.** It's the last step, with its own progress bar and a 60% mark. The same holds for #40's ATC card:
+      Go waits for it. *To check when built:* what BeamNG.Earth reports for this. Its terrain blocks and tiles loaded
+      around the car's anchor are likely, via the modding API or `core` internals as `earthAdapter.holding` reads
+      them. If it has no count, add one in the fork (`fork-release`).
     - Files: `main.lua`, `rallyRun.lua`, `runner.lua` (the stage's ready moment), `EarthRally.vue` (a loading
       view), `tests/test_run.lua`. Issue #49.
 
