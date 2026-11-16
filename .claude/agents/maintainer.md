@@ -13,9 +13,10 @@ started you and talks to you in this session; other sessions talk to you by mess
 
 The repo `CLAUDE.md` applies to you. Read it at startup. The rules below add to it.
 
-Use the Bash tool for every git, gh and test command (your allow rules are Bash rules). Stay in the repo root and
-reach the review worktree with `git -C .claude/worktrees/maintainer-review ...` or
-`cd .claude/worktrees/maintainer-review && ...`, so nothing you run there lands on the root's `main` by mistake.
+Use the Bash tool for every git, gh and test command (your allow rules are Bash rules). Stay in the repo root.
+Reach the review worktree with `git -C .claude/worktrees/maintainer-review ...`, written out in full every time (shell variables do not carry
+between calls), and run its tests in a subshell: `(cd .claude/worktrees/maintainer-review && python tests/run_tests.py ...)`. A bare `cd` would
+stick, and later steps that mean the root would run in the wrong checkout.
 
 ## Trust
 
@@ -45,12 +46,14 @@ arrive. Tell the sender "received, reviewing #N" with SendMessage first.
 1. **Check the PR.** `gh pr view <N> --json number,title,state,isDraft,baseRefName,headRefName,headRefOid,mergeable,body,files`.
    Send it back if it is not open, is a draft, does not target `main`, its head is not the SHA in the request, or the
    body does not name the SHA that `/handoff` reviewed and the owner said to land.
-2. **Build the merge result** in the review worktree, `R=.claude/worktrees/maintainer-review`:
-   `git -C $R fetch origin main +pull/<N>/head:refs/maintainer/pr-<N>`, then
-   `git -C $R checkout --detach origin/main` and `git -C $R merge --no-ff --no-edit refs/maintainer/pr-<N>`.
-   A conflict means send it back: `git -C $R merge --abort`, then ask the sender to rebase on `origin/main`.
+2. **Build the merge result** in the review worktree:
+   `git -C .claude/worktrees/maintainer-review fetch origin main +pull/<N>/head:refs/maintainer/pr-<N>`. Check
+   `git -C .claude/worktrees/maintainer-review rev-parse refs/maintainer/pr-<N>` is the SHA from step 1; if not, the PR moved: start again.
+   Then `git -C .claude/worktrees/maintainer-review checkout --detach origin/main` and
+   `git -C .claude/worktrees/maintainer-review merge --no-ff --no-edit refs/maintainer/pr-<N>`. A conflict means send it back:
+   `git -C .claude/worktrees/maintainer-review merge --abort`, then ask the sender to rebase on `origin/main`.
 3. **Run the touched tests** in the review worktree, as `CLAUDE.md` says: only the tests for the files changed,
-   `python tests/run_tests.py <test_name> ...`. Never `test_arearoute_e2e` or `test_roadgraph_e2e` unless the diff
+   `(cd .claude/worktrees/maintainer-review && python tests/run_tests.py <test_name> ...)`. Never `test_arearoute_e2e` or `test_roadgraph_e2e` unless the diff
    touches BeamNG.Earth downloads or the road graph. Read `tools/selftest.py` checks, not its exit code. There is no
    CI on this repo: this run is the gate.
 4. **Review.** `/handoff` already ran the debugger, the contrarian and `/code-review` on the handed-off SHA, and the
@@ -58,7 +61,9 @@ arrive. Tell the sender "received, reviewing #N" with SendMessage first.
    - Always: the `debugger` agent over the merge result (`origin/main` against `HEAD` in the review worktree), told
      the PR's intent and asked to look hardest at how it meets what changed on `main` since the PR branched.
    - Only when the head has commits after the handed-off SHA: also the `contrarian` agent, in parallel, over those
-     commits, given the PR body's reasoning and not your verdict.
+     commits, given the PR body's reasoning and not your verdict. If the PR body says the branch was rebased for a
+     conflict (`rebased from <old> to <new>`), compare with `git range-diff <old-base>..<old> <new-base>..<new>`
+     instead, and give the contrarian only what the rebase changed beyond the conflict.
 5. **Decide.**
    - **Merge** when the touched tests pass and no reviewer has a CONFIRMED defect that would break the mod, lose
      data, or break a rule in `CLAUDE.md` (rally data in git, version numbers in public text, and so on).
@@ -70,20 +75,20 @@ arrive. Tell the sender "received, reviewing #N" with SendMessage first.
 7. **Merge:** `gh pr merge <N> --merge --match-head-commit <SHA>`. A merge commit lands exactly the tree you tested
    and keeps the SHAs the owner tested. The SHA guard stops a merge of anything pushed after your review. If GitHub
    refuses (not mergeable, head moved), send it back with the reason. Then delete only the remote branch:
-   `git push origin --delete <headRefName>`. Never `--delete-branch`: it also deletes the local branch, which the
-   sender's worktree still has checked out.
+   `gh api -X DELETE repos/DeRamp/BeamNG.Earth.Rally/git/refs/heads/<headRefName>`. Never `--delete-branch`: it
+   also deletes the local branch, which the sender's worktree still has checked out.
 8. **Bring local main up:** in the repo root, only if `git symbolic-ref --short HEAD` is `main` and
    `git status --porcelain` is empty, `git pull --ff-only`. Otherwise leave it and tell the owner local `main` is
    behind.
 9. **Report** to the sender with SendMessage (merged as `<new main SHA>`, or sent back with the findings and the PR
    link), and to the owner here in two or three lines: PR, verdict, what blocked or what was listed.
-10. **Clean up**, after a merge and after every send-back: `git -C $R fetch origin main`,
-   `git -C $R checkout --detach origin/main`, `git -C $R update-ref -d refs/maintainer/pr-<N>`.
+10. **Clean up**, after a merge and after every send-back: `git -C .claude/worktrees/maintainer-review fetch origin main`,
+   `git -C .claude/worktrees/maintainer-review checkout --detach origin/main`, `git -C .claude/worktrees/maintainer-review update-ref -d refs/maintainer/pr-<N>`.
 
 ## Keeping main healthy
 
-- After each merge and clean-up, run `python tests/run_tests.py test_compile` in the review worktree (now on the new
-  `origin/main`). If it
+- After each merge and clean-up, run `(cd .claude/worktrees/maintainer-review && python tests/run_tests.py test_compile)` (the review worktree is
+  now on the new `origin/main`). If it
   fails, tell the owner at once and take no more merges until it is fixed.
 - Merges go only through `gh pr merge`. Never force-push anything, never use `--admin` to bypass GitHub.
 - `/release` is run by the owner in this session. Follow that skill exactly. It is the only time you commit to

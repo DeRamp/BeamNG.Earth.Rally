@@ -8,8 +8,8 @@ would change `main` of this repo (origin URL contains REPO) is blocked with exit
 - `gh pr merge` (unless `-R`/`--repo` names another repository)
 - `git push` to `main` (named in a refspec, `--all`/`--mirror`, or a bare push while on `main`)
 - `git branch -f/-D/-m/-M ... main`, `git update-ref refs/heads/main`
-- `git commit/merge/rebase/cherry-pick/revert/am/pull/reset` while on `main`, except `pull --ff-only`,
-  `--abort`/`--quit`, and a `reset` that only unstages paths
+- `git commit/merge/rebase/cherry-pick/revert/am/pull/reset` while on `main`, except `pull --ff-only` from
+  origin's main, `--abort`/`--quit`, and a `reset` that only unstages paths
 
 `git checkout X`/`git switch X` and `cd` earlier in the same command line are followed.
 This is a guardrail against mistakes, not a security boundary: aliases, `sh -c` and scripts get past it.
@@ -37,7 +37,8 @@ REASON = (
 
 HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n.*?^\s*\2\s*$", re.S | re.M)
 HERESTRING = re.compile(r"@(['\"])\r?\n.*?^\1@", re.S | re.M)
-REDIRECT = re.compile(r"^\d*>{1,2}(&\d*)?$|^\d*>{1,2}\S+$|^<\S*$")
+REDIRECT = re.compile(r"^\*?\d*>{1,2}\S+$|^<\S+$")  # operator with its target attached: 2>&1, >out, 2>$null
+BARE_REDIRECT = re.compile(r"^\*?\d*>{1,2}$|^<$")  # operator alone: its target is the next token
 ENV_PREFIX = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
 
@@ -92,7 +93,15 @@ def tokens(segment):
     toks = [t[1:-1] if len(t) > 1 and t[0] == t[-1] and t[0] in "\"'" else t for t in toks]
     while toks and ENV_PREFIX.match(toks[0]):  # GIT_EDITOR=true git ...
         toks = toks[1:]
-    return [t for t in toks if not REDIRECT.match(t)]
+    out, skip = [], False
+    for t in toks:
+        if skip:
+            skip = False
+        elif BARE_REDIRECT.match(t):
+            skip = True
+        elif not REDIRECT.match(t):
+            out.append(t)
+    return out
 
 
 def exe(token):
@@ -145,9 +154,28 @@ def names_main(ref, state):
     return dst.removeprefix("refs/heads/") in MAIN
 
 
-def looks_like_commit(arg):
+def is_commit(state, arg):
     # Plain HEAD is left out: resetting to HEAD only unstages, the branch stays put.
-    return bool(re.search(r"[~^@]|^origin/|^[0-9a-f]{7,40}$", arg))
+    return arg not in ("HEAD", "@") and bool(git_out(state.dir, "rev-parse", "--verify", "-q", arg + "^{commit}"))
+
+
+def is_branch(state, name):
+    if git_out(state.dir, "rev-parse", "--verify", "-q", "refs/heads/" + name):
+        return True
+    return bool(git_out(state.dir, "for-each-ref", "--count=1", "refs/remotes/*/" + name))
+
+
+def without_values(args, opts):
+    """Drop options that take a value (and the value) so positionals are the real names."""
+    out, skip = [], False
+    for a in args:
+        if skip:
+            skip = False
+        elif a in opts:
+            skip = True
+        else:
+            out.append(a)
+    return out
 
 
 def git_blocked(args, state):
@@ -170,10 +198,12 @@ def git_blocked(args, state):
 
         if sub in ("checkout", "switch"):
             new = next((rest[j + 1] for j, a in enumerate(rest[:-1]) if a in ("-b", "-B", "-c", "-C")), None)
-            if new or (positional and "--" not in rest and "--detach" not in rest):
-                state.set_branch(new or positional[0])
-            elif "--detach" in rest:
+            if new:
+                state.set_branch(new)
+            elif "--detach" in rest or "-d" in rest:
                 state.set_branch("")
+            elif positional and "--" not in rest and is_branch(state, positional[0]):
+                state.set_branch(positional[0])  # `git checkout README.md` restores a file, it does not switch
             return None
         if sub not in CHANGES_CURRENT | {"push", "branch", "update-ref"} or not state.ours():
             return None
@@ -187,33 +217,44 @@ def git_blocked(args, state):
                 return "git push while on main"
             return None
         if sub == "branch":
-            moving = any(a in ("-f", "--force", "-D", "-d", "--delete", "-m", "-M", "--move") for a in rest)
-            # `git branch -f mine main` moves mine, not main: only the first name is the branch acted on
-            return "git branch moving or deleting main" if moving and positional[:1] and positional[0] in MAIN else None
+            # delete, rename and copy act on every name given; rename/copy write the last one
+            if any(a in ("-d", "-D", "--delete", "-m", "-M", "--move", "-c", "-C", "--copy") for a in rest):
+                return "git branch deleting, renaming or copying onto main" if set(positional) & MAIN else None
+            # `git branch -f mine main` moves mine, not main: only the first name is the branch moved
+            if any(a in ("-f", "--force") for a in rest) and positional[:1] and positional[0] in MAIN:
+                return "git branch -f main"
+            return None
         if sub == "update-ref":
-            return "git update-ref on main" if positional[:1] and names_main(positional[0], state) else None
+            names = [a for a in without_values(rest, {"-m"}) if not a.startswith("-")]
+            return "git update-ref on main" if names[:1] and names_main(names[0], state) else None
         if state.branch() not in MAIN:
             return None
-        if any(a in ("--abort", "--quit") for a in rest):
+        if rest[:1] in (["--abort"], ["--quit"]):
             return None
-        if sub == "pull" and "--ff-only" in rest:
+        if sub == "pull" and "--ff-only" in rest and positional in ([], ["origin"], ["origin", "main"]):
             return None
-        if sub == "reset" and not RESET_MODES & set(rest) and not any(looks_like_commit(p) for p in positional):
-            return None
+        if sub == "reset" and not RESET_MODES & set(rest):
+            before_dashdash = positional if "--" not in rest else [p for p in rest[: rest.index("--")] if not p.startswith("-")]
+            if not any(is_commit(state, p) for p in before_dashdash):
+                return None  # unstaging paths only
         return f"git {sub} on main"
     finally:
         state.dir = saved_dir  # `git -C dir` applies to that one command only
 
 
 def gh_blocked(toks, state):
-    if len(toks) > 2 and toks[1] == "pr" and toks[2] == "merge":
-        for j, a in enumerate(toks):
-            if a in ("-R", "--repo") and j + 1 < len(toks):
-                return "gh pr merge" if REPO in toks[j + 1].lower() else None
-            if a.startswith("--repo="):
-                return "gh pr merge" if REPO in a.lower() else None
-        return "gh pr merge" if state.ours() else None
-    return None
+    repo = None
+    for j, a in enumerate(toks):
+        if a in ("-R", "--repo") and j + 1 < len(toks):
+            repo = toks[j + 1]
+        elif a.startswith("--repo="):
+            repo = a.split("=", 1)[1]
+    words = [a for a in without_values(toks[1:], {"-R", "--repo"}) if not a.startswith("--repo=")]
+    if words[:2] != ["pr", "merge"]:
+        return None
+    if repo is not None:
+        return "gh pr merge" if REPO in repo.lower() else None
+    return "gh pr merge" if state.ours() else None
 
 
 def check(command, cwd):
@@ -239,12 +280,12 @@ def check(command, cwd):
 
 
 def main():
-    raw = sys.stdin.read()
-    log = os.environ.get("GUARD_MAIN_LOG")
-    if log:
-        with open(log, "a", encoding="utf-8") as f:
-            f.write(raw.strip() + "\n")
     try:
+        raw = sys.stdin.read()
+        log = os.environ.get("GUARD_MAIN_LOG")
+        if log:
+            with open(log, "a", encoding="utf-8") as f:
+                f.write(raw.strip() + "\n")
         data = json.loads(raw)
         if not isinstance(data, dict):
             return 0

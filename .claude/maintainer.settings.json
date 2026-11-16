@@ -11,10 +11,11 @@
       "Bash(gh auth status*)",
       "Bash(git worktree add --detach .claude/worktrees/maintainer-review *)",
       "Bash(git -C .claude/worktrees/maintainer-review *)",
-      "Bash(git push origin --delete *)",
+      "Bash(gh api -X DELETE repos/DeRamp/BeamNG.Earth.Rally/git/refs/heads/*)",
       "Bash(git pull --ff-only*)",
       "Bash(git symbolic-ref *)",
-      "Bash(python tests/run_tests.py *)"
+      "Bash(python tests/run_tests.py *)",
+      "Bash(cd .claude/worktrees/maintainer-review && python tests/run_tests.py *)"
     ]
   }
 }

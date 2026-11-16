@@ -30,4 +30,5 @@ other session. To land work, do these in order.
    is wrong, the fix, the files. When the owner says to go ahead, fix, run `/handoff` again, hand the build back to
    the owner, and only when they say to land it, push and send a new request with the new head SHA. A conflict is
    the exception the owner need not test: rebase on `origin/main`, re-run the touched tests, push with
-   `--force-with-lease`, and tell the owner before sending the new request.
+   `--force-with-lease`, add `rebased from <old SHA> to <new SHA>, conflict only` to the PR body, and tell the
+   owner before sending the new request.
