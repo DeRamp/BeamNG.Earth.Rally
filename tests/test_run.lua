@@ -2695,4 +2695,159 @@ do
   T.check(runner.bridgeEnd(L, cum, 200, { x = 40, y = 260 }) == nil, 'bridgeEnd: 40 m off the line: none')
 end
 
+------------------------------------------------------------------------------------------ Route to start: driven in (GitHub #19)
+-- Route to start arms the stage; driven up to it, it gets ready as Run stage would, with no teleport and the car
+-- left where it is. The GPS is BeamNG.Earth's until 250 m out, the run's arrows from there.
+do
+  runner.abort(true)
+  map = nil
+  anchor = { lat = 47.0, lon = -123.0 }
+  local kx = math.rad(1) * R * math.cos(math.rad(47.0))
+  local atcLat, atcLon = full[11][1] - 600 / 111195, full[11][2] + 8 / kx      -- 600 m before the start, 8 m east
+  local ev = { format = 1, id = 'test19', name = 'Test Rally 19', stages = { {
+    id = 'hill', name = 'Hill', lengthM = 3000, radiusM = 1200, centre = event.stages[1].centre,
+    controls = { start = event.stages[1].controls.start, ff = event.stages[1].controls.ff,
+                 atc = { lat = atcLat, lon = atcLon } },
+    line = event.stages[1].line } } }
+  files['/earthRally/events/test19.json'] = ev
+  files['/earthRally/matched/test19__hill.json'] = { format = 1, points = recFrom }
+  local st = ev.stages[1]
+
+  -- BeamNG.Earth's GPS: a destination, cleared by gpsClear; teleports counted
+  local gpsDest, clears, teleports = nil, 0, 0
+  local hadGps, hadClear, hadTp = beamngEarth_api.gps, beamngEarth_api.gpsClear, beamngEarth_api.teleport
+  beamngEarth_api.gps = function() return gpsDest end
+  beamngEarth_api.gpsClear = function() gpsDest = nil clears = clears + 1 end
+  beamngEarth_api.teleport = function(lat, lon) teleports = teleports + 1 car.lat, car.lon = lat, lon return true end
+  local function route(la, lo)
+    gpsDest = { lat = la, lon = lo, name = 'x' }
+    T.check(runner.armApproach(ev, st), 'Route to start arms the stage')
+  end
+  -- the car driven north along the road (the ATC's road, 8 m west of its board) at `ms`, one 0.1 s frame at a time,
+  -- until `untilFn` says stop; false if the car was ever moved by anything but the driving
+  local moved = false
+  local function drive(ms, untilFn, maxFrames)
+    car.speed = ms
+    for _ = 1, maxFrames or 3000 do
+      if untilFn() then return true end
+      car.lat = car.lat + ms * 0.1 / 111195
+      local la, lo = car.lat, car.lon
+      frames(1)
+      if car.lat ~= la or car.lon ~= lo then moved = true end
+    end
+    return false
+  end
+  local geo_m = require('earthRally/geo').metres
+  local function toAtcM() return geo_m(car.lat, car.lon, atcLat, atcLon) end
+
+  -- 1. armed 5 km out: nothing loads until the car is within APPROACH_M of the ATC
+  car.lat, car.lon, car.speed = atcLat - 5000 / 111195, full[11][2], 0
+  route(atcLat, atcLon)
+  frames(5)
+  T.check(runner.current() == nil and runner.approaching() ~= nil, 'driven in: 5 km out, armed and nothing loaded')
+  local routesBefore = #routes
+  drive(30, function() return runner.current() ~= nil end)
+  T.check(runner.current() ~= nil and toAtcM() <= runner.APPROACH_M + 5 and toAtcM() > runner.APPROACH_M - 10,
+    string.format('driven in: the stage loads at %.0f m from the ATC', toAtcM()))
+  T.check(runner.approaching() == nil, 'driven in: and the route is no longer armed')
+  drive(30, function() return runner.state() == 'toAtc' end, 200)
+  T.check(runner.state() == 'toAtc' and toAtcM() > 500,
+    string.format('driven in: ready to drive (toAtc) while still %.0f m out', toAtcM()))
+  T.check(runner.current().checks.atcSetDown == 'driven there' and teleports == 0 and not moved,
+    'driven in: never teleported nor set down (' .. tostring(runner.current().checks.atcSetDown) .. ')')
+  drive(30, function() return toAtcM() < 300 end)
+  T.check(#routes == routesBefore and clears == 0 and gpsDest ~= nil,
+    'driven in: BeamNG.Earth\'s GPS leads while the car is far (' .. (#routes - routesBefore) .. ' arrows set)')
+  drive(30, function() return toAtcM() < 200 end)
+  T.check(#routes > routesBefore and clears == 1, 'driven in: the run\'s arrows from 250 m, the GPS cleared')
+  -- rolling through the zone is no check-in; stopping in it is
+  drive(10, function() return car.lat >= atcLat end)          -- (beside the board, 8 m off it)
+  T.check(runner.current().startAt == nil and not moved, 'driven in: rolling into the ATC zone is not a check-in')
+  car.speed = 0 frames(3)
+  T.check(runner.current().startAt ~= nil and runner.current().checks.atc ~= nil,
+    'driven in: stopped at the board, checked in (' .. tostring(runner.current().checks.atc) .. ')')
+  -- checked in: driving off no longer unloads it
+  car.lat = atcLat - 3000 / 111195 frames(10)
+  T.check(runner.current() ~= nil, 'driven in: checked in, then far away: the run is kept')
+  runner.abort(true)
+
+  -- 2. the route cleared, or another destination set, before the car got there: disarmed, nothing loads
+  car.lat, car.lon, car.speed = atcLat - 3000 / 111195, full[11][2], 0
+  route(atcLat, atcLon)
+  gpsDest = nil
+  frames(10)
+  T.check(runner.approaching() == nil, 'route cleared: disarmed')
+  car.lat = atcLat - 500 / 111195 frames(10)
+  T.check(runner.current() == nil, 'route cleared: driven near anyway, nothing loads')
+  car.lat = atcLat - 3000 / 111195
+  route(atcLat, atcLon)
+  gpsDest = { lat = atcLat + 0.05, lon = atcLon, name = 'elsewhere' }
+  frames(10)
+  T.check(runner.approaching() == nil, 'another destination set: disarmed')
+  -- a BeamNG.Earth that cannot say where its GPS goes: the route stands
+  beamngEarth_api.gps = nil
+  route(atcLat, atcLon)
+  frames(10)
+  T.check(runner.approaching() ~= nil, 'no GPS to ask: still armed')
+  beamngEarth_api.gps = function() return gpsDest end
+  runner.disarmApproach('test')
+
+  -- 3. loaded, then driven away (past it, or a change of mind) before checking in: unloaded, not re-armed
+  car.lat, car.lon, car.speed = atcLat - 1500 / 111195, full[11][2], 0
+  route(atcLat, atcLon)
+  drive(30, function() return runner.state() == 'toAtc' end)
+  T.check(runner.state() == 'toAtc', 'driven away: loaded first')
+  car.lat = atcLat - 2500 / 111195 frames(10)
+  T.check(runner.current() == nil and runner.approaching() == nil, 'driven away before checking in: unloaded')
+  T.check(toasts[#toasts] and tostring(toasts[#toasts].msg):find('drove off') ~= nil,
+    'driven away: told (' .. tostring(toasts[#toasts] and toasts[#toasts].msg) .. ')')
+
+  -- 4. a stage with no ATC, the car standing still on the start line when it loads: not counted down until driven
+  local lx, ly = toGame(full[11][1], full[11][2])
+  car.lat, car.lon = toGeo(lx, ly - 6)
+  car.speed = 0
+  gpsDest = { lat = full[11][1], lon = full[11][2] }
+  T.check(runner.armApproach(event, event.stages[1]), 'no ATC: armed to the start')
+  frames(60)
+  local held = { car.lat, car.lon }
+  T.check(runner.state() == 'toStart' and runner.current().checks.startSetDown == 'driven there'
+    and runner.current().startAt == nil and teleports == 0,
+    'no ATC, stopped on the line as it loads: kept there, no countdown (' ..
+    tostring(runner.current() and runner.current().checks.startSetDown) .. ')')
+  car.lat, car.lon = toGeo(lx, ly - 10)       -- (backed up 4 m, then stopped: the player's own stop)
+  car.speed = 2 frames(1) car.speed = 0 frames(3)
+  T.check(runner.current().startAt ~= nil and held[1] ~= car.lat, 'no ATC: driven and stopped again, counted down')
+  runner.abort(true)
+  -- rolling in over the start zone: no countdown while it moves
+  car.lat, car.lon = toGeo(lx, ly - 400)
+  gpsDest = { lat = full[11][1], lon = full[11][2] }
+  runner.armApproach(event, event.stages[1])
+  drive(8, function() return runner.state() == 'toStart' and geo_m(car.lat, car.lon, full[11][1], full[11][2]) < 8 end)
+  T.check(runner.state() == 'toStart' and runner.current().startAt == nil and not moved,
+    'no ATC, rolling in: no countdown while the car moves')
+  runner.abort(true)
+
+  -- 5. another stage's run under way: waited for; once it is finished, put away for the routed one
+  car.lat, car.lon, car.speed = full[1][1], full[1][2], 0
+  runner.start(event, event.stages[1])
+  frames(40)
+  T.check(runner.current().event.id == 'test', 'a stage loaded by Run stage')
+  gpsDest = { lat = atcLat, lon = atcLon }
+  runner.armApproach(ev, st)
+  car.lat, car.lon = atcLat - 300 / 111195, full[11][2]
+  frames(10)
+  T.check(runner.current().event.id == 'test' and runner.approaching() ~= nil,
+    'another run under way: the routed stage waits')
+  runner.wrapUp()
+  frames(10)
+  T.check(runner.current().event.id == 'test19' and runner.current().drivenIn ~= nil,
+    'that run finished: put away, the routed stage loaded (' .. runner.current().event.id .. ')')
+  -- and Stop the run disarms a route still armed
+  runner.armApproach(ev, st)
+  runner.abort(true)
+  T.check(runner.approaching() == nil, 'Stop the run: the route disarmed')
+
+  beamngEarth_api.gps, beamngEarth_api.gpsClear, beamngEarth_api.teleport = hadGps, hadClear, hadTp
+end
+
 T.done('test_run')
