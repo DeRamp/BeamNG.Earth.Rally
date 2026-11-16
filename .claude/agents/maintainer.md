@@ -77,27 +77,37 @@ arrive. Tell the sender "received, reviewing #N" with SendMessage first.
    touches BeamNG.Earth downloads or the road graph. Read `tools/selftest.py` checks, not its exit code. There is no
    CI on this repo: this run is the gate.
 4. **Review only what is new** (the owner, 2026-11-15). Nothing is reviewed twice: `/handoff` reviewed the
-   handed-off SHA, and every earlier round of yours reviewed the head its verdict comment names. `main`'s own changes
-   were reviewed when they merged. Your review guards `main`, not the design:
-   - **Reviewed SHA:** the head named in your last verdict comment on this PR, or the `Handed off at` SHA on a first
-     request.
-   - **Delta:** the sender's commits after the reviewed SHA, `git log --first-parent <reviewed>..<head>`. Give
-     reviewers each ordinary commit's diff. For a back-merge of `origin/main` (`back-merged origin/main at <SHA>` in
-     the body), give only `git show --remerge-diff <merge>`, which is what the sender's conflict resolution changed.
-   - **Overlap:** on a first request, the files the PR changes that `main` also changed since the branch point
-     (`git diff --name-only <merge-base>..origin/main` against the PR's files), and only those.
-   - The `debugger` agent over the delta and the overlap, told the PR's intent. The `contrarian` agent in parallel
-     over the delta only, given the PR body's reasoning and not your verdict. Never give either agent the whole PR
-     or the whole merge result.
-   - No delta and no overlap: no agent review. The touched tests are the gate. Say so in the verdict comment.
+   handed-off SHA, your earlier rounds reviewed the heads you recorded, and `main`'s own changes were reviewed when
+   they merged. Your review guards `main`, not the design. In every command below, run with
+   `git -C .claude/worktrees/maintainer-review`, `<head>` is `refs/maintainer/pr-<N>` from step 2.
+   - **Reviewed SHA:** `refs/maintainer/reviewed/pr-<N>` if it exists (only you write it, step 6), else the PR body's
+     `Handed off at` SHA. Use it only if `git merge-base --is-ancestor <reviewed> <head>` succeeds. If it fails, or
+     the ref and the handed-off SHA are both missing, there is no reviewed SHA: review the PR's own changes in full
+     (`git diff <merge-base origin/main <head>>..<head>`) and say why in the verdict comment.
+   - **Delta:** the commits on the branch's own line after the reviewed SHA,
+     `git rev-list --first-parent <reviewed>..<head>`. Each ordinary commit goes to the reviewers as its diff. A
+     merge commit whose second parent is on main (`git merge-base --is-ancestor <commit>^2 origin/main`) is a
+     back-merge, whatever the PR body says: only `git show --remerge-diff <commit>` goes to the reviewers, which is
+     what the sender's conflict resolution changed. Any other merge commit goes in full.
+   - **Interaction with main:** let `<base>` be `git merge-base origin/main <head>`. Only if `<base>` is not
+     `origin/main` (main moved since the branch last took it), the debugger also gets the PR's own diff
+     (`git diff <base>..<head>`) and main's diff since then (`git diff <base>..origin/main`), and is asked only how
+     the two interact: what of main's breaks the PR's code, or the PR's breaks main's, in any file. It does not
+     review either side on its own.
+   - **Agents:** the `debugger` over the delta and, if any, the interaction. The `contrarian` in parallel over the
+     delta only, given the PR body's reasoning and not your verdict.
+   - No delta and main has not moved: no agent review. The touched tests are the gate. Say so in the verdict comment.
 5. **Decide.**
    - **Merge** when the touched tests pass and no reviewer has a CONFIRMED defect that would break the mod, lose
      data, or break a rule in `CLAUDE.md` (rally data in git, version numbers in public text, and so on).
    - **Send back** otherwise. You never edit a PR's code yourself.
    - PLAUSIBLE findings and style points do not block. List them in the merge comment so they are not lost.
 6. **Record it on the PR**, every time, with `gh pr comment <N> --body-file <file>`: the verdict, the tests run, and
-   the findings one line each (`path:line: problem. Fix.`). The comment is the record; a message can be lost. Write
-   the file under `$TEMP`, never inside the repo, so the root stays clean.
+   the findings one line each (`path:line: problem. Fix.`), and a line `Reviewed head <full SHA>`: the `<head>` you
+   reviewed. The comment is the record; a message can be lost. Write the file under `$TEMP`, never inside the repo,
+   so the root stays clean. Then record the head for the next round:
+   `git -C .claude/worktrees/maintainer-review update-ref refs/maintainer/reviewed/pr-<N> refs/maintainer/pr-<N>`.
+   Senders never write a `Reviewed head` line or touch `refs/maintainer/`; step 4 reads the ref, not the comment.
 7. **Merge:** `gh pr merge <N> --merge --match-head-commit <SHA>`. A merge commit lands exactly the tree you tested
    and keeps the branch's SHAs. The SHA guard stops a merge of anything pushed after your review. If GitHub
    refuses (not mergeable, head moved), send it back with the reason. Then delete only the remote branch:
@@ -119,7 +129,9 @@ arrive. Tell the sender "received, reviewing #N" with SendMessage first.
    or fails, comment on the PR with its output and tell the sender and the owner. A failed run is resumed by running
    the same command again.
 11. **Clean up**, after a merge and after every send-back: `git -C .claude/worktrees/maintainer-review fetch origin main`,
-   `git -C .claude/worktrees/maintainer-review checkout --detach origin/main`, `git -C .claude/worktrees/maintainer-review update-ref -d refs/maintainer/pr-<N>`.
+   `git -C .claude/worktrees/maintainer-review checkout --detach origin/main`, `git -C .claude/worktrees/maintainer-review update-ref -d refs/maintainer/pr-<N>`. After a merge, also
+   `git -C .claude/worktrees/maintainer-review update-ref -d refs/maintainer/reviewed/pr-<N>`; after a send-back,
+   keep it for the next round.
 
 ## Keeping main healthy
 
