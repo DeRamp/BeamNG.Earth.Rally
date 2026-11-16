@@ -2,6 +2,8 @@
 
 Drafted with the user, 2026-11-13; 1.3.1 and 1.3.2 released 2026-11-14. Each version has one theme; a
 version is done when it has been driven in game.
+Planned features carry no number: `+name`, built on the release named, and numbered (the next minor) only when
+the owner merges and releases them (CLAUDE.md, "Feature builds"). Older entries kept their numbers.
 Sizes are rough (S: a session, M: a few, L: a week or more of sessions). Numbers in brackets are the roadmap items
 from the planning list.
 
@@ -123,7 +125,7 @@ the owner's findings in docs/notes-1.6.2.md.
 | ✔ | Menus: rally menu pauses (#13), controller (#14), finish time in the top bar (#17), Close on the results card (#18) | built |
 | ✔ | Route to stage gets the stage ready as you arrive (#19) | built |
 
-## 1.7.0: make and share stages
+## Feature `+share`: make and share stages (not started; lands as the next minor)
 
 Players build their own stages and pass them around.
 
@@ -134,7 +136,7 @@ Players build their own stages and pass them around.
 | In-game editor, top-down on the map: draw or reroute stages, drag controls, edit existing stages (11) | L |
 | Friends' times through shared files (20; local leaderboards against real results came in 1.4.0) | S |
 
-## 1.8.0: the full rally
+## Feature `+fullrally`: the full rally (building on branch `full-rally-mvp`, on 1.6.2: `1.6.2-alpha+fullrally`)
 
 From a single stage to a whole event.
 
@@ -207,7 +209,7 @@ Decided against, with the reason, so they are not proposed again.
   late-start penalty moved to on the stage. So the 1.3 line is finished.
 - 1.4.0 (rally files) released ahead of on the stage (the user, 2026-11-14): it was built alongside it on a branch
   of its own and finished first. The menus and the leaderboards are the parts of the rally file a player sees, and
-  1.7.0's writing half builds on the same format.
+  `+share`'s writing half builds on the same format.
 - 1.5.0 (the co-driver) released ahead of on the stage (the user, 2026-11-14): built alongside it on a branch of
   its own and finished first, as the rally files were. Its height reading and sight crests are what on the stage's
   height profiles and sketches can draw on.
@@ -215,11 +217,11 @@ Decided against, with the reason, so they are not proposed again.
   junction signs stand on the junction data 1.3.0's auto recce already finds, so the heart of it needs nothing from
   later versions. It was first placed after the rally file because it was said to build on that too; in its new
   place, anything here that would have lived in the file (a ghost's run, most likely) has to be kept on this
-  machine per stage until 1.7.0 can carry it -- to settle when 1.6.0 is planned.
+  machine per stage until `+share` can carry it -- to settle when 1.6.0 is planned.
 - The co-driver was the pacenote overhaul on its own (split from 1.3.0, the user, 2026-11-13): large, and best
   tested on the matched lines 1.3.0 gives everyone, which 1.3.1 made reachable on ground nobody has driven.
-- 1.7.0's rally file is the base for the editor, setup mode, leaderboards, the starter pack and full rallies, so it
+- `+share`'s rally file is the base for the editor, setup mode, leaderboards, the starter pack and full rallies, so it
   comes before them.
 - On the stage before the full rally (the user, 2026-11-13), and now before everything after 1.3 (2026-11-14).
-- 1.8.0 needs the rally file (itineraries, service areas live in it).
+- `+fullrally` needs the rally file (itineraries, service areas live in it).
 - 2.0.0 gathers what a newcomer needs, once the content and tools exist to fill a starter pack.
