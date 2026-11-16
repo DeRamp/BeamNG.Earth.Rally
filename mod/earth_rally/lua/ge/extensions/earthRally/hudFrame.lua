@@ -149,8 +149,8 @@ local INACTIVE = { activeState = 'inactive', showStageApps = false }
 function M.approachLine(ours, ctx)
   local a = ctx.approach
   if type(a) ~= 'table' or ctx.uiHidden then return end
-  ours.approach = { name = a.name, distM = a.distM, label = a.rally and 'Transit' or 'Route',
-    sub = a.rally and 'follow the arrows' or 'gets ready as you arrive' }
+  ours.approach = { name = a.name, distM = a.distM, label = a.waiting and 'Rally' or (a.rally and 'Transit' or 'Route'),
+    sub = a.waiting and 'time card: Ctrl+Alt+K to go on' or (a.rally and 'follow the arrows' or 'gets ready as you arrive') }
   ours.show.approach = true
 end
 
@@ -159,6 +159,10 @@ function M.approachText(a, units)
   if type(a) ~= 'table' then return nil end
   local d = a.distM and (' · ' .. M.lengthText(a.distM, units) .. (units == 'mi' and ' mi' or ' km')) or ''
   -- (the HUD app is not on screen between stages: the Messages line carries the transit's controls, #27)
+  -- (#35: a rally waiting at a stop for the player: what is next and how to go on)
+  if a.waiting then
+    return tostring(a.name) .. ' · open the time card to go on: Ctrl+Alt+K'
+  end
   if a.rally then
     return 'Transit to ' .. tostring(a.name or 'the stage') .. d ..
       ' · follow the arrows · Recover: Backspace / D-pad → · Time card: Ctrl+Alt+K'

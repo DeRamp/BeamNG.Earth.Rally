@@ -426,6 +426,31 @@ function M.loading()
   return { done = done, total = total }
 end
 
+-- How much of the world round the car has loaded, 0..100 (1.7.0, #49: the loading screens wait for a share of it).
+-- BeamNG.Earth's world server sends what it wants round the car and how much of it is done (core state
+-- `loadProgress`: ground = the terrain block under the car, roads = the road and building tiles within 640 m, trees;
+-- each { done, wanted }), the counts its own status bar's "Loading N%" is made from. `far` (the distant terrain ring)
+-- is left out: it is never complete while the car moves. Counts from before the last teleport (another anchor) are not
+-- used. Internals, felt for: nil when this BeamNG.Earth has none (the caller then goes by ready() alone).
+function M.worldLoaded()
+  if not M.ready() then return 0 end
+  local c = core()
+  local ok, st = pcall(function() return c and c._state and c._state() end)
+  if not (ok and type(st) == 'table') then return nil end
+  local lp = st.loadProgress
+  if type(lp) ~= 'table' then return nil end
+  if lp.anchorId ~= nil and st.anchorId ~= nil and lp.anchorId ~= st.anchorId then return 0 end
+  local d, n = 0, 0
+  for _, k in ipairs({ 'ground', 'roads', 'trees' }) do
+    local p = lp[k]
+    if type(p) == 'table' and type(p[1]) == 'number' and type(p[2]) == 'number' and p[2] > 0 then
+      d, n = d + math.max(0, math.min(p[1], p[2])), n + p[2]
+    end
+  end
+  if n <= 0 then return 100 end
+  return math.floor(100 * d / n + 0.5)
+end
+
 -- BeamNG.Earth's rebase distance (m from the origin before it moves the world), and setting it (clamped by it to
 -- 2000..16000). nil when it cannot be read.
 function M.rebaseDistance()

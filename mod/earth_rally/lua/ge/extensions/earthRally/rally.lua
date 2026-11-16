@@ -68,7 +68,11 @@ local function orderOf(event, cancelled)
         -- (nothing driven yet: no stop)
       elseif lastIsStop() then
         local l = out[#out]
-        if kind == 'overnight' then l.kind, l.label, l.place = 'overnight', 'Overnight', s.place or l.place end
+        -- (#48: a service and an overnight together: the overnight at the service park)
+        if kind == 'overnight' then
+          if l.kind == 'service' and l.place then l.atService = true else l.place = s.place or l.place end
+          l.kind, l.label = 'overnight', 'Overnight'
+        end
       else
         out[#out + 1] = { kind = kind, label = s.label or (kind == 'overnight' and 'Overnight' or 'Service'),
           name = s.name, place = s.place }
@@ -76,6 +80,18 @@ local function orderOf(event, cancelled)
     end
   end
   while lastIsStop() do out[#out] = nil end
+  -- (#48, the owner: you always drive back to service at the end of a day, and the overnight is there. An overnight
+  -- is at the last service park before it -- driven to like a service, the car repaired and the rally saved -- and at
+  -- its own place only where the rally had no service before it)
+  local lastSvc = nil
+  for _, it in ipairs(out) do
+    if (it.kind == 'service' or it.atService) and it.place then lastSvc = it
+    elseif it.kind == 'overnight' and lastSvc then
+      it.parcFerme = it.place and it.place.name or it.name
+      it.place = { name = lastSvc.place.name, lat = lastSvc.place.lat, lon = lastSvc.place.lon }
+      it.name = lastSvc.name or lastSvc.place.name
+    end
+  end
   -- (the services lettered again in this order: one merged away, or the first after a cancelled day, keeps A, B...)
   local n = 0
   for _, it in ipairs(out) do
@@ -143,7 +159,8 @@ function M.holdOut(r, stageId, why)
   while i <= #r.order do
     local a, b = r.order[i - 1], r.order[i]
     if a.kind ~= 'stage' and b.kind ~= 'stage' then
-      if b.kind == 'overnight' and a.kind == 'service' then a.kind, a.label, a.place = 'overnight', 'Overnight', b.place or a.place end
+      -- (#48: the overnight is at the service park: the service's place kept)
+      if b.kind == 'overnight' and a.kind == 'service' then a.kind, a.label, a.place = 'overnight', 'Overnight', a.place or b.place end
       table.remove(r.order, i)
     else
       i = i + 1

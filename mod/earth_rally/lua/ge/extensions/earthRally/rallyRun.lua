@@ -325,6 +325,25 @@ function M.prepNext()
   return prep.current, prep.i, #prep.list
 end
 function M.preparing() return prep end
+function M.moving() return move end
+
+-- The time card's tracker while the stages are got ready (#34): { i, of, name, stages = [{ ss, name, km, state =
+-- 'done' | 'failed' | 'now' | 'wait' }], have = [SS of the stages with a line already] }. main.lua adds the stage in
+-- progress's detail (its auto recce: going, downloading, window x of y).
+function M.prepInfo()
+  if not prep then return nil end
+  if not ev and R then load(R.eventId) end
+  local out = { i = prep.i, of = #prep.list, name = prep.current and prep.current.name, stages = {} }
+  for k, st in ipairs(prep.list) do
+    local state = 'wait'
+    if k < prep.i then
+      state = events.stageLine(R.eventId, st.id, st) and 'done' or 'failed'
+    elseif k == prep.i then state = 'now' end
+    out.stages[k] = { ss = ev and menu.ssLabel(ev, st.id) or nil, name = st.name,
+      km = st.lengthM and math.floor(st.lengthM / 100 + 0.5) / 10 or nil, state = state }
+  end
+  return out
+end
 -- main.lua: every stage on the list tried. The rally goes on.
 function M.prepDone()
   if not (R and prep) then return end
@@ -395,8 +414,8 @@ local function goToStop()
     return true
   end
   move = { item = it, t = 0, ready = 0 }
-  if M.ui.closeMenu then M.ui.closeMenu() end
-  say('On the way to ' .. (it.name or it.label) .. '.', 4, 'info', it.label)
+  -- (the page stays up on a loading screen until the car is there and the world round it is in: #49)
+  if M.ui.loading then M.ui.loading('move', it) elseif M.ui.closeMenu then M.ui.closeMenu() end
   return true
 end
 
@@ -423,7 +442,9 @@ local function armTransit()
   pcall(earth.gpsSet, lat, lon, title .. ' ' .. kind)
   local ok = runner.armApproach(ev, stage, { sticky = true, title = title, rally = true,
     startOpts = { rally = true, ssLabel = it.ss, keepDamage = true },
-    onStart = function() M.onStageLoaded() end })
+    onStart = function() M.onStageLoaded() end,
+    -- (#40: loaded at the ATC, behind the time control card)
+    atBoard = true, onArrive = function() M.atControl(it, stage) end })
   if not ok then return false, it.ss .. ': the stage could not be got ready' end
   log('I', logTag, 'rally: transit to ' .. title)
   return true
@@ -440,7 +461,18 @@ local function startHere(it)
   local ok, why = runner.start(ev, stage, { rally = true, ssLabel = it.ss, keepDamage = true })
   if not ok then return false, why end
   M.onStageLoaded()
+  if M.ui.loading then M.ui.loading('stage', it, stage) end
   return true
+end
+
+-- (#40) At the stage's ATC: the time control card up over the stage loading, its Continue once it is ready.
+function M.atControl(it, stage)
+  if not R then return end
+  local r = runner.current()
+  local tc = { ss = it.ss, name = stage.name, km = stage.lengthM and math.floor(stage.lengthM / 100 + 0.5) / 10,
+    day = it.day, rally = R.name, timeIn = r and runner.formatClock(runner.clock() or 0) or nil }
+  log('I', logTag, 'rally: at the time control of ' .. tostring(it.ss) .. ', the stage loads behind its card')
+  if M.ui.atControl then M.ui.atControl(tc, stage) end
 end
 
 -- (runner: the rally's stage loaded, by the transit's arrival or startHere)
@@ -486,7 +518,7 @@ function M.start(id, opts)
   M.block(true)
   log('I', logTag, string.format('rally: %s started (%s, %s, cancelled stages %s)', R.name, R.mode, R.class,
     R.cancelled))
-  if M.ui.closeMenu then M.ui.closeMenu() end
+  -- (the page stays on the time card, which follows the stages being got ready: #34)
   getReady(function() goToStop() end)
   return true
 end
@@ -524,7 +556,6 @@ function M.resume(id)
     -- them again on top of themselves)
     save()
   end
-  if M.ui.closeMenu then M.ui.closeMenu() end
   getReady(function()
     local it = rally.current(R)
     if it and it.kind ~= 'stage' then goToStop()
@@ -537,6 +568,7 @@ function M.resume(id)
         if s.kind ~= 'stage' then from = s.place and s.place.lat and s break end
       end
       if from and earth.teleport(from.place.lat, from.place.lon, from.place.name or from.label) then
+        if M.ui.loading then M.ui.loading('resume', from) end
         move = { item = from, t = 0, ready = 0, thenDo = function()
           local okT, whyT = armTransit()
           if not okT then say(tostring(whyT), 6, 'warning', R.name) end
@@ -605,7 +637,7 @@ function M.goNext()
   if it.kind ~= 'stage' then
     if not rally.isServiced(R) then
       -- (not there yet: a service is driven to, an overnight or a stop with no place is gone to)
-      if it.kind == 'service' and it.place and not recoveredAt then
+      if (it.kind == 'service' or it.kind == 'overnight') and it.place and not recoveredAt then
         if not toStop then driveToStop()
         elseif (toStop.distM or math.huge) <= M.ARRIVE_NEAR_M then arrive() end
         return true
@@ -642,7 +674,7 @@ function M.onFinished(res)
   card = { ss = it.ss, name = stage and stage.name or it.stageId, timeS = res.timeS, stage = st, overall = ov,
     mode = R.mode, canRestart = R.mode == 'casual' and not rally.over(R), last = rally.over(R),
     next = nx and (nx.kind == 'stage' and (nx.ss .. ' ' .. stageName(nx)) or nx.label) or nil,
-    driven = nx and (nx.kind == 'stage' or (nx.kind == 'service' and nx.place ~= nil)) or nil }
+    driven = nx and (nx.kind == 'stage' or ((nx.kind == 'service' or nx.kind == 'overnight') and nx.place ~= nil)) or nil }
   local r = runner.current()
   if r then
     r.rally = { mode = R.mode, card = card }
@@ -650,7 +682,7 @@ function M.onFinished(res)
   end
   if rally.over(R) then finish() return end
   if nx.kind == 'stage' then armTransit()
-  elseif nx.kind == 'service' and nx.place then driveToStop() end
+  elseif (nx.kind == 'service' or nx.kind == 'overnight') and nx.place then driveToStop() end
 end
 runner.onFinished = function(res) M.onFinished(res) end
 
@@ -730,6 +762,19 @@ function M.update(dt)
     toStop.t = toStop.t - dt
     if toStop.t <= 0 then
       toStop.t = M.ARRIVE_POLL_S
+      -- (#42) The stage's own arrows (to its stop control) clear BeamNG.Earth's GPS and wipe the road arrows as the run
+      -- ends, so the service's GPS set at the finish was gone: set again once the stage's run has let the arrows go,
+      -- and whenever the GPS has no destination after that.
+      local rr0 = runner.current()
+      if not runLive() and not (rr0 and rr0.routeTarget) then
+        local g = earth.gps()
+        if not toStop.gpsAgain or g == nil then
+          toStop.gpsAgain = true
+          local it = toStop.item
+          pcall(earth.gpsSet, toStop.lat, toStop.lon, it.place and it.place.name or it.label)
+          log('I', logTag, 'rally: the GPS set to ' .. tostring(it.label) .. ' again')
+        end
+      end
       local p = earth.pose()
       if p and p.lat then
         toStop.distM = geo.metres(p.lat, p.lon, toStop.lat, toStop.lon)
@@ -747,6 +792,25 @@ end
 -- The service being driven to, for the HUD's line and the game's Messages app: { name, distM, rally } or nil.
 local tInfo
 function M.transitInfo()
+  -- (#35) Waiting at a stop (the start, a service, after its card was closed): never nothing on screen. The line says
+  -- the rally is ready and how to go on.
+  if R and not toStop and not move and not prep and not R.done and not rally.over(R) and not runLive() then
+    local it = rally.current(R)
+    if it and it.kind ~= 'stage' then
+      local nx = rally.nextStage(R)
+      local name
+      if rally.isServiced(R) then
+        name = (it.kind == 'start' and 'Rally ready' or (it.label .. ' done')) ..
+          (nx and (' · ' .. nx.ss .. ' ' .. stageName(nx) .. ' next') or '')
+      else
+        name = 'Next: ' .. tostring(it.label) .. (it.name and (' · ' .. it.name) or '')
+      end
+      if not (tInfo and tInfo.waiting and tInfo.name == name) then
+        tInfo = { name = name, rally = true, waiting = true }
+      end
+      return tInfo
+    end
+  end
   if not (R and toStop) then tInfo = nil return nil end
   local d = toStop.distM and math.floor(toStop.distM / 10 + 0.5) * 10 or nil
   if not (tInfo and tInfo.item == toStop.item and tInfo.distM == d) then
@@ -813,7 +877,8 @@ function M.resultsAction(what)
   elseif what == 'continue' or what == 'menu' then
     pcall(runner.closeResults)
     local it = rally.current(R)
-    if it and it.kind == 'overnight' and not rally.isServiced(R) then goToStop() return true end
+    -- (#48: an overnight is driven to now, at the service park, as a service is; one with no place is gone to)
+    if it and it.kind == 'overnight' and not it.place and not rally.isServiced(R) then goToStop() return true end
     if M.ui.openCard then M.ui.openCard() end
     return true
   end
@@ -907,7 +972,7 @@ function M.uiCard()
     cancelled = R.cancelled, rows = rows, pos = R.pos, phase = phase, transit = transit,
     at = cur and { kind = cur.kind, label = cur.kind == 'stage' and cur.ss or cur.label,
       name = cur.kind == 'stage' and stageName(cur) or cur.name, serviced = rally.isServiced(R) or nil } or nil,
-    prep = prep and { i = prep.i, of = #prep.list, name = prep.current and prep.current.name } or nil,
+    prep = prep and M.prepInfo() or nil,
     nextStage = nextStage, nextIndex = nxi, superRally = sr, overall = rally.standing(R, board),
     totalS = rally.totalS(R), done = rally.over(R) or nil, unclassified = R.unclassified or nil,
     heldOut = #held > 0 and held or nil, leave = M.leaveInfo(), hasBoard = board ~= nil or nil,

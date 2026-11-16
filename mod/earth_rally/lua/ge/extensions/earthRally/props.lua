@@ -582,6 +582,12 @@ function M.sitePoint(kind)
   end
 end
 
+-- A site is set for this kind (its props down or not yet).
+function M.hasSite(kind)
+  for _, s in ipairs(sites) do if s.kind == kind then return true end end
+  return false
+end
+
 -- A site's props are down.
 function M.placed(kind)
   for _, s in ipairs(sites) do if s.kind == kind and s.objs and #s.objs > 0 then return true end end

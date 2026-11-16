@@ -453,6 +453,7 @@ function M.start(event, stage, opts)
   for i = 2, #latlon do flatLen = flatLen + geo.metres(latlon[i - 1][1], latlon[i - 1][2], latlon[i][1], latlon[i][2]) end
   run = {
     inRally = (opts and opts.rally) and true or nil,
+    checkInNow = (opts and opts.checkInNow) or nil,
     event = event, stage = stage, state = 'travel', t = 0, latlon = latlon, latlonLength = flatLen,
     startFlat = startFlat, finishFlat = finishFlat,
     dir = M.RUNTIME_DIR .. event.id .. '__' .. stage.id, id = 'beamng_earth/earthRally/' .. event.id .. '/' .. stage.id,
@@ -1118,7 +1119,8 @@ local function stepPlace()
     if near then
       -- (driven here, e.g. by Route to start: left where it is)
       run.checks.atcSetDown = 'driven there'
-      run.atcStill = run.drivenIn and stillAt() or nil
+      -- (stopped at the board when the stage loaded behind the time control card, #40: checked in where it stands)
+      run.atcStill = run.drivenIn and not run.checkInNow and stillAt() or nil
     else
       run.checks.atcSetDown = setDownBeforeAtc(veh, a, sp, p.z)
     end
@@ -1712,7 +1714,9 @@ function M.armApproach(event, stage, opts)
   --  would load whenever the car came by. The route alone then, as before 1.6.2)
   if not opts.sticky and earth.gps() == false then approach = nil return false end
   approach = { event = event, stage = stage, lat = lat, lon = lon, kind = kind, t = 0, sticky = opts.sticky,
-    title = opts.title, rally = opts.rally, startOpts = opts.startOpts, onStart = opts.onStart }
+    title = opts.title, rally = opts.rally, startOpts = opts.startOpts, onStart = opts.onStart,
+    -- (#40: a rally's stage with an ATC loads at the ATC itself, behind the time control card: onArrive)
+    atBoard = opts.atBoard and kind == 'ATC' or nil, onArrive = opts.onArrive }
   log('I', logTag, string.format('route to %s: armed, the stage loads %d m from its %s', stage.name, M.APPROACH_M, kind))
   return true
 end
@@ -1722,6 +1726,52 @@ function M.disarmApproach(why)
 end
 function M.approaching() return approach end
 
+-- (#40) The ATC's boards and tent alone, before its stage is loaded: put down as the car comes near, so the time
+-- control is there to stop at. Its site as the run's own setupProps sets it (facing the way on to the start, on its
+-- road). True once set.
+M.AT_BOARD_M = 25              -- stopped this close to the ATC's board: the stage loads (behind the card)
+M.AT_BOARD_PASS_M = 10         -- ... or this close at any speed
+M.AT_BOARD_START_M = 60        -- ... or this close to the start line (the ATC driven past)
+M.AT_BOARD_NEAR_M = 400        -- looked at every frame from this close
+function M.controlProps(event, stage)
+  if props.hasSite('atc') then return true end
+  local ctl = stage.controls or {}
+  local st0 = ctl.start or (stage.line and stage.line[1] and { lat = stage.line[1][1], lon = stage.line[1][2] })
+  if not (ctl.atc and st0) then return false end
+  local a = ctlGame(ctl.atc)
+  local sx, sy = earth.toGame(st0.lat, st0.lon, 0)
+  if not (a and sx) then return false end
+  local site = props.setSite('atc', ctl.atc.lat, ctl.atc.lon, { x = sx - a.x, y = sy - a.y })
+  site.toward, site.away = { lat = st0.lat, lon = st0.lon }, nil
+  site.road = events.controlOnRoad(event.id, stage.id, 'atc', ctl.atc)
+  log('I', logTag, 'route to ' .. stage.name .. ': its time control put out ahead of the stage')
+  return true
+end
+
+-- At the ATC (atBoard): stopped at its board, rolled over it, or past it at the start. Returns true then.
+local function atBoard(a, p)
+  local gp = carPos()
+  if not gp then return false end
+  -- (the world's origin moved since the boards went down: put down again in the new frame)
+  local la, lo = earth.anchor()
+  if a.anchorLat and la and (la ~= a.anchorLat or lo ~= a.anchorLon) then props.reset() end
+  a.anchorLat, a.anchorLon = la, lo
+  pcall(M.controlProps, a.event, a.stage)
+  props.update(gp, earth.toGame)
+  local b = props.sitePoint('atc') or ctlGame(a.stage.controls.atc)
+  if not b then return false end
+  local d = math.sqrt((gp.x - b.x) ^ 2 + (gp.y - b.y) ^ 2)
+  a.boardM = d
+  if d <= M.AT_BOARD_PASS_M or (d <= M.AT_BOARD_M and (p.speed or 0) < M.STOPPED_MS) then return true end
+  local st0 = a.stage.controls.start
+  if st0 and geo.metres(p.lat, p.lon, st0.lat, st0.lon) <= M.AT_BOARD_START_M then return true end
+  if not a.toldStop and d < 300 then
+    a.toldStop = true
+    say('Stop at the time control's red board.', 6, 'info', a.title or a.stage.name)
+  end
+  return false
+end
+
 local function stepApproach(dt)
   local a = approach
   a.t = a.t - (dt or 0)
@@ -1729,7 +1779,15 @@ local function stepApproach(dt)
   a.t = M.APPROACH_POLL_S
   local p = earth.pose()
   if not (p and p.lat) then return end
-  if geo.metres(p.lat, p.lon, a.lat, a.lon) > M.APPROACH_M then
+  local dist = geo.metres(p.lat, p.lon, a.lat, a.lon)
+  if a.atBoard and dist <= M.APPROACH_M then
+    -- (the stage loads at the board, not 1 km out: until then only the ATC's own boards, looked at every frame near)
+    if run and run.state ~= 'finished' and run.state ~= 'failed' then return end
+    if run and run.inRally and run.resultsOpen then return end
+    if dist <= M.AT_BOARD_NEAR_M then a.t = 0 end
+    if not atBoard(a, p) then return end
+  end
+  if dist > M.APPROACH_M then
     if a.sticky then return end
     -- (false: this BeamNG.Earth cannot say where its GPS goes any more: not armed without it, armApproach)
     local g = earth.gps()
@@ -1749,6 +1807,7 @@ local function stepApproach(dt)
   local opts = {}
   for k, v in pairs(a.startOpts or {}) do opts[k] = v end
   opts.drivenIn = { lat = a.lat, lon = a.lon }
+  if a.atBoard then opts.checkInNow = true end
   local ok, why = M.start(a.event, a.stage, opts)
   if not ok then
     -- (a rally's transit: tried again shortly, said once a minute, not on every try)
@@ -1763,6 +1822,7 @@ local function stepApproach(dt)
   end
   if a.sticky and run then run.rearm = a end
   if a.onStart then pcall(a.onStart) end
+  if a.atBoard and a.onArrive then pcall(a.onArrive) end
 end
 
 -- A stage loaded as the car drove up and then driven away from before checking in (or stopping on the line):

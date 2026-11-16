@@ -23,6 +23,7 @@ local earthMenuFix = require('earthRally/earthMenuFix') -- STOPGAP: remove with 
 local menuPause = require('earthRally/menuPause')     -- the game paused while the menu page is up (1.6.2, #13)
 local rally = require('earthRally/rally')             -- the full rally (1.7.0): its rules and numbers
 local rallyRun = require('earthRally/rallyRun')       -- ... and driving it in the game
+local loadScreen = require('earthRally/loadScreen')   -- the page's loading screen (1.7.0, #49)
 menuPause.holding = earth.holding                    -- (BeamNG.Earth's own holds: our request waits for them)
 
 local M = {}
@@ -92,6 +93,106 @@ end
 -- (the full rally's time card is a view of the menu page: rallyRun opens it after a recovery and from Continue)
 rallyRun.ui.openCard = function() return M.openMenu('timecard') end
 rallyRun.ui.closeMenu = function() if menuOpen then pcall(menuPause.suspend) return M.closeMenu() end end
+
+------------------------------------------------------------------------------------------ the loading screens (#49)
+-- Wherever the menu used to close and the world then loaded in view, the page stays up (or opens) on a loading screen
+-- (loadScreen.lua) until the car is placed and the world round it has loaded to the setting's share. The game stays
+-- paused under it: BeamNG.Earth loads while paused (the drive of 2026-11-16, docs/notes-1.7.0.md #10), and the
+-- run's loading steps go on real time (runner.update's travel / anchor / build / place).
+
+-- Up on the page: opened at `view` when the menu is not up.
+local function showLoading(view)
+  if not menuOpen then M.openMenu(view) end
+end
+
+-- After a run was started (runner.start): its steps until the car is at its control. after(ok, why) at the end.
+local function stageLoading(ev, stage, kick, after, opts)
+  opts = opts or {}
+  local _, _, kind = runner.arrivalPoint(stage)
+  local where = kind == 'ATC' and 'the time control' or 'the start'
+  local ss = menu.ssLabel(ev, stage.id)
+  local steps = { 'The map at ' .. where, 'The stage: line, pacenotes, controls, dressing', 'Your car at ' .. where }
+  loadScreen.begin({ kind = 'stage', kick = kick, title = (ss and (ss .. ' ') or '') .. stage.name,
+    sub = stage.lengthM and string.format('%.1f km', stage.lengthM / 1000) or nil, steps = steps,
+    tip = opts.tip, thenView = opts.thenView,
+    probe = function()
+      local r = runner.current()
+      if not r then return 1, nil, nil, 'the run was stopped' end
+      if r.state == 'failed' then return 1, nil, nil, tostring(r.error or 'the stage could not be got ready') end
+      local s = r.state
+      local i = (s == 'travel' and 1) or ((s == 'anchor' or s == 'build') and 2) or (s == 'place' and 3) or 4
+      return i, (i - 1) / #steps, steps[math.min(i, #steps)]
+    end,
+    done = after })
+  showLoading(opts.thenView)
+end
+M._stageLoading = stageLoading
+
+-- A single stage's loading screen: the menu closed at its end; a failure stays on the page with the reason.
+local function closeAfter(ok, why)
+  if ok then
+    if menuOpen then M.closeMenu() end
+  else
+    message = 'Could not get ready: ' .. tostring(why)
+    runner.say(message, 6, 'warning', 'Earth Rally')
+  end
+end
+
+-- (rallyRun's) a move or a stage loading in a full rally: the screen, then the time card or driving.
+rallyRun.ui.loading = function(what, item, stage)
+  local r = rallyRun.active()
+  if not r then return end
+  local kick = r.name
+  if what == 'stage' then
+    local ev = menu.findEvent(r.eventId)
+    if not (ev and stage) then return end
+    return stageLoading(ev, stage, kick, function(ok, why)
+      if ok then if menuOpen then M.closeMenu() end
+      else runner.say('Could not get the stage ready: ' .. tostring(why), 6, 'warning', r.name) M.openMenu('timecard') end
+    end, { thenView = 'timecard' })
+  end
+  -- a move to a stop: the teleport, the car there, then the time card (rallyRun.arrive opens it)
+  local label = item and (item.kind == 'start' and 'the start' or item.label) or 'the stop'
+  local steps = { 'The map around ' .. (item and item.name or label), 'Your car at ' .. label }
+  loadScreen.begin({ kind = 'move', kick = kick .. (what == 'resume' and ' · continuing' or ''),
+    title = 'Going to ' .. label, sub = item and item.name or nil, steps = steps, thenView = 'timecard',
+    tip = item and item.kind == 'service' and 'Damage is repaired at service. The game saves here.' or nil,
+    probe = function()
+      local mv = rallyRun.moving()
+      if mv then
+        local i = earth.ready() and 2 or 1
+        return i, (i - 1) / #steps, steps[i]
+      end
+      return #steps + 1
+    end,
+    done = function() if rallyRun.active() then M.openMenu('timecard') end end })
+  showLoading('timecard')
+end
+
+-- (rallyRun's, #40) the time control card: the stage loading behind it, Continue once it and the world are ready.
+rallyRun.ui.atControl = function(tc, stage)
+  local steps = { 'Map at the start', 'Line, pacenotes, controls', 'Junctions taped, stage dressed', 'Start control ready' }
+  loadScreen.begin({ kind = 'atc', kick = 'Time control · in', title = tostring(tc.ss) .. ' ' .. tostring(tc.name),
+    sub = (tc.km and (tc.km .. ' km · ') or '') .. tostring(tc.rally) .. (tc.day and (' · day ' .. tc.day) or ''),
+    steps = steps, card = tc, button = 'Continue', thenView = 'timecard',
+    probe = function()
+      local r = runner.current()
+      if not r then return 1, nil, nil, 'the stage was put away' end
+      if r.state == 'failed' then return 1, nil, nil, tostring(r.error or 'the stage could not be got ready') end
+      local st = r.state
+      local i = (st == 'travel' and 1) or (st == 'anchor' and 2) or (st == 'build' and 2) or (st == 'place' and 4) or 5
+      return i, (i - 1) / #steps, steps[math.min(i, #steps)]
+    end,
+    done = function(ok, why)
+      if ok then if menuOpen then M.closeMenu() end
+      else runner.say('Could not get the stage ready: ' .. tostring(why), 6, 'warning', tostring(tc.ss)) end
+    end })
+  showLoading('timecard')
+end
+
+-- The page's loading screen, nil with none (polled by EarthRallyLoading.vue).
+function M.uiLoading() return loadScreen.ui() end
+function M.uiLoadingContinue() return loadScreen.continue() end
 -- Ctrl+Alt+K
 function M.toggleMenu()
   if menuOpen then return M.closeMenu() end
@@ -754,7 +855,8 @@ doAction = function(what, eventId, stageId, fromPanel)
   if what == 'recce' or what == 'goStart' or what == 'autoRecce' then runner.disarmApproach(what) end
   -- (they move the car or load the world: the menu's pause request taken back for them, BeamNG.Earth's holds take the
   --  game's plain pause only when it is not paused already, and not put in again until the page is next opened)
-  if what == 'recce' or what == 'goStart' or what == 'autoRecce' or what == 'drive' then pcall(menuPause.suspend) end
+  -- (Drive, Go to start and Recce keep the page up on a loading screen now, the game paused under it: 1.7.0, #49)
+  if what == 'autoRecce' then pcall(menuPause.suspend) end
   if what == 'reset' then
     -- Behind the same busy and autoRecce.active() guards as an auto recce, and for the same reason: the runner and
     -- the auto recce both read the stage's line while they work, so removing it under either is how a car gets
@@ -808,7 +910,8 @@ doAction = function(what, eventId, stageId, fromPanel)
   end
   if what == 'drive' then
     local ok, why = runner.start(ev, stage)
-    return res(ok, ok and nil or why, true)
+    if ok and not fromPanel then stageLoading(ev, stage, 'Drive stage · ' .. tostring(ev.name), closeAfter) end
+    return res(ok, ok and nil or why, fromPanel)
   elseif what == 'route' then
     local lat, lon, kind = runner.arrivalPoint(stage)
     local ok, why = false, 'the stage has no start'
@@ -831,14 +934,26 @@ doAction = function(what, eventId, stageId, fromPanel)
       local tok, terr = earth.teleport(s.lat, s.lon, stage.name .. ' start')
       if not tok then return res(false, 'Could not go there: ' .. tostring(terr)) end
       facing = { stage = stage, eventId = ev.id, t = 0, ready = 0 }
+      if not fromPanel then
+        local steps = { 'The map at the start', 'Your car at the start' }
+        loadScreen.begin({ kind = 'stage', kick = (what == 'recce' and 'Recce · ' or 'Go to start · ') .. tostring(ev.name),
+          title = stage.name, steps = steps, done = closeAfter,
+          probe = function()
+            if facing and facing.stage == stage then
+              local i = earth.ready() and 2 or 1
+              return i, (i - 1) / #steps, steps[i]
+            end
+            return #steps + 1
+          end })
+      end
     end
     if what == 'recce' then
       recce.start(ev, stage)
       runner.say('Follow the orange line on the road to the flying finish (the green ball); the recce saves itself there.',
         8, 'info', 'Recce: ' .. stage.name)
-      return res(true, 'Recce started.', true)
+      return res(true, 'Recce started.', not far)
     end
-    return res(true, 'Waiting for the world to load...', true)
+    return res(true, 'Waiting for the world to load...', false)
   end
   return res(false, 'unknown action ' .. tostring(what))
 end
@@ -865,6 +980,12 @@ function M.uiResults(what)
   local eventId = r and r.event and r.event.id
   local ok, why = runner.resultsAction(what)
   if what == 'menu' then M.openMenu('rally', eventId) end
+  -- (Next stage / Retry: the new run's loading screen, #49)
+  local nr = runner.current()
+  if ok and (what == 'next' or what == 'retry') and nr and nr.state == 'travel' then
+    stageLoading(nr.event, nr.stage, (what == 'retry' and 'Retry · ' or 'Next stage · ') .. tostring(nr.event.name),
+      closeAfter)
+  end
   if not ok and why then runner.say(tostring(why), 4, 'warning') end
   return { ok = ok == true, message = why }
 end
@@ -1006,6 +1127,11 @@ end
 function M.uiRallyCard()
   local ok, r = pcall(rallyRun.uiCard)
   if not ok then log('E', logTag, 'time card: ' .. tostring(r)) return { none = true, error = tostring(r) } end
+  -- (the stages being got ready: the one in progress's auto recce, for the tracker, #34)
+  if r and r.prep then
+    local okA, sum = pcall(runSummary)
+    r.prep.auto = okA and sum and sum.auto or nil
+  end
   return r or { none = true }
 end
 
@@ -1029,11 +1155,10 @@ function M.uiRallyAction(what, eventId, opts)
       local okS, why = rallyRun.resume(eventId)
       return go(okS, why, okS and 'timecard' or nil)
     elseif what == 'go' then
-      pcall(menuPause.suspend)
       local okS, why = rallyRun.goNext()
       -- (not when Go arrived at a stop at once -- one with no place on the map: its card is the next step)
       local card = okS and rallyRun.uiCard()
-      if okS and menuOpen and not (card and card.phase == 'stop') then M.closeMenu() end
+      if okS and menuOpen and not (card and card.phase == 'stop') and not loadScreen.active() then M.closeMenu() end
       return go(okS, why)
     elseif what == 'quit' or what == 'abandon' then
       -- (left while the stages are being got ready: the auto recce under way stops with it)
@@ -1256,6 +1381,8 @@ function M.onUpdate(dtReal, dtSim)
   end
   pcall(earthMenuFix.update)   -- (ahead of earth.update, which is not pcall'd)
   pcall(menuPause.update)      -- (a pause request held back while BeamNG.Earth held the game)
+  local okL, errL = pcall(loadScreen.update, dtReal or 0)
+  if not okL then log('E', logTag, 'loading screen: ' .. tostring(errL)) loadScreen.cancel() end
   earth.update()
   -- In the BeamNG.Earth level: the version check again, now that the game's rally engine can be looked at without
   -- dragging it in at the main menu (versions.lua says why). Once per level, and quiet unless something changed

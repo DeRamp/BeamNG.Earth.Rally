@@ -322,4 +322,33 @@ do
   T.check(start2 and start2.name == 'The Service Park', "no start place: the first service's")
 end
 
+------------------------------------------------------------------------------------------ #48: overnight at service
+do
+  local ev = event()
+  ev.rallyStops[1].place = { name = 'Park A', lat = 1, lon = 2 }
+  ev.rallyStops[2].place = { name = 'Parc Ferme', lat = 5, lon = 6 }
+  local ord = rally._orderOf(ev, 'real')
+  local on
+  for _, it in ipairs(ord) do if it.kind == 'overnight' then on = it end end
+  T.check(on and on.place and on.place.name == 'Park A' and on.place.lat == 1 and on.parcFerme == 'Parc Ferme',
+    'the overnight is at the last service park, driven back to (#48)')
+  -- a service and the overnight on top of each other: at that service
+  local ev2 = event()
+  ev2.rallyStops[2].after = 3
+  ev2.rallyStops[1].place = { name = 'Park A', lat = 1, lon = 2 }
+  ev2.rallyStops[2].place = { name = 'Parc Ferme', lat = 5, lon = 6 }
+  local ord2 = rally._orderOf(ev2, 'real')
+  local on2
+  for _, it in ipairs(ord2) do if it.kind == 'overnight' then on2 = it end end
+  T.check(on2 and on2.place and on2.place.name == 'Park A', 'a service and the overnight together: at the service park')
+  -- no service before it: its own place
+  local ev3 = event()
+  ev3.rallyStops[1].after = 9
+  ev3.rallyStops[2].place = { name = 'Parc Ferme', lat = 5, lon = 6 }
+  local ord3 = rally._orderOf(ev3, 'real')
+  local on3
+  for _, it in ipairs(ord3) do if it.kind == 'overnight' then on3 = it end end
+  T.check(on3 and on3.place and on3.place.name == 'Parc Ferme', 'no service before it: the overnight at its own place')
+end
+
 T.done('test_rally')
