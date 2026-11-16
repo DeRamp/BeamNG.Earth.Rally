@@ -112,6 +112,39 @@ local r4 = imp.scan()
 local gone = false
 for _, x in ipairs(r4) do if x.removed and x.eventId == 'oldid' then gone = true end end
 T.check(gone and files['/earthRally/events/oldid.json'] ~= nil, 'the file taken out: forgotten, its rally kept')
+-- (#50) ... but no longer listed; a rally the folder never had (tools/import_kml.py's) still is; the file put back
+-- brings the rally back under its id
+do
+  local events = require('earthRally/events')
+  files['/earthRally/events/devonly.json'] = { format = 1, id = 'devonly', name = 'Dev', source = { file = 'dev.kml' },
+    stages = {} }
+  local function listed(id)
+    for _, e in ipairs(events.list(true)) do if e.id == id then return true end end
+    return false
+  end
+  T.check(not listed('oldid') and files['/earthRally/events/oldid.json'] ~= nil,
+    'a rally whose file left the import folder: not listed, its file kept')
+  T.check(listed('devonly'), 'a rally the import folder never had (import_kml.py): still listed')
+  T.check(files['/earthRally/importIndex.json'].gone.oldid.file == 'Test Rally.kml', 'the index notes it gone')
+  files['/earthRally/import/Test Rally.kml'] = kml
+  local back = imp.scan()
+  T.check(#back == 1 and back[1].eventId == 'oldid' and listed('oldid'), 'the file put back: the rally back, same id')
+  T.check(files['/earthRally/importIndex.json'].gone == nil, 'and the note gone')
+  -- a file that fails to read keeps its rally while it is in the folder; taken out, the rally goes off the list too
+  files['/earthRally/import/Test Rally.kml'] = '<kml></kml>'
+  local bad = imp.scan()
+  T.check(#bad == 1 and not bad[1].ok and listed('oldid'), 'the file broken: reported, its rally still listed')
+  files['/earthRally/import/Test Rally.kml'] = nil
+  imp.scan()
+  T.check(not listed('oldid'), 'the broken file taken out: its rally not listed')
+  files['/earthRally/events/devonly.json'] = nil
+  -- no index at all (nothing scanned yet): everything listed
+  local idx = files['/earthRally/importIndex.json']
+  files['/earthRally/importIndex.json'] = nil
+  T.check(listed('oldid'), 'no import index: every rally listed')
+  files['/earthRally/importIndex.json'] = idx
+  events.list(true)
+end
 -- an edit that keeps the file's length is seen
 files['/earthRally/import/Same.kml'] = kml
 imp.scan()
@@ -175,6 +208,32 @@ do
   T.check(#imp.scan() == 0, 'the rules moved on with an empty folder: still nothing to do')
   jsonWriteFile = realWrite
   T.check(wroteIndex, 'but the index is written anyway, so the re-import is not asked for on every start')
+end
+
+------------------------------------------------------------------------------------------ which rallies show (#50)
+
+do
+  local check = require('earthRally/events')._folderCheck
+  local index = { format = 1, files = { ['a.kml'] = { eventId = 'a' } },
+    packs = { ['P.zip'] = { eventIds = { 'p-new' } }, ['S'] = { failed = true, eventIds = { 's1' } } },
+    gone = { b = { file = 'b.kml' }, c = { file = 'c.kml' } } }
+  local show = check(index)
+  T.check(show({ id = 'a', source = { file = 'a.kml' } }), 'a loose map in the folder: shown')
+  T.check(not show({ id = 'b', source = { file = 'b.kml' } }), 'a loose map noted gone: not shown')
+  T.check(show({ id = 'x', source = { file = 'x.kml' } }) and show({ id = 'y' }), 'never in the folder: shown')
+  T.check(show({ id = 'p-new', pack = { file = 'P.zip' } }), "a pack's rally: shown")
+  T.check(not show({ id = 'p-old', pack = { file = 'P.zip' } }),
+    'an updated pack (same name, new ids): its old rally not shown beside the new one')
+  T.check(show({ id = 'p-round', pack = { file = 'P.zip' }, retired = { season = 's' } }),
+    'a round its season no longer lists: kept with its pack (retired: off Home, its page still there)')
+  T.check(not show({ id = 'q', pack = { file = 'Q.zip' } }) and
+    not show({ id = 'q2', pack = { file = 'Q.zip' }, retired = { season = 's' } }), 'a pack taken out: not shown')
+  T.check(show({ id = 's1', pack = { file = 'S' } }), 'a pack that failed to read again: its rallies still shown')
+  T.check(show({ id = 'c', pack = { file = 'C.zip' } }) == false and check(index)({ id = 'c', source = {} }) == false,
+    'gone means gone, whatever the event says')
+  index.files['c2.kml'] = { eventId = 'c' }
+  T.check(check(index)({ id = 'c', source = { file = 'c2.kml' } }), 'an id a file in the folder has again: shown')
+  T.check(check(nil)({ id = 'b', source = { file = 'b.kml' } }), 'no index: everything shown')
 end
 
 ------------------------------------------------------------------------------------------ naming a rally

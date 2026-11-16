@@ -794,8 +794,18 @@ function M.idTaken(index, cand, exceptFile, exceptPack)
   return false
 end
 
+-- (#50) A loose map's rally whose file has left the folder -- taken out, or imported again under another id: noted
+-- in the index (index.gone, event id -> { file, date }) so events.list stops showing it. Its files stay on disk; the
+-- note goes when a file in the folder has that id again.
+local function noteGone(index, eventId, fileName)
+  if not eventId then return end
+  index.gone = index.gone or {}
+  index.gone[eventId] = { file = fileName, date = os.date('!%Y-%m-%dT%H:%M:%SZ') }
+end
+
 -- The folder made, its files imported when new or changed (every file with force), files taken out forgotten (their
--- rallies kept). Returns a list of { file, eventId, name, stages, ok, why, removed }.
+-- rallies kept on disk, no longer shown: events.list). Returns a list of { file, eventId, name, stages, ok, why,
+-- removed }.
 function M.scan(force)
   local done = {}
   if not FS:directoryExists(M.IMPORT_DIR) then pcall(function() FS:directoryCreate(M.IMPORT_DIR, true) end) end
@@ -807,6 +817,7 @@ function M.scan(force)
   force = force or renaming
   local seen = {}
   local found = {}
+  local goneNoted = false     -- (a failed file's rally noted gone with nothing to report: the index still written)
   for _, pat in ipairs({ '*.kml', '*.kmz', '*.gpx', '*.KML', '*.KMZ', '*.GPX', '*.kml.xml', '*.KML.xml', '*.kml.XML' }) do
     for _, f in ipairs(FS:findFiles(M.IMPORT_DIR, pat, 0, false, false) or {}) do
       -- (only the folder's own files: a map inside a pack is the pack's, not a rally of its own as well)
@@ -829,7 +840,8 @@ function M.scan(force)
         if s then okP, parsed = pcall(M.parse, s, ext == 'gpx' and 'gpx' or 'kml') end
         if not s or not okP then
           done[#done + 1] = { file = fileName, ok = false, why = why or tostring(parsed) }
-          index.files[fileName] = { fingerprint = fp, failed = true }   -- (told once, until it changes)
+          -- (told once, until it changes; the rally it made before kept to it: #50)
+          index.files[fileName] = { fingerprint = fp, failed = true, eventId = entry and entry.eventId }
           log('W', 'earthRally', 'import ' .. fileName .. ': ' .. tostring(why or parsed))
         else
           local id = (entry and entry.eventId) or existingId(fileName) or idFrom(stem(fileName))
@@ -845,6 +857,8 @@ function M.scan(force)
           local okB, event, report = pcall(M.build, parsed, id, name, fileName)
           if okB and event then
             jsonWriteFile(M.EVENTS_DIR .. id .. '.json', event, true)
+            -- (the file's rally under another id now: the old one is not shown beside it)
+            if entry and entry.eventId and entry.eventId ~= id then noteGone(index, entry.eventId, fileName) end
             index.files[fileName] = { fingerprint = fp, eventId = id, date = os.date('!%Y-%m-%dT%H:%M:%SZ') }
             M.lastReports[id] = { file = fileName, lines = M.reportLines(report) }
             done[#done + 1] = { file = fileName, eventId = id, name = name, stages = #event.stages, ok = true }
@@ -853,30 +867,41 @@ function M.scan(force)
           else
             local why2 = okB and table.concat(M.reportLines(report or {}), '; ') or tostring(event)
             done[#done + 1] = { file = fileName, ok = false, why = why2 }
-            index.files[fileName] = { fingerprint = fp, failed = true }
+            index.files[fileName] = { fingerprint = fp, failed = true, eventId = entry and entry.eventId }
             log('W', 'earthRally', 'import ' .. fileName .. ': ' .. why2)
           end
         end
       end
     end
   end
-  -- files taken out of the folder: forgotten, their rallies kept (a rally is only ever deleted by the player)
+  -- files taken out of the folder: forgotten, their rallies kept on disk but no longer shown (#50: noteGone; a rally
+  -- is only ever deleted by the player)
   for fileName, entry in pairs(index.files) do
     if not seen[fileName] and entry.failed then
       index.files[fileName] = nil
+      if entry.eventId then noteGone(index, entry.eventId, fileName) goneNoted = true end
     elseif not seen[fileName] then
       index.files[fileName] = nil
+      noteGone(index, entry.eventId, fileName)
       done[#done + 1] = { file = fileName, eventId = entry.eventId, removed = true, ok = true }
       log('I', 'earthRally', fileName .. ' taken out of the import folder: its rally ' .. tostring(entry.eventId) ..
-        ' is kept (delete earthRally/events/' .. tostring(entry.eventId) .. '.json to remove it)')
+        ' is kept but not shown (put the file back to bring it back)')
     end
   end
   -- packs (pack.lua): folders and .zips with a manifest, fingerprinted and kept in the same index
   local packDone, packChanged = require('earthRally/pack').scan(index, force)
   for _, d in ipairs(packDone) do done[#done + 1] = d end
+  -- (a rally noted gone whose id a file or pack in the folder has again: the note goes)
+  if index.gone then
+    for _, e in pairs(index.files) do if e.eventId then index.gone[e.eventId] = nil end end
+    for _, e in pairs(index.packs or {}) do
+      for _, id in ipairs(e.eventIds or {}) do index.gone[id] = nil end
+    end
+    if next(index.gone) == nil then index.gone = nil end
+  end
   -- (also when only the naming rules moved on, so the re-import is not asked for again on every start; and when a
   -- pack was only touched, so its new size and time spare the next start hashing it again)
-  if #done > 0 or renaming or packChanged then jsonWriteFile(M.INDEX, index, true) end
+  if #done > 0 or renaming or packChanged or goneNoted then jsonWriteFile(M.INDEX, index, true) end
   return done
 end
 
