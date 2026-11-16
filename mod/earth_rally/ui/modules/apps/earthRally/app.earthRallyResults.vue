@@ -10,7 +10,7 @@
   <!-- (1.7.0) A pass of a full rally: the card is the rally's (mock-up 3: your stage and class place against the
        real National field, the crews round you; Continue to the time card, Restart in Casual only, Close), and in
        Realistic mode the Recover? question (mock-up 4) comes up in it from the recovery key during the stage. -->
-  <div v-if="res || ask" class="er-results" tabindex="0"
+  <div v-if="res || ask" ref="cardEl" class="er-results" tabindex="0"
     v-bng-scoped-nav="{ scopeId: 'earthRallyResults', type: 'nonav', activateOnMount: true, trapPolicy: 'always',
       bubbleWhitelistEvents: ['menu'] }"
     v-bng-on-ui-nav:ok="pressPicked" v-bng-on-ui-nav:back="() => act(ask ? 'keep' : 'close')"
@@ -78,11 +78,11 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onUnmounted } from "vue"
+import { ref, computed, watch, nextTick, onUnmounted } from "vue"
 import { useStreams } from "@/services/events"
 import { BngButton, ACCENTS } from "@/common/components/base"
 import { vBngScopedNav, vBngOnUiNav } from "@/common/directives"
-import { reportState } from "@/services/stateReporter"
+import { reportState, hasReportedPopupState } from "@/services/stateReporter"
 import useControls from "@/services/controls"
 import * as fmt from "./format.js"
 
@@ -135,9 +135,14 @@ const ring = what => padOn.value && picked.value === what
 function pick(d) {
   const o = order.value
   const i = o.indexOf(picked.value)
+  // (a pick not on the card starts at its first button)
   picked.value = o[Math.max(0, Math.min(o.length - 1, (i < 0 ? 0 : i + d)))]
 }
-function pressPicked() { if (picked.value) act(picked.value) }
+// (A on a pick that is not on the card picks the first button and shows it, rather than pressing nothing: #41)
+function pressPicked() {
+  if (order.value.includes(picked.value)) act(picked.value)
+  else picked.value = order.value[0]
+}
 
 // While the card is up the game is told an activity popup is open (the name has the shape its popup service
 // reports, /popup/<type>/<component>/aside): its input bindings turn its menu buttons on for the driving screen then,
@@ -154,7 +159,38 @@ watch(up, (r, was) => {
   if (r && r !== was) picked.value = order.value[0]
   if (!r) picked.value = null
   setReported(!!r && !(f.value && f.value.preview))
+  if (r && r !== was) logOpen(r)
 }, { immediate: true })
+// (#41) The buttons change under the card: a rally's part (continue / restart / close) arrives after the stage's
+// (next / retry / ...), so the pick made as it opened is on no button. A new order picks its first button again.
+// (by the names, not the array: the stream sends a new frame, and so a new array, many times a second)
+watch(() => order.value.join(","), (o, was) => {
+  if (up.value && o !== was) {
+    picked.value = order.value[0]
+    gameLog(`results card buttons now ${o.replace(/,/g, " ")}: pick ${picked.value}`)
+  }
+})
+
+// (#41) The game's log says, as the card opens, whether the popup state was reported (which lets the pad's menu
+// buttons through) and whether the card's nav scope took the pad.
+const cardEl = ref(null)
+function logOpen(r) {
+  nextTick(() => setTimeout(() => {
+    let popup = "?"
+    try { popup = String(hasReportedPopupState()) } catch (e) { /* (an older game) */ }
+    const el = cardEl.value
+    const scope = el ? el.getAttribute("data-bng-scoped-nav-state") || "none" : "no card"
+    const line = `results card up (${r}): popup state reported ${reported}, popup open ${popup}, nav scope ${scope}, ` +
+      `pick ${picked.value}, buttons ${order.value.join(" ")}`
+    gameLog(line)
+  }, 250))
+}
+function gameLog(line) {
+  console.log("earthRally: " + line)
+  if (window.bngApi && window.bngApi.engineLua) {
+    window.bngApi.engineLua(`log('I', 'earthRally', ${JSON.stringify(line)})`)
+  }
+}
 onUnmounted(() => setReported(false))
 
 function act(what) {
