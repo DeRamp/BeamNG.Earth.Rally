@@ -98,6 +98,10 @@ function M.gpsSet(lat, lon, name) local a = api() if not (a and a.gpsSet) then r
   local ok, r, why = pcall(a.gpsSet, lat, lon, name) if not ok then return false, tostring(r) end
   if not r then return false, why or 'BeamNG.Earth\'s GPS did not take the place' end
   return true end
+-- (the GPS destination now, { lat, lon, name, ... }; nil with none set; false when this BeamNG.Earth cannot say)
+function M.gps() local a = api() if not (a and type(a.gps) == 'function') then return false end
+  local ok, g = pcall(a.gps) if not ok then return false end
+  return g end
 
 ------------------------------------------------------------------------------------------
 -- the road graph (the auto recce's one dependency on BeamNG.Earth beyond the pose)

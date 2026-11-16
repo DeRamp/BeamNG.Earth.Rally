@@ -706,6 +706,8 @@ doAction = function(what, eventId, stageId, fromPanel)
     -- second press and two sequences on one stage.
     return res(false, 'An auto recce is under way: stop it first.')
   end
+  -- (a recce or an auto recce takes the car elsewhere or drives the stage: Route to start is not armed through it)
+  if what == 'recce' or what == 'goStart' or what == 'autoRecce' then runner.disarmApproach(what) end
   if what == 'reset' then
     -- Behind the same busy and autoRecce.active() guards as an auto recce, and for the same reason: the runner and
     -- the auto recce both read the stage's line while they work, so removing it under either is how a car gets
@@ -764,7 +766,10 @@ doAction = function(what, eventId, stageId, fromPanel)
     local lat, lon, kind = runner.arrivalPoint(stage)
     local ok, why = false, 'the stage has no start'
     if lat then ok, why = earth.gpsSet(lat, lon, stage.name .. ' ' .. kind) end
-    if ok then runner.say('Follow the arrows on the road.', 5, 'info', 'Route set to ' .. stage.name .. "'s " .. kind) end
+    -- (GitHub #19: the stage gets itself ready as the car comes near, runner.armApproach)
+    if ok then runner.armApproach(ev, stage) end
+    if ok then runner.say('Follow the arrows on the road: the stage gets ready as you get near.', 5, 'info',
+      'Route set to ' .. stage.name .. "'s " .. kind) end
     return res(ok, ok and ('Route set to ' .. stage.name .. "'s " .. kind .. ': follow the arrows on the road.')
       or ('Could not set a route: ' .. tostring(why)), true)
   elseif what == 'goStart' or what == 'recce' then

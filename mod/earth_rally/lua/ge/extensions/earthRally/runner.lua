@@ -74,6 +74,16 @@ M.DRIVEN_THERE_MIN_M = 15      -- ... unless it is this near or nearer, when it 
                                -- CONTROL_RADIUS_M (12) and a few metres over, not picked: the band between this and
                                -- NO_SET_DOWN_M is where a player who drove up and parked keeps the spot they chose,
                                -- and every metre added to it is a player moved who did not ask to be.
+-- Route to start (GitHub #19): the stage loaded as the car drives up to it, as Run stage would have it but with the
+-- car left where the player drove it. Armed by the route; the run starts once the car is APPROACH_M (straight line)
+-- from the ATC (the start with none). Not from farther: a run moves the world's origin to the stage, puts its route
+-- arrows on the game's road map and its boards on the road there, and BeamNG.Earth streams that map in only round
+-- the car. 1 km is about 30 s at 120 km/h, time to load before the car reaches the control.
+M.APPROACH_M = 1000
+M.APPROACH_POLL_S = 0.5        -- (looked at this often)
+M.APPROACH_LEAVE_M = 2000      -- a stage loaded that way and driven away from, before checking in: unloaded
+M.GPS_HANDOVER_M = 250         -- ... and BeamNG.Earth's GPS, which planned the way, leads until this close
+M.GPS_SAME_M = 100             -- the GPS's destination this close to the stage's: still our route
 M.LANDMARK_OFF_M = 15          -- a junction or bridge this close to the stage line is on it
 M.CONTROL_RADIUS_M = 12        -- stopped this close to a control's board: checked in
 M.STOP_CONTROL_RADIUS_M = 25
@@ -135,6 +145,7 @@ M.SOUND_STOPPED = 'event:UI_Checkpoint'
 M.SOUND_FINISH = 'event:UI_CountdownGo'
 
 local run = nil
+local approach = nil           -- Route to start armed: { event, stage, lat, lon, kind, t } (M.armApproach)
 
 -- The rally clock (seconds of the day): the game's time of day when the run began, carried on with game time (so a
 -- pause stops it, as the stage clock).
@@ -371,7 +382,10 @@ local function carPos()
   return { x = p.x, y = p.y, z = p.z }, veh
 end
 
-function M.start(event, stage)
+-- opts.drivenIn: { lat, lon } of the ATC / start the car is being driven up to (the approach below): never a
+-- teleport, and the car is not set down where it arrives (stepPlace).
+function M.start(event, stage, opts)
+  local drivenIn = opts and opts.drivenIn
   if run and run.state ~= 'finished' and run.state ~= 'failed' then return false, 'a run is under way' end
   local ok, why = earth.check()
   if not ok then return false, why end
@@ -435,7 +449,9 @@ function M.start(event, stage)
 
   local s = run.atc and { run.atc.lat, run.atc.lon } or latlon[1]
   local p = earth.pose()
-  if p and geo.metres(p.lat, p.lon, s[1], s[2]) > M.TRAVEL_IF_FARTHER_M then
+  if drivenIn then
+    run.drivenIn, run.gpsUntilM = drivenIn, M.GPS_HANDOVER_M
+  elseif p and geo.metres(p.lat, p.lon, s[1], s[2]) > M.TRAVEL_IF_FARTHER_M then
     local tok, twhy = earth.teleport(s[1], s[2], stage.name .. (run.atc and ' ATC' or ' start'))
     if not tok then fail('could not go to the start: ' .. tostring(twhy)) return false, twhy end
     run.teleported = true
@@ -990,6 +1006,16 @@ local function setDownBeforeAtc(veh, a, sp, pz)
   return spot.road and 'on the road map' or 'no road on the map there'
 end
 
+-- A car the stage loaded round as it drove up (Route to start), found standing still: where (lat / lon), so a
+-- control's zone is not offered until it has been driven MOVED_OFF_M from there -- a car that stopped by the board
+-- or on the line while the stage was still loading is not checked in or counted down on the frame it is ready
+-- (docs/notes-1.3.0.md #1). nil while it is moving: rolling in and stopping is the player's own check-in.
+local function stillAt()
+  local ps = earth.pose()
+  if not (ps and ps.lat) or (ps.speed or 0) >= M.STOPPED_MS then return nil end
+  return { lat = ps.lat, lon = ps.lon }
+end
+
 local function stepPlace()
   local p, veh = carPos()
   if not veh then fail('no car') return end
@@ -1023,11 +1049,15 @@ local function stepPlace()
       from = math.min(atcAlong + M.CONTROL_RADIUS_M, run.startM - M.START_ZONE_BEFORE_M)
     end
     local past = along >= from and off <= M.START_ZONE_OFF_M
-    local near = p and not run.teleported and not past and d2a <= M.NO_SET_DOWN_M ^ 2
-      and d2a > M.DRIVEN_THERE_MIN_M ^ 2
+    -- (loaded as the car drove up, Route to start: kept wherever it is short of the stage, the board included. Not
+    --  DRIVEN_THERE_MIN_M: the car is the player's, not one set down there, and a car still rolling in is not
+    --  stopped in the zone; one already stopped waits to be driven, stillAt)
+    local near = p and not run.teleported and not past and (run.drivenIn ~= nil
+      or (d2a <= M.NO_SET_DOWN_M ^ 2 and d2a > M.DRIVEN_THERE_MIN_M ^ 2))
     if near then
       -- (driven here, e.g. by Route to start: left where it is)
       run.checks.atcSetDown = 'driven there'
+      run.atcStill = run.drivenIn and stillAt() or nil
     else
       run.checks.atcSetDown = setDownBeforeAtc(veh, a, sp, p.z)
     end
@@ -1044,8 +1074,12 @@ local function stepPlace()
     local _, sp = aheadDir(run.line, run.cum, run.startM)
     local d2s = p and ((p.x - sp.x) ^ 2 + (p.y - sp.y) ^ 2)
     -- (driven here, e.g. by Route to start, and not parked on the line itself: left where the player chose)
-    if p and not run.teleported and d2s <= M.NO_SET_DOWN_M ^ 2 and d2s > M.DRIVEN_THERE_MIN_M ^ 2 then
+    -- (loaded as the car drove up, Route to start: kept wherever it is; a car over the line is told to back up)
+    if p and not run.teleported and (run.drivenIn ~= nil
+        or (d2s <= M.NO_SET_DOWN_M ^ 2 and d2s > M.DRIVEN_THERE_MIN_M ^ 2)) then
       run.checks.startSetDown = 'driven there'
+      -- (stopped on the line while the stage loaded: not taken for a start until driven, as a car set down there)
+      run.startPlaced = run.drivenIn and stillAt() or nil
     else
       local back, at, how = toStartLine(veh, M.CAR_BEFORE_START_M)
       run.checks.startSetDown = string.format('%.0f m before the line, %s', back, how)
@@ -1223,6 +1257,28 @@ local function routeOff()
   end
 end
 
+-- A stage loaded as the car drove up (Route to start): BeamNG.Earth's GPS, which planned the way over its own roads,
+-- keeps leading while the car is more than GPS_HANDOVER_M (straight) from the control `d` and the GPS still has a
+-- destination; the run's arrows (routeTo, which clears the GPS) from then on. The game's road map the arrows are
+-- planned on may not reach that far yet. (The GPS asked once a second.)
+local function gpsLeads(d, dt)
+  if not run.gpsUntilM then return false end
+  if d > run.gpsUntilM then
+    run.gpsT = (run.gpsT or 0) - (dt or 0)
+    if run.gpsT <= 0 then run.gpsT, run.gpsOn = 1, earth.gps() and true or false end
+    if run.gpsOn then return true end
+  end
+  run.gpsUntilM = nil
+  return false
+end
+
+-- The car found standing still when the stage loaded (stillAt): forgotten once it has been driven MOVED_OFF_M.
+local function stillGone(at)
+  if not at then return true end
+  local ps = earth.pose()
+  return ps and geo.metres(ps.lat, ps.lon, at.lat, at.lon) > M.MOVED_OFF_M or false
+end
+
 local function stepToAtc(dt)
   run.t = run.t + dt
   local p = carPos()
@@ -1234,8 +1290,9 @@ local function stepToAtc(dt)
   run.toControlM = d
   run.atcTarget = run.atcTarget or {}
   run.atcTarget.pos = { x = a.x, y = a.y, z = p.z }
-  if not (run.zone and run.zone.stopped) then routeTo(run.atcTarget, dt) end   -- (none once stopped in the zone)
-  local zs = zone(d <= M.CONTROL_RADIUS_M, dt, false, 1 - d / M.CONTROL_RADIUS_M)
+  if not (run.zone and run.zone.stopped) and not gpsLeads(d, dt) then routeTo(run.atcTarget, dt) end   -- (none once stopped in the zone)
+  if run.atcStill and stillGone(run.atcStill) then run.atcStill = nil end
+  local zs = zone(d <= M.CONTROL_RADIUS_M and not run.atcStill, dt, false, 1 - d / M.CONTROL_RADIUS_M)
   if zs == 'stopped' then
     local now = M.clock()
     run.atcTime = now
@@ -1282,7 +1339,9 @@ local function stepToStart(dt)
   local sp = geo.pointAt(run.line, run.cum, run.startM)
   run.startTarget = run.startTarget or {}
   run.startTarget.pos = sp
-  if not (run.zone and run.zone.stopped) then routeTo(run.startTarget, dt) end   -- (none once stopped in the zone)
+  if not (run.zone and run.zone.stopped) and not gpsLeads(math.sqrt((p.x - sp.x) ^ 2 + (p.y - sp.y) ^ 2), dt) then
+    routeTo(run.startTarget, dt)   -- (none once stopped in the zone)
+  end
   if along > run.startM + 2 and off <= M.START_ZONE_OFF_M and not run.zone then
     if not run.overLine then say('Back up behind the start line.', 3, 'warning') end
     run.overLine = true
@@ -1546,10 +1605,78 @@ resultsUpdate = function(dt)
   end
 end
 
+------------------------------------------------------------------------------------------ Route to start (GitHub #19)
+-- Route to start arms the stage; driven to within APPROACH_M of its ATC (its start with none) it is loaded as Run
+-- stage would load it, without the teleport and with the car left where it is (M.start's drivenIn). Not loaded
+-- first and routed to after: from far away a run would move the world's origin to a stage the car is nowhere near
+-- and plan its arrows on a road map BeamNG.Earth has not streamed in yet.
+--   Disarmed by: the route cleared or another destination set on BeamNG.Earth's map before the car got there; Run
+--   stage, a recce or an auto recce (main.lua); Stop the run, the level left (M.abort).
+--   Waits while another run is under way; a finished one (its results card) is put away for it.
+
+-- Armed for this stage. Returns true, or false with no place to go.
+function M.armApproach(event, stage)
+  local lat, lon, kind = M.arrivalPoint(stage)
+  if not lat then approach = nil return false end
+  approach = { event = event, stage = stage, lat = lat, lon = lon, kind = kind, t = 0 }
+  log('I', logTag, string.format('route to %s: armed, the stage loads %d m from its %s', stage.name, M.APPROACH_M, kind))
+  return true
+end
+function M.disarmApproach(why)
+  if approach and why then log('I', logTag, 'route to ' .. approach.stage.name .. ': disarmed (' .. why .. ')') end
+  approach = nil
+end
+function M.approaching() return approach end
+
+local function stepApproach(dt)
+  local a = approach
+  a.t = a.t - (dt or 0)
+  if a.t > 0 then return end
+  a.t = M.APPROACH_POLL_S
+  local p = earth.pose()
+  if not (p and p.lat) then return end
+  if geo.metres(p.lat, p.lon, a.lat, a.lon) > M.APPROACH_M then
+    -- (false: this BeamNG.Earth cannot say where its GPS goes, and the route is taken to stand)
+    local g = earth.gps()
+    if g == nil or (g and not (g.lat and g.lon and geo.metres(g.lat, g.lon, a.lat, a.lon) <= M.GPS_SAME_M)) then
+      M.disarmApproach('the route was cleared or changed')
+    end
+    return
+  end
+  if run and run.state ~= 'finished' and run.state ~= 'failed' then
+    if run.stage.id == a.stage.id and run.event.id == a.event.id then M.disarmApproach('the stage is already loaded') end
+    return
+  end
+  approach = nil
+  log('I', logTag, 'route to ' .. a.stage.name .. ': near its ' .. a.kind .. ', the stage loads')
+  local ok, why = M.start(a.event, a.stage, { drivenIn = { lat = a.lat, lon = a.lon } })
+  if not ok then say('Could not get ' .. a.stage.name .. ' ready: ' .. tostring(why), 6, 'warning', 'Earth Rally') end
+end
+
+-- A stage loaded as the car drove up and then driven away from before checking in (or stopping on the line):
+-- unloaded, so a player who changed their mind is not left with a stage hanging on. True when it was.
+local function leftBehind(dt)
+  if run.atcTime or run.missedAtc or run.staged or run.startAt then run.drivenIn = nil return false end
+  run.leaveT = (run.leaveT or 0) - (dt or 0)
+  if run.leaveT > 0 then return false end
+  run.leaveT = M.APPROACH_POLL_S
+  local p = earth.pose()
+  if not (p and p.lat) or geo.metres(p.lat, p.lon, run.drivenIn.lat, run.drivenIn.lon) <= M.APPROACH_LEAVE_M then
+    return false
+  end
+  local name = run.stage.name
+  log('I', logTag, 'route to ' .. name .. ': driven away before checking in, the stage unloaded')
+  M.abort(true)
+  say(name .. ' put away: you drove off. Route to start to run it.', 6, 'info', 'Earth Rally')
+  return true
+end
+
 -- Every frame (main.lua).
 function M.update(dtReal, dtSim)
   camUpdate(dtReal or 0)
+  if approach then stepApproach(dtReal) end
   if not run then return end
+  if run.drivenIn and run.state ~= 'finished' and run.state ~= 'failed' and leftBehind(dtReal) then return end
   run.realT = (run.realT or 0) + (dtReal or 0)
   if run.sinceFinish then run.sinceFinish = run.sinceFinish + (dtReal or 0) end
   if run.resultsOpen then resultsUpdate(dtReal or 0) end
@@ -1654,6 +1781,7 @@ function M.wrapUp()
 end
 
 function M.abort(quiet)
+  M.disarmApproach(run and 'a run started or stopped' or 'stopped')
   if not run then return end
   tidy()
   if not quiet and run.state ~= 'finished' then say('Run stopped.', 4, 'info') end
