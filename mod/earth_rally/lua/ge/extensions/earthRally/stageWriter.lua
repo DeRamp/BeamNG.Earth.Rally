@@ -66,14 +66,21 @@ M.PRIORITY = {
 -- of corner notes and not a second opinion about it. (The notebook also has notes with no corner in them -- a crest
 -- on a straight, the finish -- which that tile does not count.)
 --   o.startM, o.finishM   the stage along `line`
+--   o.stopM               notes on past the finish to here (the stop control; issue #47), or nil: to the finish.
+--                         A corner across the finish line is left out, as before, and so is one starting within
+--                         NOTE_CLEAR_M past it
 --   o.lead                of line extended in before startM, if any: mute is read in the coordinates of the line
 --                         as it came, which is where its gaps were measured
 --   o.mute                { { fromM, toM }... }: no notes along there
 --   o.corners             geo.corners options
--- Also returns muted(i), the test it used, for the landmarks that go on these notes.
+-- Also returns muted(i), the test it used, for the landmarks that go on these notes, and iF, the finish's sample.
 function M.stageCorners(line, cum, o)
-  local stagePts = geo.resample(geo.slice(line, cum, o.startM, o.finishM), M.NOTE_STEP_M)
+  local endM = math.max(o.finishM, o.stopM or o.finishM)
+  local stagePts = geo.resample(geo.slice(line, cum, o.startM, endM), M.NOTE_STEP_M)
   local clear = math.ceil(M.NOTE_CLEAR_M / M.NOTE_STEP_M)
+  -- (the finish's sample: the last one when the notes end there)
+  local iF = #stagePts
+  if endM > o.finishM then iF = math.min(#stagePts, math.floor((o.finishM - o.startM) / M.NOTE_STEP_M + 0.5) + 1) end
   local function muted(i)
     local s = o.startM + (i - 1) * M.NOTE_STEP_M - (o.lead or 0)
     for _, r in ipairs(o.mute or {}) do if s >= r[1] and s <= r[2] then return true end end
@@ -84,14 +91,19 @@ function M.stageCorners(line, cum, o)
   local found = geo.corners(stagePts, M.NOTE_STEP_M, o.corners)
   local sTurn, sK = geo.curvature(stagePts, M.NOTE_STEP_M, pacenotes.SWEEP_SMOOTH_M)
   for _, c in ipairs(pacenotes.sweepers(sTurn, sK, M.NOTE_STEP_M, found)) do
-    if c.i0 > clear and c.i1 < #stagePts and not muted(c.i0) and not muted(c.i1) then corners[#corners + 1] = c end
+    if c.i0 > clear and c.i1 < #stagePts and (c.i1 < iF or c.i0 > iF + clear) and not muted(c.i0) and
+       not muted(c.i1) then
+      corners[#corners + 1] = c
+    end
   end
   -- (a chicane, or a twisty run of fast corners, is one note: one entry here, so the count is still one per note)
-  return pacenotes.group(corners, M.NOTE_STEP_M), stagePts, muted
+  return pacenotes.group(corners, M.NOTE_STEP_M), stagePts, muted, iF
 end
 
 -- line: { {x, y, z}... } in game coordinates, the stage from (about) its start to (about) its finish.
--- opts: startM, finishM (distances along the line), name, quatFn, mute, landmarks ({ { s (along the line as given),
+-- opts: startM, finishM (distances along the line), stop ({ x, y }: the stop control, or nil -- the notes go on past
+-- the finish to it, issue #47: the co-driver reads the road to the stop; the stage's length, race distance and
+-- pathnodes stay start to finish), name, quatFn, mute, landmarks ({ { s (along the line as given),
 -- type (a key of M.LANDMARKS) }... }), speaks ({ [call] = true }: the calls the player's voice can say, or nil for
 -- all of them -- rallyAdapter.speaks; a call it cannot say is left out, and a note with nothing it can say is not
 -- written).
@@ -168,11 +180,17 @@ function M.build(line, opts)
     segments = segments, startPositions = startPositions,
   }
 
-  -- notebook: corners between the start and the finish (opts.mute: { {fromM, toM}... } along the line as given),
-  -- with what pacenotes.lua reads off the line round them, and the junctions and bridges (opts.landmarks)
+  -- notebook: corners between the start and the finish -- and on to the stop control (opts.stop), placed on the line
+  -- past the finish and clamped to what it covers, short of its end -- (opts.mute: { {fromM, toM}... } along the line
+  -- as given), with what pacenotes.lua reads off the line round them, and the junctions and bridges (opts.landmarks)
   local step = M.NOTE_STEP_M
-  local corners, stagePts, muted = M.stageCorners(line, cum, { startM = startM, finishM = finishM, lead = lead,
-                                                               mute = opts.mute, corners = opts.corners })
+  local stopM = nil
+  if opts.stop then
+    stopM = math.min(geo.alongBetween(line, cum, opts.stop, finishM, total), total - M.NOTE_CLEAR_M)
+    if stopM <= finishM + M.NOTE_CLEAR_M then stopM = nil end
+  end
+  local corners, stagePts, muted, iF = M.stageCorners(line, cum, { startM = startM, finishM = finishM,
+    stopM = stopM, lead = lead, mute = opts.mute, corners = opts.corners })
   local np = #stagePts
   local clear = math.ceil(M.NOTE_CLEAR_M / step)
   local function callable(i) return i > clear and i < np and not muted(i) end
@@ -439,16 +457,21 @@ function M.build(line, opts)
     if a.i0 ~= b.i0 then return a.i0 < b.i0 end
     return a.i1 < b.i1
   end)
-  -- the finish: on the note that ends last when that is close to it, else a note of its own on the line ("over
-  -- finish", as the game's own stages have it; no "to stop" after it: the co-driver is off once the finish is crossed)
+  -- the finish: on the note before it that ends last when that is close to it, else a note of its own on the line
+  -- ("over finish", as the game's own stages have it; no "to stop" after it). With a stop control the notes past the
+  -- finish follow it (issue #47)
   local last = nil
-  for _, e in ipairs(entries) do if not last or e.i1 > last.i1 then last = e end end
+  for _, e in ipairs(entries) do if e.i0 < iF and (not last or e.i1 > last.i1) then last = e end end
   -- (not on a keep note: that is a note of its own; the finish then has one of its own after it)
-  if last and not last.keep and (np - last.i1) * step <= M.FINISH_ON_NOTE_M then
-    table.insert(last.post, { type = 'finish', i = np, prio = M.PRIORITY.finish })
+  if last and not last.keep and (iF - last.i1) * step <= M.FINISH_ON_NOTE_M then
+    table.insert(last.post, { type = 'finish', i = iF, prio = M.PRIORITY.finish })
   else
-    entries[#entries + 1] = { i0 = math.max(1, np - 2), i1 = np, at = np, pre = { { type = 'finish', i = np,
+    entries[#entries + 1] = { i0 = math.max(1, iF - 2), i1 = iF, at = iF, pre = { { type = 'finish', i = iF,
       prio = M.PRIORITY.finish } }, post = {} }
+    table.sort(entries, function(a, b)
+      if a.i0 ~= b.i0 then return a.i0 < b.i0 end
+      return a.i1 < b.i1
+    end)
   end
 
   -- calls of one family say the same thing: one of them per note
@@ -530,8 +553,12 @@ function M.build(line, opts)
   local notebook = { audioMode = 4, authors = 'Earth Rally', created_at = 0, description = '', metadata = {},
                      name = 'structured', pacenotes = pacenotes_, updated_at = 0, version = '4' }
 
-  return { race = race, driveline = driveline, notebook = notebook, nodes = nodes, corners = #corners, landmarks = landmarks,
-           notes = #pacenotes_, calls = calls, startM = startM, finishM = finishM, lengthM = finishM - startM, leadM = lead }
+  -- (corners: the stage's own, start to finish -- the menu's Corners tile; those past the finish counted apart)
+  local afterFinish = 0
+  for _, c in ipairs(corners) do if c.i0 > iF then afterFinish = afterFinish + 1 end end
+  return { race = race, driveline = driveline, notebook = notebook, nodes = nodes, corners = #corners - afterFinish,
+           cornersAfterFinish = afterFinish, landmarks = landmarks, notes = #pacenotes_, calls = calls, startM = startM,
+           finishM = finishM, stopM = stopM, lengthM = finishM - startM, leadM = lead }
 end
 
 function M.write(dir, built)

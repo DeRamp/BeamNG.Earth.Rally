@@ -637,6 +637,9 @@ local function stepBuild()
   run.checks.voiceStyle = style or 'not known (every call written)'
   local okB, built = pcall(writer.build, run.line, { startM = run.startM, finishM = run.finishM, name = run.stage.name,
     mute = mute, landmarks = lms, speaks = speaks,
+    -- (#47: the notes on past the finish to the stop control)
+    stop = run.stopCtl and (function() local x, y = earth.toGame(run.stopCtl.lat, run.stopCtl.lon, 0)
+      return x and { x = x, y = y } or nil end)() or nil,
     quatFn = function(x, y, z) local q = quatFromDir(vec3(x, y, z), vec3(0, 0, 1)) return q.x, q.y, q.z, q.w end })
   if not okB then fail('could not build the stage: ' .. tostring(built)) return end
   writer.write(run.dir, built)
@@ -1597,7 +1600,9 @@ local function stepRunning(dtSim)
   end
   if along >= run.finishM and off <= (run.finishInGap and M.FINISH_OFF_GAP_M or M.FINISH_OFF_M) then
     sound(M.SOUND_FINISH)
-    rallyA.notesOn(false)        -- (the stage is over: no more calls on the way to the stop control or after)
+    -- (the stage is over: with a stop control the co-driver reads the road on to it, #47 -- its notes end there --
+    -- else no more calls)
+    if not run.stopCtl then rallyA.notesOn(false) end
     run.offRoute, run.backBearing = false, nil
     run.stageTime = run.clock
     local resetPen = (run.resets or 0) * M.RESET_PENALTY_S
