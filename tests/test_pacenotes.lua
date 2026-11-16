@@ -155,6 +155,17 @@ do
                                    { 'straight', 300 } })))
   T.check(tight[2] and tight[2]:find('^1:caution2'), 'a 25 m radius bend after 800 m flat out: a caution (' ..
     show(tight) .. ')')
+  -- (review: the straight runs back to the last corner called tighter than a six -- a six taken flat on the way
+  --  does not start it again; a four does)
+  local function via(radius)
+    return notes(build(road({ { 'straight', 200 }, { 'arc', 12, 150 }, { 'straight', 250 }, { 'arc', radius, 30 },
+                              { 'straight', 200 }, { 'arc', 45, 50 }, { 'straight', 300 } })))
+  end
+  local viaSix, viaFour = via(150), via(50)
+  T.check(#viaSix == 4 and viaSix[3]:find('^1:caution1,4:corner'), 'a six 250 m into a 530 m straight: the bend ' ..
+    'after it still a care (' .. show(viaSix) .. ')')
+  T.check(#viaFour == 4 and not viaFour[3]:find('caution'), 'a four there: the straight starts again, no care (' ..
+    show(viaFour) .. ')')
 end
 
 ------------------------------------------------------------------------------------------ the height profile
@@ -548,6 +559,19 @@ do
   local c = geo.corners(sp, 5)[1]
   T.check(c and pn.racingOpen(c, sp, 5, 100, 100) and not pn.racingOpen(c, sp, 5, 0, 100),
     'racingOpen: with room either side, not without')
+  -- (review: the room is measured to the next real corner -- a sweeper beside a kink is room for the line)
+  for _, order in ipairs({ { { 'arc', 60, 20 }, { 'arc', 220, -30 } }, { { 'arc', 220, -30 }, { 'arc', 60, 20 } } }) do
+    local beside = cornerItems(build(road({ { 'straight', 300 }, order[1], order[2], { 'straight', 300 } })))
+    local kinkItem, sw = nil, 0
+    for _, ci in ipairs(beside) do if ci.meta.sweeper then sw = sw + 1 else kinkItem = ci.item end end
+    T.check(sw == 1 and kinkItem and kinkItem.riskIntensity == -1, 'a kink right beside a sweeper: still one grade ' ..
+      'more open (' .. tostring(kinkItem and kinkItem.riskIntensity) .. ')')
+  end
+  -- (the grade the game measures: the circle through the waypoints and the middle, on its one to six ladder)
+  local ring = geo.resample(road({ { 'straight', 50 }, { 'arc', 100, 60 }, { 'straight', 50 } }), 5)
+  local rc = geo.corners(ring, 5)[1]
+  T.check(rc and pn.measuredGrade(rc, ring) == 5, 'measuredGrade: a 100 m radius is a five (' ..
+    tostring(rc and pn.measuredGrade(rc, ring)) .. ')')
 end
 
 T.done('test_pacenotes')

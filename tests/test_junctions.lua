@@ -293,7 +293,11 @@ do
   T.check(J.obvious(j('straight', 0, { { 270, 3 } }, 3)), 'obvious: a road as wide as the stage\'s, at right angles')
   T.check(not J.obvious(j('straight', 0, { { 270, 3 } }, nil)), 'not: the same, the stage road\'s width not known')
   T.check(J.obvious(j('turn', 90, { { 95, 2 } }, 3)), 'obvious: at a turn, the road straight on')
-  T.check(not J.obvious(j('turn', 90, { { 330, 1.8 } }, 3)), 'not: a turn with only a track going back')
+  -- (review: the stage turns, so the road it was on goes on -- the wrong way is right there, whatever the side road)
+  T.check(J.obvious(j('turn', 90, { { 330, 1.8 } }, 3)), 'a turn, the side road going back: still called')
+  T.check(J.obvious(j('turn', 0, { { 90 } }, nil)), 'a T where the stage turns, the other branch at 90 degrees, no ' ..
+    'widths stored: called')
+  T.check(not J.obvious(j('straight', 0, { { 90 } }, nil)), 'the same side road where the stage goes straight on: not')
   T.check(J.obvious({ kind = 'fork', side = 'left' }), 'a fork: always')
   T.check(J.obvious({ kind = 'straight', side = '' }), 'a format 1 junction (no side roads kept): as before')
   events.forget()

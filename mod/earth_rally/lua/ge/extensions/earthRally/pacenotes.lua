@@ -116,7 +116,9 @@ end
 -- RACING_SWING_M / (1 - cos(a / 2)) more than the road's (the textbook line), as far as the straight either side
 -- leaves room for it (its tangent points (R - r) tan(a / 2) further out, RACING_ROOM_M at most). Where that line is a
 -- grade more open on the game's ladder (GRADE_DIAMETERS), the corner is called one grade more open: the note's
--- corner `riskIntensity = -1`, the one step the game's notes allow (compositorUtil lookupRiskAdjustedIntensityEntry).
+-- corner `riskIntensity = -1`, the one step the game's notes allow (compositorUtil lookupRiskAdjustedIntensityEntry:
+-- the style's ladder runs one to six, and -1 moves one entry towards six, for every note, whatever the settings; a
+-- six stays a six. The length ("long") is still read off the measured grade).
 -- Only a corner RACING_ARC_M long or shorter, start to end, and RACING_MAX_DEG or less: a kink. On a longer or sharper
 -- one the line gains less, and the game's number is what it measured (a tight corner called too open is the worse
 -- mistake).
@@ -142,14 +144,26 @@ local function circleRadius(a, b, c)
   return sqrt((a.x - ux) ^ 2 + (a.y - uy) ^ 2)
 end
 
+-- The radius the game measures a corner at: the circle through its note's two waypoints (c.i0, c.i1 over pts) and
+-- the road half way between (geoPacenotes buildSingleFit). huge for a corner with no turn.
+local function measuredRadius(c, pts)
+  local mid = floor((c.i0 + c.i1) / 2 + 0.5)
+  if not (pts[c.i0] and pts[mid] and pts[c.i1]) then return huge end
+  return circleRadius(pts[c.i0], pts[mid], pts[c.i1])
+end
+
+-- The grade (1 one .. 6 six) the game will call a corner, before any riskIntensity.
+function M.measuredGrade(c, pts)
+  return gradeOf(2 * measuredRadius(c, pts))
+end
+
 -- c: a corner over pts (every `step` m); before, after: m of road with no corner either side of it. Returns true when
 -- the line through it is a grade more open than the game will measure it, and the two grades.
 function M.racingOpen(c, pts, step, before, after)
   if (c.i1 - c.i0) * step > M.RACING_ARC_M or (c.angleDeg or 0) > M.RACING_MAX_DEG then return false end
   local a = math.rad(c.angleDeg or 0)
   if a <= 0 or a >= math.pi then return false end
-  local mid = floor((c.i0 + c.i1) / 2 + 0.5)
-  local r = circleRadius(pts[c.i0], pts[mid], pts[c.i1])
+  local r = measuredRadius(c, pts)
   if r == huge then return false end
   local g = gradeOf(2 * r)
   if g > #M.GRADE_DIAMETERS then return false end
