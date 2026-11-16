@@ -1768,12 +1768,16 @@ local function atBoard(a, p)
   if not b then return false end
   local d = math.sqrt((gp.x - b.x) ^ 2 + (gp.y - b.y) ^ 2)
   a.boardM = d
+  -- (#45: the GPS still has its approach point ahead -- the car came from the start's side and is on its way round
+  -- to come in the right way: not at the board yet)
+  local g = earth.gps()
+  if type(g) == 'table' and type(g.waypoints) == 'table' and #g.waypoints > 0 then return false end
   if d <= M.AT_BOARD_PASS_M or (d <= M.AT_BOARD_M and (p.speed or 0) < M.STOPPED_MS) then return true end
   local st0 = a.stage.controls.start
   if st0 and geo.metres(p.lat, p.lon, st0.lat, st0.lon) <= M.AT_BOARD_START_M then return true end
   if not a.toldStop and d < 300 then
     a.toldStop = true
-    say('Stop at the time control's red board.', 6, 'info', a.title or a.stage.name)
+    say("Stop at the time control's red board.", 6, 'info', a.title or a.stage.name)
   end
   return false
 end
@@ -1820,7 +1824,7 @@ local function stepApproach(dt)
     a.fails = (a.fails or 0) + 1
     if not a.sticky or a.fails % 12 == 1 then
       say('Could not get ' .. a.stage.name .. ' ready: ' .. tostring(why) ..
-        (a.sticky and '. Trying again; Leave rally on the time card (Ctrl+Alt+K) if it keeps failing.' or ''),
+        (a.sticky and '. Trying again; Save and quit on the time card (Ctrl+Alt+K) if it keeps failing.' or ''),
         8, 'warning', 'Earth Rally')
     end
     if a.sticky then a.t = 5 approach = a end

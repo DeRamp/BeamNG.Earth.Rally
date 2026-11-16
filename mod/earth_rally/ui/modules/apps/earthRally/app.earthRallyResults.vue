@@ -72,7 +72,7 @@
       <!-- (1.6.2, #18) just the card gone, back to driving: runner.resultsAction's last case -->
       <BngButton class="er-close" :class="{ 'er-picked': ring('close') }" :accent="ACCENTS.outlined" @click="act('close')">Close</BngButton>
     </div>
-    <div class="er-foot">{{ rc ? (rc.next && !rc.last ? (rc.driven ? `Next: ${rc.next}. Close and follow the arrows.` : `Next: ${rc.next}. Time card (Ctrl+Alt+K) to go on.`) : "") : "Or just drive off: the card closes." }}</div>
+    <div class="er-foot">{{ rc ? (rc.next && !rc.last ? (rc.driven ? `Next: ${rc.next}. Close and follow the arrows.` : `Next: ${rc.next}. Time card (Ctrl+Alt+K) to go on.`) : "") : "The game is paused: Close (B) to drive on." }}</div>
     </template>
   </div>
 </template>

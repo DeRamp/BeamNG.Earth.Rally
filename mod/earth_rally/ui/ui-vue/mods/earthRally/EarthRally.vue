@@ -12,6 +12,8 @@
        (v-bng-ui-nav-focus; never for a mouse). -->
   <div class="er-page" bng-ui-scope="earthRally" v-bng-on-ui-nav:back="back" v-bng-on-ui-nav:menu="closeMenu"
     v-bng-on-ui-nav:tab_l="tabPrev" v-bng-on-ui-nav:tab_r="tabNext" v-bng-on-ui-nav:context="contextPress">
+    <!-- the loading screen over everything while the world loads (1.7.0, #49 / #40) -->
+    <EarthRallyLoading @view="v => (v === 'timecard' ? openCard() : null)" />
     <div class="er-topbar">
       <div class="er-back" tabindex="0" bng-nav-item @click="back" @keydown.enter="back"><span>‹</span> {{ view === "home" ? "Close" : "Back" }}</div>
       <div class="er-title"><span class="er-accent">Earth</span> Rally</div>
@@ -346,6 +348,7 @@ import EarthRallyPic from "./EarthRallyPic.vue"
 import EarthRallyBoard from "./EarthRallyBoard.vue"
 import EarthRallyResults from "./EarthRallyResults.vue"
 import EarthRallyFull from "./EarthRallyFull.vue"
+import EarthRallyLoading from "./EarthRallyLoading.vue"
 import {
   state, season, rally, stage, busyMsg, action as luaAction, refreshState, takeOpenAt, loadSeason, loadRally, loadStage,
   closeMenu, lastPlace, loadRallyStart, loadRallyCard, rallyAction, loadDrive,

@@ -439,7 +439,12 @@ local function armTransit()
   local lat, lon, kind = runner.arrivalPoint(stage)
   if not lat then return false, it.ss .. ': the stage has no start' end
   local title = it.ss .. ' ' .. stage.name
-  pcall(earth.gpsSet, lat, lon, title .. ' ' .. kind)
+  -- (#45) Into the ATC the right way: the GPS through a point APPROACH_VIA_M before it, on the far side from the
+  -- start (the way the stage runs, carried back), then to the ATC. BeamNG.Earth's planner snaps it to the road there.
+  local via = M.approachVia(stage, lat, lon, kind)
+  local okR = via and select(2, pcall(earth.gpsRoute, { { lat = via.lat, lon = via.lon, name = title .. ' approach' },
+    { lat = lat, lon = lon, name = title .. ' ' .. kind } }))
+  if okR ~= true then pcall(earth.gpsSet, lat, lon, title .. ' ' .. kind) end
   local ok = runner.armApproach(ev, stage, { sticky = true, title = title, rally = true,
     startOpts = { rally = true, ssLabel = it.ss, keepDamage = true },
     onStart = function() M.onStageLoaded() end,
@@ -448,6 +453,30 @@ local function armTransit()
   if not ok then return false, it.ss .. ': the stage could not be got ready' end
   log('I', logTag, 'rally: transit to ' .. title)
   return true
+end
+
+-- (#45) A point before the stage's ATC (its start with none), against the way the stage runs: the ATC carried on back
+-- from the start by APPROACH_VIA_M. With the ATC on top of the start, the stage line's first stretch gives the way.
+-- { lat, lon } or nil.
+M.APPROACH_VIA_M = 150
+function M.approachVia(stage, lat, lon, kind)
+  local ctl = stage.controls or {}
+  local line = stage.line
+  local fromLat, fromLon
+  local st = ctl.start or (line and line[1] and { lat = line[1][1], lon = line[1][2] })
+  if kind == 'ATC' and st and geo.metres(lat, lon, st.lat, st.lon) >= 20 then
+    fromLat, fromLon = st.lat, st.lon
+  elseif line and #line >= 2 then
+    -- (the first point some 50 m into the line)
+    local k = 2
+    while k < #line and geo.metres(line[1][1], line[1][2], line[k][1], line[k][2]) < 50 do k = k + 1 end
+    fromLat, fromLon = lat + (line[k][1] - line[1][1]), lon + (line[k][2] - line[1][2])
+  end
+  if not fromLat then return nil end
+  local d = geo.metres(lat, lon, fromLat, fromLon)
+  if not d or d < 1 then return nil end
+  local k = M.APPROACH_VIA_M / d
+  return { lat = lat + (lat - fromLat) * k, lon = lon + (lon - fromLon) * k }
 end
 
 -- The stage loaded where the car is now (a teleport: a Casual restart, the debug panel's skip). Returns ok, why.

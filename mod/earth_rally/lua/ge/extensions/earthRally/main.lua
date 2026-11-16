@@ -1140,7 +1140,7 @@ function M.uiRallyCard()
 end
 
 -- The full rally's buttons: start (opts: mode, class, cancelled), resume, go (out of service, on to the next stage),
--- quit (Leave rally: its save kept), abandon (Retire: its save deleted). Returns { ok, message, view }.
+-- quit (Save and quit: its save kept), abandon (Retire: its save deleted). Returns { ok, message, view }.
 function M.uiRallyAction(what, eventId, opts)
   local function go(ok, why, view)
     if not ok and why then message = why end
@@ -1172,7 +1172,7 @@ function M.uiRallyAction(what, eventId, opts)
         if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
       end
     end
-    if what == 'quit' then              -- Leave rally: continue later from the last service
+    if what == 'quit' then              -- Save and quit: continue later from the last service
       rallyRun.quit()
       return go(true, nil, 'rally')
     elseif what == 'abandon' then       -- Retire: the saved rally deleted
@@ -1385,6 +1385,13 @@ function M.onUpdate(dtReal, dtSim)
   end
   pcall(earthMenuFix.update)   -- (ahead of earth.update, which is not pcall'd)
   pcall(menuPause.update)      -- (a pause request held back while BeamNG.Earth held the game)
+  -- (#43) the stage's finish card at the stop box: the game paused while it gives the options (not under our page,
+  -- which has its own request)
+  do
+    local r = runner.current()
+    local want = r ~= nil and r.resultsOpen == true and r.state == 'finished' and not menuOpen and not runner.uiHidden
+    pcall(menuPause.card, 'earthRally_results', want)
+  end
   local okL, errL = pcall(loadScreen.update, dtReal or 0)
   if not okL then log('E', logTag, 'loading screen: ' .. tostring(errL)) loadScreen.cancel() end
   earth.update()
@@ -1493,7 +1500,7 @@ end
 -- layoutOff sixth of nine, so a throw in the traffic or the props would otherwise take the release with it, and a
 -- strip left held outlives the level it was held in.
 function M.onClientEndMission()
-  pcall(menuPause.release)   -- (the menu's pause request, if the level went with the page up)
+  pcall(menuPause.releaseAll)   -- (the menu's pause request, if the level went with the page up)
   if selftest then pcall(selftest.onClientEndMission) end
   if recce.active() then pcall(recce.stop, false) end
   -- An auto recce converts each window through the world's origin, so one still in flight when the level goes
@@ -1526,7 +1533,7 @@ function M.onModDeactivated()
   local fs = rawget(_G, 'FS')
   if fs and fs.fileExists and fs:fileExists(M.OUR_FILE) then return end   -- another mod went: not our business
   log('I', logTag, 'Earth Rally switched off: the run stopped and BeamNG.Earth left as it was')
-  pcall(menuPause.release)   -- (the menu's pause request, if it went with the page up)
+  pcall(menuPause.releaseAll)   -- (the menu's pause request, if it went with the page up)
   if recce.active() then pcall(recce.stop, false) end
   -- An auto recce converts each window through the world's origin, so one still in flight when the level goes
   -- would answer into a world that is not there -- and the page would show a banner for something nothing is
@@ -1551,7 +1558,7 @@ end
 -- all -- and BeamNG.Earth leaves its own imgui status bar and banner out while it believes an app holds them, so a
 -- hold left behind takes its "server not running" message with it on any layout without its apps.
 function M.onExtensionUnloaded()
-  pcall(menuPause.release)   -- (the menu's pause request, if the module goes with the page up: a reload)
+  pcall(menuPause.releaseAll)   -- (the menu's pause request, if the module goes with the page up: a reload)
   if recce.active() then pcall(recce.stop, false) end
   -- An auto recce converts each window through the world's origin, so one still in flight when the level goes
   -- would answer into a world that is not there -- and the page would show a banner for something nothing is

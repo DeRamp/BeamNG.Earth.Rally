@@ -5,7 +5,7 @@
                      cancelled stages as they really ran or all of them, Start (at the rally's start on the map).
        kind "card"   the time card: the running order with your times and stage places, where you are (getting the
                      stages ready, at a service, on a transit, on a stage) with its one button, the Super Rally card
-                     after a Realistic recovery, your overall place, and Leave rally / Retire, each with a confirm
+                     after a Realistic recovery, your overall place, and Save and quit / Retire, each with a confirm
                      (#28). Data: earthRally_main.uiRallyStart / uiRallyCard (store.js). -->
   <section class="er-full">
     <!-- ===== start ===== -->
@@ -97,8 +97,15 @@
           <!-- where you are and what is next -->
           <div v-else class="er-card er-pad">
             <template v-if="c.phase === 'prep'">
+              <!-- (#34) the auto recce of each stage still to come with no line, followed -->
               <h3>GETTING THE STAGES READY</h3>
-              <div v-if="c.prep && c.prep.name">Auto recce: {{ c.prep.name }} ({{ c.prep.i }} of {{ c.prep.of }})</div>
+              <div class="er-muted er-small" v-if="c.prep">The auto recce matches each stage to the roads<template v-if="c.prep.of">. Stage {{ Math.max(1, c.prep.i) }} of {{ c.prep.of }}</template>. Then: to the start.</div>
+              <div v-for="(p, i) in arr(c.prep && c.prep.stages)" :key="i" class="er-pr" :class="p.state">
+                <span class="er-mono">{{ p.ss || "" }}</span>
+                <span class="er-clip">{{ p.name }}<small>{{ prepDetail(p) }}</small></span>
+                <span class="er-r">{{ { done: "✓ Ready", failed: "No line", now: prepPct(p), wait: "Waiting" }[p.state] }}</span>
+                <div v-if="p.state === 'now' && prepBar() != null" class="er-pbar"><i :style="{ width: prepBar() + '%' }"></i></div>
+              </div>
             </template>
             <template v-else-if="c.phase === 'moving'">
               <h3>ON THE WAY TO {{ (c.at && c.at.label || "").toUpperCase() }}</h3>
@@ -134,12 +141,12 @@
           <div class="er-card er-pad">
             <BngButton v-if="c.done" :accent="ACCENTS.outlined" @click="leave">Close the rally</BngButton>
             <template v-else-if="ask === 'leave'">
-              <h3>LEAVE THE RALLY?</h3>
+              <h3>SAVE AND QUIT?</h3>
               <div>You continue later from {{ c.leave ? c.leave.at : "the last service" }}.</div>
               <div v-if="c.leave && c.leave.superRally" class="er-warn">{{ c.leave.superRally }} is under way: it is scored under Super Rally.</div>
               <div v-if="c.leave && arr(c.leave.redo).length" class="er-warn">{{ arr(c.leave.redo).join(", ") }}: driven again.</div>
               <div class="er-btns">
-                <BngButton v-bng-ui-nav-focus="1" :accent="ACCENTS.main" @click="leave">Leave rally</BngButton>
+                <BngButton v-bng-ui-nav-focus="1" :accent="ACCENTS.main" @click="leave">Save and quit</BngButton>
                 <BngButton :accent="ACCENTS.outlined" @click="ask = null">Cancel</BngButton>
               </div>
             </template>
@@ -152,7 +159,7 @@
               </div>
             </template>
             <div v-else class="er-btns">
-              <BngButton :accent="ACCENTS.outlined" @click="ask = 'leave'">Leave rally</BngButton>
+              <BngButton :accent="ACCENTS.outlined" @click="ask = 'leave'">Save and quit</BngButton>
               <BngButton :accent="ACCENTS.outlined" @click="ask = 'retire'">Retire</BngButton>
             </div>
           </div>
@@ -204,10 +211,35 @@ const goLabel = computed(() => {
   switch (x.phase) {
     case "stop": return x.at && x.at.kind === "start" ? `Drive to ${nx}` : `Service out · drive to ${nx}`
     case "toGo": return `Go to ${x.at ? x.at.label : "the next stop"}`
-    case "stage": return "Back to the stage"
+    // (#44: says what you go back to)
+    case "stage": return `Back to ${x.at ? `${x.at.label} ${x.at.name || ""}`.trim() : "the stage"}`
+    case "transit":
+    case "toStop": return x.transit && x.transit.name ? `Back to the transit · to ${x.transit.name}` : "Back to the transit"
     default: return "Back to driving"
   }
 })
+// (#34) the stage in progress: what its auto recce is doing
+const AUTO_WORDS = { going: "Going to the stage", asking: "Pricing the map data", planning: "Checking the map data",
+  downloading: "Downloading the map", matching: "Matching the roads" }
+function prepAuto() { return c.value && c.value.prep && c.value.prep.auto }
+function prepBar() {
+  const a = prepAuto()
+  if (!a) return null
+  if (a.windows) return Math.round(100 * (a.done || 0) / a.windows)
+  if (a.area && a.area.total) return Math.round(100 * (a.area.done || 0) / a.area.total)
+  return null
+}
+function prepPct(p) { const b = prepBar(); return b == null ? "Working" : `${b}%` }
+function prepDetail(p) {
+  if (p.state === "failed") return "Not matched: held out if it has no line"
+  if (p.state !== "now") return p.km ? `${p.km} km` : ""
+  const a = prepAuto()
+  if (!a) return "Starting"
+  let t = AUTO_WORDS[a.phase] || "Working"
+  if (a.windows) t += ` · window ${Math.min((a.done || 0) + 1, a.windows)} of ${a.windows}`
+  else if (a.area && a.area.total) t += ` · ${a.area.done || 0} of ${a.area.total}`
+  return t
+}
 const rowCls = r => ({ next: r.next && r.kind === "stage", svc: r.kind !== "stage", here: r.next && r.kind !== "stage", sr: r.superRally, dim: r.done && r.kind !== "stage" })
 const dayHead = i => {
   const rows = arr(c.value && c.value.rows)
@@ -256,6 +288,14 @@ h3 { margin: 0 0 10px; font-size: 20px; letter-spacing: 0.04em; }
   &.dim { color: #8a909a; } }
 .er-hd { color: #b8bcc6; font-size: 14px; grid-template-columns: 80px minmax(0, 1fr) 110px 70px 110px; }
 .er-sr { grid-template-columns: 80px minmax(0, 1fr) 110px 70px 110px; color: #ffb38a; }
+.er-pr { display: grid; grid-template-columns: 70px minmax(0, 1fr) 110px; gap: 12px; align-items: center; padding: 10px 12px; margin-top: 6px; border-radius: 4px; font-size: 18px;
+  small { display: block; color: #8a909a; font-size: 14px; }
+  &.done { background: rgba(60, 207, 126, 0.08); .er-r { color: #3ccf7e; } }
+  &.now { background: rgba(242, 107, 29, 0.14); outline: 2px solid rgba(242, 107, 29, 0.6); }
+  &.wait { color: #8a909a; }
+  &.failed { background: rgba(255, 211, 107, 0.07); .er-r { color: #ffd36b; } } }
+.er-pbar { grid-column: 1 / -1; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.12); overflow: hidden;
+  i { display: block; height: 100%; background: #f26b1d; } }
 .er-row2 { display: flex; justify-content: space-between; padding: 5px 0; font-size: 18px; }
 .er-big { font: 700 44px "Overpass Mono", monospace; color: #f26b1d; }
 </style>

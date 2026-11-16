@@ -1967,8 +1967,8 @@ do
     runner.disarmApproach()
     beamngEarth_api.gpsSet, beamngEarth_api.gps = hadSet, hadGps
   end
-  -- Drive stage from the page: the run starts, the page closes, and the menu's pause request goes with it (a
-  -- page left up would hold BeamNG.Earth's drop hold off: it pauses only a game not paused already)
+  -- Drive stage from the page (1.7.0, #49): the run starts and the page stays up on its loading screen, the game
+  -- paused under it; the page closes once the car is at the control and the world round it is in.
   local reqsD = {}
   simTimeAuthority = { pushPauseRequest = function(id) reqsD[id] = true end,
     popPauseRequest = function(id) reqsD[id] = nil end }
@@ -1977,10 +1977,13 @@ do
   car.lat, car.lon, car.speed = full[1][1] - 0.02, full[1][2], 0
   navs = {}
   a = main.uiAction('drive', 'test8', 'hill')
-  T.check(a.ok and runner.current() and navs[1] == 'play', 'Drive stage: the run starts, back to the game')
-  T.check(not reqsD.earthRally_menu, "Drive stage: the menu's pause request taken back as it starts")
-  main.onUiChangedState('earthRally')
-  T.check(not reqsD.earthRally_menu, '... and not put in again until the page is next opened')
+  local ls = require('earthRally/loadScreen')
+  T.check(a.ok and runner.current() and navs[1] == nil and ls.active(), 'Drive stage: the run starts under a loading screen')
+  T.check(reqsD.earthRally_menu, "Drive stage: the game stays paused under the loading screen")
+  local ui = ls.ui()
+  T.check(ui and #ui.steps == 4 and ui.steps[4].world and ui.steps[1].state == 'now',
+    'the loading screen: three steps and the world last, the first under way')
+  ls.cancel()
   main.onUiChangedState('play')
   simTimeAuthority = nil
   T.check(not main.uiAction('drive', 'test8', 'hill').ok, 'not a second run while one is under way')

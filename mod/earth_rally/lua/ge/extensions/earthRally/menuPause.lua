@@ -84,12 +84,34 @@ function M.suspend()
   pop()
 end
 
+-- (1.7.0, #43) A pause request of its own for a card over driving (the stage's finish card at the stop box): held
+-- while on is true, taken back when false. Not while BeamNG.Earth holds the game (its holds take the plain pause
+-- only when it is not paused already).
+local cards = {}
+function M.card(id, on)
+  local s = sta()
+  if not s then return end
+  if on and not cards[id] and not earthHolds() then
+    cards[id] = true
+    pcall(s.pushPauseRequest, id)
+  elseif not on and cards[id] then
+    cards[id] = nil
+    pcall(s.popPauseRequest, id)
+  end
+end
+function M.cardHeld(id) return cards[id] == true end
+
 -- Our request taken back, if there is one, and the page taken for closed: on leaving the page, and when the level
 -- goes, the mod is switched off or reloaded with the page up (a request left behind would hold the next level paused,
 -- and every Escape menu after it).
 function M.release()
   pageUp, suspended = false, false
   pop()
+end
+-- Everything taken back: the level going, the mod off or reloaded.
+function M.releaseAll()
+  M.release()
+  for id in pairs(cards) do M.card(id, false) end
 end
 
 return M
