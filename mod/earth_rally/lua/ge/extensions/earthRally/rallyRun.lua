@@ -919,6 +919,7 @@ end
 runner.onRallyReset = function() M.onRallyReset() end
 runner.transitSource = function() return M.transitInfo() end
 runner.rallyOn = function() return R ~= nil and not R.done end
+events.keepShown = function(id) return R ~= nil and not R.done and R.eventId == id end
 
 -- The results card's buttons in a rally: 'continue' (the time card; an overnight is gone to), 'restart' (Casual: the
 -- stage again, from its start), 'close' (back to driving: the transit is armed already).

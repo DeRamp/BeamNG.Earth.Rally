@@ -83,9 +83,12 @@ local function orderOf(event, cancelled)
   -- (#48, the owner: you always drive back to service at the end of a day, and the overnight is there. An overnight
   -- is at the last service park before it -- driven to like a service, the car repaired and the rally saved -- and at
   -- its own place only where the rally had no service before it)
-  local lastSvc = nil
+  local lastSvc, day = nil, nil
   for _, it in ipairs(out) do
-    if (it.kind == 'service' or it.atService) and it.place then lastSvc = it
+    if it.kind == 'stage' then
+      if it.day ~= day then lastSvc = nil end        -- (the day's own service park only)
+      day = it.day
+    elseif (it.kind == 'service' or it.atService) and it.place then lastSvc = it
     elseif it.kind == 'overnight' and lastSvc then
       it.parcFerme = it.place and it.place.name or it.name
       it.place = { name = lastSvc.place.name, lat = lastSvc.place.lat, lon = lastSvc.place.lon }

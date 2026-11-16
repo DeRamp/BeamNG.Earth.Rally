@@ -196,6 +196,12 @@ function M.uiLoadingContinue() return loadScreen.continue() end
 -- Ctrl+Alt+K
 function M.toggleMenu()
   if menuOpen then return M.closeMenu() end
+  -- (a rally's finish card up, the game paused under it, #43: the key takes its Continue -- the card put away)
+  local rc = runner.current()
+  if rallyRun.active() and rc and rc.inRally and rc.resultsOpen then
+    pcall(rallyRun.resultsAction, 'continue')
+    return true
+  end
   if rallyRun.active() then return M.openMenu('timecard') end   -- (a full rally: its time card)
   local r = runner.current()
   if r and r.resultsOpen and r.state == 'finished' then

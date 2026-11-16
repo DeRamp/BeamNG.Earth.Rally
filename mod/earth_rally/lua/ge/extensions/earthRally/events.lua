@@ -71,6 +71,8 @@ local function folderCheck(index)
   end
 end
 M._folderCheck = folderCheck
+-- (rallyRun sets this: the full rally under way is never hidden from under the player by a rescan, #50)
+M.keepShown = function() return false end
 
 -- Every event whose file is still in the import folder (folderCheck): { { id, name, stages = {...}, points = {...},
 -- file }... }, sorted by name. Re-read when asked.
@@ -87,7 +89,8 @@ function M.list(reload)
     if ok and type(e) == 'table' and e.format == 1 and type(e.stages) == 'table' then
       e.file = f
       e.id = e.id or f:match('([^/]+)%.json$')
-      if shown(e) then cache[#cache + 1] = e else hidden = hidden + 1 end
+      local okK, keep = pcall(M.keepShown, e.id)
+      if shown(e) or (okK and keep) then cache[#cache + 1] = e else hidden = hidden + 1 end
     else
       log('W', 'earthRally', 'not an Earth Rally event file: ' .. tostring(f))
     end
