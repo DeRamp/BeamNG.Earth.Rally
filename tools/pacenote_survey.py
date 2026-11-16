@@ -87,6 +87,7 @@ def main():
                                     quatFn = function() return 0, 0, 0, 1 end, speaks = speaks })
       end''')
     geo = lua.require('earthRally/geo')
+    junctions = lua.require('earthRally/junctions')
     locate, cumulative = geo.locate, geo.cumulative
 
     speaks = lua.table_from({k: True for k in CASUAL}) if a.casual else None
@@ -114,6 +115,9 @@ def main():
             t = {'turn': 'atJunction', 'straight': 'pastJunction'}.get(j[2])
             if j[2] == 'fork':
                 t = 'keepLeft' if j[3] == 'left' else 'keepRight'
+            # (only the side roads a driver could take by mistake, as events.landmarks: junctions.obvious)
+            if t and not junctions.obvious(junctions.decode(lua.table_from(j, recursive=True))):
+                t = None
             if t:
                 lms.append(dict(at(j[0], j[1]), type=t))
         for b in m.get('bridges') or []:

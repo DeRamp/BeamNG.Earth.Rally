@@ -280,6 +280,30 @@ do
   T.check(events.junctions('ev', 'hill', { line = { { 46, -122 }, { 46.1, -122 } } }) == nil,
     'a matched line from another version of the map: none')
   T.check(events.junctions('ev', 'nothere') == nil, 'no matched line: none')
+
+  -- 1.6.2, issue #10: only a side road a driver could take by mistake is called
+  local function j(kind, inDeg, sides, half)
+    local out = { kind = kind, side = '', inDeg = inDeg, outDeg = inDeg, sides = {}, half = half }
+    for k, s in ipairs(sides) do out.sides[k] = { deg = s[1], halfW = s[2] } end
+    return out
+  end
+  T.check(J.obvious(j('straight', 0, { { 30, 1.8 } }, 3)), 'obvious: a track splitting off 30 degrees from the way on')
+  T.check(not J.obvious(j('straight', 0, { { 90, 1.8 } }, 3)), 'not: a narrow track off at right angles')
+  T.check(not J.obvious(j('straight', 350, { { 200, 3 } }, 3)), 'not: a road going back')
+  T.check(J.obvious(j('straight', 0, { { 270, 3 } }, 3)), 'obvious: a road as wide as the stage\'s, at right angles')
+  T.check(not J.obvious(j('straight', 0, { { 270, 3 } }, nil)), 'not: the same, the stage road\'s width not known')
+  T.check(J.obvious(j('turn', 90, { { 95, 2 } }, 3)), 'obvious: at a turn, the road straight on')
+  T.check(not J.obvious(j('turn', 90, { { 330, 1.8 } }, 3)), 'not: a turn with only a track going back')
+  T.check(J.obvious({ kind = 'fork', side = 'left' }), 'a fork: always')
+  T.check(J.obvious({ kind = 'straight', side = '' }), 'a format 1 junction (no side roads kept): as before')
+  events.forget()
+  files['/earthRally/matched/ev__hill.json'] = { format = 2, mapKey = events.mapKey(stage.line),
+    points = { { 47.0, -123.0, 0 }, { 47.01, -123.0, 0 } },
+    junctions = { { 47.001, -123.0, 'straight', '', 0, 0, { { 90, 1.8 } }, 3 },
+                  { 47.002, -123.0, 'straight', '', 0, 0, { { 320, 1.8 } }, 3 } } }
+  lm = events.landmarks('ev', 'hill', stage)
+  T.check(#lm == 1 and lm[1].lat == 47.002, 'events.landmarks: the track off at right angles is not called (' ..
+    #lm .. ')')
 end
 
 ------------------------------------------------------------------------------------------ 7: 1.4.0's review

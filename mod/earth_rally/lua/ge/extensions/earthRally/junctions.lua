@@ -180,6 +180,32 @@ function M.judge(wIn, wOut, ways)
            sides = out }
 end
 
+------------------------------------------------------------------------------------------ which ones are called
+
+-- (1.6.2, issue #10: "junction calls get a bit excessive. Some are for side roads so out of the way you don't even
+-- notice them while driving ... keep the junction call for side roads that are obvious, ones you might accidentally
+-- go down") A junction is called when it is a fork (keep left / right), or one of its side roads is one a driver
+-- could take by mistake: within OBVIOUS_DEG of the way the stage comes in (straight on at a turn, or a shallow split
+-- off a straight), or as wide as the stage road (OBVIOUS_WIDE of its half width, both widths known: a road as big as
+-- the stage's own) and within OBVIOUS_WIDE_DEG. A track off at right angles, or one going back, is not called. A
+-- junction the file kept no side roads for (format 1) is called, as before.
+M.OBVIOUS_DEG = 60
+M.OBVIOUS_WIDE = 0.9
+M.OBVIOUS_WIDE_DEG = 100
+
+-- j: a junction as M.decode gives it. True when the co-driver should call it.
+function M.obvious(j)
+  if not j then return false end
+  if j.kind == 'fork' then return true end
+  if not j.inDeg or not j.sides or #j.sides == 0 then return true end
+  for _, s in ipairs(j.sides) do
+    local off = abs(M.turnDeg(j.inDeg, s.deg))
+    if off <= M.OBVIOUS_DEG then return true end
+    if off <= M.OBVIOUS_WIDE_DEG and s.halfW and j.half and s.halfW >= M.OBVIOUS_WIDE * j.half then return true end
+  end
+  return false
+end
+
 ------------------------------------------------------------------------------------------ the file
 
 -- A junction as the matched file's entry (format 2), at lat / lon.
