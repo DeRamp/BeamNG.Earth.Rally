@@ -1,0 +1,1 @@
+Earth Rally (alpha) · MIT · [README](https://github.com/DeRamp/BeamNG.Earth.Rally#readme) · [Changelog](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/CHANGELOG.md) · [Report a bug](https://github.com/DeRamp/BeamNG.Earth.Rally/issues) · Source for these pages: `docs/wiki/` in the repository.

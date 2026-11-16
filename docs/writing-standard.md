@@ -28,10 +28,10 @@ Target **400-600 words**. `wc -w README.md` before committing; over 600 means so
 
 <one-sentence pitch>
 
-**vX.Y.Z-alpha · BeamNG.drive <ver> · BeamNG.Earth modding API <ver>+ · auto recce: [DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)**
-[Download](…/releases) · [Changelog](CHANGELOG.md) · [Player guide](docs/guide.md) · [Report a bug](…/issues)
+**Alpha · BeamNG.drive <ver> · BeamNG.Earth modding API <ver>+ · auto recce: [DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)**
+[Download](…/releases) · [Wiki](…/wiki) · [Changelog](CHANGELOG.md) · [Player guide](docs/guide.md) · [Report a bug](…/issues)
 
-<one screenshot, once we have one>
+<hero screenshot from docs/media/>
 
 ## What it does        5-8 one-line bullets
 ## Install             3-5 numbered steps; BeamNG.Earth from the fork first; `earth_rally-<version>.zip`;
@@ -46,6 +46,11 @@ Target **400-600 words**. `wc -w README.md` before committing; over 600 means so
 
 The version line is the only part that changes on every release. The README never names "this version's" notes;
 it links to `CHANGELOG.md`.
+
+## No version numbers in public material
+
+README, the wiki and posts say **alpha**, never a version number (the owner, 2026-11-15). Version
+numbers stay in the CHANGELOG, tags, release titles, zip names and `M.VERSION`.
 
 ## CHANGELOG.md
 
