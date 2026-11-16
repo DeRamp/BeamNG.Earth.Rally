@@ -1017,7 +1017,8 @@ local function sendStreams(dt)
   -- state, and each at least every STREAM_FLOOR_S, which also carries what the keys leave out: BeamNG.Earth's place,
   -- banner and loading. Where a distance in metres moves every frame, at most once per STREAM_GAP_S / HUD_GAP_S)
   -- (every frame inside the start zone or near the stop: the stock 'staged' / 'stop' badge follows the car there)
-  local closeIn = r.zone ~= nil or (s == 'toStop' and (r.toControlM or 99) < 30)
+  local closeIn = (s == 'toStart' and r.zone ~= nil)
+    or (s == 'toStop' and (r.toControlM or 1e9) < (runner.STOP_CONTROL_RADIUS_M or 25) + 5)
   if fresh or closeIn or not slowSample or slowT >= M.SLOW_SAMPLE_S then slowT, slowSample = 0, runner.uiSlow() end
   local kr, kh = runner.uiKeys(slowSample)
   local gapR = (s == 'running' or s == 'waitStart') and 0 or M.STREAM_GAP_S

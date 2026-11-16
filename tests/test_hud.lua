@@ -447,6 +447,7 @@ do
   for _, cs in ipairs(cases) do
     local name, run, step, t0 = cs[1], cs[2], cs[3], cs[4]
     local prevD, prevK, prevO, prevKo, misses, frames = nil, nil, nil, nil, 0, 0
+    local changes, sawRl = { 0, 0 }, false
     for f = 0, 60 * 25 do
       local t = f / 60
       step(run, t)
@@ -456,7 +457,9 @@ do
       local rl, ours = hud.build(run, ctx)
       local kr, ko = hud.streamKeys(run, { now = now, units = 'km', stopped = speed < 1.0, canSkip = false, stopRadiusM = 25 })
       local d, o = drawn(rl, ours)
+      sawRl = sawRl or (rl ~= nil and rl.activeState ~= 'inactive')
       for _, pr in ipairs({ { prevD, d, prevK, kr, 'stock' }, { prevO, o, prevKo, ko, 'ours' } }) do
+        if pr[1] and pr[2] ~= pr[1] then changes[pr[5] == 'stock' and 1 or 2] = changes[pr[5] == 'stock' and 1 or 2] + 1 end
         if pr[1] and pr[2] ~= pr[1] and pr[4] == pr[3] then
           misses = misses + 1
           if misses == 1 then print('  first miss, ' .. name .. ' (' .. pr[5] .. ') at ' .. t .. ' s:\n    ' .. pr[1]
@@ -465,6 +468,8 @@ do
       end
       prevD, prevK, prevO, prevKo, frames = d, kr, o, ko, frames + 1
     end
+    T.check((changes[1] > 0 or not sawRl) and changes[2] > 0, 'stream keys: ' .. name .. ', the drawn text moves (' .. changes[1]
+      .. ', ' .. changes[2] .. ')')
     T.check(misses == 0, 'stream keys: ' .. name .. ', every change drawn changes the key (' .. misses .. ' missed in '
       .. frames .. ' frames)')
   end
