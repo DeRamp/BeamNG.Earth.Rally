@@ -1,7 +1,7 @@
 <template>
   <!-- Earth Rally's stage-done card (docs/mockups-1.2.0/results.html), an interactive app in the stage layout, shown
        while the stream 'earthRally' says show.results (Lua: hudFrame.lua; open from the stop control until a button,
-       driving off, or a timeout: runner.lua). The buttons go to earthRally_main.uiResults. -->
+       driving off, or a timeout: runner.lua). The buttons go to earthRally_main.uiResults; Close shuts the card. -->
   <div v-if="res" class="er-results">
     <div class="er-top">
       <span v-if="fmt.ss(stage)" class="er-ss">{{ fmt.ss(stage) }}</span><span class="er-name">{{ stage.name }}</span><span class="er-done">Stage complete</span>
@@ -28,6 +28,8 @@
       </BngButton>
       <BngButton :accent="ACCENTS.secondary" @click="act('retry')">Retry</BngButton>
       <BngButton :accent="ACCENTS.secondary" @click="act('menu')">Rally menu</BngButton>
+      <!-- (1.6.2, #18) just the card gone, back to driving: runner.resultsAction's last case -->
+      <BngButton class="er-close" :accent="ACCENTS.outlined" @click="act('close')">Close</BngButton>
     </div>
     <div class="er-foot">Or just drive off: the card closes.</div>
   </div>
@@ -101,6 +103,7 @@ function act(what) {
 .er-sum { font-weight: 700; .er-v { font-size: 26px; font-weight: 700; } }
 .er-bestline .er-v { color: var(--er-muted); }
 .er-buttons { display: flex; gap: 16px; padding: 24px 40px 12px; }
+.er-close { margin-left: auto; }
 .er-main { flex: 1; small { font-weight: 500; opacity: 0.85; margin-left: 8px; } }
 .er-foot { padding: 0 40px 22px; font-size: 16px; color: var(--er-muted); }
 </style>

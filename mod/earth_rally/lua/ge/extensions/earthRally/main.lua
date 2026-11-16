@@ -19,6 +19,7 @@ local menu = require('earthRally/menu')
 local preview = require('earthRally/preview')
 local versions = require('earthRally/versions')
 local earthMenuFix = require('earthRally/earthMenuFix') -- STOPGAP: remove with BeamNG.Earth's fix (the file says)
+local menuPause = require('earthRally/menuPause')     -- the game paused while the menu page is up (1.6.2, #13)
 
 local M = {}
 local logTag = 'earthRally'
@@ -104,6 +105,7 @@ function M.onUiChangedState(toState)
   runner.uiHidden = toState:sub(1, 4) == 'menu' or earthMenuFix.isPause(toState) or toState == 'loading'
     or toState == M.ROUTE or toState == 'beamngEarthMap'
   earthMenuFix.uiState(toState, M.ROUTE)
+  menuPause.uiState(toState, M.ROUTE)
 end
 
 ------------------------------------------------------------------------------------------ the developer panel
@@ -1165,6 +1167,7 @@ end
 -- layoutOff sixth of nine, so a throw in the traffic or the props would otherwise take the release with it, and a
 -- strip left held outlives the level it was held in.
 function M.onClientEndMission()
+  pcall(menuPause.release)   -- (the menu's pause request, if the level went with the page up)
   if selftest then pcall(selftest.onClientEndMission) end
   if recce.active() then pcall(recce.stop, false) end
   -- An auto recce converts each window through the world's origin, so one still in flight when the level goes
@@ -1195,6 +1198,7 @@ function M.onModDeactivated()
   local fs = rawget(_G, 'FS')
   if fs and fs.fileExists and fs:fileExists(M.OUR_FILE) then return end   -- another mod went: not our business
   log('I', logTag, 'Earth Rally switched off: the run stopped and BeamNG.Earth left as it was')
+  pcall(menuPause.release)   -- (the menu's pause request, if it went with the page up)
   if recce.active() then pcall(recce.stop, false) end
   -- An auto recce converts each window through the world's origin, so one still in flight when the level goes
   -- would answer into a world that is not there -- and the page would show a banner for something nothing is

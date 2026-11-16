@@ -6,7 +6,7 @@
     <div class="er-top">
       <h3>Leaderboard</h3>
       <div v-if="passes.length > 1" class="er-tabs">
-        <span v-for="p in passes" :key="p.ss" tabindex="0" :class="{ on: p.ss === b.pass, cx: p.cancelled }"
+        <span v-for="p in passes" :key="p.ss" tabindex="0" bng-nav-item :class="{ on: p.ss === b.pass, cx: p.cancelled }"
           @click="emit('pass', p.ss)" @keydown.enter="emit('pass', p.ss)">{{ p.ss }}</span>
       </div>
       <div v-else class="er-one er-mono">{{ b.pass }}</div>

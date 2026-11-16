@@ -13,7 +13,7 @@
         <span
           v-for="o in arr(s.options)"
           :key="String(o.value)"
-          tabindex="0"
+          tabindex="0" bng-nav-item
           :class="{ on: values[s.id] === o.value }"
           @click="setSetting(s.id, o.value)"
           @keydown.enter="setSetting(s.id, o.value)"

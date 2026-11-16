@@ -90,13 +90,19 @@
       <span class="er-off-s">· {{ wayBack }}</span>
     </div>
 
-    <!-- 5 the flying finish, a few seconds -->
-    <div v-if="show.finish && fin" class="er-finish">
-      <div class="er-finish-l">{{ fmt.ssName(stage) }} · flying finish</div>
-      <div class="er-finish-t">{{ fmt.time(fin.time) }}</div>
-      <div v-if="fin.newBest" class="er-delta er-best">{{ fin.first ? "FIRST TIME" : fmt.delta(fin.delta) + " · NEW BEST" }}</div>
-      <div v-else class="er-delta er-slower">{{ fmt.delta(fin.delta) }}</div>
-      <div v-if="fin.penalty > 0" class="er-finish-pen">includes +{{ Math.round(fin.penalty) }} s {{ penWords }}</div>
+    <!-- 5 the flying finish (1.6.2, #17: no longer an 800 px card mid-screen, over the road at the line): in the
+         top bar beside the stage clock, where the km readout was. A few seconds larger (show.finish 'big'), then
+         tucked to the bar's own height (show.finish 'tucked') until the stop control. hudFrame.finishPhase. -->
+    <div v-if="show.finish && fin" class="er-finish" :class="show.finish === 'big' ? 'er-fin-big' : 'er-fin-tucked'">
+      <div class="er-finish-head">
+        <span class="er-finish-l">{{ show.finish === "big" ? `${fmt.ssName(stage)} · finish` : "Finish" }}</span>
+        <span v-if="fin.penalty > 0 && show.finish === 'big'" class="er-finish-pen">incl. +{{ Math.round(fin.penalty) }} s {{ penWords }}</span>
+      </div>
+      <div class="er-finish-row">
+        <span class="er-finish-t">{{ fmt.time(fin.time) }}</span>
+        <span v-if="fin.newBest" class="er-delta er-best">{{ fin.first ? "FIRST TIME" : fmt.delta(fin.delta) + (show.finish === "big" ? " · NEW BEST" : " BEST") }}</span>
+        <span v-else class="er-delta er-slower">{{ fmt.delta(fin.delta) }}</span>
+      </div>
     </div>
 
     <div v-if="f.preview && f.previewLabel" class="er-preview">HUD preview: {{ f.previewLabel }}</div>
@@ -265,12 +271,37 @@ const penWords = computed(() => {
   .er-off-s { font-size: 26px; font-weight: 600; }
 }
 
+/* the flying finish, in the top bar beside the progress bar (left 1068: where .er-km sits on the stage; free once
+   past the finish) and short of the stock topLeftApps at 1467, so 399 px at most; 90 px tall at most, as the stock
+   RallyCountdown's panel (SLOW / STOP and the distance to the stop control) starts at top 92 and reaches x 1185.
+   Clear of the road. */
 .er-finish {
-  position: absolute; left: 50%; transform: translateX(-50%); top: 210px; width: 800px; padding: 22px 30px 26px;
-  text-align: center; background: rgba(0, 0, 0, 0.72); border-radius: 0.5rem; border-top: 6px solid var(--er-theme);
-  .er-finish-l { font-size: 20px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--er-muted); }
-  .er-finish-t { font: 700 120px/1.05 "Overpass Mono", monospace; }
-  .er-finish-pen { margin-top: 12px; font-size: 20px; color: #ffd36b; }
+  position: absolute; left: 1068px; top: 0; width: 399px; box-sizing: border-box; overflow: hidden;
+  background: rgba(0, 0, 0, 0.8); border-left: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 4px solid var(--er-theme); border-radius: 0 0 0.5rem 0;
+  transition: height 0.4s ease, padding 0.4s ease;
+  .er-finish-head { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+  .er-finish-l { letter-spacing: 0.12em; text-transform: uppercase; color: var(--er-muted); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .er-finish-row { display: flex; align-items: center; gap: 14px; white-space: nowrap; }
+  .er-finish-t { font-family: "Overpass Mono", monospace; font-weight: 700; line-height: 1; transition: font-size 0.4s ease; }
+  .er-finish-pen { margin-left: auto; font-size: 14px; color: #ffd36b; white-space: nowrap; flex: none; }
+  .er-delta { margin-top: 0; }
+}
+.er-fin-big {
+  height: 90px; padding: 8px 18px 0;
+  .er-finish-head { margin-bottom: 4px; }
+  .er-finish-l { font-size: 13px; }
+  .er-finish-t { font-size: 50px; }
+  .er-delta { font-size: 20px; padding: 3px 10px; border-radius: 6px; }
+}
+.er-fin-tucked {
+  width: auto; max-width: 399px; height: 68px; padding: 0 18px; display: flex; align-items: center; gap: 12px;
+  border-bottom-width: 2px;
+  .er-finish-l { font-size: 12px; flex: none; }
+  .er-finish-t { font-size: 28px; }
+  .er-delta { font-size: 16px; padding: 2px 8px; border-radius: 5px; }
+  .er-finish-row { gap: 10px; }
 }
 .er-delta { display: inline-block; margin-top: 8px; font-size: 34px; font-weight: 800; padding: 4px 18px; border-radius: 8px; }
 .er-best { background: var(--er-go); color: #002a00; }
