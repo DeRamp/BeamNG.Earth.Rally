@@ -782,6 +782,26 @@ else
     oj.media.cover == '/earthRally/media/ara26-ojibwe-forests/cover.png',
     'ARA: Ojibwe\'s place, itinerary, cover')
   T.check(#rounds == 8 and rounds[8] == 'ara26-lake-superior', 'ARA: the season, its ids from the manifest')
+  -- (1.7.0) each rally's full-rally running order, as rally.lua makes it from the imported event: printed for the
+  -- owner to read against the itinerary (the developer check the plan asks for), checked only for what every round
+  -- has -- a service, a stage after it
+  local R = require('earthRally/rally')
+  local allRun = true
+  for r = 1, 8 do
+    local ev = mem['/earthRally/events/' .. tostring(rounds[r]) .. '.json']
+    local rr = ev and R.new(ev, { cancelled = 'all' })
+    local parts, svc = {}, 0
+    for _, it in ipairs(rr and rr.order or {}) do
+      if it.kind == 'stage' then parts[#parts + 1] = it.ss .. (it.cancelledReal and '(x)' or '')
+      else
+        parts[#parts + 1] = '[' .. it.label .. ']'
+        if it.kind == 'service' then svc = svc + 1 end
+      end
+    end
+    if not (rr and svc > 0) then allRun = false end
+    print(string.format('test_pack: full rally %s: %s', ev and ev.name or tostring(rounds[r]), table.concat(parts, ' ')))
+  end
+  T.check(allRun, 'ARA: every round runs as a full rally, with at least one service')
 end
 
 T.done('test_pack')
