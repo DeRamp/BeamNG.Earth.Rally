@@ -947,12 +947,11 @@ end
 function M.uiSet(key, value) return settings.set(key, value) end
 
 -- Settings > Privacy and the first-open question (EarthRallyPrivacy.vue, EarthRally.vue): 'yes' / 'no' (the
--- answer, or the switch), 'shown' (the question came up), 'delete', 'openFolder', 'report' (a = what the player wrote, b = save the log).
+-- answer, or the switch), 'shown' (the question came up), 'openFolder', 'report' (a = what the player wrote, b = save the log).
 function M.uiStats(what, a, b)
   local ok, r = pcall(function()
     if what == 'yes' or what == 'no' then stats.answer(what == 'yes') if what == 'yes' then stats.flushSoon() end
     elseif what == 'shown' then stats.prompting()     -- (the question is on screen: leaving now is a No)
-    elseif what == 'delete' then stats.deleteMine()
     elseif what == 'openFolder' then stats.openFolder()
     elseif what == 'report' then
       local cur = runner.current()
@@ -1132,7 +1131,7 @@ M._sendStreams = sendStreams
 ------------------------------------------------------------------------------------------ hooks
 
 function M.onUpdate(dtReal, dtSim)
-  stats.update(dtReal, menuOpen)
+  pcall(stats.update, dtReal, menuOpen)
   -- switched off a frame ago: stop running (see onModDeactivated)
   if unloadNext then
     unloadNext = false

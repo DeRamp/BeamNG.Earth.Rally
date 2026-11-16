@@ -439,7 +439,6 @@ function M.start(event, stage, opts)
       lengthM = nx.lengthM }
   end
   run.moveHandle = earth.onMoved(function(info) M._moved(info) end)
-  pcall(stats.stageStarted, run)
 
   -- the time controls round the stage (from the event's map), when they are near enough to be its own
   local ctl = stage.controls or {}
@@ -1475,6 +1474,7 @@ local function stepWaitStart(dt)
     -- marking it called froze the engine's step to the next note, which only moves on when it plays one itself.)
     run.clock = -left          -- (from the minute itself, not this frame)
     setState('running')
+    pcall(stats.stageStarted, run)     -- (a run, for the stats, from GO: driving to the start is not one)
   end
 end
 
@@ -1561,7 +1561,7 @@ local function stepRunning(dtSim)
       lineFinish = run.lineFinish,
       startAt = M.formatClock(run.startAt), date = os.date('!%Y-%m-%dT%H:%M:%SZ'), checks = checks })
     run.finalTime, run.best = time, best
-    pcall(stats.stageEnded, run, 'finished', events.best)
+    pcall(stats.stageEnded, run, 'finished')
     run.sinceFinish = 0
     log('I', logTag, 'run checks: ' .. dumps(checks))
     local title = string.format('%s: %s', run.stage.name, M.formatTime(time))

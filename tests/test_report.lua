@@ -25,6 +25,20 @@ T.check(not out:find('9f8e7d6c5b4a', 1, true), 'H2 line removed')
 T.check(not out:find('jane.doe@example.com', 1, true), 'email removed')
 T.check(not out:find('jdoe', 1, true), 'user name removed everywhere')
 
+local more = table.concat(report.clean(table.concat({
+  '1.0|I|fs| C:\\Users\\x\\OneDrive - Contoso Ltd\\Documents\\BeamNG',
+  '1.1|I|fs| /home/janed/.local/share/BeamNG',
+  '1.2|I|fs| /Users/janed/Library/BeamNG',
+  '1.3|I|x| hello JDOE and Jdoe',
+  '1.4|I|net| peer fe80::1c2b:3d4e:5f60:7a8b connected, also 2001:db8:85a3::8a2e:370:7334',
+  '1.5|I|t| at 12:34:56 and hash deadbeefcafe1234:abc',
+}, '\n'), 'jdoe'), '\n')
+T.check(not more:find('Contoso', 1, true), 'OneDrive organisation removed')
+T.check(not more:find('janed', 1, true), 'Linux and Mac home folders removed')
+T.check(not more:find('JDOE', 1, true) and not more:find('Jdoe', 1, true), 'user name in any letter case')
+T.check(not more:find('fe80', 1, true) and not more:find('2001:db8', 1, true), 'IPv6 removed')
+T.check(more:find('12:34:56', 1, true) ~= nil, 'a clock time kept')
+
 -- picking: our lines from early on, the tail whole
 report.TAIL_LINES = 3
 local ls = { 'a', 'earthRally: one', 'b', 'c', 'd', 'e' }

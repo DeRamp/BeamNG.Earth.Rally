@@ -1,7 +1,7 @@
 # Earth Rally stats server
 
-A Cloudflare Worker with a D1 database, on the free plan. It takes the mod's anonymous stats, deletes an install's
-stats on request, and answers the dashboard. Code: `src/worker.js`. Tables: `schema.sql`. Privacy: `../PRIVACY.md`.
+A Cloudflare Worker with a D1 database, on the free plan. It takes the mod's anonymous stats and answers the
+dashboard. Code: `src/worker.js`. Tables: `schema.sql`. Privacy: `../PRIVACY.md`.
 
 ## Set it up (owner, once, about 15 minutes)
 
@@ -16,12 +16,19 @@ Run these from this `server` folder. Node is already installed on the desktop.
    your password manager. It is never in the mod.
 6. **Publish:** `npx wrangler deploy`. It prints the address, like
    `https://earth-rally-stats.<your-subdomain>.workers.dev`.
-7. **Check plain HTTP works:** open `http://earth-rally-stats.<your-subdomain>.workers.dev/` (http, not https). It
-   should say "Earth Rally anonymous stats". If it switches to https, tell Claude.
+7. **Check plain HTTP works:** run `curl -i http://earth-rally-stats.<your-subdomain>.workers.dev/` (http, not
+   https). It should answer `200` and "Earth Rally anonymous stats". If it answers a redirect (`301`), tell Claude.
+   Don't check in a browser: browsers always switch `.dev` addresses to https.
 8. **Give Claude the address.** It goes into `M.ENDPOINT` in `mod/.../earthRally/stats.lua`, as `http://...`, and
    the build is made again.
 
 Until step 8, the mod still asks the question and keeps stats on the player's PC, but sends nothing.
+
+## Optional: a rate limit
+
+Anyone can post to the address. Each session is capped at 1,000 rows, but a script could make new sessions. If the
+database ever fills with junk: Cloudflare dashboard › your Worker › Settings › add a rate limiting rule for
+`/v1/events`, such as 20 requests a minute per IP.
 
 ## Test it offline
 
@@ -30,11 +37,10 @@ Until step 8, the mod still asks the question and keeps stats on the player's PC
 ## Cost
 
 Free plan: 100,000 requests a day, 5 GB of D1. The mod sends one batch per menu visit, so this covers thousands of
-players. Each install is capped at 400 events a day.
+players.
 
 ## Still to check once it is live
 
 - That the game's Lua can reach the Worker (BeamNG may filter addresses). Test in game: answer Yes, run a stage,
   open the menu, then look for rows with
   `npx wrangler d1 execute earth-rally-stats --remote --command "SELECT * FROM events LIMIT 5"`.
-- Whether Cloudflare's free rate limiting is worth adding on top of the per-install cap.

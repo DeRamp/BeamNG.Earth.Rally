@@ -64,9 +64,9 @@ export function setSetting(key, value) {
   })
 }
 
-// Stats and Report a problem (+stats; main.lua uiStats): what = yes / no / shown / delete / openFolder / report.
-// a, b: for report, what the player wrote and whether to save the log.
-const luaText = v => JSON.stringify(String(v || "").replace(/[\u0000-\u0009\u000b-\u001f]/g, " ").slice(0, 4000))
+// Stats and Report a problem (+stats; main.lua uiStats): what = yes / no / shown / openFolder / report.
+// a, b: for report, what the player wrote and whether to save the log. (Cut at 4000 without splitting an emoji.)
+const luaText = v => JSON.stringify(String(v || "").replace(/[\u0000-\u0009\u000b-\u001f]/g, " ").slice(0, 4000).replace(/[\ud800-\udbff]$/, ""))
 export function statsAction(what, a, b, cb) {
   engineLua(`earthRally_main and earthRally_main.uiStats(${q(what)}, ${luaText(a)}, ${b ? "true" : "false"}) or nil`, r => {
     if (r && r.stats) state.value = Object.assign({}, state.value, { stats: r.stats })

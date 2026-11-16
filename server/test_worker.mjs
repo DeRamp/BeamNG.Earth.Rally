@@ -35,11 +35,11 @@ const post = (path, body) => worker.fetch(new Request("http://x" + path, { metho
 
 const id = "0123456789abcdef0123456789abcdef"
 const day = new Date().toISOString().slice(0, 10)
-const base = { install: id, mod: "1.6.2-alpha+stats", game: "0.40.5.0", earth: "1.10", day }
+const base = { session: id, mod: "1.6.2-alpha+stats", game: "0.40.5.0", earth: "1.10", day }
 
 // clean: unknown events, bad ids and extra fields refused
 assert.equal(clean({ ...base, event: "nope" }), null)
-assert.equal(clean({ ...base, event: "session_start", install: "Bob" }), null)
+assert.equal(clean({ ...base, event: "session_start", session: "Bob" }), null)
 assert.equal(clean({ ...base, event: "error", code: "x", message: "C:/Users/Bob" }).message, undefined)
 assert.equal(clean({ ...base, event: "session_start", day: "1999-01-01" }).day, day)
 assert.equal(clean({ ...base, event: "stage_finished", time_s: 412.4, resets: -3 }).time_s, 412)
@@ -63,7 +63,7 @@ assert.equal((await worker.fetch(new Request("http://x/api/summary"), env, ctx))
 r = await worker.fetch(new Request("http://x/api/summary?days=30", { headers: { authorization: "Bearer " + env.DASHBOARD_KEY } }), env, ctx)
 assert.equal(r.status, 200)
 const s = await r.json()
-assert.equal(s.totals.installs, 1)
+assert.equal(s.totals.sessions, 1)
 assert.equal(s.totals.started, 2)
 assert.equal(s.totals.finished, 2)
 assert.equal(s.stages[0].runs, 2)
@@ -71,17 +71,24 @@ assert.equal(s.stages[0].median_s, 410)
 assert.equal(s.errors[0].code, "menu_action_drive")
 assert.equal(s.downloads[0].downloads, 12)
 
-// the per-day cap
-db.exec(`INSERT INTO events (day, event, install) SELECT '${day}', 'session_start', '${id}' FROM (WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 400) SELECT x FROM c)`)
-assert.equal((await post("/v1/events", { events: [{ ...base, event: "session_start" }] })).status, 429)
+// no delete route any more (no install number to delete by)
+assert.equal((await post("/v1/delete", { session: id })).status, 404)
 
-// delete
-assert.equal((await post("/v1/delete", { install: id })).status, 204)
-assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events").get().n, 0)
-assert.equal(db.prepare("SELECT COUNT(*) AS n FROM deletes").get().n, 1)
+// a message with two sessions (events waiting from an earlier game): both stored
+const id2 = "fedcba9876543210fedcba9876543210"
+assert.equal((await post("/v1/events", { events: [{ ...base, event: "session_start" }, { ...base, session: id2, event: "session_start" }] })).status, 204)
+assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events WHERE session = ?").get(id2).n, 1)
+
+// the per-session cap, counted over every day: a full session skipped, the other in the same message still stored
+const count = () => db.prepare("SELECT COUNT(*) AS n FROM events").get().n
+db.exec(`INSERT INTO events (day, event, session) SELECT '2026-01-01', 'session_start', '${id}' FROM (WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 1000) SELECT x FROM c)`)
+let n = count()
+assert.equal((await post("/v1/events", { events: [{ ...base, event: "session_start" }, { ...base, session: id2, event: "error", code: "y" }] })).status, 204)
+assert.equal(count(), n + 1)
 
 // prune: a year-old row archived
-db.exec(`INSERT INTO events (day, event, install) VALUES ('2020-01-05', 'session_start', '${id}')`)
+db.exec("DELETE FROM events")
+db.exec(`INSERT INTO events (day, event, session) VALUES ('2020-01-05', 'session_start', '${id}')`)
 await worker.scheduled({}, env)
 assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events").get().n, 0)
 assert.equal(db.prepare("SELECT n FROM archive WHERE month = '2020-01'").get().n, 1)

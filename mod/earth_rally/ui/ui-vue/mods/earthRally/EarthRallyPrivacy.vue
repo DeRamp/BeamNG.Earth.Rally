@@ -1,10 +1,10 @@
 <template>
   <!-- Settings › Privacy (+stats; docs/mockups-telemetry/telemetry.html, #settings and #reportweb): the stats switch,
-       the local copy of what was sent, Delete my stats, and Report a problem (a GitHub issue in the browser). -->
+       the local copy of what was sent, and Report a problem (a GitHub issue in the browser). -->
   <div class="er-privacy">
     <div class="er-pv-title">Privacy</div>
     <div class="er-pv-row">
-      <div class="er-pv-t"><b>Send anonymous stats</b><span>Stages and rallies run and finished. Nothing personal.</span></div>
+      <div class="er-pv-t"><b>Send anonymous stats</b><span>Stages and rallies run and finished. A new random number each session, so nothing links back to you.</span></div>
       <div class="er-seg">
         <span tabindex="0" bng-nav-item :class="{ on: s.consent === 'yes' }" @click="statsAction('yes')" @keydown.enter="statsAction('yes')">On</span>
         <span tabindex="0" bng-nav-item :class="{ on: s.consent !== 'yes' }" @click="statsAction('no')" @keydown.enter="statsAction('no')">Off</span>
@@ -14,10 +14,6 @@
       <div class="er-pv-t"><b>See what was sent</b><span>Every message is also saved on your PC, word for word
         (earthRally/telemetry/sent.jsonl).</span></div>
       <BngButton :accent="ACCENTS.outlined" @click="statsAction('openFolder')">Open folder</BngButton>
-    </div>
-    <div class="er-pv-row">
-      <div class="er-pv-t"><b>Delete my stats</b><span>Removes everything sent from this PC and starts a new install number.</span></div>
-      <BngButton :accent="ACCENTS.outlined" @click="del">{{ deleted ? "Deleted" : "Delete" }}</BngButton>
     </div>
     <div class="er-pv-row">
       <div class="er-pv-t"><b>Report a problem</b><span>Opens a bug report on GitHub. You choose whether to add your log.</span></div>
@@ -62,9 +58,6 @@ const reportOpen = ref(false)
 const text = ref("")
 const withLog = ref(true)
 const msg = ref("")
-const deleted = ref(false)
-
-function del() { statsAction("delete", null, false, () => { deleted.value = true }) }
 function send() {
   statsAction("report", text.value, withLog.value, r => {
     msg.value = (r && r.message) || ""

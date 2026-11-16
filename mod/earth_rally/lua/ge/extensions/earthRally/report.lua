@@ -28,12 +28,28 @@ local function scrubIps(l)
   end))
 end
 
--- The log with the player's details taken out: the Windows user name (in paths and anywhere else), Steam IDs and
--- Steam names, email addresses, IP addresses, the hardware hash line. user: the Windows user name, if known.
+-- (an IPv6 address: hex groups and colons, with a '::' or a hex letter, so a clock time like 12:34:56 is kept)
+local function scrubIp6(l)
+  return (l:gsub('[%x:][%x:][%x:]+', function(m)
+    local _, colons = m:gsub(':', '')
+    if colons < 2 or #m < 6 then return nil end
+    if not (m:find('::', 1, true) or m:find('%a')) then return nil end
+    if m:find('[^:]%x%x%x%x%x') then return nil end         -- (a group longer than 4: a hash, not an address)
+    return '<removed>'
+  end))
+end
+
+-- a pattern matching s in any letter case
+local function anyCase(s)
+  return (s:gsub('[%^%$%(%)%%%.%[%]%*%+%-%?]', '%%%0'):gsub('%a', function(c) return '[' .. c:lower() .. c:upper() .. ']' end))
+end
+
+-- The log with the player's details taken out: the user name (in Windows, Mac and Linux paths and anywhere else,
+-- any letter case), a OneDrive organisation name, Steam IDs and Steam names, email addresses, IP addresses (v4 and
+-- v6), the hardware hash line. user: the user name, if known.
 function M.clean(text, user)
   local out = {}
-  local userPat = nil
-  if type(user) == 'string' and #user >= 3 then userPat = user:gsub('[%^%$%(%)%%%.%[%]%*%+%-%?]', '%%%0') end
+  local userPat = (type(user) == 'string' and #user >= 3) and anyCase(user) or nil
   for _, l in ipairs(lines(text or '')) do
     local low = l:lower()
     if low:find('%f[%w]h2%f[%W]') or low:find('hardware hash') or low:find('hwid')
@@ -41,9 +57,13 @@ function M.clean(text, user)
       l = '<line removed>'
     else
       l = l:gsub('([A-Za-z]:[\\/][Uu][Ss][Ee][Rr][Ss][\\/])[^\\/\r\n"\']+', '%1<you>')
+      l = l:gsub('(/[Uu]sers/)[^/\r\n"\']+', '%1<you>')
+      l = l:gsub('(/home/)[^/\r\n"\']+', '%1<you>')
+      l = l:gsub('([Oo]ne[Dd]rive ?%- ?)[^\\/\r\n"\']+', '%1<removed>')
       l = l:gsub('7656119%d%d%d%d%d%d%d%d%d%d', '<removed>')
       l = l:gsub('[%w%.%-_+]+@[%w%-]+%.[%w%.%-]+', '<removed>')
       l = scrubIps(l)
+      l = scrubIp6(l)
       if userPat then l = l:gsub(userPat, '<you>') end
     end
     out[#out + 1] = l
@@ -101,12 +121,13 @@ end
 function M.saveLog()
   local text = readLog()
   if not text or text == '' then return nil, 'the game log could not be read' end
-  local user = os.getenv and os.getenv('USERNAME') or nil
-  local out = M.pick(M.clean(text, user))
+  local user = os.getenv and (os.getenv('USERNAME') or os.getenv('USER')) or nil
+  -- (picked first, then cleaned: a long log is mostly left out, no need to clean it all)
+  local out = table.concat(M.clean(M.pick(lines(text)), user), '\n')
   local name = M.REPORT_DIR .. 'log-' .. os.date('%Y%m%d-%H%M%S') .. '.txt'
   local wf = rawget(_G, 'writeFile')
   local ok = false
-  if wf then ok = pcall(wf, name, out) end
+  if wf then local okW, r = pcall(wf, name, out) ok = okW and r ~= false end
   if not ok then
     local okF, f = pcall(io.open, name, 'w')
     if okF and f then f:write(out) f:close() ok = true end

@@ -2,18 +2,22 @@
 -- docs/mockups-telemetry/telemetry.html).
 --
 --   Asked once, when the rally menu first opens. Nothing is recorded or sent before the answer; closing the menu
---   with the question up counts as No. The answer, a random install number (made only on Yes) and anything waiting
---   to go are kept in the user folder's earthRally/telemetry/; every message sent is also written word for word to
---   SENT_FILE, so the player can read exactly what left their PC.
+--   with the question up counts as No. Only the answer and anything waiting to go are kept, in the user folder's
+--   earthRally/telemetry/; every message sent is also written word for word to SENT_FILE, so the player can read
+--   exactly what left their PC.
+--
+--   No install number: each game session gets a new random number, kept in memory only, so two sessions of the same
+--   player cannot be linked (the owner's choice, 2026-11-16: "fully anonymous"). The price: installs are not counted,
+--   only sessions, and there is nothing to "delete my stats" by.
 --
 --   Sent over plain HTTP (the game's Lua has no TLS) to the stats Worker (server/), in batches, from a coroutine
 --   stepped by update(): the game never waits on the network, except the one name lookup per session, which is
---   only done while the menu page is up (the game is paused there).
+--   only done while the menu page is up (the game is paused there), and not tried again that session if it fails.
 --
---   What is sent: the event, the install number, the mod, game and BeamNG.Earth versions, the day (UTC, no time),
+--   What is sent: the event, the session number, the mod, game and BeamNG.Earth versions, the day (UTC, no time),
 --   and per event a few counts (EVENTS). Rallies and stages from a pack are named; a player's own imported maps are
---   sent as 'custom' (a name could be a private place). Never: names, accounts, IP (the server does not keep it),
---   hardware, other mods, positions, free text, logs.
+--   sent as 'custom' (a name could be a private place). Never: names, accounts, hardware, other mods, positions,
+--   free text, logs. The IP address travels with every request (it must, to reach the server) but is not stored.
 local M = {}
 
 -- The stats Worker's address (server/README.md). Empty: stats are asked about and kept, but nothing is sent.
@@ -31,25 +35,28 @@ M.PRIVACY_URL = 'https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/PRIVACY.
 -- event -> the extra fields it may carry (anything else is dropped before it is queued)
 M.EVENTS = {
   session_start = {},
-  stage_started = { rally = true, stage = true, pass = true, pacenotes = true, line = true },
-  stage_finished = { rally = true, stage = true, pass = true, result = true, time_s = true, resets = true,
-                     pacenotes = true, line = true },
+  stage_started = { rally = true, stage = true, pass = true, line = true },
+  stage_finished = { rally = true, stage = true, pass = true, result = true, time_s = true, resets = true, line = true },
   rally_started = { rally = true, stages_total = true },
   rally_finished = { rally = true, stages_done = true, stages_total = true },
   recce_done = { result = true },
   error = { code = true, module = true },
 }
 
-local st = nil              -- { consent = 'ask'|'yes'|'no', install, deletes = { install... } }
+local st = nil              -- { consent = 'ask'|'yes'|'no' }
 local queue = nil
+local session = nil         -- this game session's random number (memory only)
 local modVersion = '?'
 local prompted = false      -- the question has been on screen this session
 local sessionSent = false
-local job, jobT = nil, 0    -- the send under way (a coroutine) and how long it has run
+local job, sock = nil, nil  -- the send under way (a coroutine) and its socket
+local gen = 0               -- bumped by No: a send started before it is thrown away
 local nextTry = 0
 local clock = 0
 local lastSent = nil        -- the last message sent, as written to SENT_FILE
-local dnsCache = {}
+local dnsCache, dnsFailed = {}, false
+local attempts = {}         -- event id -> { done = { stageId = true } }: this session's rally attempt
+local wantSend = false
 
 local function lg(level, msg) local f = rawget(_G, 'log') if f then f(level, 'earthRally', 'stats: ' .. msg) end end
 local function readJson(p)
@@ -68,35 +75,44 @@ local function encode(t)
   error('no jsonEncode')
 end
 
--- A random install number: 32 hex digits. Not tied to anything on the PC; replaced by "Delete my stats".
-function M.newInstall()
+-- A random number for this session: 32 hex digits. Not tied to anything on the PC, never saved.
+local seeded = false
+function M.newSession()
+  if not seeded then
+    seeded = true
+    local addr = tonumber(tostring({}):match('0x(%x+)') or '0', 16) or 0
+    math.randomseed((os.time() + math.floor(os.clock() * 1e6) + addr) % 2147483647)
+  end
   local parts = {}
-  local mix = math.floor((os.clock() * 1e6) % 65536) + os.time() % 65536 + tonumber(tostring({}):match('0x(%x+)') or '0', 16) % 65536
-  for i = 1, 32 do parts[i] = string.format('%x', (math.random(0, 15) + mix + i * 7) % 16) mix = math.floor(mix / 3) + math.random(0, 9999) end
+  for i = 1, 32 do parts[i] = string.format('%x', math.random(0, 15)) end
   return table.concat(parts)
 end
 
 local function load()
   if st then return end
-  st = readJson(M.STATE_FILE) or {}
-  if st.consent ~= 'yes' and st.consent ~= 'no' then st.consent = 'ask' end
-  if st.consent == 'yes' and type(st.install) ~= 'string' then st.install = M.newInstall() end
-  if type(st.deletes) ~= 'table' then st.deletes = {} end
+  local saved = readJson(M.STATE_FILE) or {}
+  st = { consent = (saved.consent == 'yes' or saved.consent == 'no') and saved.consent or 'ask' }
   local q = readJson(M.QUEUE_FILE)
-  queue = (q and type(q.events) == 'table') and q.events or {}
+  queue = (st.consent == 'yes' and q and type(q.events) == 'table') and q.events or {}
 end
-local function saveState() writeJson(M.STATE_FILE, { consent = st.consent, install = st.install, deletes = st.deletes }) end
+local function saveState() writeJson(M.STATE_FILE, { consent = st.consent }) end
 local function saveQueue() writeJson(M.QUEUE_FILE, { events = queue }) end
+
+-- Drop the send under way (its socket closed): after No, nothing more may leave.
+local function cancelSend()
+  if sock then pcall(function() sock:close() end) end
+  job, sock = nil, nil
+  gen = gen + 1
+end
 
 function M.init(version) modVersion = version or '?' load() end
 function M.consent() load() return st.consent end
 
--- The player's answer: true (Yes), false (No).
+-- The player's answer: true (Yes), false (No). No also drops anything waiting and any send under way.
 function M.answer(yes)
   load()
   st.consent = yes and 'yes' or 'no'
-  if yes and not st.install then st.install = M.newInstall() end
-  if not yes then queue = {} saveQueue() end
+  if not yes then queue = {} saveQueue() cancelSend() wantSend = false end
   saveState()
   lg('I', 'the player said ' .. st.consent)
   if yes then M.sessionStart() end
@@ -119,7 +135,8 @@ function M.record(name, fields)
   if st.consent ~= 'yes' then return false end
   local allowed = M.EVENTS[name]
   if not allowed then return false end
-  local e = { event = name, install = st.install, mod = modVersion, game = rawget(_G, 'beamng_version'),
+  session = session or M.newSession()
+  local e = { event = name, session = session, mod = modVersion, game = rawget(_G, 'beamng_version'),
     earth = earthVersion(), day = os.date('!%Y-%m-%d') }
   for k, v in pairs(fields or {}) do
     if allowed[k] then
@@ -150,31 +167,44 @@ end
 
 ------------------------------------------------------------------------------------------ hooks from the runner
 
--- run: runner's run table. Each run reports one start and one ending.
-function M.stageStarted(run, pacenotes)
+-- run: runner's run table. Called when the stage clock starts (GO), so driving to the start and leaving is not a
+-- run. Each run reports one start and, after it, one ending.
+--   A rally attempt (this session, in memory): starts when the rally's first stage starts, unless an attempt is
+--   open with nothing finished yet (restarting stage 1 is the same attempt); finishes once every stage of the rally
+--   has been finished in it, in any order. A one-stage rally is only a stage.
+function M.stageStarted(run)
   if not (run and run.event and run.stage) or run.statsStarted then return end
   run.statsStarted = true
   local rally, stage = M.names(run.event, run.stage)
-  M.record('stage_started', { rally = rally, stage = stage, pass = run.ss, pacenotes = pacenotes, line = run.checks and run.checks.line })
-  local stages = run.event.stages or {}
+  M.record('stage_started', { rally = rally, stage = stage, pass = run.ss, line = run.checks and run.checks.line })
+  local stages, id = run.event.stages or {}, run.event.id or rally
   if #stages > 1 and stages[1] and stages[1].id == run.stage.id then
-    M.record('rally_started', { rally = rally, stages_total = #stages })
+    local a = attempts[id]
+    if not (a and next(a.done) == nil) then
+      attempts[id] = { done = {} }
+      M.record('rally_started', { rally = rally, stages_total = #stages })
+    end
   end
 end
 
--- result: 'finished' | 'failed' | 'quit'. best(eventId, stageId): a time on that stage, for "rally finished".
-function M.stageEnded(run, result, best)
+-- result: 'finished' | 'failed' | 'quit'.
+function M.stageEnded(run, result)
   if not (run and run.event and run.stage) or run.statsEnded or not run.statsStarted then return end
   run.statsEnded = true
   local rally, stage = M.names(run.event, run.stage)
   M.record('stage_finished', { rally = rally, stage = stage, pass = run.ss, result = result,
     time_s = result == 'finished' and run.finalTime or nil, resets = run.resets or 0,
     line = run.checks and run.checks.line })
-  local stages = run.event.stages or {}
-  if result == 'finished' and #stages > 1 and stages[#stages].id == run.stage.id and best then
+  local stages, id = run.event.stages or {}, run.event.id or rally
+  local a = attempts[id]
+  if result == 'finished' and a then
+    a.done[run.stage.id] = true
     local done = 0
-    for _, s in ipairs(stages) do if best(run.event.id, s.id) then done = done + 1 end end
-    if done == #stages then M.record('rally_finished', { rally = rally, stages_done = done, stages_total = #stages }) end
+    for _, s in ipairs(stages) do if a.done[s.id] then done = done + 1 end end
+    if done == #stages then
+      M.record('rally_finished', { rally = rally, stages_done = done, stages_total = #stages })
+      attempts[id] = nil
+    end
   end
   M.flushSoon()
 end
@@ -198,20 +228,28 @@ function M.post(url, body, now)
   if not okS then return nil, 'no luasocket' end
   local ip = dnsCache[host]
   if not ip then
+    if dnsFailed then return nil, 'name lookup failed earlier' end
     ip = socket.dns.toip(host)
-    if not ip then return nil, 'name lookup failed' end
+    if not ip then dnsFailed = true return nil, 'name lookup failed' end
     dnsCache[host] = ip
   end
   local t0 = now()
   local c = socket.tcp()
+  sock = c
   c:settimeout(0)
-  local ok, err = c:connect(ip, port)
   local function late() return now() - t0 > M.TIMEOUT_S end
-  if not ok and err ~= 'timeout' and err ~= 'Operation already in progress' then c:close() return nil, err end
+  local function stop(why) c:close() if sock == c then sock = nil end return nil, why end
+  local ok, err = c:connect(ip, port)
+  if not ok and err ~= 'timeout' and err ~= 'Operation already in progress' then return stop(err) end
   while not ok do
     local _, w = socket.select(nil, { c }, 0)
-    if w and #w > 0 then break end
-    if late() then c:close() return nil, 'connect timed out' end
+    if w and #w > 0 then
+      -- writable: connected, or (on some systems) failed. Asking again tells which.
+      local ok2, e2 = c:connect(ip, port)
+      if ok2 or e2 == 'already connected' then break end
+      if e2 ~= 'timeout' and e2 ~= 'Operation already in progress' then return stop(e2) end
+    end
+    if late() then return stop('connect timed out') end
     coroutine.yield()
   end
   local req = 'POST ' .. path .. ' HTTP/1.0\r\nHost: ' .. host .. '\r\nContent-Type: application/json\r\n' ..
@@ -222,20 +260,21 @@ function M.post(url, body, now)
     if n then i = n + 1
     elseif e == 'timeout' then
       i = (partial or (i - 1)) + 1
-      if late() then c:close() return nil, 'send timed out' end
+      if late() then return stop('send timed out') end
       coroutine.yield()
-    else c:close() return nil, e end
+    else return stop(e) end
   end
   local line, got = nil, ''
   while true do
     local s, e, partial = c:receive('*l', got)
     if s then line = s break end
-    if e ~= 'timeout' then c:close() return nil, e end
+    if e ~= 'timeout' then return stop(e) end
     got = partial or got
-    if late() then c:close() return nil, 'no answer' end
+    if late() then return stop('no answer') end
     coroutine.yield()
   end
   c:close()
+  if sock == c then sock = nil end
   return tonumber(line:match('^HTTP/%d%.%d (%d+)'))
 end
 
@@ -249,36 +288,41 @@ local function base(path)
   return (M.ENDPOINT:gsub('/+$', '')) .. path
 end
 
--- The next send: a waiting delete first, then a batch of events.
+-- Take these events off the queue by identity (more may have been queued meanwhile, or the oldest pushed out).
+local function unqueue(batch)
+  local gone = {}
+  for _, e in ipairs(batch) do gone[e] = true end
+  local kept = {}
+  for _, e in ipairs(queue) do if not gone[e] then kept[#kept + 1] = e end end
+  queue = kept
+  saveQueue()
+end
+
+-- The next send: a batch of events. Returns a function(now) -> true (done), false (try later).
 local function nextJob()
-  if M.ENDPOINT == '' then return nil end
-  if #st.deletes > 0 then
-    local id = st.deletes[1]
-    return function(now)
-      local code = M.post(base('/v1/delete'), encode({ install = id }), now)
-      if code and code >= 200 and code < 300 then table.remove(st.deletes, 1) saveState() return true end
-      return false
-    end
-  end
-  if st.consent ~= 'yes' or #queue == 0 then return nil end
-  local n = math.min(#queue, M.BATCH)
+  if M.ENDPOINT == '' or st.consent ~= 'yes' or #queue == 0 then return nil end
   local batch = {}
-  for k = 1, n do batch[k] = queue[k] end
+  for k = 1, math.min(#queue, M.BATCH) do batch[k] = queue[k] end
+  local myGen = gen
   return function(now)
-    local body = encode({ events = batch })
-    local code, why = M.post(base('/v1/events'), body, now)
+    local code, why = M.post(base('/v1/events'), encode({ events = batch }), now)
+    if myGen ~= gen then return true end           -- (No was pressed meanwhile: forget it)
     if code and code >= 200 and code < 300 then
-      for _ = 1, n do table.remove(queue, 1) end
-      saveQueue()
+      unqueue(batch)
       for _, e in ipairs(batch) do appendSent(encode(e)) end
       return true
+    end
+    if code and code >= 400 and code < 500 then
+      -- refused (bad, too big, over the cap): sending it again would be refused again
+      lg('W', 'the server refused ' .. #batch .. ' events (' .. code .. '); dropped')
+      unqueue(batch)
+      return false
     end
     lg('I', 'not sent (' .. tostring(code or why) .. '); kept for later')
     return false
   end
 end
 
-local wantSend = false
 function M.flushSoon() wantSend = true end
 
 -- Every frame (main.onUpdate). menuUp: the menu page is the screen (the one name lookup is done only then).
@@ -286,44 +330,24 @@ function M.update(dt, menuUp)
   clock = clock + (dt or 0)
   if not st then return end
   if job then
-    jobT = jobT + (dt or 0)
-    local ok, r = coroutine.resume(job, function() return clock end)
-    if not ok then lg('W', 'send failed: ' .. tostring(r)) job = nil nextTry = clock + M.RETRY_S return end
-    if coroutine.status(job) == 'dead' then
+    local co = job
+    local ok, r = coroutine.resume(co, function() return clock end)
+    if job ~= co then return end                    -- (cancelled while it ran)
+    if not ok then lg('W', 'send failed: ' .. tostring(r)) cancelSend() nextTry = clock + M.RETRY_S return end
+    if coroutine.status(co) == 'dead' then
       job = nil
-      if r then wantSend = (#queue > 0 or #st.deletes > 0) else nextTry = clock + M.RETRY_S end
+      if r then wantSend = #queue > 0 else nextTry = clock + M.RETRY_S end
     end
     return
   end
-  if not wantSend or clock < nextTry then return end
+  if not wantSend or clock < nextTry or dnsFailed then return end
   if not next(dnsCache) and not menuUp then return end
   local fn = nextJob()
   if not fn then wantSend = false return end
-  job, jobT = coroutine.create(function(now) return fn(now) end), 0
+  job = coroutine.create(function(now) return fn(now) end)
 end
 
 ------------------------------------------------------------------------------------------ the player's controls
-
--- Settings > Privacy: on / off (the same as answering again).
-function M.set(on) M.answer(on and true or false) end
-
--- Delete my stats: the server asked to remove this install's rows, what is waiting and the local copy dropped,
--- and a new install number if stats stay on.
-function M.deleteMine()
-  load()
-  if st.install then st.deletes[#st.deletes + 1] = st.install end
-  st.install = (st.consent == 'yes') and M.newInstall() or nil
-  queue = {}
-  saveQueue()
-  saveState()
-  pcall(os.remove, M.SENT_FILE)
-  local fs = rawget(_G, 'FS')
-  if fs and fs.removeFile then pcall(function() fs:removeFile(M.SENT_FILE) end) end
-  lastSent = nil
-  sessionSent = false
-  M.flushSoon()
-  lg('I', 'stats deleted; a new install number')
-end
 
 function M.openFolder()
   local plat = rawget(_G, 'Engine') and Engine.Platform
@@ -334,13 +358,17 @@ end
 -- For the menu page.
 function M.uiState()
   load()
-  return { consent = st.consent, server = M.ENDPOINT ~= '', waiting = #queue, last = lastSent,
-    install = st.install and (st.install:sub(1, 4) .. '…' .. st.install:sub(-4)) or nil, privacyUrl = M.PRIVACY_URL }
+  return { consent = st.consent, server = M.ENDPOINT ~= '', waiting = #queue, last = lastSent, privacyUrl = M.PRIVACY_URL }
 end
 
 -- (tests)
-function M._reset() st, queue, prompted, sessionSent, job, lastSent, nextTry, clock, wantSend = nil, nil, false, false, nil, nil, 0, 0, false dnsCache = {} end
+function M._reset()
+  st, queue, session, prompted, sessionSent, job, sock, lastSent = nil, nil, nil, false, false, nil, nil, nil
+  nextTry, clock, wantSend, dnsCache, dnsFailed, attempts = 0, 0, false, {}, false, {}
+end
 function M._queue() return queue end
 function M._state() return st end
+function M._session() return session end
+function M._job() return job end
 
 return M

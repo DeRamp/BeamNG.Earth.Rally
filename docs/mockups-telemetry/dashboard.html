@@ -74,8 +74,8 @@ a.lnk { color: #86b6ef; }
 <section class="view" id="v-overview">
   <div class="tiles">
     <div class="tile"><div class="k">Downloads</div><div class="v">1,284</div><div class="d">All releases, from GitHub</div></div>
-    <div class="tile"><div class="k">Installs sharing stats</div><div class="v">212</div><div class="d">Said yes, ever</div></div>
-    <div class="tile"><div class="k">Active installs</div><div class="v">64</div><div class="d">Opened the menu in 30 days</div></div>
+    <div class="tile"><div class="k">Sessions</div><div class="v">1,240</div><div class="d">Games started with stats on, 30 days</div></div>
+    <div class="tile"><div class="k">Stages per session</div><div class="v">3.4</div><div class="d">Average, 30 days</div></div>
     <div class="tile"><div class="k">Stages run</div><div class="v">1,930</div><div class="d">Started in 30 days</div></div>
     <div class="tile"><div class="k">Finish rate</div><div class="v">71%</div><div class="d">Finished of started</div></div>
     <div class="tile"><div class="k">Rallies finished</div><div class="v">38</div><div class="d">Every stage done, 30 days</div></div>
@@ -92,14 +92,14 @@ a.lnk { color: #86b6ef; }
       <table id="topStages"></table></div>
     <div class="card"><h2>New errors</h2><div class="sub">Error codes first seen in 30 days</div>
       <table>
-        <tr><th>Code</th><th>Where</th><th class="n">Installs</th><th></th></tr>
+        <tr><th>Code</th><th>Where</th><th class="n">Sessions</th><th></th></tr>
         <tr><td><span class="pill crit">notes_nil_pace</span></td><td>pacenotes</td><td class="n">9</td><td><a class="lnk">Open issue</a></td></tr>
         <tr><td><span class="pill warn">area_dl_timeout</span></td><td>autoRecce</td><td class="n">4</td><td><a class="lnk">Open issue</a></td></tr>
         <tr><td><span class="pill warn">rally_engine_missing</span></td><td>rallyAdapter</td><td class="n">2</td><td><a class="lnk">Open issue</a></td></tr>
       </table>
       <div class="sub" style="margin-top:10px">"Open issue" starts a GitHub issue with the code, versions and counts filled in.</div></div>
   </div>
-  <div class="foot">Installs and runs count only players who said yes to stats, so they are a sample, not everyone.
+  <div class="foot">Sessions and runs count only players who said yes to stats, so they are a sample, not everyone.
     Raw events are kept 12 months, then only these totals. Delete requests handled: 3. Data since 2026-12-01.</div>
 </section>
 
@@ -109,7 +109,7 @@ a.lnk { color: #86b6ef; }
     <table id="allStages"></table></div>
   <div class="card"><h2>Rallies</h2><div class="sub">Started = first stage run; finished = every stage done.</div>
     <table>
-      <tr><th>Rally</th><th class="n">Stages</th><th class="n">Started</th><th class="n">Finished</th><th class="n">Finished %</th><th class="n">Installs</th></tr>
+      <tr><th>Rally</th><th class="n">Stages</th><th class="n">Started</th><th class="n">Finished</th><th class="n">Finished %</th><th class="n">Sessions</th></tr>
       <tr><td>ARA Rally 2026: Oregon Trail</td><td class="n">10</td><td class="n">52</td><td class="n">14</td><td class="n">27%</td><td class="n">41</td></tr>
       <tr><td>ARA Rally 2026: Sno*Drift</td><td class="n">8</td><td class="n">47</td><td class="n">11</td><td class="n">23%</td><td class="n">38</td></tr>
       <tr><td>Warden Test Rally</td><td class="n">3</td><td class="n">22</td><td class="n">13</td><td class="n">59%</td><td class="n">15</td></tr>
@@ -120,13 +120,13 @@ a.lnk { color: #86b6ef; }
 <!-- ============ versions ============ -->
 <section class="view" id="v-versions">
   <div class="grid2" style="grid-template-columns:1fr 1fr 1fr">
-    <div class="card"><h2>Mod version</h2><div class="sub">Active installs, 30 days</div><div id="vMod"></div></div>
-    <div class="card"><h2>Game version</h2><div class="sub">Active installs, 30 days</div><div id="vGame"></div></div>
-    <div class="card"><h2>BeamNG.Earth version</h2><div class="sub">Active installs, 30 days</div><div id="vEarth"></div></div>
+    <div class="card"><h2>Mod version</h2><div class="sub">Sessions, 30 days</div><div id="vMod"></div></div>
+    <div class="card"><h2>Game version</h2><div class="sub">Sessions, 30 days</div><div id="vGame"></div></div>
+    <div class="card"><h2>BeamNG.Earth version</h2><div class="sub">Sessions, 30 days</div><div id="vEarth"></div></div>
   </div>
   <div class="card"><h2>Errors</h2><div class="sub">Error codes only, never log text. Logs come in through GitHub bug reports.</div>
     <table>
-      <tr><th>Code</th><th>Module</th><th>Mod version</th><th class="n">Times</th><th class="n">Installs</th><th>First seen</th><th>Last seen</th><th></th></tr>
+      <tr><th>Code</th><th>Module</th><th>Mod version</th><th class="n">Times</th><th class="n">Sessions</th><th>First seen</th><th>Last seen</th><th></th></tr>
       <tr><td><span class="pill crit">notes_nil_pace</span></td><td>pacenotes</td><td>1.6.2-alpha</td><td class="n">31</td><td class="n">9</td><td>2026-12-03</td><td>2026-12-29</td><td><a class="lnk">Open issue</a></td></tr>
       <tr><td><span class="pill warn">area_dl_timeout</span></td><td>autoRecce</td><td>1.6.2-alpha</td><td class="n">7</td><td class="n">4</td><td>2026-12-08</td><td>2026-12-27</td><td><a class="lnk">Open issue</a></td></tr>
       <tr><td><span class="pill warn">rally_engine_missing</span></td><td>rallyAdapter</td><td>1.6.2-alpha</td><td class="n">2</td><td class="n">2</td><td>2026-12-20</td><td>2026-12-21</td><td><a class="lnk">Open issue</a></td></tr>
@@ -188,7 +188,7 @@ function hbars(id, rows, fmt) {
 
 function stageTable(id, n, full) {
   const max = Math.max(...stages.map(s => s[2]));
-  let h = '<tr><th>Stage</th>' + (full ? '<th>Rally</th>' : '') + '<th>Runs</th><th class="n">Installs</th><th class="n">Finished</th>' + (full ? '<th class="n">Median time</th><th class="n">Resets / run</th><th class="n">Retired</th><th class="n">Quit</th>' : '') + '</tr>';
+  let h = '<tr><th>Stage</th>' + (full ? '<th>Rally</th>' : '') + '<th>Runs</th><th class="n">Sessions</th><th class="n">Finished</th>' + (full ? '<th class="n">Median time</th><th class="n">Resets / run</th><th class="n">Retired</th><th class="n">Quit</th>' : '') + '</tr>';
   stages.slice(0, n).forEach(s => {
     h += `<tr><td>${s[0]}</td>` + (full ? `<td>${s[1]}</td>` : '') + `<td><span class="bar" style="width:${s[2] / max * 120}px"></span>${s[2]}</td><td class="n">${s[3]}</td><td class="n">${Math.round(s[4] * 100)}%</td>`
       + (full ? `<td class="n">${s[5]}</td><td class="n">${s[6].toFixed(1)}</td><td class="n">${s[7]}</td><td class="n">${s[8]}</td>` : '') + '</tr>';

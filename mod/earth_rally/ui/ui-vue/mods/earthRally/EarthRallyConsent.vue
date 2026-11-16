@@ -12,10 +12,10 @@
           <li>Mod and game version</li>
           <li>Stages and rallies started and finished</li>
           <li>Stage time, resets, retirements</li>
-          <li>A random install number</li></ul></div>
+          <li>A random number, new every session</li></ul></div>
         <div class="er-cs-col no"><h2>Never sent</h2><ul>
           <li>Your name, Steam or BeamNG account</li>
-          <li>Your IP address or location</li>
+          <li>Your location, or your IP address (never stored)</li>
           <li>Your other mods or your PC</li>
           <li>Logs, unless you send a report</li></ul></div>
       </div>
