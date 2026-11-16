@@ -167,6 +167,7 @@ end
 -- Casual only: the stage just driven again (its time taken back). Returns the stage item, or nil and why.
 function M.restart(r)
   if r.mode ~= 'casual' then return nil, 'no restarts in Realistic mode' end
+  if M.over(r) then return nil, 'the rally is over' end
   local i = r.lastPos
   local it = i and r.order[i]
   if not (it and it.kind == 'stage') then return nil, 'no stage to restart' end
@@ -180,14 +181,16 @@ function M.restart(r)
 end
 
 -- The National field on a pass: rows { timeS, name, class, car }, fastest first, notional times left out (they are
--- assigned, not driven). nil when the board has no such pass.
-function M.field(board, ss)
+-- assigned, not driven) unless withNotional (the overall totals: the real classification counts them). nil when the
+-- board has no such pass.
+function M.field(board, ss, withNotional)
   if type(board) ~= 'table' then return nil end
   for _, p in ipairs(board.passes or {}) do
     if tostring(p.ss) == tostring(ss) then
       local rows, seen = {}, {}
       for _, f in ipairs(p.field or {}) do
-        if type(f) == 'table' and type(f[1]) == 'number' and f[6] ~= true and lower(f[5]) == M.CHAMPIONSHIP then
+        if type(f) == 'table' and type(f[1]) == 'number' and (withNotional or f[6] ~= true)
+          and lower(f[5]) == M.CHAMPIONSHIP then
           local key = lower(f[2])
           if key ~= '' and not seen[key] then
             seen[key] = true
@@ -257,6 +260,23 @@ function M.serviced(r)
   r.serviced[tostring(r.pos)] = true
   return true
 end
+-- A Realistic loop cut short by a quit (the save holds the times since the last service, not the car): back where
+-- the loop got to. loop = { results = { stage results, in order }, started = a stage begun and not finished }. The
+-- stage begun counts as recovered (Super Rally): quitting is no free restart. Returns r.
+function M.replayLoop(r, loop, board)
+  if type(loop) ~= 'table' or r.mode ~= 'realistic' then return r end
+  local res = type(loop.results) == 'table' and loop.results or {}
+  if #res == 0 and not loop.started then return r end
+  local it = M.current(r)
+  if it and it.kind ~= 'stage' then M.serviceOut(r) end
+  for _, x in ipairs(res) do
+    if M.over(r) or not M.stageDone(r, x) then break end
+  end
+  it = M.current(r)
+  if loop.started and it and it.kind == 'stage' then M.recover(r, board) end
+  return r
+end
+
 function M.serviceOut(r)
   local it = M.current(r)
   if not (it and it.kind ~= 'stage') then return nil end
@@ -315,7 +335,7 @@ function M.standing(r, board)
   if #done == 0 or type(board) ~= 'table' then return nil end
   local acc, n = {}, 0
   for _, d in ipairs(done) do
-    local rows = M.field(board, d.item.ss)
+    local rows = M.field(board, d.item.ss, true)
     if rows and #rows > 0 then
       n = n + 1
       for _, row in ipairs(rows) do
@@ -329,7 +349,7 @@ function M.standing(r, board)
   -- (your total over the same passes: the ones with a field)
   local mine = 0
   for _, d in ipairs(done) do
-    local rows = M.field(board, d.item.ss)
+    local rows = M.field(board, d.item.ss, true)
     if rows and #rows > 0 then mine = mine + (d.result.timeS or 0) end
   end
   local all, cls = {}, {}
@@ -356,16 +376,19 @@ function M.finished(r, date)
     car = r.car and r.car.name or nil, unclassified = r.unclassified or nil, date = date, passes = passes }
 end
 
--- Your finished rallies' best, for the Results tab: the classified one with the lowest total (Realistic before
--- Casual when equal), else the latest unclassified one. nil with none.
+-- Your finished rallies' best, for the Results tab: a classified Realistic one (the lowest total) before any Casual
+-- one -- Casual's free recoveries and restarts would beat it every time -- then a classified Casual one, then an
+-- unclassified one. nil with none.
+local function rankOf(f)
+  if f.unclassified then return 3 end
+  return f.mode == 'realistic' and 1 or 2
+end
 function M.bestFinished(list)
   local best = nil
   for _, f in ipairs(list or {}) do
     if type(f) == 'table' and type(f.totalS) == 'number' then
-      if not best then best = f
-      elseif best.unclassified and not f.unclassified then best = f
-      elseif not f.unclassified and f.totalS < best.totalS - 1e-6 then best = f
-      elseif not f.unclassified and math.abs(f.totalS - best.totalS) <= 1e-6 and f.mode == 'realistic' then best = f
+      if not best or rankOf(f) < rankOf(best) or (rankOf(f) == rankOf(best) and f.totalS < best.totalS - 1e-6) then
+        best = f
       end
     end
   end

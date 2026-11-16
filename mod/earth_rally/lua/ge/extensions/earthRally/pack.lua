@@ -431,7 +431,7 @@ local function itineraryOf(evFile, stages, lineId, warn)
           warn(string.format('itinerary %s "%s": no line of that name in the map', tostring(row.control),
             str(row.stage)))
         end
-        rows[#rows + 1] = { kind = 'SS', new = sid ~= nil, n = #out, day = tonumber(row.day) }
+        rows[#rows + 1] = { kind = 'SS', new = new, n = #out, day = tonumber(row.day) }
       elseif type(row) == 'table' then
         rows[#rows + 1] = { kind = 'other', raw = row }
       end
@@ -826,8 +826,13 @@ local function importSeason(src, m, index, entry, ids, fp, out)
 end
 
 -- (one pack looked at: nil when it is unchanged, else what happened; and whether the index changed)
+-- (1.7.0: the event file's services read too) a pack last imported by an older reader -- or by an older Earth Rally
+-- sharing the user folder -- is imported again, whatever its fingerprint. Kept per pack, and set only by an import
+-- that went through.
+M.READER = 2
 local function importPack(p, index, force, gone)
   local entry = index.packs[p.name]
+  if entry and entry.reader ~= M.READER then force = true end
   -- (the gone pack this one is found to be under a new name: its ids are this pack's to take, and kept if this
   -- import then fails)
   local adopted = nil
@@ -881,7 +886,7 @@ local function importPack(p, index, force, gone)
     -- was found to be under its old name)
     local keep = entry or {}
     if not (keep.seasonId or keep.eventIds) and adopted then keep = adopted end
-    index.packs[p.name] = { fingerprint = f or fp or ('failed:' .. w), stat = st, failed = true,
+    index.packs[p.name] = { reader = M.READER, fingerprint = f or fp or ('failed:' .. w), stat = st, failed = true,
       seasonId = keep.seasonId, eventIds = keep.eventIds, rounds = keep.rounds, nameSlug = keep.nameSlug,
       kind = keep.kind }
     log('W', 'earthRally', 'import ' .. p.name .. ': ' .. w)
@@ -949,7 +954,7 @@ local function importPack(p, index, force, gone)
     importer.lastReports[r.id] = { file = p.name, lines = importer.reportLines(r.report) }
     for _, w in ipairs(r.report.warnings) do res.warnings[#res.warnings + 1] = r.name .. ': ' .. w end
   end
-  index.packs[p.name] = { fingerprint = fp, stat = st, kind = res.kind, seasonId = res.seasonId, eventIds = ids,
+  index.packs[p.name] = { reader = M.READER, fingerprint = fp, stat = st, kind = res.kind, seasonId = res.seasonId, eventIds = ids,
                           rounds = res.rounds, nameSlug = res.nameSlug, date = os.date('!%Y-%m-%dT%H:%M:%SZ') }
   log('I', 'earthRally', string.format('imported %s: %s, %d rall%s, %d stages', p.name, tostring(res.name), #ids,
     #ids == 1 and 'y' or 'ies', stages))
@@ -961,10 +966,8 @@ end
 -- Every pack in the import folder imported when new or changed (every one with force); packs taken out forgotten,
 -- their rallies kept. index: importer's (its .packs kept here). Returns entries in importer.scan's shape, plus
 -- rallies, seasonId and warnings; and whether the index changed with nothing to report (a file only touched).
-M.READER = 2     -- (1.7.0: the event file's services read too) a newer reader imports every pack again, once
 function M.scan(index, force)
   index.packs = index.packs or {}
-  if index.packReader ~= M.READER then force, index.packReader = true, M.READER end
   local found, seen = M.find(), {}
   for _, p in ipairs(found) do seen[p.name] = true end
   -- (packs gone from the folder leave the index before any id is given, so a pack renamed since the last scan

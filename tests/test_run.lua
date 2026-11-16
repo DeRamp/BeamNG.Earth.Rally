@@ -2993,14 +2993,19 @@ do
   local rr = runner.current()
   T.check(rr.inRally and rr.ssLabel == 'SS4' and rr.nextStage == nil, 'in a rally: its SS label, no next stage')
   frames(80)
-  T.check(not runner.keepingDamage(), 'keepDamage off once the stage is placed')
+  T.check(runner.keepingDamage(), 'keepDamage kept on through a rally pass (BeamNG.Earth fall guard)')
   car.lat, car.lon, car.speed = full[9][1], full[9][2], 0
   frames(20)
   go(rr)
   T.check(runner.state() == 'running', 'running (rally pass)')
   T.check(runner.onReset(1) == false and (rr.resets or 0) == 0 and rallyResets == 1,
     'a reset in a rally: no penalty, handed to the rally')
+  rr.resetAt = -100
+  T.check(runner.onReset(nil) == false and rallyResets == 2, 'a reset with no vehicle id (the radial menu): the rally too')
+  local oldBest = events.best
+  events.best = function() return nil end      -- (a stage never driven before: no best to show)
   driveTo(11, #full)
+  events.best = oldBest
   T.check(runner.state() == 'finished' and #finished == 1 and math.abs(finished[1].timeS - rr.finalTime) < 1e-9,
     'the finish handed to the rally (' .. runner.state() .. ')')
   T.check(#(events.results('test', 'hill').runs or {}) == nRuns, 'a rally time is not a single-stage run')
@@ -3014,6 +3019,7 @@ do
   for _ = 1, 20 do frames(10, 10) end
   T.check(rr.resultsOpen, 'the rally\'s card waits for an answer (no timeout)')
   runner.abort(true)
+  T.check(not runner.keepingDamage(), 'keepDamage off once the rally pass ends')
   runner.onFinished, runner.onRallyReset = nil, nil
   spawn = oldSpawn
   settings.reset()

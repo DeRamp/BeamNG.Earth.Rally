@@ -1002,6 +1002,7 @@ function M.uiRallyAction(what, eventId, opts)
       local okS, why = rallyRun.start(eventId, type(opts) == 'table' and opts or {})
       return go(okS, why, okS and 'timecard' or nil)
     elseif what == 'resume' then
+      if recce.active() or autoRecce.active() or autoSeq then return go(false, 'A recce is under way: finish it first.') end
       local okS, why = rallyRun.resume(eventId)
       return go(okS, why, okS and 'timecard' or nil)
     elseif what == 'go' then

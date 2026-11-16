@@ -23,9 +23,11 @@ Branch `full-rally-mvp`, from `main` at 1.6.2. Plan: [`plan-1.7.0.md`](plan-1.7.
 7. **Realistic:** Start again in **Realistic** and press Backspace on SS2. The Recover? card asks first; Keep going
    (or B, or 10 s) takes it down. Press Backspace again to confirm. You land at the first service with the Super
    Rally card. Your missed stages score the class's fastest + 10:00, then + 7:00. Service out goes to the next stage.
-8. **Quit and resume:** after the stage after that service, Quit. On the rally page Continue brings you back at the
-   service, not at the stage you quit after.
-9. **Finish** (if you get that far): the finish card, then the rally's Results tab shows your total, place and mode.
+8. **Quit and resume (Casual):** after the stage after a service, Quit. On the rally page Continue brings you back
+   at the service, not at the stage you quit after.
+9. **Quit and resume (Realistic):** Quit halfway through a stage. Continue keeps the stages you finished since the
+   service, scores the one you quit under Super Rally, and puts you at the next service.
+10. **Finish** (if you get that far): the finish card, then the rally's Results tab shows your total, place and mode.
 
 ## Findings
 

@@ -399,13 +399,18 @@ function M.keepDamage(on)
   local w = { orig = orig, untilT = wallClock() + M.KEEP_DAMAGE_S }
   w.fn = function(veh, pos, rot, a, b, c, d, resetVehicle, ...)
     local pv = getPlayerVehicle and getPlayerVehicle(0)
-    if pv and veh and pv == veh and wallClock() < w.untilT then resetVehicle = false end
+    local same = pv ~= nil and veh ~= nil and (pv == veh or select(2, pcall(function() return pv:getID() == veh:getID() end)) == true)
+    if same and (wallClock() < w.untilT or (run and run.inRally)) then
+      resetVehicle = false
+      w.caught = (w.caught or 0) + 1
+    end
     return orig(veh, pos, rot, a, b, c, d, resetVehicle, ...)
   end
   sp.safeTeleport = w.fn
   keepWrap = w
 end
 function M.keepingDamage() return keepWrap ~= nil end
+function M.keepCaught() return keepWrap and keepWrap.caught or 0 end
 
 local function carPos()
   local veh = getPlayerVehicle and getPlayerVehicle(0)
@@ -1064,7 +1069,14 @@ local function stillAt()
 end
 
 local function stepPlace()
-  M.keepDamage(false)       -- (BeamNG.Earth has set the car down by now: its own resets are its own again)
+  if run.inRally then
+    -- (kept on for the whole rally pass: BeamNG.Earth may set the car down again, its fall guard, its floor check)
+    if M.keepingDamage() and M.keepCaught() == 0 then
+      log('W', logTag, 'rally: the car was set down without the damage wrapper seeing it: the damage may be gone')
+    end
+  else
+    M.keepDamage(false)     -- (BeamNG.Earth has set the car down by now: its own resets are its own again)
+  end
   local p, veh = carPos()
   if not veh then fail('no car') return end
   setupProps()
@@ -1592,12 +1604,13 @@ local function stepRunning(dtSim)
     local time = run.clock + run.penalty
     local checks = run.checks
     run.bestBefore = events.best(run.event.id, run.stage.id)      -- (the best before this run: the HUD's difference)
-    local best = run.inRally and run.bestBefore or events.addResult(run.event.id, run.stage.id, { finished = true, timeS = time, stageS = run.clock,
+    local best = run.bestBefore
+    if not run.inRally then best = events.addResult(run.event.id, run.stage.id, { finished = true, timeS = time, stageS = run.clock,
       penaltyS = run.penalty, jumpStart = run.jumpStart == true, lateMinutes = checks.lateMinutes,
       missedAtc = run.missedAtc == true, resets = run.resets or 0, resetPenaltyS = resetPen, line = checks.line,
       lineKey = run.lineKey, lineM = math.floor(run.finishM - run.startM + 0.5), lineStart = run.lineStart,
       lineFinish = run.lineFinish,
-      startAt = M.formatClock(run.startAt), date = os.date('!%Y-%m-%dT%H:%M:%SZ'), checks = checks })
+      startAt = M.formatClock(run.startAt), date = os.date('!%Y-%m-%dT%H:%M:%SZ'), checks = checks }) end
     run.finalTime, run.best = time, best
     run.sinceFinish = 0
     if run.inRally and M.onFinished then
@@ -1962,8 +1975,16 @@ end
 function M.onReset(vid)
   if not (run and run.state == 'running') then return false end
   if run.inRally then
-    -- (the game's own recovery is blocked during a rally, rallyRun.lua; one that still got through is the rally's)
-    if vid ~= nil and M.onRallyReset then pcall(M.onRallyReset) end
+    -- (the game's own recovery is blocked during a rally, rallyRun.lua; one that still got through -- the radial
+    -- menu, quick access: they send no vehicle id -- is the rally's. Not another car's, nor BeamNG.Earth moving it.)
+    local _, veh = carPos()
+    local okI, id = pcall(function() return veh and veh:getID() end)
+    if okI and id ~= nil and vid ~= nil and id ~= vid then return false end
+    local t = run.realT or 0
+    if earth.rebasing() or (run.movedAt and t - run.movedAt < M.RESET_AFTER_MOVE_S) then return false end
+    if run.resetAt and t - run.resetAt < M.RESET_DEBOUNCE_S then return false end
+    run.resetAt = t
+    if M.onRallyReset then pcall(M.onRallyReset) end
     return false
   end
   if settings.get('resetPenalty') == false then return false end

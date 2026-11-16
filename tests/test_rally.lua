@@ -160,9 +160,11 @@ do
 end
 
 do
-  local best = rally.bestFinished({ { totalS = 5000, unclassified = true }, { totalS = 6000, mode = 'casual' },
-    { totalS = 5500, mode = 'realistic' }, { totalS = 5500, mode = 'casual' } })
-  T.check(best.totalS == 5500 and best.mode == 'realistic', 'the best classified run; Realistic on a tie')
+  local best = rally.bestFinished({ { totalS = 5000, unclassified = true }, { totalS = 4000, mode = 'casual' },
+    { totalS = 5600, mode = 'realistic' }, { totalS = 5500, mode = 'realistic' } })
+  T.check(best.totalS == 5500 and best.mode == 'realistic', 'the best Realistic run before a faster Casual one')
+  T.check(rally.bestFinished({ { totalS = 5000, unclassified = true }, { totalS = 6000, mode = 'casual' } }).mode
+    == 'casual', 'a classified Casual run before an unclassified one')
   T.check(rally.guessClass('AWD') == 'L4WD' and rally.guessClass('RWD') == 'L2WD' and rally.guessClass(nil) == nil,
     'the class guessed from the drivetrain')
 end
@@ -193,6 +195,38 @@ do
   T.check(table.concat(got, ' ') == '2:Service A 3:Overnight 4:Service B:Big Park', 'the stops: ' .. table.concat(got, ' '))
   local _, none = pack._itineraryOf(nil, { { id = 'a', lengthM = 1000 } }, lineId, function() end)
   T.check(none == nil, 'no event file: no stops')
+  -- a pass with no line in the map, then a service: the service is still read
+  local ev2 = { itinerary = { ss('SS1', 'A', 1), ss('SS2', 'X', 1), { type = 'SVC_IN', control = 'TC2B', day = 1 },
+    ss('SS3', 'B', 1) } }
+  local it2, stops2 = pack._itineraryOf(ev2, {}, lineId, function() end)
+  T.check(#it2 == 2 and stops2 and #stops2 == 1 and stops2[1].after == 1,
+    'an unmatched pass before a service: the service kept, after SS1')
+end
+
+------------------------------------------------------------------------------------------ a quit mid-loop
+
+do
+  local saved = rally.new(event(), { mode = 'realistic', class = 'L4WD' })
+  rally.stageDone(saved, { timeS = 900 })
+  rally.stageDone(saved, { timeS = 330 })
+  rally.stageDone(saved, { timeS = 880 })
+  rally.serviced(saved)                    -- the save at Service A
+  local r = rally.new(event(), { mode = 'realistic', class = 'L4WD' })
+  for k, v in pairs(saved) do r[k] = v end
+  rally.replayLoop(r, { results = { { timeS = 700 } }, started = true }, board)
+  T.check(r.results.SS4.timeS == 700, 'the loop\'s finished stage kept')
+  T.check(r.results.SS5.superRally and r.results.SS6.superRally, 'the stage quit during and the rest of the loop: Super Rally')
+  T.check(rally.current(r).label == 'Overnight', 'back in at the overnight')
+  local c = rally.new(event(), { mode = 'casual', class = 'L4WD' })
+  rally.replayLoop(c, { results = { { timeS = 700 } }, started = true }, board)
+  T.check(rally.current(c).ss == 'SS1' and not c.results.SS1, 'Casual: no loop replayed')
+  -- Casual: no restart once the last stage is done
+  for _ = 1, 20 do
+    local it = rally.current(c)
+    if not it then break end
+    if it.kind == 'stage' then rally.stageDone(c, { timeS = 100 }) else rally.serviced(c) rally.serviceOut(c) end
+  end
+  T.check(rally.over(c) and rally.restart(c) == nil, 'Casual: no restart after the last stage')
 end
 
 T.done('test_rally')

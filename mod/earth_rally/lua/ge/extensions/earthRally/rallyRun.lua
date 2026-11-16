@@ -40,6 +40,7 @@ local blocked = false
 local card = nil       -- the last stage's card for the results card: { ss, name, timeS, stage = standing, overall }
 local recoveredAt = nil -- (the Super Rally card: shown once at the stop rejoined at)
 local askT = nil       -- how long the Recover? question has been up
+local loop = nil       -- Realistic: the times since the last save ({ results, started }), kept in the save file
 
 local function say(text, s, kind, title) pcall(runner.say, text, s or 4, kind or 'info', title) end
 
@@ -82,6 +83,17 @@ local function save()
   local t = M.readFile(R.eventId)
   t.current = copy(R)
   t.current.savedAt = os.date('!%Y-%m-%dT%H:%M:%SZ')
+  t.loop = nil
+  loop = { results = {} }
+  writeFile(R.eventId, t)
+end
+
+-- Realistic only: the loop's times written as they happen, so a quit mid-loop is no free restart (rally.replayLoop
+-- on resume). The car is not kept: the game saves only at a service.
+local function saveLoop()
+  if not (R and R.mode == 'realistic' and loop) then return end
+  local t = M.readFile(R.eventId)
+  t.loop = copy(loop)
   writeFile(R.eventId, t)
 end
 
@@ -146,6 +158,7 @@ end
 -- resetVehicle = true, core/recoveryPrompt.lua repairHere).
 function M.repair()
   local veh = getPlayerVehicle and getPlayerVehicle(0)
+  pcall(runner.keepDamage, false)
   local sp = rawget(_G, 'spawn')
   if not (veh and sp and sp.safeTeleport) then return false end
   local ok, err = pcall(function()
@@ -211,6 +224,7 @@ function M.start(id, opts)
     cancelled = opts and opts.cancelled, car = car })
   if not r then return false, why end
   R, card, recoveredAt = r, nil, nil
+  M.repair()
   M.block(true)
   save()
   log('I', logTag, string.format('rally: %s started (%s, %s, cancelled stages %s)', R.name, R.mode, R.class,
@@ -224,11 +238,30 @@ function M.resume(id)
   local t = M.readFile(id)
   if not t.current then return false, 'there is no rally saved for this one' end
   if not load(id) then return false, 'that rally is not on this computer any more' end
+  local car = M.car()
+  if not car then return false, 'get in a car first' end
+  local want = type(t.current.car) == 'table' and t.current.car.name or nil
+  if want and car.name ~= want then
+    return false, 'this rally was started in the ' .. tostring(want) .. ': get in that car to continue it'
+  end
   pcall(runner.abort, true)
-  R, card, recoveredAt = t.current, nil, nil
+  R, card, recoveredAt, askT = t.current, nil, nil, nil
   -- (every save is made with the car put right -- the start, a service -- so it is put right again)
   M.repair()
   M.block(true)
+  loop = { results = {} }
+  if R.mode == 'realistic' and type(t.loop) == 'table' then
+    local missedBefore = R.missed or 0
+    rally.replayLoop(R, t.loop, board)
+    log('I', logTag, string.format('rally: resumed mid-loop, %d stage(s) kept%s', #(t.loop.results or {}),
+      t.loop.started and ', the stage quit during scored under Super Rally' or ''))
+    if rally.over(R) then
+      finish()
+      return true
+    end
+    if (R.missed or 0) > missedBefore then recoveredAt = R.pos end
+    if not M.serviceIfDue() then save() end
+  end
   return true
 end
 
@@ -236,7 +269,7 @@ end
 function M.quit()
   if not R then return true end
   if M.inRun() then pcall(runner.abort, true) end
-  R, card, recoveredAt = nil, nil, nil
+  R, card, recoveredAt, loop, askT = nil, nil, nil, nil, nil
   M.block(false)
   return true
 end
@@ -254,7 +287,7 @@ end
 
 local function finish()
   local t = M.readFile(R.eventId)
-  t.current = nil
+  t.current, t.loop, loop = nil, nil, nil
   t.finished[#t.finished + 1] = rally.finished(R, os.date('!%Y-%m-%dT%H:%M:%SZ'))
   writeFile(R.eventId, t)
   M.block(false)
@@ -285,6 +318,10 @@ local function stageOf(item) return select(2, menu.findStage(R.eventId, item.sta
 function M.goNext()
   if not R then return false, 'no rally under way' end
   if rally.over(R) then return false, 'the rally is over' end
+  if M.inRun() then
+    local st = runner.current().state
+    if st ~= 'finished' and st ~= 'failed' then return false, 'a stage is under way: finish it first' end
+  end
   local it = rally.current(R)
   if it.kind ~= 'stage' then
     M.serviceIfDue()
@@ -304,6 +341,7 @@ function M.goNext()
     r.rally = { mode = R.mode }
     r.rallyKey = 'rally:' .. R.mode
   end
+  if loop then loop.started = true saveLoop() end
   return true
 end
 
@@ -312,11 +350,16 @@ function M.onFinished(res)
   if not R then return end
   local it, why = rally.stageDone(R, res)
   if not it then log('W', logTag, 'rally: ' .. tostring(why)) return end
+  if loop and not rally.over(R) then
+    loop.results[#loop.results + 1] = { timeS = res.timeS, stageS = res.stageS, penaltyS = res.penaltyS }
+    loop.started = false
+    saveLoop()
+  end
   local st = rally.stageStanding(board, it, res.timeS, R.class)
   local ov = rally.standing(R, board)
   local stage = stageOf(it)
   card = { ss = it.ss, name = stage and stage.name or it.stageId, timeS = res.timeS, stage = st, overall = ov,
-    mode = R.mode, canRestart = R.mode == 'casual', last = rally.over(R) }
+    mode = R.mode, canRestart = R.mode == 'casual' and not rally.over(R), last = rally.over(R) }
   local r = runner.current()
   if r then
     r.rally = { mode = R.mode, card = card }
@@ -336,7 +379,11 @@ function M.recoverKey()
   end
   -- Realistic, on the stage: the question first; the key again while it is up is the answer (a keyboard player has
   -- no pointer on the driving screen)
-  if r.rally and r.rally.ask then return (M.answer('recover')) or true end
+  -- Not a double press (within CONFIRM_GAP_S), nor with a menu over the question.
+  if r.rally and r.rally.ask then
+    if (askT or 0) < M.CONFIRM_GAP_S or runner.uiHidden then return true end
+    return (M.answer('recover')) or true
+  end
   r.rally = r.rally or { mode = R.mode }
   r.rally.ask = { ss = r.ssLabel, name = r.stage and r.stage.name,
     stop = (function()
@@ -351,7 +398,7 @@ function M.recoverKey()
 end
 
 -- (main.onUpdate) the Recover? question taken down after ASK_S unanswered: the player drove on.
-M.ASK_S = 10
+M.ASK_S, M.CONFIRM_GAP_S = 10, 1
 function M.update(dt)
   if not askT then return end
   local r = runner.current()
@@ -373,8 +420,12 @@ function M.answer(what)
     r.rallyKey = 'kept:' .. tostring(os.clock())
     return true
   end
+  if not (r.state == 'running' and r.rally and (r.rally.ask or r.rally.forced)) then
+    return false, 'the stage is not under way'
+  end
   local out, why = rally.recover(R, board)
   if not out then return false, why end
+  askT = nil
   pcall(runner.abort, true)
   card = nil
   if rally.over(R) then
@@ -393,6 +444,9 @@ function M.onRallyReset()
   if not (R and M.inRun()) then return end
   if R.mode == 'realistic' and runner.current().state == 'running' then
     say('A reset during a Realistic rally ends the stage.', 6, 'warning', 'Super Rally')
+    local r = runner.current()
+    r.rally = r.rally or { mode = R.mode }
+    r.rally.forced = true
     M.answer('recover')
   end
 end
