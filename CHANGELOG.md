@@ -11,11 +11,10 @@ Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com
 Earth Rally does less work each frame on a stage, for players whose frame rate dropped.
 
 ### Fixed
-* Earth Rally's own HUD data is sent only when something in it changes: about once a second on a stage, was 10 to 30.
+* HUD updates are sent only when they change: stage timing about 10 a second, Earth Rally's panel about 1, both were 30.
 * Less garbage made for the HUD on every update.
-* Stage dressing goes down in short slices, so arriving at a dressed stretch hitches less.
+* Stage dressing goes down in short slices with faster road lookups, so arriving at a dressed stretch hitches less.
 * Dressing ahead of the car goes down before dressing behind it.
-* Faster road lookups for dressing on large road maps.
 
 ### Known issues
 * If your frame rate still falls on a stage, please report it with your graphics preset, GPU and `beamng.log`.
