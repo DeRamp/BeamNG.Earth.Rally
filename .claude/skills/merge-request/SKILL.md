@@ -19,9 +19,9 @@ other session. To land work, do these in order.
    - the touched tests you ran and their result;
    - what `/handoff` found, what was fixed, and the objections not acted on with the reason.
    If a PR for the branch is already open, reuse it (`gh pr view <branch>`).
-5. **Find the maintainer.** ListAgents. If no session named `maintainer` is listed, tell the owner to start it with
-   `powershell -ExecutionPolicy Bypass -File tools\maintainer.ps1` from the repo root (or merge the PR by hand on
-   GitHub), and stop here.
+5. **Find the maintainer.** ListAgents. If no session named `maintainer` is listed, start it yourself: from the repo
+   root, `powershell -ExecutionPolicy Bypass -File tools\maintainer.ps1` (a background session; it will not start
+   a second one). Give it a minute for its startup checks, then ListAgents again.
 6. **Send the request** with SendMessage to `maintainer`, plain text, one message:
    `merge-request PR #<N> <url> head <full SHA> branch <branch> from <your session name>. Intent: ... Tests: ...`
 7. **Get the verdict.** The maintainer replies by message and always records the verdict as a PR comment. If no reply
