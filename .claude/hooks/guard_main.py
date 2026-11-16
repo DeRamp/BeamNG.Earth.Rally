@@ -29,7 +29,7 @@ REPO = "beamng.earth.rally"
 MAIN = {"main", "master"}
 CHANGES_CURRENT = {"commit", "merge", "rebase", "cherry-pick", "revert", "am", "pull", "reset"}
 GIT_OPTS_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
-PYTHONS = {"python", "python3", "py"}
+PYTHON = re.compile(r"^(python[\d.]*|py|uv)$")
 RESET_MODES = {"--hard", "--soft", "--mixed", "--keep", "--merge"}
 REASON = (
     "Blocked: only the maintainer session changes Earth Rally's `main`. Work on your own branch and land it with "
@@ -276,9 +276,15 @@ def check(command, cwd):
             reason = gh_blocked(toks, state)
         elif head == "git":
             reason = git_blocked(toks[1:], state)
-        elif head in PYTHONS or head == "release.py":
-            if any(exe(t) == "release.py" for t in toks[:3]) and state.ours():
-                reason = "tools/release.py"
+        elif PYTHON.match(head) or head == "release.py":
+            for t in toks:
+                if exe(t) == "release.py":
+                    where = os.path.dirname(join(state.dir, t)) or state.dir
+                    while not os.path.isdir(where) and os.path.dirname(where) != where:
+                        where = os.path.dirname(where)  # git -C needs a folder that exists
+                    script = State(where)
+                    if script.ours():
+                        reason = "tools/release.py"
         if reason:
             return reason
     return None

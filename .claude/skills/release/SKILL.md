@@ -1,27 +1,24 @@
 ---
 name: release
-description: Cut an Earth Rally release - changelog, version bump, then tools/release.py tags, zips, pushes and publishes the GitHub pre-release. Run by the maintainer session only, right after merging a PR whose body has a `Release:` line, or when the owner runs /release there.
+description: Publish an Earth Rally release by hand in the maintainer session - tools/release.py tags a commit on main, zips it and makes the GitHub pre-release. Only when the owner runs /release. The usual path needs no /release - a merged PR with a `Release:` line is published by the maintainer itself.
+disable-model-invocation: true
 argument-hint: <X.Y.Z-alpha> [release name]
 ---
 
 Release `$ARGUMENTS` of Earth Rally. Read `docs/writing-standard.md` first; it is the rule for every text below.
 
-The owner approved the maintainer releasing on its own (2026-11-15): no owner OK is needed at any step.
+The usual way to release is a PR that carries the release (see `/merge-request`): the maintainer publishes it
+right after the merge, with no `/release`. Use this skill when the owner wants to publish a commit already on main.
 
-1. **Preconditions.** This is the `maintainer` session (only it may commit and push to `main`; the guard hook blocks
-   other sessions). On `main`, clean, up to date with `origin/main`. Everything in the release came through a merged
-   PR. The DeRamp fork's latest release (https://github.com/DeRamp/BeamNG.Earth/releases) has an installer
-   and the API this release needs. If any is not true, stop, comment on the PR and tell the sender.
-2. **CHANGELOG.md:** the entry at the top in the standard's template, `Works with` line included, dated today. The PR
-   usually wrote it: check it, and fix any CONFIRMED wording finding from your merge review. Write it if missing.
-   Patch 150 words at most, minor 400. Check with `wc -w`.
-3. **README.md:** no version number in it (it says Alpha); update **Known issues** if they changed; stay under 600 words (`wc -w README.md`).
-4. **Version bump:** grep for the old version (`M.VERSION` in `mod/`, versioned doc names) and update what should move.
-5. **Check:** `python tools/release.py X.Y.Z-alpha --check`. It checks the version, main against origin, the
-   CHANGELOG entry and word limit, `M.VERSION`, the README and the fork's installer, and prints the release body.
-   Fix what it refuses and run it again. Leave the edits unstaged.
-6. **Publish:** `python tools/release.py X.Y.Z-alpha`. It commits `X.Y.Z-alpha: <name>` (only tracked edits), tags
-   `vX.Y.Z-alpha`, builds the zip, pushes main and the tag in one atomic push, and creates the GitHub pre-release
-   (CHANGELOG entry plus the standard's install block, the zip as the only asset). If it fails partway, it says what
-   is done: finish the rest by hand with the same commands, never re-run it.
-7. **Report** the release URL as a comment on the PR, to the sender, and to the owner here.
+1. **Preconditions.** This is the `maintainer` session (the guard hook blocks `tools/release.py` elsewhere). The
+   commit to release is on `origin/main` and already holds the release text: the top `CHANGELOG.md` entry in the
+   standard's template (`Works with` line, patch 150 words at most, minor 400) and `M.VERSION` in `mod/`. README
+   names no version. If they are missing, tell the owner they come in a PR (`/merge-request` with `Release:`); never
+   commit them to `main` here.
+2. **Check:** `python tools/release.py X.Y.Z-alpha <commit> --check` (commit default `origin/main`). It checks the
+   version is the next one after the latest tag, the CHANGELOG entry and word limit, `M.VERSION`, the README and the
+   fork's installer, all read from the commit, and prints the release body.
+3. **Publish:** `python tools/release.py X.Y.Z-alpha <commit>`. It tags the commit, pushes the tag, builds the zip
+   from the tag and creates the GitHub pre-release. It commits nothing and never pushes `main`. If it fails, fix the
+   cause and run the same command again: every step already done is skipped.
+4. **Report** the release URL.

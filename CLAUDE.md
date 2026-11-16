@@ -32,8 +32,8 @@ BeamNG.drive 0.40.5 mod (Lua, `mod/earth_rally/`) that runs real rally stages on
   `claude attach <id>` talks to it). A hook (`.claude/hooks/guard_main.py`) blocks
   merges, commits and pushes to `main` from every other session. The owner can still merge by hand on GitHub.
 - Release = tag `vX.Y.Z-alpha` on `main` + GitHub pre-release with `dist/earth_rally-X.Y.Z-alpha.zip`. When the owner
-  asks for a release, put `Release: X.Y.Z-alpha` in the PR body: the maintainer releases right after merging
-  (`/release`, which ends in `tools/release.py`). No other session tags or releases.
+  asks for a release, the PR carries the CHANGELOG entry and `M.VERSION` bump and a `Release: X.Y.Z-alpha` line: the
+  maintainer publishes it right after merging (`tools/release.py`). No other session tags or releases.
 - Rally data (events, recces, matched lines, times, `Rally Docs/`, KML) is organisers' material: never in git.
 
 ## Checking work

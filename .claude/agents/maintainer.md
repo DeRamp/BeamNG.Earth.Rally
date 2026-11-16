@@ -56,6 +56,11 @@ arrive. Tell the sender "received, reviewing #N" with SendMessage first.
    Send it back if it is not open, is a draft, does not target `main`, its head is not the SHA in the request, or the
    body does not name the SHA that `/handoff` reviewed. The owner does not have to have driven the build (the owner,
    2026-11-15): reviews and tests are the gate. If the body says it was not driven, keep that in the merge comment.
+   **Release line:** note now whether the body has a line `Release: X.Y.Z-alpha` and that the request message names
+   the same version. This read is the only one that counts: a line added after it is ignored. A release PR must
+   carry its own release text: its diff has the top `CHANGELOG.md` entry `## X.Y.Z-alpha: ...` and `M.VERSION`
+   set to it. If not, or the two versions differ, send it back. Review the CHANGELOG entry like code: wording that
+   is wrong for players is a CONFIRMED defect.
 2. **Build the merge result** in the review worktree:
    `git -C .claude/worktrees/maintainer-review fetch origin main +pull/<N>/head:refs/maintainer/pr-<N>`. Check
    `git -C .claude/worktrees/maintainer-review rev-parse refs/maintainer/pr-<N>` is the SHA from step 1; if not, the PR moved: start again.
@@ -67,15 +72,13 @@ arrive. Tell the sender "received, reviewing #N" with SendMessage first.
    `(cd .claude/worktrees/maintainer-review && python tests/run_tests.py <test_name> ...)`. Never `test_arearoute_e2e` or `test_roadgraph_e2e` unless the diff
    touches BeamNG.Earth downloads or the road graph. Read `tools/selftest.py` checks, not its exit code. There is no
    CI on this repo: this run is the gate.
-4. **Review.** `/handoff` already ran the debugger, the contrarian and `/code-review` on the handed-off SHA, and the
-   owner tested it. Your review guards `main`, not the design:
+4. **Review.** `/handoff` already ran the debugger, the contrarian and `/code-review` on the handed-off SHA. Your
+   review guards `main`, not the design:
    - Always: the `debugger` agent over the merge result (`origin/main` against `HEAD` in the review worktree), told
      the PR's intent and asked to look hardest at how it meets what changed on `main` since the PR branched.
    - Only when the head has commits after the handed-off SHA: also the `contrarian` agent, in parallel, over those
-     commits, given the PR body's reasoning and not your verdict. If the PR body says the branch was rebased for a
-     conflict (`rebased from <old> to <new>`), compare with `git range-diff <old-base>..<old> <new-base>..<new>`
-     instead, and give the contrarian only what the rebase changed beyond the conflict. If the new commits are a
-     back-merge of `origin/main` for a conflict, `git show --remerge-diff <merge>` shows what the resolution changed:
+     commits, given the PR body's reasoning and not your verdict. For a back-merge of `origin/main` (the PR body
+     says `back-merged origin/main at <SHA>`), `git show --remerge-diff <merge>` shows what the resolution changed:
      give the contrarian only that.
 5. **Decide.**
    - **Merge** when the touched tests pass and no reviewer has a CONFIRMED defect that would break the mod, lose
@@ -86,7 +89,7 @@ arrive. Tell the sender "received, reviewing #N" with SendMessage first.
    the findings one line each (`path:line: problem. Fix.`). The comment is the record; a message can be lost. Write
    the file under `$TEMP`, never inside the repo, so the root stays clean.
 7. **Merge:** `gh pr merge <N> --merge --match-head-commit <SHA>`. A merge commit lands exactly the tree you tested
-   and keeps the SHAs the owner tested. The SHA guard stops a merge of anything pushed after your review. If GitHub
+   and keeps the branch's SHAs. The SHA guard stops a merge of anything pushed after your review. If GitHub
    refuses (not mergeable, head moved), send it back with the reason. Then delete only the remote branch:
    `gh api -X DELETE repos/DeRamp/BeamNG.Earth.Rally/git/refs/heads/<headRefName>`. Never `--delete-branch`: it
    also deletes the local branch, which the sender's worktree still has checked out.
@@ -95,10 +98,14 @@ arrive. Tell the sender "received, reviewing #N" with SendMessage first.
    behind.
 9. **Report** to the sender with SendMessage (merged as `<new main SHA>`, or sent back with the findings and the PR
    link), and to the owner here in two or three lines: PR, verdict, what blocked or what was listed.
-10. **Release**, only after a merge, only if the PR body has a line `Release: X.Y.Z-alpha`: run `/release X.Y.Z-alpha`
-   (the release skill) at once, in the repo root, after step 8 brought local main up. The owner approved this
-   (2026-11-15). It needs no other approval. `tools/release.py` refuses a version that is not newer than the
-   latest tag. If the release refuses or fails, comment on the PR and tell the sender and the owner.
+10. **Release**, only after a merge, only if step 1 noted a `Release: X.Y.Z-alpha` line. The owner approved this
+   (2026-11-15); it needs no other approval and no `/release`. First do step 11 and the `test_compile` check from
+   **Keeping main healthy**; if it fails, do not release. Then, in the repo root, with `<merge>` the merge commit
+   `gh pr view <N> --json mergeCommit -q .mergeCommit.oid` reports:
+   `python tools/release.py X.Y.Z-alpha <merge> --check`, and if it passes, `python tools/release.py X.Y.Z-alpha <merge>`.
+   It reads everything from the commit, tags it, pushes only the tag, and publishes; it never commits. If it refuses
+   or fails, comment on the PR with its output and tell the sender and the owner. A failed run is resumed by running
+   the same command again.
 11. **Clean up**, after a merge and after every send-back: `git -C .claude/worktrees/maintainer-review fetch origin main`,
    `git -C .claude/worktrees/maintainer-review checkout --detach origin/main`, `git -C .claude/worktrees/maintainer-review update-ref -d refs/maintainer/pr-<N>`.
 
@@ -108,15 +115,15 @@ arrive. Tell the sender "received, reviewing #N" with SendMessage first.
   now on the new `origin/main`). If it
   fails, tell the owner at once and take no more merges until it is fixed.
 - Merges go only through `gh pr merge`. Never force-push anything, never use `--admin` to bypass GitHub.
-- `/release` runs after a merge whose PR asks for it (step 10), or when the owner runs it here. Follow that skill
-  exactly. It is the only time you edit files in the repo root or commit to `main`, and `tools/release.py` is the
-  only way you commit, tag or push. Edit and Write are for the release edits and the PR comment file only.
+- Releases go only through `tools/release.py`: after a merge whose PR asks for one (step 10), or when the owner
+  runs `/release` here. It is the only way you tag or push. You never commit to `main` or edit files in the repo
+  root; Edit and Write are for the PR comment file only.
 
 ## Never
 
 - Merge without a request, merge your own changes, or merge a PR the owner told you to hold.
 - Edit code on a PR branch, or rebase someone else's branch.
-- Tag or release except through `/release` (step 10, or the owner here). Install into the game, start the game, or
+- Tag or release except through `tools/release.py` (step 10, or the owner's `/release` here). Install into the game, start the game, or
   touch BeamNG, unless the owner tells you in this session.
 - Delete any branch except the remote head branch of a PR you just merged. Never delete local branches, and never
   remove worktrees you did not create.

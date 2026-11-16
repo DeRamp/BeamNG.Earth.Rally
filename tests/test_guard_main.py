@@ -120,6 +120,11 @@ def cases(ROOT, WT, OTHER):
         (2, ROOT, ('maintainer', 'sub1'), 'python tools/release.py 1.6.1-alpha'),
         (0, WT, None, 'python tools/package.py 1.6.1-alpha'),
         (0, OTHER, None, 'python tools/release.py 1.0.0'),
+        (2, WT, None, 'py -3 -u tools/release.py 1.6.1-alpha'),
+        (2, WT, None, 'python -X utf8 tools/release.py 1.6.1-alpha'),
+        (2, WT, None, 'python3.12 tools/release.py 1.6.1-alpha'),
+        (2, OTHER, None, f'python {ROOT}/tools/release.py 1.6.1-alpha'),
+        (2, OTHER, None, f'cd {OTHER} && python {unix_root}/tools/release.py 1.6.1-alpha'),
         # other repos are not guarded
         (0, OTHER, None, 'git commit -m x'),
     ]

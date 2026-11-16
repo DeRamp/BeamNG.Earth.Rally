@@ -121,12 +121,13 @@ old `docs/release-*.md` files stay as history.
 ## Release checklist
 
 1. `CHANGELOG.md`: new entry at the top, within the word limit.
-2. `README.md`: bump the version line; update **Known issues** if they changed. Still under 600 words.
+2. `README.md`: no version number in it (it says alpha); update **Known issues** if they changed. Still under 600 words.
    The fork's latest release has an installer and the API this release needs (see above).
 3. Grep for the old version number (`M.VERSION` in `mod/`, versioned doc names like `pacenotes-X.Y.Z.md`) and
    update what should move.
-4. `python tools/release.py X.Y.Z-alpha --check`, then without `--check`: it commits, tags `vX.Y.Z-alpha`, builds the
-   zip, pushes and makes the GitHub pre-release with the title, body and asset above. The maintainer runs it.
+4. These go in the release PR, with `Release: X.Y.Z-alpha` in its body (`/merge-request`).
+5. After the merge the maintainer runs `python tools/release.py X.Y.Z-alpha <merge commit>`: it tags the commit,
+   builds the zip from the tag and makes the GitHub pre-release with the title, body and asset above.
 
 ## Other docs
 
