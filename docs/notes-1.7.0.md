@@ -382,3 +382,320 @@ All 17 findings below are built on `full-rally-mvp`. Not yet driven. Changes fro
       the owner's own dev rallies vanish.
     - A rally under way or saved whose file is removed: hide it too, but don't delete the save.
     - Files: `events.lua`, `importer.lua`, `tests/test_import.lua`. Issue #50.
+
+## Third drive (revision 3, 2026-11-16)
+
+(Logged while the owner drives. Not fixed during the drive.)
+
+1. **Mouse and controller highlights are separate.** The orange outline follows the mouse and the controller's
+   selection on their own, so two options can be lit at once. They should be one highlight.
+   *Diagnosis:* the tiles and cards style `&:hover, &:focus` alike (`EarthRallyHomeMenu.vue:91`, `:115`;
+   `EarthRallyHome.vue:83`). Hover is the mouse, focus is the controller's nav, and nothing ties them.
+   *Fix idea:* outline on `:focus` only; on `mouseenter` focus the element (and blur the old one), so the mouse
+   moves the one selection. Apply it to every page's selectable tiles, cards and rows (Home, Home menu, Pick,
+   Season, Settings, the time card). Files: the `earthRally/*.vue` pages, maybe a shared directive.
+
+2. **Drive rally: no highlight on the rally cards.** On the Drive rally page the cards never show the orange outline,
+   neither from the mouse, the controller nor the picked one. Clicking a card works.
+   *Diagnosis:* `.er-pk-rc` draws the outline inside the card (`outline-offset: -4px`, `EarthRallyPick.vue:144`).
+   The card's picture, art and shade are absolutely positioned over the whole card (`inset: 0`), so they paint on
+   top of the card's own outline and hide it. Likely also why the picked card (`.on`) shows nothing.
+   *Fix idea:* draw the highlight on a `::after` layer above the picture (`inset: 0; border: 4px solid orange;
+   border-radius` to match, `pointer-events: none`), or set the outline outside the card (`outline-offset: 0`, with
+   room in the grid's padding). Keep one look for picked vs selected (#51: one selection). File: `EarthRallyPick.vue`.
+
+3. **The game's own footer draws over ours.** BeamNG's bottom text (the Steam login and "alpha 0.40.5") and its own
+   controller-button hints show on top of Earth Rally's button hints.
+   *Diagnosis (not yet checked in the game):* our hint bar is part of the page (the loading screen's `.er-load-foot`
+   is `position: fixed`, `z-index: 50`, `EarthRallyLoading.vue:85`/`:89`), but the game draws its version line and
+   its button-hint bar in its own layer above every page. Which screen it was is to be confirmed (loading screen,
+   Home, or both).
+   *Fix idea:* either give the game's layer room (keep our hints off the bottom strip it uses, or drop ours where
+   the game's own hints already say the same), or hide the game's hint bar and version line while our page is up,
+   if the game lets a page do that. Check how the game's own full-screen pages (Logbook, career) handle it.
+   Files: `EarthRally.vue`, `EarthRallyLoading.vue`.
+
+4. **Results: drop the "real top 10 is waiting" overlay.** Until every stage has a time, a rally's Results tab
+   greys the table under "The real top 10 is waiting / Your total goes in here once every stage has a time."
+   The owner: leave it out. Not being on the list already says you have no total. Instead show the "Your rally" card
+   as if you had times, with the position as "--" and the reason in as few words as possible.
+   *Where:* `EarthRallyResults.vue`. The overlay is line 40 (`waiting`, line 51, also greys the table at line 29).
+   The left card is "Drive all N stages to get a rally result" with a bar and chips (lines 8-15) until complete,
+   then "Your rally" with the place (lines 16-25).
+   *Fix idea:*
+   - Remove the overlay and the greying: the table shows plainly.
+   - Left card, not complete: "Your rally", the big place as "--", one short line under it, e.g.
+     "3 of 6 stages driven". Keep or drop the chips: to confirm with the owner (they show which are left).
+   - Total and gap: "--" too, or left out until complete.
+   - Mock-up first (UI change).
+
+5. **Results from Drive rally lands you in Drive stage.** On Drive rally, Results for a rally (e.g. Rally Colorado)
+   opens its results, but Back then goes through the Drive stage pages, not back to Drive rally.
+   *Diagnosis:* `openResults` (`EarthRally.vue:683`) just opens the rally's own page (`openRally`, the Drive stage
+   one) on its Results tab. Nothing records that it came from Drive rally, so the crumbs read
+   "Home > Drive stage > (season) > Rally Colorado" and `back()` (`:714`) goes to the season or the Rallies list.
+   The start screen already handles this with `startFrom = 'pick'` (`:687`, crumbs `:425`, back `:716`).
+   *Fix idea:* the same for results: remember it came from Drive rally; crumbs "Home > Drive rally > Rally Colorado
+   results"; Back (and B) go to Drive rally with the same rally still picked. Cleared when the rally page is opened
+   any other way. Maybe show only the Results there, not the rally page's other tabs. File: `EarthRally.vue`.
+
+6. **Start the rally: the Start button is small and lost among the settings.** On the start screen the Start button
+   is small, doesn't read as the way in, and sits in the same card as the settings (Mode, Cancelled stages).
+   The owner: move it away from the settings, as a big Start button at the lower right, as in any other game; and
+   give the settings a "Rally settings" header.
+   *Where:* `EarthRallyFull.vue`, `kind === 'start'` (lines 12-50). Two cards: left the rally, Car and Class; right
+   Mode, Cancelled stages, then `.er-foot` with the notes (to recce, held out, replaces your save, another under
+   way) and the Start button (`er-wide`, line 47).
+   *Fix idea:*
+   - A "Rally settings" header over Mode and Cancelled stages (maybe Class too: to confirm with the owner).
+   - Start out of the card: a big main button fixed at the lower right of the page, like Home's Continue.
+     Keep "at 08:00" on it (or under it) and its disabled state when there's no car.
+   - The warnings (replaces your save, another rally under way) stay next to the button, just above it.
+   - Mock-up first (UI change).
+
+7. **Time card after Start: the Start row sits above Day 1, and the go button looks like an option.** After Start
+   the rally loads fine, then opens the time card, which looks much like the start screen just left.
+   - The time card lists "Start" above the "Day 1" header. You start on day 1, so Start belongs under Day 1.
+     *Diagnosis:* the start is put first in the running order with no day (`rally.lua:137`), and the day header
+     only goes on stage rows (`dayHead`, `EarthRallyFull.vue:244`), so Day 1 first appears at SS1, under Start.
+     *Fix idea:* the Day 1 header above the Start row (give the start the first stage's day, or let `dayHead`
+     put a day's header on its first row of any kind). Same check for service and overnight rows at a day's edge.
+   - "Drive to SS1 ..." is a small, plain button and reads as an option. The owner: a big main button, as #56's
+     Start, saying plainly "Start transit" (e.g. "Start transit · to SS1 Name").
+     *Where:* `goLabel` (`EarthRallyFull.vue:207`, phase 'stop' at the start), the buttons at lines 95 and 129.
+     *Fix idea:* the time card's main action as #56's big lower-right button; label "Start transit · to SS1 Name"
+     at the start; out of a service maybe "Service out · start transit to SS2 Name" (to confirm). Mock-up first.
+   - (The time card looking like the start screen: probably fixed by #56 and the big button here. Ask the owner if
+     more is wanted.)
+
+8. **SS1's load at the time control: paused but nothing loading, triggered before the car stopped, no warning.**
+   Arriving at SS1 Canal Road's time control, the game paused for the stage load. The pause is fine, but nothing
+   was loading while it sat there. The owner also wants:
+   - the car to come to a complete stop at the timing tent before the load starts;
+   - a prompt first that asks you to load the stage, so it doesn't take you by surprise.
+   *From the log (third drive, game time):*
+   - 879.6 "Stop at the time control's red board." 896.9 "near its ATC, the stage loads", the card goes up.
+   - 896.9 to 921.97 the run sits in `anchor`: it asked BeamNG.Earth to move the origin to the stage centre and
+     waits up to `ANCHOR_WAIT_S` (25 s, `runner.lua:44`). BeamNG.Earth did a resync at 920.2, but the run still
+     gave up at 921.97: "origin never moved to the stage centre: the world may shift during the run".
+     So ~25 s of a paused card with nothing visibly moving: the "nothing loading" the owner saw.
+   - 921.97 to 922.18 build, place, props, check-in, toStart: the actual stage load took 0.2 s.
+   *Diagnosis:*
+   - The origin move likely doesn't run (or runs late) while the game is paused: BeamNG.Earth's anchor / rebase
+     work may be driven by sim time or need the car to move. Before 1.7.0 this step ran unpaused. To check in
+     BeamNG.Earth (`beamngEarth_core`, moveOriginTo / rebasing) before changing anything.
+   - The trigger (`atBoard`, `runner.lua:1741-1784`) fires stopped within 25 m of the board, but also at any speed
+     within 10 m of it (`AT_BOARD_PASS_M`), or within 60 m of the start line (`AT_BOARD_START_M`). So it can fire
+     while still rolling.
+   *Fix idea:*
+   - Trigger only on a full stop at the board (drop the "at any speed" and start-line cases, or keep only a
+     driven-past fallback that asks to turn back).
+   - When stopped at the board: a prompt "Load SS1 Canal Road?" with Load (A) / not yet, before pausing.
+     Mock-up first (UI).
+   - The anchor step: find out why the origin move stalls under the pause; either run that step unpaused (before
+     the card pauses), or skip the move when the ATC is already close to the stage (as `ANCHOR_CLOSE_M`), or cut
+     the wait. And show it on the card as its own step ("Moving the world to the stage") with progress.
+
+9. **The Recover? question is awkward: pause it, and drive it with A and the D-pad / stick.** In a Realistic
+   rally's stage, the recovery key brings up "Recover?" (Recover · Super Rally / Keep going). The owner wants it to
+   pause the game while it's up, ask, and take the same A button and stick / D-pad navigation as the menus.
+   *Where:* the question is on the HUD's results card (`app.earthRallyResults.vue:19-27`), raised by
+   `rallyRun.recoverKey` (`rallyRun.lua:729`). It is built to be answered while driving: no pause, the key again
+   to recover, and it goes by itself after 10 s of driving on (`ASK_S`, `rallyRun.lua:773`; "Drive on and it goes
+   after 10 s"). The card is a non-modal activity popup so the car's controls stay live; it moves its pick with
+   the nav's focus_r / focus_d (`:18`) and draws the ring only with a controller.
+   *Diagnosis:* because the car's controls stay live, the stick and D-pad drive the car rather than the card, and
+   D-pad right is also the recovery key itself, so the pad has no clean way to pick.
+   *Fix idea:*
+   - Pause on the question (`menuPause.card('earthRally_recover', true)`, as the finish card), and make it modal
+     while up, so A / D-pad / stick go to the card. B = Keep going.
+   - Drop the 10 s time-out and "drive on and it goes" (it can't time out while paused). Keep "the key again =
+     recover" for the keyboard, or not: to confirm.
+   - The pick ring always shown (one selection, #51).
+   - Check the Casual and transit recoveries: they are instant (no question), so unchanged.
+
+10. **The loading screen shows the menu behind it.** When a loading screen comes up, the menu page it was opened
+    from is still visible behind it. It shouldn't be: the loading screen should be all you see.
+    *Diagnosis:* `EarthRallyLoading.vue` is an overlay inside the menu page (`EarthRally.vue:15`), `position:
+    fixed; inset: 0` with a 92% see-through background (`rgba(10, 12, 16, 0.92)`, `:85`). The page under it (top
+    bar, crumbs, cards) stays drawn and shows through. The mock-up (`docs/mockups-1.7.0/loading.html`) had it as
+    its own screen.
+    *Fix idea:* while a loading screen is up, don't draw the page under it (the page's content `v-if` off, or the
+    loading screen in place of the page rather than over it), and make its background its own: solid, or the
+    stage / rally picture darkened, as the mock-up. Check the game's own layer above (#53) at the same time.
+
+    *Update to #8 (owner, later in the drive):* "nothing loading while paused" is taken back: the load works fine.
+    #8 keeps only the full stop at the board and the prompt before loading. The 25 s anchor time-out in the log
+    stays a note, not a bug: look at it only if a load is slow again.
+
+11. **Loading screen: Continue isn't selected when it appears.** On the time control card, once the stage is ready,
+    A does nothing until you move the selection onto Continue first. The footer even says "A Continue".
+    *Diagnosis:* the ready button is a new element swapped in for the disabled "Loading the stage..." one
+    (`v-if="L.ready"`, `EarthRallyLoading.vue:29-30`). It carries `v-bng-ui-nav-focus="1"`, but that directive
+    focuses only when its page comes up with a controller in use, not for a button appearing later on a page
+    already up; and with the disabled button there before, nothing on the card had the focus.
+    *Fix idea:* A on the loading screen presses Continue whenever it's ready, wherever the focus is
+    (`v-bng-on-ui-nav:ok` on the overlay, calling `cont()` when `L.ready`), and also focus the button when it
+    appears (a watch on `L.ready`). Same check for any other button that appears late (finish card, Recover? #59).
+
+12. **Finish card: A doesn't open the time card straight away.** After finishing a stage, A does nothing until you
+    select the time card button first.
+    *From the log:* 1315.83 the finish card pauses the game (`earthRally_results`); 1316.14 "results card up (res):
+    popup state reported true, popup open true, nav scope active, pick continue, buttons continue close". So the
+    card thinks Continue is picked and its nav scope has the pad, yet the first A didn't press it. A press itself
+    isn't logged, so it's not known whether the A reached the card at all.
+    *Diagnosis (to confirm):* the card takes A through `v-bng-on-ui-nav:ok="pressPicked"`
+    (`app.earthRallyResults.vue:16`). Likely the game's nav sends "ok" to the element with the focus, and nothing
+    on the card has the real focus until the D-pad moves it (the pick ring is the card's own, drawn by `ring()`, not
+    the game's focus). Possibly also the pause (new in this build) changing which action map takes A. Same family as
+    #61.
+    *Fix idea:* log each A / D-pad the card gets, to see what arrives. Then give Continue the real focus as the card
+    comes up (and as its buttons change), so A presses it at once; keep the card's ring and the focus as one
+    (#51). Test with the game paused under it.
+
+13. **Loading screen: the World bar doesn't move while the game is paused.** Every other step loads fine; the
+    World bar stays put while paused.
+    *From the log:* SS1 Canal Road's card was up 82.2 s, SS2 Hillside's 69.8 s; "Going to the start" and "Going to
+    Service A" ~4 s. No "the world at N% ... let go" warnings.
+    *Diagnosis (BeamNG.Earth fork, `beamngEarth/core.lua`):*
+    - The bar reads `loadProgress` (`earthAdapter.worldLoaded`), and reads 0 while its `anchorId` isn't the current
+      anchor's.
+    - BeamNG.Earth holds back an anchor's commit / resync while the game is paused (`core.lua:2024`: "vehicles move
+      only with physics running"), and a rebase's second phase only counts down with physics running (`:2927`).
+    - So under our pause the new anchor round the stage waits to commit, its counts don't apply, and the bar sits.
+      Same cause as the 25 s anchor wait in #58's log.
+    - (The counts themselves keep coming: the pose and `updateWorld` run on real time, `:1949`, `:2963`.)
+    *Fix idea, to choose:*
+    - Let the anchor / rebase step run before our pause comes on: the card shows, the pause waits until the
+      origin move is done (a few frames of physics with the car held), then pauses for the rest of the load.
+    - Or a BeamNG.Earth fork change: an API call to let a commit through while paused for a held car (as the map
+      view already does, `mapOpen`). Fork change = its own release.
+    - Either way, the World bar shows "Moving the world" while the anchor is not committed rather than a stuck 0%.
+
+14. **After the ATC load, the time control should already be done.** Once you press Continue on the time control
+    card, you should only have to drive to the start line.
+    *From the log:* it already checks in behind the card. SS2 Hillside: 1187.06 "run: toAtc", "Hillside: Drive to
+    the time control and stop at its red board."; 1187.09 "Checked in 08:24:08: Your start time: 08:25:00. Move up
+    to the start line."; 1187.15 "run: toStart". Continue was pressed 44 s later (1231.84). Same on SS1.
+    *Diagnosis:* the check-in happens, but the player isn't shown it:
+    - the runner still passes through `toAtc` for a frame and says "Drive to the time control and stop at its red
+      board." first (`runner.lua`, the toAtc message), so that message is queued with the check-in's;
+    - the card says "Start time: given at the red board" and "Then: move up to the start line"
+      (`EarthRallyLoading.vue:17-18`), never the time you got;
+    - (to check) whether the start time given at check-in has gone by during a long pause (the rally clock vs the
+      44 s wait), which would make the start feel like it wasn't set up.
+    *Fix idea:*
+    - In a rally's ATC load, skip `toAtc`'s message (straight to the check-in), so only "Move up to the start line"
+      shows after Continue.
+    - The card shows the check-in: "Checked in 08:24:08", "Start time 08:25:00" once done.
+    - Give the start time from when Continue is pressed (or hold the clock while the card is up), so it's never
+      due before you can drive.
+    - Ask the owner what they saw after Continue (the old message, the ATC HUD, the clock).
+
+15. **No pacenotes after a long paused load: only the start calls.** When the time control card was left up for a
+    while, the co-driver gave only the start (intercom check, belts, countdown) and then no notes on the stage.
+    *From the log and the runtime files:*
+    - The notebooks were written and loaded: canal-road 9 notes, hillside 7, canal-bank 5 (`earthRally/runtime/
+      warden-test-rally-v2__*/rally/notebooks/structured.notebook.json`; the same counts as the V1 rally earlier
+      today, so the writer's output didn't change with #47).
+    - After each "go", no other "playing ... pacenote" line. Only system calls are logged, so it isn't certain the
+      game logs ordinary notes at all: to check against a drive where notes were heard.
+    - The origin never moved to the stage centre on any of the three (#58 / #63: the anchor move waits while
+      paused). On SS3 Canal Bank the world then shifted during the load: 1511.5 "the world shifted during the run
+      (resync, event): the co-driver keeps its old positions", Anchor #15 at 46.97987, -119.03466.
+    - SS1's start time also ran out under the card: 993.9 "We've been given a new start minute." (#64).
+    *Diagnosis (to confirm):* the notes' trigger points are in the world frame of the moment the stage was built.
+      A resync / rebase that lands after the build (held back by the pause, #63) moves the world under them, so the
+      car never meets them. Or the note checks run on sim time and something about the long pause leaves them
+      off (the run's `notesOn` at the start: check it was turned on).
+    *Fix idea:* first a log line per note called (ours, from the runner) and one when notes go on, to tell the two
+    apart. Then: fix #63 so the origin move is done before the stage is built; and on a world shift during a run,
+    rebuild the co-driver's positions in the new frame instead of keeping the old ones.
+
+16. **Leaving the stop control, the finish tent vanishes at once.** When you leave the stage's stop control to
+    start the transit, the finish / stop control props (tent, boards) disappear straight away. They should stay
+    until you're out of loading distance, like any other site.
+    *Diagnosis:* ending the run tidies it (`runner.lua` `tidy`, ~:1968), which calls `props.clear()` and removes
+    every site, the finish and stop included. Sites otherwise come and go by distance (`props.SPAWN_M` = 350 m,
+    `props.lua:31`), but cleared sites are gone, not left to the distance rule.
+    *Fix idea:* at the end of a rally stage, keep the finish and stop sites (and their tape) as sites left behind:
+    don't clear them in `tidy`; drop each once the car is beyond `SPAWN_M` (or a little more) from it, or at the
+    next stage's setup. Same for the start / ATC sites if the car is still near them (a restart). Check the props
+    don't stay forever if the car is teleported away (a move to a stop: dropped on the move).
+
+17. **Controls entered at speed: service taken at ~100 mph.** You should have to stop to enter any time control,
+    service included. The owner drove into service at about 100 mph and it counted.
+    *Diagnosis:* a service (and any stop driven to: overnight, parc fermé, regroup) is done within `ARRIVE_M`
+    (150 m) of its place at any speed, or within `ARRIVE_NEAR_M` (500 m) when stopped (`rallyRun.lua:45-48`,
+    the check at `:841`). Only the second needs a stop. The stage ATC has the same kind of rolling fallbacks
+    (#58: `AT_BOARD_PASS_M`, `AT_BOARD_START_M`).
+    *Fix idea:*
+    - Every control (ATC, service in / out, overnight, regroup) is entered only when stopped
+      (`speed < STOPPED_MS`) within its distance; no "at any speed" case.
+    - A board or a marker to stop at for the stops too (a service's point is the venue, not always on a road: keep
+      the 500 m radius for the stopped case, maybe with the HUD's "Stop to check in" once within it).
+    - Driving through without stopping: nothing happens (the GPS keeps pointing there), with a "Stop to check in"
+      line on the HUD.
+
+18. **No tent at service.** A service park has nothing there; it should have a tent.
+    *Diagnosis:* only stage controls get props: start, flying finish, ATC, stop (`runner.lua:874-889`, kinds in
+    `props.lua:92-95`). Service, overnight and regroup stops have no site at all; they are a GPS point and a radius
+    (`rallyRun.lua`, `ARRIVE_M`).
+    *Fix idea:* a 'service' site kind: a time control board and a tent (as the ATC's), put at the service's place
+    on the nearest road (`props.roadAt`, as the transit recovery finds a road), facing along it. Put out when the
+    service is armed, dropped when the car leaves it (by distance, as #66). It gives #67 a place to stop at
+    ("stop at the service board"). To confirm with the owner: just a tent, or service-in / service-out boards too,
+    and whether overnight / regroup get the same.
+
+19. **Transit: the car can be reset in a Realistic rally.** On a transit in a Realistic rally the owner could reset
+    the car.
+    *Diagnosis:* as planned, not a slip: `docs/plan-1.7.0.md:80` "Recovery on a transit puts the car on the nearest
+    road, free", for both modes. `rallyRun.recoverKey` (`rallyRun.lua:729`): off a live run it calls
+    `runner.recoverToRoad()` (and in Casual also repairs). The game's own reset is blocked during a rally.
+    *To ask the owner:* which reset it was (Backspace / D-pad right = ours; the game's own R / Insert = a leak in the
+    block), and what Realistic should do on a transit:
+    - no recovery at all on a transit (stuck = Leave, or call for help with a time penalty);
+    - or a recovery with a cost (a time penalty on the time card, e.g. +5 min, or counted as lateness at the next
+      control);
+    - repairs: Realistic already doesn't repair on a transit (`notes` line 35).
+    *Fix idea:* once decided, `recoverKey`'s transit branch by mode. Log which key did it.
+    *Owner:* it was D-pad right, the rally's own recovery (no leak in the game's reset block). Still to decide: what
+    Realistic does on a transit.
+
+20. **Transit SS5 Canal Bank to SS6 Canal Road routes the long way round.** Instead of crossing the bridge and
+    turning left then right straight into the time control, the GPS sends the car straight on past the turn to the
+    time control, round to the crossroad, and in from there: much more transit time. Turning right there also
+    gives the right way into the time control. The owner asks whether it's the routing trying to get the right
+    direction. (Log: "transit to SS6 Canal Road" at 2037.6 and again at 2052.5.)
+    *Diagnosis:* yes, almost certainly the direction point (#40 / revision 3). `rallyRun.approachVia`
+    (`rallyRun.lua:469`) adds a GPS waypoint `APPROACH_VIA_M` (150 m) behind the ATC, on a straight line drawn
+    back from the start through the ATC. It ignores the roads: where the road into the ATC bends (the turn off
+    the bridge road), the point 150 m back lands on another road (here, likely the crossroad), and the GPS routes
+    through it. The car must reach within 40 m of it before the GPS lets it go.
+    *Fix idea:*
+    - Put the direction point on the road: walk back from the ATC along the road map (BeamNG.Earth's navgraph /
+      `props.roadAt` steps) rather than a straight line, and only 30-60 m, so it's on the approach road itself.
+    - Or skip it when the plain route already arrives the right way (route to the ATC, check the last leg's
+      heading against the stage's; add the via only if it's the wrong way).
+    - Test on this transit (SS5 to SS6, Warden V2) and on SS3's (armed twice earlier).
+
+21. **The rally's end: drive back to service, then two big buttons.** After the last stage the rally is over at
+    once. The owner:
+    - you should still have to drive back to service after the last stage (the rally finishes there);
+    - "Close the rally" is too small; replace it with two big buttons:
+      - **New rally**: back to the Earth Rally Home menu;
+      - **Continue driving**: closes the menus and puts you back in plain BeamNG.Earth free roam (its own HUD
+        and layout, not the stage's).
+    *Where:*
+    - The running order ends with the last stage when the event has no service after it (`rally.lua` orderOf);
+      the rally is `done` once that stage's result is in.
+    - The finished card (`EarthRallyFull.vue:77-82`, "RALLY FINISHED" with total and place); its only button is
+      "Close the rally" (`:142`, outlined, small), which calls `quit` and opens the rally's page (`leave`, `:199`).
+    *Fix idea:*
+    - `orderOf`: after the last stage, always end at a final service / finish (the day's last service park, or the
+      rally start's place, as #48's overnight); driven to with a stop (#67), the tent (#68). Done there.
+    - The finished card: the result, then the two main buttons, big, as #56 / #57.
+    - Continue driving: `quit` (save kept as finished), close the menu, the stage layout off, BeamNG.Earth's HUD back
+      (`layoutOff`, as `tidy`).
+    - New rally: the same, then open Home.
+    - Mock-up first (with #56 / #57's buttons).

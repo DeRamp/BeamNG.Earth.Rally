@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Rally 1.7.0 revision 4: third drive mock-ups (#51-#71)</title>
+<!-- Mock-ups for the third drive's findings (docs/notes-1.7.0.md, "Third drive"). Not built. 1920x1080, the menu
+     page's own look (loading.html, home.html). Names are made up: real event data never goes in git. -->
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700;800&family=Overpass+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root { --orange: #f26b1d; --orange-d: #c75b1e; --muted: #b8bcc6; --dim: #8a909a; --blue: #1f8fff; --amber: #ffd36b; --green: #3ccf7e; --red: #e5533d; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto Sans", system-ui, sans-serif; }
+.mock-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 16px; background: #1a1d22; border-bottom: 1px solid #2a2e35; position: sticky; top: 0; z-index: 10; }
+.mock-bar b { margin-right: 8px; }
+.mock-bar button { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 4px; border: 1px solid #3a3f48; background: #23272e; color: #ddd; cursor: pointer; }
+.mock-bar button.on { background: var(--orange-d); border-color: var(--orange-d); color: #fff; }
+.mock-bar .sep { width: 1px; height: 22px; background: #3a3f48; margin: 0 6px; }
+#who { padding: 10px 16px; color: var(--muted); font-size: 15px; max-width: 1400px; line-height: 1.5; }
+#who ul { margin: 6px 0 0; padding-left: 20px; } #who .q { color: var(--amber); }
+.wrap { padding: 0 16px 16px; }
+.box { position: relative; width: 100%; max-width: 1920px; margin: 0 auto; aspect-ratio: 16/9; overflow: hidden; border-radius: 6px; box-shadow: 0 0 0 1px #2a2e35; }
+.screen { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-size: 16px; overflow: hidden;
+  background: linear-gradient(180deg, #8fb3cf 0%, #b9c9d2 40%, #6f7f55 41%, #55633d 70%, #3d4630 100%); }
+.road { position: absolute; left: 50%; bottom: 0; width: 1400px; height: 640px; transform: translateX(-50%); background: linear-gradient(180deg, #8c7a5e, #a38e6c); clip-path: polygon(47% 0, 53% 0, 100% 100%, 0 100%); }
+.hud-ex { position: absolute; border: 2px dashed rgba(255,255,255,.3); border-radius: 6px; color: rgba(255,255,255,.55); font-size: 14px; display: flex; align-items: center; justify-content: center; }
+.dimmer { position: absolute; inset: 0; background: rgba(10,12,16,.82); }
+.solid { position: absolute; inset: 0; background: radial-gradient(ellipse at 70% 30%, #2a2219 0%, #121418 60%, #0b0c0f 100%); }
+.page { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.top { height: 84px; display: flex; align-items: center; gap: 20px; padding: 0 64px; background: linear-gradient(180deg, rgba(0,0,0,.8), rgba(0,0,0,.35)); }
+.back { font-size: 20px; color: var(--muted); margin-right: 10px; }
+.title { font-size: 30px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; } .title span { color: var(--orange); }
+.crumbs { font-size: 18px; color: var(--muted); } .crumbs b { color: #fff; font-weight: 400; } .crumbs i { font-style: normal; color: #6f7480; margin: 0 10px; }
+.content { flex: 1; display: flex; align-items: center; justify-content: center; padding: 28px 64px; position: relative; }
+.content.tl { align-items: stretch; justify-content: flex-start; }
+.prompts { height: 56px; display: flex; align-items: center; gap: 30px; padding: 0 64px; background: rgba(0,0,0,.6); color: var(--muted); font-size: 17px; }
+.k { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; font: 700 14px "Noto Sans"; color: #111; margin-right: 8px; }
+.k.a { background: #6cc24a; } .k.b { background: var(--red); } .k.x { background: #3b8beb; color: #fff; } .k.y { background: #f0c419; }
+.paused { margin-left: auto; font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+.card { background: rgba(0,0,0,.6); border-radius: 10px; }
+.pad { padding: 30px 34px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; padding: 14px 28px; border-radius: 4px; font-size: 20px; font-weight: 600; background: var(--orange-d); color: #fff; }
+.btn.out { background: transparent; border: 1px solid #6f7480; color: #ddd; font-weight: 500; }
+.btn.off { background: #3a3f48; color: #8a909a; }
+.btn.huge { font-size: 30px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; padding: 22px 56px; min-width: 520px; }
+.btn.huge small { display: block; font-size: 17px; font-weight: 500; text-transform: none; letter-spacing: 0; opacity: .85; margin-top: 2px; }
+.btn.huge.col { flex-direction: column; }
+.sel { outline: 4px solid var(--orange); outline-offset: 3px; }
+.cornerbtn { position: absolute; right: 64px; bottom: 34px; display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
+.warn { color: var(--amber); font-size: 17px; }
+.muted { color: var(--muted); } .dim { color: var(--dim); } .mono { font-family: "Overpass Mono", monospace; }
+.lbl { font-size: 15px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); font-weight: 600; margin: 22px 0 10px; }
+h2 { margin: 0; font-size: 40px; text-transform: uppercase; line-height: 1.1; }
+h3.sec { margin: 0 0 4px; font-size: 18px; letter-spacing: .16em; text-transform: uppercase; color: var(--orange); font-weight: 700; }
+.seg { display: inline-flex; border-radius: 4px; overflow: hidden; box-shadow: inset 0 0 0 1px #5a6070; }
+.seg span { padding: 11px 20px; color: var(--muted); font-size: 18px; white-space: nowrap; } .seg span.on { background: var(--orange-d); color: #fff; font-weight: 600; }
+.boxv { display: flex; justify-content: space-between; padding: 14px 18px; border-radius: 6px; background: rgba(255,255,255,.06); font-size: 20px; }
+.newtag { font-size: 12px; font-weight: 700; letter-spacing: .1em; color: var(--orange); margin-left: 10px; vertical-align: middle; }
+.change { position: absolute; border: 2px dashed var(--amber); border-radius: 8px; pointer-events: none; }
+.change b { position: absolute; top: -26px; left: 0; background: var(--amber); color: #111; font-size: 13px; padding: 2px 8px; border-radius: 3px; white-space: nowrap; }
+
+/* pick */
+.pk { display: grid; grid-template-columns: 1fr 640px; gap: 28px; width: 100%; }
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; align-content: start; }
+.rc { position: relative; height: 300px; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 18px 20px; }
+.rc .art { position: absolute; inset: 0; } .rc .shade { position: absolute; inset: 0; background: linear-gradient(180deg, transparent 30%, rgba(0,0,0,.9)); }
+.rc > h4, .rc > div.m { position: relative; } .rc h4 { margin: 0; font-size: 26px; text-transform: uppercase; } .rc .m { color: #d6d9df; font-size: 15px; margin-top: 4px; }
+.rc.on::after { content: ""; position: absolute; inset: 0; border: 4px solid var(--orange); border-radius: 10px; }
+.cursor { position: absolute; width: 0; height: 0; border-left: 12px solid transparent; border-right: 12px solid transparent; border-bottom: 26px solid #fff; transform: rotate(-30deg); filter: drop-shadow(0 1px 2px #000); }
+
+/* time card */
+.tc2 { display: grid; grid-template-columns: 1fr 560px; gap: 28px; width: 100%; }
+.row { display: grid; grid-template-columns: 70px 1fr 140px 120px; gap: 14px; padding: 12px 16px; font-size: 19px; border-bottom: 1px solid rgba(255,255,255,.06); }
+.row.cur { background: rgba(242,107,29,.14); border-left: 4px solid var(--orange); }
+.row .r { text-align: right; } .day { margin: 18px 0 4px 16px; font-size: 14px; text-transform: uppercase; letter-spacing: .1em; color: var(--orange); font-weight: 700; }
+.day.was { position: relative; }
+
+/* loading / ATC */
+.tc { width: 1080px; display: grid; grid-template-columns: 1fr 1fr; overflow: hidden; }
+.tc .l { padding: 42px 46px; } .tc .r { padding: 42px 46px; background: rgba(255,255,255,.04); display: flex; flex-direction: column; }
+.kick { font-size: 17px; letter-spacing: .18em; text-transform: uppercase; color: var(--orange); font-weight: 700; }
+.tc h1 { margin: 6px 0 2px; font-size: 52px; line-height: 1.05; text-transform: uppercase; font-weight: 800; }
+.tc .sub { color: var(--muted); font-size: 20px; margin-bottom: 28px; }
+.tcrow { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,.08); font-size: 20px; }
+.tcrow span { color: var(--muted); } .tcrow b { font-family: "Overpass Mono", monospace; font-size: 26px; } .tcrow b.ok { color: var(--green); }
+.tc .r h3 { margin: 0 0 14px; font-size: 18px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.steps { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; font-size: 18px; }
+.steps li { display: flex; align-items: center; gap: 14px; color: var(--dim); } .steps li.done { color: #e8eaee; } .steps li.now { color: #fff; font-weight: 600; }
+.dot { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #5a606a; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; }
+.done .dot { background: var(--green); border-color: var(--green); color: #062; }
+.now .dot { border-color: var(--orange); border-top-color: transparent; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.world { margin-top: 22px; padding: 18px 20px 30px; border-radius: 8px; background: rgba(255,255,255,.05); }
+.world .wt { display: flex; justify-content: space-between; font-size: 18px; margin-bottom: 10px; } .world .wt span { color: var(--muted); }
+.wbar { position: relative; height: 14px; border-radius: 7px; background: rgba(255,255,255,.12); }
+.wbar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 7px; background: var(--blue); } .wbar i.full { background: var(--green); }
+.wbar i.move { width: 30%; background: repeating-linear-gradient(90deg, #3b8beb 0 14px, #2a6bb8 14px 28px); animation: slide 1.6s linear infinite; }
+@keyframes slide { from { left: 0; } to { left: 70%; } }
+.wbar em { position: absolute; left: 60%; top: -6px; bottom: -6px; width: 3px; background: #fff; border-radius: 2px; }
+.wbar u { position: absolute; left: 60%; top: 20px; transform: translateX(-50%); text-decoration: none; font-size: 14px; color: #fff; }
+.tc .r .btn { width: 100%; margin-top: 22px; font-size: 26px; padding: 18px; }
+
+/* HUD bits */
+.hudline { position: absolute; left: 50%; top: 110px; transform: translateX(-50%); padding: 14px 30px; border-radius: 6px; background: rgba(20,24,30,.9); border-left: 4px solid var(--orange); font-size: 22px; }
+.hudline small { display: block; color: var(--muted); font-size: 16px; }
+.ask { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 760px; padding: 34px 40px; border-radius: 10px; background: rgba(12,14,18,.95); box-shadow: 0 10px 50px rgba(0,0,0,.6); }
+.ask h2 { font-size: 36px; } .ask p { font-size: 20px; color: var(--muted); margin: 12px 0 26px; line-height: 1.4; }
+.ask .btns { display: flex; gap: 16px; } .ask .btns .btn { flex: 1; font-size: 22px; padding: 18px; }
+.ask .foot { margin-top: 18px; display: flex; gap: 26px; color: var(--muted); font-size: 16px; }
+.tent { position: absolute; width: 150px; height: 90px; background: linear-gradient(180deg, #e8e8e8, #bbb); clip-path: polygon(10% 0, 90% 0, 100% 35%, 100% 100%, 0 100%, 0 35%); }
+.tent::after { content: "SERVICE"; position: absolute; top: 4px; left: 0; right: 0; text-align: center; font: 700 14px "Noto Sans"; color: #c75b1e; }
+.board { position: absolute; width: 60px; height: 70px; background: #d33; border: 3px solid #fff; color: #fff; font: 700 12px "Noto Sans"; display: flex; align-items: center; justify-content: center; text-align: center; }
+
+/* results */
+.res { display: grid; grid-template-columns: 520px 1fr; gap: 28px; width: 100%; align-self: flex-start; }
+.big { font: 800 84px "Noto Sans"; line-height: 1; margin: 10px 0 6px; } .big small { font-size: 26px; color: var(--muted); font-weight: 500; margin-left: 10px; }
+.trow { display: grid; grid-template-columns: 70px 1fr 90px 160px 130px; gap: 12px; padding: 11px 16px; font-size: 18px; border-bottom: 1px solid rgba(255,255,255,.06); }
+.trow.h { color: var(--dim); font-size: 14px; text-transform: uppercase; letter-spacing: .1em; }
+.trow .r { text-align: right; font-family: "Overpass Mono", monospace; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; } .chip { padding: 6px 12px; border-radius: 14px; background: rgba(255,255,255,.08); font-size: 15px; color: var(--muted); } .chip.done { background: rgba(60,207,126,.15); color: var(--green); }
+.ghost { position: relative; } .ghost .over { position: absolute; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; text-align: center; font-size: 22px; }
+.ghost .over::after { content: ""; position: absolute; left: 10%; right: 10%; top: 50%; height: 4px; background: var(--red); transform: rotate(-8deg); }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="mock-bar">
+  <b>1.7.0 rev 4 · third drive</b>
+  <button data-go="pick">#51 #52 · Drive rally</button>
+  <button data-go="start">#56 · Start the rally</button>
+  <button data-go="timecard">#57 · Time card</button>
+  <span class="sep"></span>
+  <button data-go="roll">#58 #67 · Rolling up</button>
+  <button data-go="prompt">#58 · Load the stage?</button>
+  <button data-go="atc">#60 #63 · ATC loading</button>
+  <button data-go="atcReady">#61 #64 · ATC ready</button>
+  <span class="sep"></span>
+  <button data-go="recover">#59 · Recover?</button>
+  <button data-go="service">#67 #68 · Service</button>
+  <span class="sep"></span>
+  <button data-go="results">#54 · Results</button>
+  <button data-go="finished">#71 · Rally finished</button>
+</div>
+<div id="who"></div>
+<div class="wrap"><div class="box" id="box"><div class="screen" id="screen">
+  <div class="road"></div>
+  <div class="hud-ex" style="left:40px;bottom:40px;width:300px;height:300px;border-radius:50%">speed / tacho</div>
+  <div class="hud-ex" style="right:40px;bottom:40px;width:360px;height:240px">minimap</div>
+
+  <!-- ===== on the road (HUD) ===== -->
+  <div data-m="roll">
+    <div class="board" style="left:900px;top:520px">TC<br>SS2</div>
+    <div class="hudline">Stop at the time control's red board<small>SS2 Cutter Creek · 40 m · 52 km/h</small></div>
+  </div>
+  <div data-m="prompt">
+    <div class="board" style="left:860px;top:560px">TC<br>SS2</div>
+    <div class="ask">
+      <div class="kick">Time control · SS2</div>
+      <h2>Load the stage?</h2>
+      <p>SS2 Cutter Creek, 14.8 km. The game pauses while the stage and the world around you load. Your time in is taken now.</p>
+      <div class="btns"><div class="btn sel">Load SS2</div><div class="btn out">Not yet</div></div>
+      <div class="foot"><span><span class="k a">A</span>Load</span><span><span class="k b">B</span>Not yet</span></div>
+    </div>
+  </div>
+  <div data-m="service">
+    <div class="tent" style="left:1120px;top:470px"></div>
+    <div class="board" style="left:930px;top:540px">TC<br>SERVICE A</div>
+    <div class="hudline">Stop at the board to check in<small>Service A · Pine Valley Service Park · 25 m</small></div>
+  </div>
+  <div data-m="recover">
+    <div class="dimmer" style="background:rgba(10,12,16,.55)"></div>
+    <div class="ask">
+      <div class="kick">SS3 Long Branch · Realistic</div>
+      <h2>Recover?</h2>
+      <p>Recovering ends this stage. You go to <b style="color:#fff">Service B</b> under Super Rally and carry on from there.</p>
+      <div class="btns"><div class="btn sel">Recover · Super Rally</div><div class="btn out">Keep going</div></div>
+      <div class="foot"><span><span class="k a">A</span>Select</span><span><span class="k b">B</span>Keep going</span><span class="paused" style="margin-left:auto">Game paused</span></div>
+    </div>
+  </div>
+
+  <!-- ===== menu pages ===== -->
+  <div class="dimmer" data-m="pick start timecard results finished"></div>
+  <div class="solid" data-m="atc atcReady"></div>
+  <div class="page" data-m="pick start timecard results finished atc atcReady">
+    <div class="top">
+      <span class="back" data-m="pick start timecard results finished">‹ Back</span>
+      <div class="title"><span>Earth</span> Rally</div>
+      <div class="crumbs" id="crumbs"></div>
+    </div>
+
+    <!-- #51 #52 Drive rally -->
+    <div class="content tl" data-m="pick">
+      <div class="pk">
+        <div class="cards">
+          <div class="rc"><div class="art" style="background:linear-gradient(135deg,#5a4a3a,#8a6a4a)"></div><div class="shade"></div><h4>Pine Hollow Rally</h4><div class="m">8 stages · 2 days</div></div>
+          <div class="rc on"><div class="art" style="background:linear-gradient(135deg,#3a4a5a,#6a8aa0)"></div><div class="shade"></div><h4>Red Mesa Rally</h4><div class="m">12 stages · 3 days</div></div>
+          <div class="rc"><div class="art" style="background:linear-gradient(135deg,#3a5a3a,#6a8a5a)"></div><div class="shade"></div><h4>Lakeshore Sprint</h4><div class="m">4 stages · 1 day</div></div>
+          <div class="cursor" style="left:640px;top:200px"></div>
+        </div>
+        <div class="card pad">
+          <h2>Red Mesa Rally</h2><div class="muted" style="font-size:18px;margin-top:6px">12 stages · 3 days · 4 services</div>
+          <div style="height:260px;margin:20px 0;border-radius:6px;background:linear-gradient(135deg,#3a4a5a,#6a8aa0)"></div>
+          <div class="btn" style="width:100%;font-size:24px">Start the rally</div>
+          <div style="display:flex;gap:12px;margin-top:12px"><div class="btn out" style="flex:1">Results</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- #56 Start the rally -->
+    <div class="content tl" data-m="start">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px;width:100%;align-self:flex-start">
+        <div class="card pad">
+          <h2>Red Mesa Rally</h2>
+          <div class="muted" style="font-size:18px;margin-top:6px">12 stages · 3 days · 4 services · real field: 38 National crews</div>
+          <div class="lbl">Car</div>
+          <div class="boxv"><span>Rallye 2.0 Gravel</span><span class="muted">AWD</span></div>
+          <div class="lbl">Class</div>
+          <div class="seg"><span>L4WD</span><span class="on">O4WD</span><span>L2WD</span><span>O2WD</span></div>
+          <div class="muted" style="font-size:15px;margin-top:8px">Picked from your car's drivetrain.</div>
+        </div>
+        <div class="card pad">
+          <h3 class="sec">Rally settings</h3>
+          <div class="lbl">Mode</div>
+          <div class="seg"><span class="on">Realistic</span><span>Casual</span></div>
+          <div class="muted" style="font-size:15px;margin-top:8px">No restarts. Recovering ends your stage: Super Rally penalty, back in at the next service.</div>
+          <div class="lbl">Cancelled stages</div>
+          <div class="seg"><span class="on">As it really ran</span><span>Run them all</span></div>
+          <div class="muted" style="font-size:15px;margin-top:8px">SS7 Dry Fork was cancelled on the day.</div>
+          <div class="muted" style="font-size:15px;margin-top:22px">2 stages get their line first: the auto recce takes you to each.</div>
+        </div>
+      </div>
+      <div class="cornerbtn">
+        <div class="warn">This replaces your saved rally (at SS4).</div>
+        <div class="btn huge col sel">Start the rally<small>first car away 08:00</small></div>
+      </div>
+    </div>
+
+    <!-- #57 time card -->
+    <div class="content tl" data-m="timecard">
+      <div class="tc2" style="align-self:flex-start">
+        <div class="card pad" style="padding-top:14px">
+          <div class="day">Day 1 · Friday</div>
+          <div class="row cur"><span class="mono">·</span><span>Start · Red Mesa town square</span><span class="r mono">08:00</span><span class="r dim">you are here</span></div>
+          <div class="row"><span class="mono">SS1</span><span>Hollow Road <span class="dim">12.4 km</span></span><span class="r mono">08:24</span><span class="r dim"></span></div>
+          <div class="row"><span class="mono">SS2</span><span>Cutter Creek <span class="dim">14.8 km</span></span><span class="r mono">08:51</span><span class="r dim"></span></div>
+          <div class="row"><span class="mono">·</span><span>Service A · Pine Valley</span><span class="r mono">09:30</span><span class="r dim">30 min</span></div>
+          <div class="day">Day 2 · Saturday</div>
+          <div class="row"><span class="mono">SS3</span><span>Long Branch <span class="dim">9.6 km</span></span><span class="r mono">08:20</span><span class="r dim"></span></div>
+        </div>
+        <div class="card pad">
+          <div class="kick">At the start</div>
+          <h2 style="margin-top:6px">Red Mesa Rally</h2>
+          <div class="muted" style="font-size:18px;margin-top:6px">Realistic · O4WD</div>
+          <div class="lbl">Next</div>
+          <div class="boxv"><span>Transit to SS1 Hollow Road</span><span class="mono">24 min · 18 km</span></div>
+          <div class="muted" style="font-size:16px;margin-top:20px">Due at the SS1 time control 08:24. Early or late costs time.</div>
+          <div style="display:flex;gap:12px;margin-top:26px"><div class="btn out" style="flex:1">Save and quit</div><div class="btn out" style="flex:1">Retire</div></div>
+        </div>
+      </div>
+      <div class="cornerbtn">
+        <div class="btn huge col sel">Start transit<small>to SS1 Hollow Road</small></div>
+      </div>
+    </div>
+
+    <!-- #60 #61 #63 #64 the ATC card -->
+    <div class="content" data-m="atc atcReady">
+      <div class="card tc">
+        <div class="l">
+          <div class="kick">Time control · in</div>
+          <h1>SS2 Cutter Creek</h1>
+          <div class="sub">14.8 km · Red Mesa Rally · day 1</div>
+          <div class="tcrow"><span>Time in</span><b>08:50:12</b></div>
+          <div class="tcrow"><span>Due</span><b class="ok">On time</b></div>
+          <div class="tcrow" data-m="atc"><span>Start time</span><b class="dim" style="font-size:20px;font-family:Noto Sans">given when you continue</b></div>
+          <div class="tcrow" data-m="atcReady"><span>Start time</span><b>+1 min after Continue</b></div>
+          <div class="tcrow"><span>Then</span><b style="font-size:20px;font-family:Noto Sans">move up to the start line</b></div>
+        </div>
+        <div class="r">
+          <h3>The stage</h3>
+          <ul class="steps" data-m="atc">
+            <li class="done"><span class="dot">✓</span>Checked in</li>
+            <li class="now"><span class="dot"></span>Moving the world to the stage</li>
+            <li><span class="dot"></span>Line, pacenotes, controls</li>
+            <li><span class="dot"></span>Junctions taped, stage dressed</li>
+            <li><span class="dot"></span>The world around you: at least 60%</li>
+          </ul>
+          <div data-m="atc"><div class="world"><div class="wt"><b>World</b><span>Moving the world...</span></div><div class="wbar"><i class="move"></i><em></em><u>60%</u></div></div></div>
+          <ul class="steps" data-m="atcReady">
+            <li class="done"><span class="dot">✓</span>Checked in</li>
+            <li class="done"><span class="dot">✓</span>Moving the world to the stage</li>
+            <li class="done"><span class="dot">✓</span>Line, pacenotes, controls</li>
+            <li class="done"><span class="dot">✓</span>Junctions taped, stage dressed</li>
+            <li class="done"><span class="dot">✓</span>The world around you: at least 60%</li>
+          </ul>
+          <div data-m="atcReady"><div class="world"><div class="wt"><b>World</b><span style="color:var(--green)">Ready to drive</span></div><div class="wbar"><i class="full" style="width:74%"></i><em></em><u>60%</u></div></div></div>
+          <div class="btn off" data-m="atc">Loading the stage...</div>
+          <div class="btn sel" data-m="atcReady">Continue</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- #54 results -->
+    <div class="content tl" data-m="results">
+      <div class="res">
+        <div class="card pad">
+          <h3 class="sec">Your rally</h3>
+          <div class="big">--<small>of 38</small></div>
+          <div class="muted" style="font-size:20px">5 of 12 stages driven</div>
+          <div class="chips"><span class="chip done">✓ SS1</span><span class="chip done">✓ SS2</span><span class="chip done">✓ SS3</span><span class="chip done">✓ SS4</span><span class="chip done">✓ SS5</span><span class="chip">SS6</span><span class="chip">SS7</span><span class="chip">SS8</span><span class="chip">SS9</span><span class="chip">SS10</span><span class="chip">SS11</span><span class="chip">SS12</span></div>
+          <div class="lbl">Total</div><div class="mono" style="font-size:34px">--</div>
+        </div>
+        <div class="card pad" style="padding-top:16px">
+          <div class="trow h"><span>Pos</span><span>Driver</span><span>Class</span><span class="r">Total</span><span class="r">Gap</span></div>
+          <div class="trow"><span>1</span><span>A. Driver</span><span>O4WD</span><span class="r">1:42:18.4</span><span class="r"></span></div>
+          <div class="trow"><span>2</span><span>B. Driver</span><span>O4WD</span><span class="r">1:43:02.9</span><span class="r">+44.5</span></div>
+          <div class="trow"><span>3</span><span>C. Driver</span><span>L4WD</span><span class="r">1:44:40.1</span><span class="r">+2:21.7</span></div>
+          <div class="trow"><span>4</span><span>D. Driver</span><span>O4WD</span><span class="r">1:45:13.0</span><span class="r">+2:54.6</span></div>
+          <div class="trow"><span>5</span><span>E. Driver</span><span>O2WD</span><span class="r">1:47:55.8</span><span class="r">+5:37.4</span></div>
+          <div class="trow dim"><span>⋮</span><span></span><span></span><span></span><span></span></div>
+          <div class="trow"><span>10</span><span>J. Driver</span><span>L4WD</span><span class="r">1:53:20.2</span><span class="r">+11:01.8</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- #71 rally finished -->
+    <div class="content" data-m="finished">
+      <div class="card pad" style="width:900px;text-align:center;padding:48px">
+        <div class="kick">Red Mesa Rally · checked in at the final service</div>
+        <h2 style="font-size:60px;margin-top:10px">Rally finished</h2>
+        <div class="mono" style="font-size:56px;margin:18px 0 6px">1:49:31.7</div>
+        <div class="muted" style="font-size:22px">P7 of 38 · O4WD 3rd of 14 · +12 points in the season</div>
+        <div class="btn out" style="margin-top:22px">Full results</div>
+      </div>
+      <div class="cornerbtn" style="flex-direction:row;align-items:flex-end;gap:20px">
+        <div class="btn huge out col" style="min-width:420px">New rally<small>back to Home</small></div>
+        <div class="btn huge col sel" style="min-width:420px">Continue driving<small>free roam in BeamNG.Earth</small></div>
+      </div>
+    </div>
+
+    <div class="prompts">
+      <span data-m="pick"><span class="k a">A</span>Select</span><span data-m="pick"><span class="k y">Y</span>Results</span>
+      <span data-m="start timecard"><span class="k a">A</span>Select</span>
+      <span data-m="results finished"><span class="k a">A</span>Select</span>
+      <span data-m="atcReady"><span class="k a">A</span>Continue</span>
+      <span data-m="pick start timecard results finished"><span class="k b">B</span>Back</span>
+      <span class="paused" data-m="pick start timecard results finished atc atcReady">Game paused</span>
+    </div>
+  </div>
+</div></div></div>
+
+<script>
+const NOTES = {
+  pick: `<b>#51 #52 · Drive rally: one highlight.</b> The orange border is drawn above the card's picture (it was hidden under it). The mouse and the controller share one selection: pointing at a card moves the selection there, so only one card is ever lit, on every page. The mouse pointer here is on Red Mesa, and that's the lit card. <b>#55:</b> Results (Y) from here comes back here with B, and the trail reads "Home › Drive rally › Red Mesa Rally results".`,
+  start: `<b>#56 · Start the rally.</b> The settings get a <b>Rally settings</b> header. Start leaves the card and becomes a big button at the lower right, selected when the page opens (A starts). It keeps the first car's time and is greyed out without a car. The warnings sit just above it.
+    <ul><li class="q">Decide: Class stays with Car (shown, my pick: it follows the car), or moves under Rally settings?</li></ul>`,
+  timecard: `<b>#57 · Time card at the start.</b> "Day 1" now heads the list, above Start. The main action is the same big lower-right button, selected on open: <b>Start transit · to SS1 Hollow Road</b>. Leaving a service it would read <b>Service out · start transit to SS4 ...</b>. Save and quit / Retire stay small in the card.
+    <ul><li class="q">Decide: the service label: "Service out · start transit to SS4 Name" (my pick), or just "Start transit · to SS4 Name"?</li></ul>`,
+  roll: `<b>#58 #67 · Rolling up to a control.</b> Nothing happens until the car has stopped at the board. The HUD says "Stop at the time control's red board" with the distance (and your speed if you're still moving). Driving through does nothing: the GPS keeps pointing back to it. The same applies to every control: ATC, service, overnight, regroup.`,
+  prompt: `<b>#58 · Stopped at the board: "Load the stage?"</b> The game pauses only after you say yes. Load (A) is selected. Not yet (B) leaves you parked with the HUD line, so stopping again or pressing A brings it back. Your time in is the moment you stopped.`,
+  atc: `<b>#60 #63 · The ATC card while loading.</b> A solid background of its own: the menu page is not drawn behind it (#60). BeamNG's own bottom strip is off while it's up (#53). The steps start with <b>Checked in</b>, then <b>Moving the world to the stage</b>. That move happens before the pause (the car held still for a moment) and the World bar shows it as a moving stripe instead of a stuck 0% (#63). The start time isn't given yet, so it can't run out while you wait (#64).`,
+  atcReady: `<b>#61 #64 · Ready.</b> Continue is selected the moment it appears, so A presses it straight away (#61; the finish card gets the same fix, #62). Your start time is set from when you press Continue (+1 min), and after Continue the HUD only says "Move up to the start line", not the old "Drive to the time control" (#64).`,
+  recover: `<b>#59 · Recover? (Realistic, on a stage).</b> The game pauses. A, the D-pad and the stick work the two buttons like a menu; B is Keep going. No 10-second timeout. Casual and transit recoveries are unchanged (instant).
+    <ul><li class="q">Decide: keep "press the recovery key again = Recover" for keyboard players (my pick: yes, it does no harm)?</li></ul>`,
+  service: `<b>#67 #68 · Service.</b> A tent and a red time control board at the service, on the nearest road to the service's point. They appear as you approach and go by distance after you leave (as #66 for the finish). You check in only once stopped at the board.
+    <ul><li class="q">Decide: just the tent and one board (shown), or separate Service in / Service out boards?</li><li class="q">Decide: overnight and regroup get the same tent and board?</li></ul>`,
+  results: `<b>#54 · Results before the rally is complete.</b> No overlay and no greyed table: the top 10 shows plainly. Your card is laid out as if you had a total: position <b>--</b>, one short line "5 of 12 stages driven", total <b>--</b>.
+    <ul><li class="q">Decide: keep the stage chips (shown: which stages are left), or drop them?</li><li class="q">Decide: Total as "--" (shown), or left off until complete?</li></ul>`,
+  finished: `<b>#71 · Rally finished.</b> After the last stage you drive back to a final service and check in there (stopped, #67), which ends the rally. Then this card: the result, Full results, and two big buttons. <b>Continue driving</b> (selected) closes the menu and puts you back in plain BeamNG.Earth free roam with its normal screen. <b>New rally</b> takes you to Home.`
+};
+const CRUMBS = { pick: "Home<i>›</i><b>Drive rally</b>", start: "Home<i>›</i>Drive rally<i>›</i><b>Start the rally</b>", timecard: "Home<i>›</i><b>Time card</b>",
+  atc: "Red Mesa Rally<i>›</i><b>SS2 time control</b>", atcReady: "Red Mesa Rally<i>›</i><b>SS2 time control</b>",
+  results: "Home<i>›</i>Drive rally<i>›</i><b>Red Mesa Rally results</b>", finished: "Home<i>›</i><b>Time card</b>" };
+function go(m) {
+  document.querySelectorAll("[data-m]").forEach(e => e.classList.toggle("hidden", !e.dataset.m.split(" ").includes(m)));
+  document.querySelectorAll(".mock-bar button").forEach(b => b.classList.toggle("on", b.dataset.go === m));
+  document.getElementById("who").innerHTML = NOTES[m];
+  document.getElementById("crumbs").innerHTML = CRUMBS[m] || "";
+  history.replaceState(null, "", "#" + m);
+}
+document.querySelectorAll(".mock-bar button").forEach(b => b.onclick = () => go(b.dataset.go));
+function fit() { document.getElementById("screen").style.transform = "scale(" + (document.getElementById("box").clientWidth / 1920) + ")"; }
+addEventListener("resize", fit); fit();
+go(NOTES[location.hash.slice(1)] ? location.hash.slice(1) : "pick");
+</script>
+</body>
+</html>
