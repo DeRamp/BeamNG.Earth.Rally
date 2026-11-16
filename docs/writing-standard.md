@@ -125,8 +125,8 @@ old `docs/release-*.md` files stay as history.
    The fork's latest release has an installer and the API this release needs (see above).
 3. Grep for the old version number (`M.VERSION` in `mod/`, versioned doc names like `pacenotes-X.Y.Z.md`) and
    update what should move.
-4. Commit, tag `vX.Y.Z-alpha`, `python tools/package.py X.Y.Z-alpha`.
-5. GitHub pre-release: title, body and asset as above.
+4. `python tools/release.py X.Y.Z-alpha --check`, then without `--check`: it commits, tags `vX.Y.Z-alpha`, builds the
+   zip, pushes and makes the GitHub pre-release with the title, body and asset above. The maintainer runs it.
 
 ## Other docs
 

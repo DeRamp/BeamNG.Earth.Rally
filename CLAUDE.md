@@ -16,7 +16,8 @@ BeamNG.drive 0.40.5 mod (Lua, `mod/earth_rally/`) that runs real rally stages on
   in a new console. On a restart, wait until no BeamNG.Earth Python process is left, plus a few seconds, then
   confirm the launcher, its server and `BeamNG.drive.exe` are all running.
 - **Never install, push, tag or release without being told.** Once the owner says to land work, `/merge-request`
-  pushes your own branch and opens its PR; that is the only push it covers.
+  pushes your own branch and opens its PR, and back-merges `origin/main` into it when needed; those are the only
+  pushes it covers (never a force push).
 - Never move windows on the owner's desktop.
 - The owner dictates by speech-to-text; stray pacenote words ("left 4", "over crest") in a message are game audio.
 
@@ -30,8 +31,9 @@ BeamNG.drive 0.40.5 mod (Lua, `mod/earth_rally/`) that runs real rally stages on
   (`powershell -ExecutionPolicy Bypass -File tools/maintainer.ps1` from the main checkout, a background session; `claude agents` lists it,
   `claude attach <id>` talks to it). A hook (`.claude/hooks/guard_main.py`) blocks
   merges, commits and pushes to `main` from every other session. The owner can still merge by hand on GitHub.
-- Release = tag `vX.Y.Z-alpha` on `main` + GitHub pre-release with `dist/earth_rally-X.Y.Z-alpha.zip`. The owner runs
-  `/release` in the maintainer session.
+- Release = tag `vX.Y.Z-alpha` on `main` + GitHub pre-release with `dist/earth_rally-X.Y.Z-alpha.zip`. When the owner
+  asks for a release, put `Release: X.Y.Z-alpha` in the PR body: the maintainer releases right after merging
+  (`/release`, which ends in `tools/release.py`). No other session tags or releases.
 - Rally data (events, recces, matched lines, times, `Rally Docs/`, KML) is organisers' material: never in git.
 
 ## Checking work

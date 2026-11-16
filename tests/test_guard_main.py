@@ -112,6 +112,14 @@ def cases(ROOT, WT, OTHER):
         (0, WT, None, "git commit -m @'\nfix: don't push\ngit push origin main\n'@"),
         (0, WT, None, "git commit -F - <<'EOF'\nfix things\ngit push origin main\nEOF\ngit log -1"),
         (2, WT, None, "git commit -F - <<'EOF'\nmsg\nEOF\ngit push origin main"),
+        # the release script
+        (2, ROOT, None, 'python tools/release.py 1.6.1-alpha'),
+        (2, WT, None, 'python tools/release.py 1.6.1-alpha --check'),
+        (2, WT, None, r'py -3 tools\release.py 1.6.1-alpha'),
+        (0, ROOT, ('maintainer', None), 'python tools/release.py 1.6.1-alpha'),
+        (2, ROOT, ('maintainer', 'sub1'), 'python tools/release.py 1.6.1-alpha'),
+        (0, WT, None, 'python tools/package.py 1.6.1-alpha'),
+        (0, OTHER, None, 'python tools/release.py 1.0.0'),
         # other repos are not guarded
         (0, OTHER, None, 'git commit -m x'),
     ]

@@ -10,6 +10,7 @@ would change `main` of this repo (origin URL contains REPO) is blocked with exit
 - `git branch -f/-D/-m/-M ... main`, `git update-ref refs/heads/main`
 - `git commit/merge/rebase/cherry-pick/revert/am/pull/reset` while on `main`, except `pull --ff-only` from
   origin's main, `--abort`/`--quit`, and a `reset` that only unstages paths
+- `tools/release.py` (commits, tags and pushes `main` itself, so only the maintainer may run it)
 
 `git checkout X`/`git switch X` and `cd` earlier in the same command line are followed.
 This is a guardrail against mistakes, not a security boundary: aliases, `sh -c` and scripts get past it.
@@ -28,6 +29,7 @@ REPO = "beamng.earth.rally"
 MAIN = {"main", "master"}
 CHANGES_CURRENT = {"commit", "merge", "rebase", "cherry-pick", "revert", "am", "pull", "reset"}
 GIT_OPTS_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
+PYTHONS = {"python", "python3", "py"}
 RESET_MODES = {"--hard", "--soft", "--mixed", "--keep", "--merge"}
 REASON = (
     "Blocked: only the maintainer session changes Earth Rally's `main`. Work on your own branch and land it with "
@@ -274,6 +276,9 @@ def check(command, cwd):
             reason = gh_blocked(toks, state)
         elif head == "git":
             reason = git_blocked(toks[1:], state)
+        elif head in PYTHONS or head == "release.py":
+            if any(exe(t) == "release.py" for t in toks[:3]) and state.ours():
+                reason = "tools/release.py"
         if reason:
             return reason
     return None
