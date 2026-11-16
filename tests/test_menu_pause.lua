@@ -80,6 +80,45 @@ T.check(not paused and not mp.held() and pauseCounter == 0, 'release: our reques
 mp.release()
 T.check(pauseCounter == 0, 'release twice: harmless')
 
+-- ... and nothing put back by the frame after (the page is taken for gone)
+mp.uiState(ROUTE, ROUTE)
+mp.release()
+mp.update()
+T.check(not paused and pauseCounter == 0, 'release, then a frame: nothing put back in')
+
+-- an action that moves the car or loads the world started from the page: ours taken back, not put in again until
+-- the page is next opened (BeamNG.Earth's holds pause only a game not paused already)
+mp.uiState(ROUTE, ROUTE)
+mp.suspend()
+T.check(not paused and not mp.held() and mp.suspended(), 'an action started: our request taken back')
+mp.update()
+mp.uiState(ROUTE, ROUTE)
+T.check(not paused and not mp.held(), '... and not put in again while the page stays up')
+mp.uiState('play', ROUTE)
+mp.uiState(ROUTE, ROUTE)
+T.check(paused and mp.held() and not mp.suspended(), 'the page opened again: paused again')
+mp.uiState('play', ROUTE)
+mp.suspend()
+T.check(not mp.suspended(), 'suspend with the page closed: nothing to hold off')
+
+-- BeamNG.Earth holding the game itself: our request waits for its hold to end, then goes in
+local earthHolds = true
+mp.holding = function() return earthHolds end
+mp.uiState(ROUTE, ROUTE)
+T.check(not paused and not mp.held(), 'BeamNG.Earth holding: no request of ours on top of its hold')
+mp.update()
+T.check(not mp.held(), '... still holding: still none')
+earthHolds = false
+mp.update()
+T.check(paused and mp.held(), '... its hold over: ours in')
+mp.uiState('play', ROUTE)
+T.check(not paused, 'closed: running again')
+mp.holding = function() error('boom') end
+mp.uiState(ROUTE, ROUTE)
+T.check(mp.held(), 'a hold check that throws: taken as no hold')
+mp.uiState('play', ROUTE)
+mp.holding = function() return false end
+
 -- no request stack (an older game): the page opens, nothing paused, nothing thrown
 simTimeAuthority = nil
 mp.uiState(ROUTE, ROUTE)

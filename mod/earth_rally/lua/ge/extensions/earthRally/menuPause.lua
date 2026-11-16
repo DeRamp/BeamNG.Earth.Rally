@@ -18,11 +18,19 @@
 -- states, and a pause changes no UI state.
 --
 -- held: we have a request in. Kept so a push is never doubled and a pop never sent for a request we did not make.
+-- pageUp: our page is the UI state now. suspended: an action that moves the car or loads the world (auto recce, recce,
+-- go to start, run stage) was started from the page: our request taken back and not put in again until the page is
+-- next opened -- BeamNG.Earth's own holds (the drop hold, a generation swap: simhold.pause) take the game's plain
+-- pause only when it is not paused already, so with ours in they take none, and closing the page would run the
+-- physics in the middle of their hold.
+-- M.holding: BeamNG.Earth holding the game itself (earthAdapter.holding, set by main.lua): our request waits until
+-- it is over (M.update), for the same reason.
 local M = {}
 
 M.REQUEST_ID = 'earthRally_menu'
+M.holding = function() return false end
 
-local held = false
+local held, pageUp, suspended = false, false, false
 
 -- The game's simTimeAuthority, when it has the request stack (0.40); nil otherwise (then the menu just does not pause).
 local function sta()
@@ -33,29 +41,55 @@ local function sta()
   return nil
 end
 
+local function earthHolds()
+  local ok, h = pcall(M.holding)
+  return ok and h == true
+end
+
+-- Our request put in, if the page wants one and nothing above says to wait.
+local function take()
+  if held or not pageUp or suspended or earthHolds() then return end
+  local s = sta()
+  if not s then return end
+  held = true
+  pcall(s.pushPauseRequest, M.REQUEST_ID)
+end
+
 function M.held() return held end
+function M.suspended() return suspended end
 
 -- The UI state changed (main.onUiChangedState): our page up, a request in; anything else, ours taken back.
 function M.uiState(toState, ourRoute)
   local want = toState ~= nil and toState == ourRoute
-  if want == held then return end
-  local s = sta()
-  if not s then return end
-  if want then
-    held = true
-    pcall(s.pushPauseRequest, M.REQUEST_ID)
-  else
-    M.release()
-  end
+  if not want then M.release() return end
+  pageUp = true
+  take()
 end
 
--- Our request taken back, if there is one: on leaving the page, and when the level goes or the mod is switched off
--- with the page up (a request left behind would hold the next level paused).
-function M.release()
+-- Every frame (main.onUpdate): a request held back while BeamNG.Earth held the game, put in once its hold is over.
+function M.update()
+  if pageUp and not held and not suspended then take() end
+end
+
+-- An action that moves the car or loads the world started from the page: our request taken back until the page is
+-- next opened.
+local function pop()
   if not held then return end
   held = false
   local s = sta()
   if s then pcall(s.popPauseRequest, M.REQUEST_ID) end
+end
+function M.suspend()
+  if pageUp then suspended = true end
+  pop()
+end
+
+-- Our request taken back, if there is one, and the page taken for closed: on leaving the page, and when the level
+-- goes, the mod is switched off or reloaded with the page up (a request left behind would hold the next level paused,
+-- and every Escape menu after it).
+function M.release()
+  pageUp, suspended = false, false
+  pop()
 end
 
 return M

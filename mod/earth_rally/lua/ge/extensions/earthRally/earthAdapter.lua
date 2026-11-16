@@ -102,6 +102,21 @@ function M.gpsSet(lat, lon, name) local a = api() if not (a and a.gpsSet) then r
 function M.gps() local a = api() if not (a and type(a.gps) == 'function') then return false end
   local ok, g = pcall(a.gps) if not ok then return false end
   return g end
+-- BeamNG.Earth holding the game still itself (its drop hold, the edge guard, loading after a teleport: core.heldReason;
+-- a generation swap: core._swapLive; a fast pre-cache: core._fastPaused). Internals, each felt for: false when none
+-- of them answers. (menuPause: the menu's pause request kept out of the way of those holds, which take the game's
+-- plain pause only when it is not paused already.)
+function M.holding()
+  local c = core()
+  if type(c) ~= 'table' then return false end
+  for _, f in ipairs({ 'heldReason', '_swapLive' }) do
+    if type(c[f]) == 'function' then
+      local ok, r = pcall(c[f])
+      if ok and r then return true end
+    end
+  end
+  return c._fastPaused == true
+end
 
 ------------------------------------------------------------------------------------------
 -- the road graph (the auto recce's one dependency on BeamNG.Earth beyond the pose)
