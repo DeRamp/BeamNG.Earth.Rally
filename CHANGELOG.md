@@ -3,6 +3,23 @@
 Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/writing-standard.md). Downloads:
 [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
 
+## 1.6.1-alpha: on the stage (2026-11-15)
+
+Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)
+(official 1.6+ works, without the auto recce).
+
+Earth Rally does less work each frame on a stage, for players whose frame rate dropped.
+
+### Fixed
+* The stage HUD redraws 10 times a second instead of 30; the countdown and the way-back arrow stay smooth.
+* Less garbage made for the HUD on every update.
+* Stage dressing goes down in short slices, so arriving at a dressed stretch hitches less.
+* Dressing ahead of the car goes down before dressing behind it.
+* Faster road lookups for dressing on large road maps.
+
+### Known issues
+* If your frame rate still falls on a stage, please report it with your graphics preset, GPU and `beamng.log`.
+
 ## 1.6.0-alpha: on the stage (2026-11-15)
 
 Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)
