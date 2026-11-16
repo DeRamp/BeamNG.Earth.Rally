@@ -4,4 +4,5 @@
 # Other sessions find it by the name "maintainer" and send it merge requests (/merge-request).
 $repo = Split-Path $PSScriptRoot -Parent
 Set-Location $repo
-claude --agent maintainer --name maintainer --settings "$repo\.claude\maintainer.settings.json"
+# auto: it runs unattended, so routine steps must not wait on a permission prompt (ask rules, e.g. git push, still ask)
+claude --agent maintainer --name maintainer --permission-mode auto --settings "$repo\.claude\maintainer.settings.json"
