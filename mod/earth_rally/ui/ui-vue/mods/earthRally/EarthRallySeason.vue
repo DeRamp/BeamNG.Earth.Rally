@@ -81,6 +81,12 @@ const TABS = [{ id: "rounds", label: "Rallies" }, { id: "standings", label: "Sta
 // (kept per season across the menu closing, as the rest of where the menu was left: store.js lastPlace)
 const tab = ref((lastPlace.seasonTab && lastPlace.seasonTab.id === props.s.id && lastPlace.seasonTab.tab) || "rounds")
 watch(tab, t => { lastPlace.seasonTab = { id: props.s.id, tab: t } })
+// the bumpers (a controller's tab_l / tab_r, caught by the page: EarthRally.vue stepTab), round the ends
+function stepTab(d) {
+  const i = TABS.findIndex(t => t.id === tab.value)
+  tab.value = TABS[(i + d + TABS.length) % TABS.length].id
+}
+defineExpose({ stepTab })
 
 const st = computed(() => props.s.standings || {})
 const you = computed(() => st.value.you || null)

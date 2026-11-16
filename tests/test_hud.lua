@@ -195,8 +195,8 @@ do
     toControlM = 220, sinceFinish = 1 }
   rl, ours = hud.build(run('toStop', fin), { now = 38980, speed = 20 })
   T.check(rl.activeState == 'vehicleProximity' and rl.scheduleData.eventType == 'ss_stop' and rl.vehicleProximity.distance == 220
-    and not rl.vehicleProximity.isNear and rl.showStageApps and rl.stageData.currentSSTime == 368.9 and rl.stageData.isComplete,
-    'to the stop control: the stock SLOW and distance, the stage time kept top-left')
+    and not rl.vehicleProximity.isNear and rl.showStageApps and rl.stageData.currentSSTime == 378.9 and rl.stageData.isComplete,
+    'to the stop control: the stock SLOW and distance, the stage clock stopped at the time that counts (penalty in: 1.6.2)')
   T.check(ours.show.finish and ours.finish.time == 378.9 and math.abs(ours.finish.delta - 6.5) < 1e-9 and not ours.finish.newBest
     and ours.finish.penalties.jumpStart == 10 and ours.finish.penalty == 10, 'the flying-finish card: slower than the best, the jump start in it')
   T.check(ours.show.finish == 'big', 'at the line: the time at its larger size (beside the stage clock, not mid-screen: #17)')
@@ -212,6 +212,29 @@ do
   T.check(hud.finishPhase(run('running', {})) == nil and hud.finishPhase(nil) == nil, 'finishPhase: nothing before the finish')
   rl, ours = hud.build(run('toStop', { stageTime = 360, finalTime = 360, penalty = 0, sinceFinish = 0, toControlM = 20 }), ctx)
   T.check(ours.finish.newBest and ours.finish.first and rl.vehicleProximity.isNear, 'a first time is a best; near the stop: STOP')
+
+  -- a Route to start armed (1.6.2): the line in the rally block's corner once a run is over, never during one
+  local ap = { name = 'Deckerville', distM = 4230 }
+  rl, ours = hud.build(run('finished', { finalTime = 300, stageTime = 300, sinceFinish = 9, resultsOpen = true }),
+    { now = 38990, approach = ap })
+  T.check(ours.show.approach and ours.approach.name == 'Deckerville' and ours.approach.distM == 4230,
+    'route armed, the run over: the approach line is up')
+  rl, ours = hud.build(run('running', { clock = 20, along = 300 }), { now = 38990, approach = ap })
+  T.check(not ours.show.approach, '... and not during a run')
+  rl, ours = hud.build(run('finished', { finalTime = 300, sinceFinish = 9, resultsOpen = true }),
+    { now = 38990, approach = ap, uiHidden = true })
+  T.check(not ours.show.approach, '... nor with a menu up')
+  T.check(hud.approachText(ap, 'km') == 'Route to Deckerville · 4.2 km · gets ready as you arrive'
+    and hud.approachText({ name = 'X' }, 'mi') == 'Route to X · gets ready as you arrive' and hud.approachText(nil) == nil,
+    'the line as words, for the Messages app: ' .. tostring(hud.approachText(ap, 'km')))
+  local fr = run('finished', { finalTime = 300, sinceFinish = 9, resultsOpen = true })
+  local function ko(a) return select(2, hud.streamKeys(fr, { now = 38990, units = 'km', approach = a })) end
+  T.check(ko({ name = 'D', distM = 4230 }) == ko({ name = 'D', distM = 4240 })
+    and ko({ name = 'D', distM = 4230 }) ~= ko({ name = 'D', distM = 4130 }) and ko(nil) ~= ko({ name = 'D', distM = 4230 })
+    and ko({ name = 'D', distM = 4230 }) ~= ko({ name = 'E', distM = 4230 }),
+    'the approach line in our stream key: its stage, and the distance to 0.1 km as drawn')
+  T.check(hud.approachKey({ name = 'D', distM = 1600 }, 'mi') ~= hud.approachKey({ name = 'D', distM = 1450 }, 'mi'),
+    '... 0.1 mi in miles')
 
   -- stage done: the results card (after the finish card), penalties itemised
   local done = { stageTime = 361.4, finalTime = 401.4, penalty = 40, jumpStart = true, resets = 2, latePenalty = 10,
@@ -416,10 +439,12 @@ do
   end
   local function drawn(rl, ours)
     local o = ours or {}
-    local parts = { o.state, flags(o.show), o.clockText, tostring(o.countdown), tostring(o.canSkip),
+    -- (the rally clock is drawn only in the panel on the way to a stage: not once the run is over)
+    local parts = { o.state, flags(o.show), o.state ~= 'finished' and o.clockText or '-', tostring(o.countdown), tostring(o.canSkip),
       (o.show and o.show.next) and r1(o.toControlM) or '-',
       r10(o.doneM and o.doneM / 1000), r1(o.offM), r1(o.backBearing and o.backBearing / 2), r1(o.atcTime), r1(o.startAt),
-      tostring(o.missedAtc), o.finish and r10(o.finish.time) or '-' }
+      tostring(o.missedAtc), o.finish and r10(o.finish.time) or '-',
+      (o.show and o.show.approach and o.approach) and (o.approach.name .. r10(o.approach.distM and o.approach.distM / 1000)) or '-' }
     local mine = table.concat(parts, '#')
     parts = {}
     if rl then
@@ -454,6 +479,10 @@ do
     { 'to the stop', { state = 'toStop', startM = 0, finishM = 6800, stage = stage, startAt = 36000, finalTime = 300.4,
       stageTime = 300.4, sinceFinish = 0, toControlM = 200 },
       function(r, t) r.sinceFinish, r.toControlM = t, math.max(0, 200 - 20 * t) end, 36300 },
+    -- (1.6.2: a Route to start armed while the results card is up, the car driving towards the next stage)
+    { 'route armed, results up', { state = 'finished', startM = 0, finishM = 6800, stage = stage, startAt = 36000,
+      finalTime = 300.4, stageTime = 300.4, sinceFinish = 9, resultsOpen = true },
+      function(r, t) r.approachAt = { name = 'Deckerville', distM = 5000 - 30 * t } end, 36400 },
   }
   for _, cs in ipairs(cases) do
     local name, run, step, t0 = cs[1], cs[2], cs[3], cs[4]
@@ -464,9 +493,10 @@ do
       step(run, t)
       local now = t0 + t
       local speed = run.state == 'toStart' and math.max(0, 15 - t) or 20
-      local ctx = { now = now, speed = speed, units = 'km', canSkip = false }
+      local ctx = { now = now, speed = speed, units = 'km', canSkip = false, approach = run.approachAt }
       local rl, ours = hud.build(run, ctx)
-      local kr, ko = hud.streamKeys(run, { now = now, units = 'km', stopped = speed < 1.0, canSkip = false, stopRadiusM = 25 })
+      local kr, ko = hud.streamKeys(run, { now = now, units = 'km', stopped = speed < 1.0, canSkip = false, stopRadiusM = 25,
+        approach = run.approachAt })
       local d, o = drawn(rl, ours)
       sawRl = sawRl or (rl ~= nil and rl.activeState ~= 'inactive')
       for _, pr in ipairs({ { prevD, d, prevK, kr, 'stock' }, { prevO, o, prevKo, ko, 'ours' } }) do

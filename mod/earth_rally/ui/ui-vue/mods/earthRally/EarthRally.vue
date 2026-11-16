@@ -6,7 +6,7 @@
        each one a way back. Data and buttons: earthRally_main (store.js). -->
   <!-- a controller (1.6.2, #14), as the game's own screens take one (its Logbook, OthersView): the d-pad / stick moves
        between everything marked bng-nav-item and the buttons, A presses, B goes back a page (and closes the menu from
-       Rallies, as the Back / Close at the top does), Start closes the menu, the bumpers switch a rally's tabs, the
+       Rallies, as the Back / Close at the top does), Start closes the menu, the bumpers switch a rally's or a season's tabs, the
        right stick scrolls. The first row or card of a page takes the focus when it comes up with a controller in use
        (v-bng-ui-nav-focus; never for a mouse). -->
   <div class="er-page" bng-ui-scope="earthRally" v-bng-on-ui-nav:back="back" v-bng-on-ui-nav:menu="closeMenu"
@@ -43,7 +43,7 @@
       <EarthRallyHome v-if="view === 'rallies'" @season="openSeason" @rally="openRally" @stage="openStage" @action="action" />
 
       <!-- ===== a season ===== -->
-      <EarthRallySeason v-else-if="view === 'season' && ssn" :key="ssn.id" :s="ssn" @rally="openRally" />
+      <EarthRallySeason v-else-if="view === 'season' && ssn" ref="seasonView" :key="ssn.id" :s="ssn" @rally="openRally" />
 
       <!-- ===== a rally ===== -->
       <section v-else-if="view === 'rally' && rly">
@@ -397,8 +397,13 @@ const rallyTabs = computed(() => {
   return t
 })
 const curTab = computed(() => (rallyTabs.value.some(t => t.id === rallyTab.value) ? rallyTab.value : "stages"))
-// the bumpers (a controller's tab_l / tab_r): a rally's tabs, round the ends
+// the bumpers (a controller's tab_l / tab_r): a rally's tabs, or a season's (EarthRallySeason.vue), round the ends
+const seasonView = ref(null)
 function stepTab(d) {
+  if (view.value === "season") {
+    if (seasonView.value) seasonView.value.stepTab(d)
+    return
+  }
   const t = rallyTabs.value
   if (view.value !== "rally" || t.length < 2) return
   const i = t.findIndex(x => x.id === curTab.value)

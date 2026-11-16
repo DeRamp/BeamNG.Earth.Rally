@@ -101,8 +101,18 @@
       <div class="er-finish-row">
         <span class="er-finish-t">{{ fmt.time(fin.time) }}</span>
         <span v-if="fin.newBest" class="er-delta er-best">{{ fin.first ? "FIRST TIME" : fmt.delta(fin.delta) + (show.finish === "big" ? " · NEW BEST" : " BEST") }}</span>
-        <span v-else class="er-delta er-slower">{{ fmt.delta(fin.delta) }}</span>
+        <!-- (labelled: an amber "+2.1 s" alone, beside the yellow penalty words, read as one more penalty) -->
+        <span v-else class="er-delta er-slower">{{ fmt.delta(fin.delta) }}<small>vs best</small></span>
       </div>
+    </div>
+
+    <!-- 6 a Route to start armed, the run before it over (its results card up): one line in the rally block's
+         corner. With no run our HUD is off screen, and main.lua says it in the game's Messages app instead. -->
+    <div v-if="show.approach && f.approach" class="er-panel er-approach">
+      <span class="er-approach-l">Route</span>
+      <span class="er-approach-n">{{ f.approach.name }}</span>
+      <span v-if="f.approach.distM !== null && f.approach.distM !== undefined" class="er-approach-d">{{ fmt.len(f.approach.distM, units) }}</span>
+      <span class="er-approach-s">gets ready as you arrive</span>
     </div>
 
     <div v-if="f.preview && f.previewLabel" class="er-preview">HUD preview: {{ f.previewLabel }}</div>
@@ -302,6 +312,16 @@ const penWords = computed(() => {
   .er-finish-t { font-size: 28px; }
   .er-delta { font-size: 16px; padding: 2px 8px; border-radius: 5px; }
   .er-finish-row { gap: 10px; }
+}
+.er-slower small { font-size: 0.7em; font-weight: 700; margin-left: 0.4em; opacity: 0.8; text-transform: uppercase;
+  letter-spacing: 0.04em; }
+.er-approach {
+  left: 0; top: 0; max-width: 750px; padding: 10px 20px; display: flex; align-items: baseline; gap: 12px;
+  white-space: nowrap; overflow: hidden;
+  .er-approach-l { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--er-muted); }
+  .er-approach-n { font-size: 20px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .er-approach-d { font: 700 20px "Overpass Mono", monospace; color: var(--er-pink); flex: none; }
+  .er-approach-s { font-size: 15px; color: #e8e8e8; flex: none; }
 }
 .er-delta { display: inline-block; margin-top: 8px; font-size: 34px; font-weight: 800; padding: 4px 18px; border-radius: 8px; }
 .er-best { background: var(--er-go); color: #002a00; }

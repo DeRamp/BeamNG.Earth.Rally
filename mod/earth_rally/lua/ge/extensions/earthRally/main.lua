@@ -17,6 +17,7 @@ local importer = require('earthRally/importer')
 local settings = require('earthRally/settings')
 local menu = require('earthRally/menu')
 local preview = require('earthRally/preview')
+local hudFrame = require('earthRally/hudFrame')
 local versions = require('earthRally/versions')
 local earthMenuFix = require('earthRally/earthMenuFix') -- STOPGAP: remove with BeamNG.Earth's fix (the file says)
 local menuPause = require('earthRally/menuPause')     -- the game paused while the menu page is up (1.6.2, #13)
@@ -990,6 +991,29 @@ function M.streamsLine(rl, ours)
     rlText, showKeys(ours))
 end
 
+-- A Route to start armed with no run on (1.6.2): our HUD is not on screen (it lives in the stage layout), so the
+-- line goes through the game's Messages app, in every layout's top-left apps: one message of our own category,
+-- replaced as the distance changes (0.1 km, hudFrame.approachKey), re-sent before it times out, cleared once the
+-- route is disarmed, the stage loads or a menu is up.
+M.ROUTE_MSG_CATEGORY = 'earthRallyRoute'   -- (the Messages app reads a category as a regular expression)
+M.ROUTE_MSG_S = 2
+local routeMsgKey, routeMsgT = nil, 0
+local function routeMessage(gh, dt, on)
+  local ap = on and not runner.uiHidden and runner.approachInfo() or nil
+  local units = ap and settings.get('units') or nil
+  local key = ap and hudFrame.approachKey(ap, units) or nil
+  routeMsgT = routeMsgT + (dt or 0)
+  if key == routeMsgKey and (not key or routeMsgT < M.ROUTE_MSG_S) then return end
+  routeMsgKey, routeMsgT = key, 0
+  if not gh.trigger then return end
+  if ap then
+    pcall(gh.trigger, 'Message', { msg = hudFrame.approachText(ap, units), ttl = M.ROUTE_MSG_S * 2 + 1,
+      category = M.ROUTE_MSG_CATEGORY, icon = 'raceFlag' })
+  else
+    pcall(gh.trigger, 'Message', { msg = '', category = M.ROUTE_MSG_CATEGORY, clear = true })
+  end
+end
+
 local function sendStreams(dt)
   local gh = rawget(_G, 'guihooks')
   if not (gh and gh.queueStream) then return end
@@ -1006,6 +1030,7 @@ local function sendStreams(dt)
   local r = runner.current()
   local over = not r or ((r.state == 'finished' or r.state == 'failed') and not r.resultsOpen
     and (r.sinceFinish or 99) > 5)
+  routeMessage(gh, dt, over)
   if over then
     -- (once: the stock apps blank, ours hides)
     if not inactiveSent then
