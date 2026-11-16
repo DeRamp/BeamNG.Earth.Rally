@@ -21,5 +21,19 @@
       "Bash(python tools/install.py *)",
       "Bash(gh release *)"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_main.py\"",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
   }
 }

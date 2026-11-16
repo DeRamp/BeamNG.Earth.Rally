@@ -15,7 +15,8 @@ BeamNG.drive 0.40.5 mod (Lua, `mod/earth_rally/`) that runs real rally stages on
   `..\beamng.earth\.venv\Scripts\python.exe launcher.py --no-beammp --no-update-check` from the `beamng.earth` folder,
   in a new console. On a restart, wait until no BeamNG.Earth Python process is left, plus a few seconds, then
   confirm the launcher, its server and `BeamNG.drive.exe` are all running.
-- **Never install, push, tag or release without being told.**
+- **Never install, push, tag or release without being told.** Once the owner says to land work, `/merge-request`
+  pushes your own branch and opens its PR; that is the only push it covers.
 - Never move windows on the owner's desktop.
 - The owner dictates by speech-to-text; stray pacenote words ("left 4", "over crest") in a message are game audio.
 
@@ -23,8 +24,13 @@ BeamNG.drive 0.40.5 mod (Lua, `mod/earth_rally/`) that runs real rally stages on
 
 - **Bug fixes only until the alpha MVP is out** (the owner, 2026-11-15); features stay planned in the roadmap.
   README, wiki and posts carry no version number: they say alpha.
-- Work on `main` (or a worktree branched from it). `v1.2.0`, `v1.1.0`, `auto-test` are history only.
-- Release = tag `vX.Y.Z-alpha` on `main` + GitHub pre-release with `dist/earth_rally-X.Y.Z-alpha.zip`. Use `/release`.
+- Work on a branch or worktree branched from `main`. `v1.2.0`, `v1.1.0`, `auto-test` are history only.
+- **Only the `maintainer` session changes `main`.** It reviews, tests and merges pull requests. To land work, run
+  `/merge-request`: it opens a PR and messages the maintainer. The owner starts the maintainer with
+  `powershell -ExecutionPolicy Bypass -File tools\maintainer.ps1`. A hook (`.claude/hooks/guard_main.py`) blocks
+  merges, commits and pushes to `main` from every other session. The owner can still merge by hand on GitHub.
+- Release = tag `vX.Y.Z-alpha` on `main` + GitHub pre-release with `dist/earth_rally-X.Y.Z-alpha.zip`. The owner runs
+  `/release` in the maintainer session.
 - Rally data (events, recces, matched lines, times, `Rally Docs/`, KML) is organisers' material: never in git.
 
 ## Checking work
