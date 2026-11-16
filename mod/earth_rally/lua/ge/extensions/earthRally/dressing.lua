@@ -53,6 +53,12 @@ M.TAPE_SY_MAX = 1.25      -- a tape model stretched along its length by at most 
 M.TAPE_OVERLAP = 0.5      -- ... beyond it two pieces of the longest model, overlapping by at least this
 M.TAPE_LEN_MAX = 2 * 1.25 * 10 - 0.5  -- (so no tape is longer than two of them: 24.5 m)
 M.TAPE_GROW_STEP = 0.25   -- (a tape's maxLen, the longest that still clears the stage's road, found in these steps)
+-- A side road leaving within this of the stage's own road (the way on, or the way back: an acute junction, a fork)
+-- gets its tape parallel with the stage road, TAPE_CLEAR off its edge, across the side road's mouth (1.6.2, issue #9,
+-- the user: "the fence should always run parallel with the stage road"). Square to such a side road the tape stood at
+-- 50-75 degrees to the stage and had to be walked far in before both ends cleared it: an awkward angle. Its length
+-- is the side road's width along the stage's way (2 x half width / sin of the angle) plus TAPE_PAST each end.
+M.TAPE_PARALLEL_DEG = 45
 M.CLEAR_CELL_M = 50       -- (the whole line's clearance looked up in cells of this size)
 M.BOARD_BEFORE = 75       -- direction board before a turn / fork
 M.WARN_BEFORE = 100       -- radio / medical warning board
@@ -274,9 +280,11 @@ end
 -- TAPE_LEN_MAX). Returns key, the length laid (m) and that length over the model's (1 for a model at its own length;
 -- over TAPE_SY_MAX the plan lays it as two pieces: tapePieces).
 M.TAPES = { { 'tape6', 6 }, { 'tape8', 8 }, { 'tape10', 10 } }
-function M.tapeFor(halfW)
+-- sinA (optional): the sine of the angle between the tape and the side road, for a tape laid parallel with the stage
+-- (TAPE_PARALLEL_DEG): the road is 2 x halfW / sinA wide along it.
+function M.tapeFor(halfW, sinA)
   local h = (type(halfW) == 'number' and halfW > 0) and halfW or M.HALF
-  local need = 2 * h + 2 * M.TAPE_PAST
+  local need = 2 * h / ((sinA and sinA > 0 and sinA < 1) and sinA or 1) + 2 * M.TAPE_PAST
   for _, t in ipairs(M.TAPES) do
     if need <= t[2] + 1e-9 then return t[1], t[2], 1 end
   end
@@ -294,10 +302,12 @@ function M.tapePieces(ax, ay, bx, by, len, top)
   return { { ax, ay, ax + ux * p, ay + uy * p, p / top }, { bx - ux * p, by - uy * p, bx, by, p / top } }
 end
 -- (what props.lua needs to fit a tape of unknown width to the road it finds there when it puts it down)
-local function refit(len)
+-- (sinA: a tape parallel with the stage, at that sine to its side road -- props.lua looks for the side road that far
+-- off square and lays the tape as long as the road is wide along it)
+local function refit(len, sinA)
   local models = {}
   for _, t in ipairs(M.TAPES) do models[#models + 1] = { t[2], M.SHAPES[t[1]] } end
-  return { len = len, past = M.TAPE_PAST, models = models }
+  return { len = len, past = M.TAPE_PAST, models = models, sin = sinA }
 end
 
 -- A direction at a junction: given as a bearing, else from the line; turned round when it runs against the line
@@ -346,14 +356,31 @@ local function solveJunction(L, j)
     if sr.deg ~= nil then dx, dy = bearingToDir(sr.deg) elseif sr.dx then dx, dy = sr.dx, sr.dy end
     if dx then
       dx, dy = norm(dx, dy)
+      -- (the tape's way: square across the side road; at an acute junction along the stage leg nearest the side road,
+      -- the way back or the way on -- TAPE_PARALLEL_DEG -- and then it starts where its line runs TAPE_CLEAR off the
+      -- stage road's edge, the side road's centre crossing it s = (jh + TAPE_CLEAR) / sinA in)
       local rx, ry = rightOf(dx, dy)
-      local key, len, sy = M.tapeFor(sr.halfW)
+      local cb, ca = -(dx * inx + dy * iny), dx * outx + dy * outy
+      local lx, ly, cosL = -inx, -iny, cb
+      if ca > cb then lx, ly, cosL = outx, outy, ca end
+      local sinA, s0, sMax = nil, M.TAPE_IN, M.TAPE_IN_MAX
+      if cosL > math.cos(math.rad(M.TAPE_PARALLEL_DEG)) then
+        sinA = sqrt(max(0, 1 - cosL * cosL))
+        if sinA > 1e-3 then
+          rx, ry = lx, ly
+          s0 = (jh + M.TAPE_CLEAR) / sinA + 1e-6      -- (a hair in: exactly TAPE_CLEAR off a straight stage)
+          sMax = max(M.TAPE_IN_MAX, s0 + 10)
+        else
+          sinA = nil
+        end
+      end
+      local key, len, sy = M.tapeFor(sr.halfW, sinA)
       local known = type(sr.halfW) == 'number' and sr.halfW > 0
-      local s, ax, ay, bx, by = M.TAPE_IN
+      local s, ax, ay, bx, by = s0
       local clear = false
       -- farther in until both ends and the middle clear the stage's road, the whole line (a narrow fork's branches
       -- overlap at 8 m)
-      while s <= M.TAPE_IN_MAX do
+      while s <= sMax do
         local cx, cy = jx + dx * s, jy + dy * s
         ax, ay = cx + rx * len / 2, cy + ry * len / 2
         bx, by = cx - rx * len / 2, cy - ry * len / 2
@@ -378,7 +405,8 @@ local function solveJunction(L, j)
       end
       if clear then
         res.tapes[#res.tapes + 1] = { key = key, L = len, sy = sy, known = known, s = s, dx = dx, dy = dy, ax = ax,
-                                      ay = ay, bx = bx, by = by, halfW = known and sr.halfW or M.HALF, maxLen = maxLen }
+                                      ay = ay, bx = bx, by = by, halfW = known and sr.halfW or M.HALF, maxLen = maxLen,
+                                      sinA = sinA }
       else
         sayDropped(along, sr.deg or J and J.dirToBearing and J.dirToBearing(dx, dy))
       end
@@ -404,7 +432,10 @@ local function junctionMarshal(r, fromMap)
     if x.dx * wx + x.dy * wy < tp.dx * wx + tp.dy * wy then tp = x end
   end
   local rx, ry = rightOf(tp.dx, tp.dy)
-  local d, side = tp.s + M.MARSHAL_BEHIND, M.MARSHAL_SIDE
+  -- (behind a tape laid parallel with the stage -- an acute junction -- MARSHAL_BEHIND square to the tape, which is
+  -- farther along its side road: at most twice as far)
+  local behind = tp.sinA and min(2 * M.MARSHAL_BEHIND, M.MARSHAL_BEHIND / tp.sinA) or M.MARSHAL_BEHIND
+  local d, side = tp.s + behind, M.MARSHAL_SIDE
   local away = rx * r.toutx + ry * r.touty > 0 and -1 or 1   -- (the side of the closed road away from the way out)
   if not turn then side = away * (tp.halfW + M.MARSHAL_SIDE) end
   -- (even the least in line is in the overrun: no rule marshal at this junction)
@@ -765,7 +796,7 @@ function M.plan(input)
         -- its own, so the two came out off the side road's centre.)
         local o = linear(tp.key, tp.ax, tp.ay, tp.bx, tp.by, r.jz)
         if abs(tp.sy - 1) > 1e-9 then o.sy = tp.sy end
-        o.refit, o.maxLen = refit(tp.L), tp.maxLen
+        o.refit, o.maxLen = refit(tp.L, tp.sinA), tp.maxLen
         objs[#objs + 1] = o
       else
         for _, pc in ipairs(M.tapePieces(tp.ax, tp.ay, tp.bx, tp.by, tp.L, tp.L / tp.sy)) do

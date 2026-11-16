@@ -362,6 +362,22 @@ function M.junctions(eventId, stageId, stage)
   return out
 end
 
+-- A time control (kind 'atc' / 'stop') put on the road beside it by the auto recce (autoRecce.controlOnRoad, kept in
+-- the matched file's `controls`): { lat, lon (the road point), deg (the road's bearing there, either way), offM }, or
+-- nil -- no matched file, an older one, or one made from where the map's control was before it moved (ctl: the
+-- control as the map has it now; more than CONTROL_SAME_M from the point the recce had, and the road point is not
+-- its).
+M.CONTROL_SAME_M = 2
+function M.controlOnRoad(eventId, stageId, kind, ctl)
+  if type(ctl) ~= 'table' or type(ctl.lat) ~= 'number' or type(ctl.lon) ~= 'number' then return nil end
+  local okM, m = pcall(M.matched, eventId, stageId)
+  local c = okM and type(m) == 'table' and type(m.controls) == 'table' and m.controls[kind]
+  if type(c) ~= 'table' or type(c.lat) ~= 'number' or type(c.lon) ~= 'number' or type(c.roadLat) ~= 'number' or
+    type(c.roadLon) ~= 'number' then return nil end
+  if geo.metres(c.lat, c.lon, ctl.lat, ctl.lon) > M.CONTROL_SAME_M then return nil end
+  return { lat = c.roadLat, lon = c.roadLon, deg = tonumber(c.deg), offM = tonumber(c.offM) }
+end
+
 -- A driven line in short, kept with each time as a record (runner.lua, at the start of a run): its kind and its
 -- points in short (how many, the first, the middle and the last, to about a metre). Only a record: whether a time is
 -- on the current line is M.onLine's, by tolerance, as a line matched again a metre over is the same road. nil with

@@ -103,13 +103,14 @@ do
   T.check(b and b.objects[1].key == 'dir45Left', 'fork: s_corner_dir45_left')
   T.check(b and math.abs(b.objects[1].x + 4) < 1e-6 and math.abs(b.objects[1].y + 75) < 1e-6,
     'fork: board 75 m before, on the left')
+  -- (1.6.2, issue #9: the branches 41 degrees apart, an acute junction: the tape runs parallel with the kept road,
+  -- across the closed branch's mouth, no longer square to that branch)
   local tape = ofKind(sites, 'tape')[1]
   local o = tape and tape.objects[1]
   local ax, ay, bx, by = ends(o)
   local cx, cy = (ax + bx) / 2, (ay + by) / 2
-  local s = len(cx, cy)
-  T.check(s > D.TAPE_IN + 0.4, string.format('fork: tape pushed in past 8 m (%.1f m)', s))
-  T.check(s >= 9 and s <= 12, string.format('fork: about 10 m in, as the mock-up (%.1f m)', s))
+  T.check(o and math.abs(o.dx * lx + o.dy * ly) > 1 - 1e-6, 'fork: tape parallel with the kept road')
+  T.check(math.abs(cx * ry - cy * rx) < 1e-6, 'fork: its middle on the closed branch centre line')
   local ca, cb = distTo(S, ax, ay) - 3, distTo(S, bx, by) - 3
   T.check(ca >= 1 - 1e-6 and cb >= 1 - 1e-6, string.format('fork: both ends 1 m clear of the kept road (%.2f, %.2f)', ca, cb))
   -- (and half a metre less in would not have been)
@@ -612,8 +613,10 @@ do
       kind = 'fork', side = 'left', inDeg = 0, outDeg = 0, sides = { { deg = deg } } } } }), 'tape')[1]
     return t and t.objects[1]
   end
-  local f = tapeAt(20)
-  T.check(f and type(f.maxLen) == 'number' and f.maxLen >= 8 - 1e-9, 'fork, unknown width: the tape carries maxLen (' ..
+  -- (a side road 50 degrees off the stage: just past TAPE_PARALLEL_DEG, its tape square to it, at 40 degrees to the
+  -- stage road, so its ends close on the stage as it grows)
+  local f = tapeAt(50)
+  T.check(f and type(f.maxLen) == 'number' and f.maxLen >= 8 - 1e-9, 'oblique, unknown width: the tape carries maxLen (' ..
     tostring(f and f.maxLen) .. ')')
   if f and f.maxLen then
     -- (the tape's middle and its way across, from its origin and heading; both ends at maxLen clear the stage road)
@@ -623,10 +626,10 @@ do
     local e1 = distTo(S, cx + f.dx * h, cy + f.dy * h) - D.HALF
     local e2 = distTo(S, cx - f.dx * h, cy - f.dy * h) - D.HALF
     T.check(e1 >= D.TAPE_CLEAR - 1e-6 and e2 >= D.TAPE_CLEAR - 1e-6, string.format(
-      'fork: at maxLen both ends still clear the stage road (%.2f, %.2f)', e1, e2))
+      'oblique: at maxLen both ends still clear the stage road (%.2f, %.2f)', e1, e2))
     local g = f.maxLen / 2 + D.TAPE_GROW_STEP
     local n1 = math.min(distTo(S, cx + f.dx * g, cy + f.dy * g), distTo(S, cx - f.dx * g, cy - f.dy * g)) - D.HALF
-    T.check(f.maxLen >= D.TAPE_LEN_MAX - 1e-9 or n1 < D.TAPE_CLEAR, 'fork: and a step longer would not')
+    T.check(f.maxLen + D.TAPE_GROW_STEP > D.TAPE_LEN_MAX + 1e-9 or n1 < D.TAPE_CLEAR, 'oblique: and a step longer would not')
   end
   local sq = tapeAt(270)
   T.check(sq and sq.maxLen and f and f.maxLen and sq.maxLen > f.maxLen,
@@ -943,6 +946,116 @@ do
     #ofKind(hp, 'spectators') .. ')')
   local hm = D._merged({ { along = 900, offLineM = 5 }, { along = leg2, offLineM = 5 } })
   T.check(#hm == 2, 'merged: without their places, 250 m along is two')
+end
+
+------------------------------------------------------------------------------------------ 1.6.2, issue #9
+
+-- Acute junctions (15 to 40 degrees between the side road and the stage road): the tape runs parallel with the stage
+-- road, TAPE_CLEAR off its edge, its middle on the side road's centre line, long enough to reach TAPE_PAST beyond both
+-- of the side road's edges along the stage's way; either side of the road, off the way on or the way back, known
+-- width or not. Just past TAPE_PARALLEL_DEG a tape is square to its side road, as before.
+do
+  local S = { V(0, -300), V(0, 300) }
+  local function tapeOf(deg, halfW)
+    local t = ofKind(D.plan({ line = S, startM = 0, finishM = 600, junctions = { { along = 300, x = 0, y = 0,
+      kind = 'straight', inDeg = 0, outDeg = 0, sides = { { deg = deg, halfW = halfW } } } } }), 'tape')[1]
+    return t and t.objects or {}
+  end
+  -- (the whole run of tape a junction has: its two ends, from its one or two pieces, along the stage's way y)
+  local function span(objs)
+    local lo, hi, xs = math.huge, -math.huge, {}
+    for _, o in ipairs(objs) do
+      local ax, ay, bx, by = ends(o)
+      lo, hi = math.min(lo, ay, by), math.max(hi, ay, by)
+      xs[#xs + 1] = ax
+      xs[#xs + 1] = bx
+    end
+    return lo, hi, xs
+  end
+  local worstClear, worstPar, worstCover, worstMid = math.huge, 0, math.huge, 0
+  local n = 0
+  for _, a in ipairs({ 15, 20, 25, 30, 35, 40 }) do
+    -- (side roads off the way on to the right (bearing a) and left (360 - a), and off the way back (180 +- a))
+    for _, deg in ipairs({ a, 360 - a, 180 - a, 180 + a }) do
+      for _, hw in ipairs({ 3, 2, false }) do
+        local objs = tapeOf(deg, hw or nil)
+        local h = hw or D.HALF
+        if #objs > 0 then
+          n = n + 1
+          local lo, hi, xs = span(objs)
+          for _, o in ipairs(objs) do worstPar = math.max(worstPar, math.abs(o.dx)) end
+          for _, x in ipairs(xs) do worstClear = math.min(worstClear, math.abs(x) - D.HALF) end
+          -- (the side road's centre line x = y tan(a) (sign by side); its edges cross the tape's line h / sin a either
+          -- side of where the centre does)
+          local dx, dy = D._bearingToDir(deg)
+          local x0 = xs[1]
+          local yc = x0 * dy / dx
+          local need = h / math.sin(math.rad(a)) + D.TAPE_PAST
+          local cover = math.min(yc - lo, hi - yc) - need
+          if (hi - lo) < D.TAPE_LEN_MAX - 1e-6 then worstCover = math.min(worstCover, cover) end
+          worstMid = math.max(worstMid, math.abs((lo + hi) / 2 - yc))
+        end
+      end
+    end
+  end
+  T.check(n == 6 * 4 * 3, 'acute: a tape at every one of 72 junctions, 15-40 degrees (' .. n .. ')')
+  T.check(worstPar < 1e-6, string.format('acute: every tape parallel with the stage road (worst |dx| %.2g)', worstPar))
+  T.check(worstClear >= D.TAPE_CLEAR - 1e-6 and worstClear <= D.TAPE_CLEAR + 0.5,
+    string.format('acute: TAPE_CLEAR off the stage road\'s edge, no farther than a step more (%.2f)', worstClear))
+  T.check(worstCover >= -1e-6, string.format('acute: past both edges of the side road by TAPE_PAST (%.2f)', worstCover))
+  T.check(worstMid < 1e-6, string.format('acute: centred on the side road (%.2g)', worstMid))
+  -- (at 15 degrees a 6 m road is 23.2 m wide along the stage: 24.7 m wanted, held to TAPE_LEN_MAX, two pieces)
+  local lo, hi = span(tapeOf(15, 3))
+  T.check(math.abs((hi - lo) - D.TAPE_LEN_MAX) < 1e-6 and #tapeOf(15, 3) == 2,
+    string.format('acute: 15 degrees, a 6 m road: held to TAPE_LEN_MAX in two pieces (%.2f m)', hi - lo))
+  -- (unknown width: one object refit at spawn, carrying the angle it crosses its side road at)
+  local u = tapeOf(30)[1]
+  T.check(u and u.refit and math.abs(u.refit.sin - 0.5) < 1e-6, 'acute: an unknown width\'s refit knows the angle (sin '
+    .. tostring(u and u.refit and u.refit.sin) .. ')')
+  -- just past TAPE_PARALLEL_DEG: square to the side road
+  local sq = tapeOf(50, 3)[1]
+  local sx, sy = D._bearingToDir(50)
+  T.check(sq and math.abs(sq.dx * sx + sq.dy * sy) < 1e-6, 'acute: at 50 degrees still square to the side road')
+  -- a square crossroads is untouched
+  local cr = tapeOf(90, 3)[1]
+  T.check(cr and math.abs(cr.dx) < 1e-6 and cr.key == 'tape8', 'acute: a side road square to the stage as before')
+end
+
+-- An acute side road off a bend that turns towards it: the tape still parallel with the stage road at the junction,
+-- moved in until both ends clear the whole line by TAPE_CLEAR
+do
+  local S = { V(0, -200), V(0, 0) }
+  for k = 1, 30 do
+    local a = math.rad(k * 2)      -- (bending right, 2 degrees each 4 m)
+    local p = S[#S]
+    S[#S + 1] = V(p.x + 4 * math.sin(a), p.y + 4 * math.cos(a))
+  end
+  local t = ofKind(D.plan({ line = S, startM = 0, finishM = 300, junctions = { { along = 200, x = 0, y = 0,
+    kind = 'straight', inDeg = 0, outDeg = 0, sides = { { deg = 25, halfW = 3 } } } } }), 'tape')[1]
+  local ok, worst = t and #t.objects > 0, math.huge
+  for _, o in ipairs(t and t.objects or {}) do
+    local ax, ay, bx, by = ends(o)
+    worst = math.min(worst, distTo(S, ax, ay) - D.HALF, distTo(S, bx, by) - D.HALF,
+      distTo(S, (ax + bx) / 2, (ay + by) / 2) - D.HALF)
+  end
+  T.check(ok and worst >= D.TAPE_CLEAR - 1e-6, string.format('acute, on a bend towards it: ends and middle clear (%.2f)',
+    worst))
+end
+
+-- A junction marshal behind a parallel tape (a side road 30 degrees off the way on, at a turn): farther along its
+-- side road, MARSHAL_BEHIND square to the tape (at most twice that along it), on its far side from the stage
+do
+  local S = { V(0, -300), V(0, 0), V(300, 0) }
+  local sites = D.plan({ line = S, startM = 0, finishM = 600, junctions = { { along = 300, x = 0, y = 0, kind = 'turn',
+    inDeg = 0, outDeg = 90, sides = { { deg = 60, halfW = 3 } } } } })
+  local tp = ofKind(sites, 'tape')[1]
+  local m = ofKind(sites, 'marshal')[1]
+  local tbl = m and find(m.objects, 'table')[1]
+  T.check(tp and tp.objects[1] and math.abs(tp.objects[1].dy) < 1e-6, 'acute at a turn: the tape parallel with the way on')
+  -- (the tape's line 4 m north of the way on; the marshal 30 degrees off it, 10 m farther along its side road: 5 m
+  -- square to the tape, less MARSHAL_SIDE's share)
+  T.check(tbl and tbl.y > 4 + D.MARSHAL_BEHIND - D.MARSHAL_SIDE and tbl.y - D.HALF > 1,
+    'acute at a turn: the marshal behind the tape, clear of the stage (' .. tostring(tbl and tbl.y) .. ')')
 end
 
 T.done('test_dressing')

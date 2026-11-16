@@ -1445,7 +1445,8 @@ do
   driveTo(11, 1036)
   T.check(shapes('s_tape_road_closure') == 0, 'dressing: 1 km on, the first junction\'s tape taken away behind the car')
   driveTo(1061, 1736)
-  T.check(shapes('s_tape_road_closure') == 1 and shapes('s_corner_dir45_left') == 1,
+  -- (the fork 30 degrees off the way on: its tape parallel with the stage, 2 x 3 / sin 30 + 1.5 = 13.5 m, two pieces)
+  T.check(shapes('s_tape_road_closure') == 2 and shapes('s_corner_dir45_left') == 1,
     'dressing: nearing the fork, its tape and its board down (' .. shapes('s_tape_road_closure') .. ', ' ..
     shapes('s_corner_dir45_left') .. ')')
   driveTo(1761, #full)
