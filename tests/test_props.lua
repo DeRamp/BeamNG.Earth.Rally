@@ -978,6 +978,81 @@ do
   T.check(type(RE) == 'number' and RE > 0, 'REDO_EVERY_S: on as shipped')
 end
 
+------------------------------------------------------------------------------------------ 1.6.2, review of #5
+
+-- (the stage road north along x = 0; the ATC 12 m right of it, the auto recce's road point on it; the car coming north)
+do
+  ox, oy = 0, 0
+  local RE, MT = props.REDO_EVERY_S, props.REDO_MAX_TRIES
+  props.REDO_EVERY_S = 0
+  local G = props.SHAPES.gazeboFrame
+  local function tent() return shapesLive(G)[1] end
+  local edgeX = props.DEFAULT_HALF_WIDTH_M + props.TENT_OUT_M
+  local function atc()
+    props.clear()
+    logs = {}
+    local s = props.setSite('atc', 12, 0, { x = 0.2, y = 1 })
+    s.toward = { lat = 0, lon = 400 }
+    s.road = { lat = 0, lon = 0, deg = 0, offM = 12 }
+    return s
+  end
+
+  -- 1. a road point from the recce: a neighbouring road 35-55 m off (the stage road not on the road map yet) is not
+  -- taken; the stage road is, once it comes in
+  for _, off in ipairs({ 35, 45, 55 }) do
+    map = nil
+    atc()
+    props.update({ x = 0, y = -60, z = 0 }, toGame)
+    mapOf(straightRoad(-off, 0, 0, 3))
+    for _ = 1, 3 do props.update({ x = 0, y = -55, z = 0 }, toGame) end
+    local t = tent()
+    T.check(t and math.abs(t.pos[1] - edgeX) < 1e-6 and logged('put down again') == 0,
+      string.format('recce road point, a road %d m off on the map: not taken, the tent along the recce road (%.2f)',
+        off, t and t.pos[1] or -1))
+    mapOf(straightRoad(-off, 0, 0, 3), straightRoad(0, 0, 0, 4))
+    props.update({ x = 0, y = -55, z = 0 }, toGame)
+    t = tent()
+    T.check(t and math.abs(t.pos[1] - (4 + props.TENT_OUT_M)) < 1e-6 and logged('put down again') == 1,
+      string.format('and the stage road taken once it comes in (%.2f)', t and t.pos[1] or -1))
+  end
+
+  -- 2. the car at the control (within REDO_HOLD_M: stopped in its zone): nothing moves under it; put down again once
+  -- it has left
+  map = nil
+  atc()
+  props.update({ x = 0, y = -60, z = 0 }, toGame)
+  local id = tent() and tent().id
+  local sp0 = props.sitePoint('atc')
+  mapOf(straightRoad(0, 0, 0, 4))
+  for _ = 1, 5 do props.update({ x = 0, y = -5, z = 0 }, toGame) end
+  local sp = props.sitePoint('atc')
+  T.check(tent() and tent().id == id and sp and sp0 and sp.x == sp0.x and sp.y == sp0.y,
+    'the road map in with the car at the control: not put down again, its zone where it was')
+  -- (beside where a new board would stand, out of the zone: still not)
+  for _ = 1, 3 do props.update({ x = 4 + props.BOARD_OUT_M, y = -48, z = 0 }, toGame) end
+  T.check(tent() and tent().id == id, 'nor with the car beside where a new board would go')
+  props.update({ x = 0, y = -80, z = 0 }, toGame)
+  T.check(tent() and tent().id ~= id and logged('put down again') == 1, 'put down again once the car is clear')
+
+  -- 3. a control the road map never covers: looked at REDO_MAX_TRIES times, said once, then no more
+  props.REDO_MAX_TRIES = 5
+  map = nil
+  atc()
+  props.update({ x = 0, y = -60, z = 0 }, toGame)
+  for _ = 1, 12 do props.update({ x = 0, y = -55, z = 0 }, toGame) end
+  T.check(logged('left where it went down') == 1, 'no road map road: given up after REDO_MAX_TRIES, said once ('
+    .. logged('left where it went down') .. ')')
+  id = tent() and tent().id
+  mapOf(straightRoad(0, 0, 0, 4))
+  props.update({ x = 0, y = -55, z = 0 }, toGame)
+  T.check(tent() and tent().id == id, 'and not looked at again')
+  props.clear()
+  map = nil
+  props.REDO_EVERY_S, props.REDO_MAX_TRIES = RE, MT
+  T.check(MT >= 60 and props.REDO_HOLD_M >= 25 and props.REDO_CLEAR_M >= 3,
+    'as shipped: a minute or more of looks, held clear of both zones, props a few metres off the car')
+end
+
 -- the showcase: one of each dressing shape, in order, through the real sites' code; taken away again
 do
   local D2 = require('earthRally/dressing')

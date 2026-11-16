@@ -59,6 +59,11 @@ M.TAPE_GROW_STEP = 0.25   -- (a tape's maxLen, the longest that still clears the
 -- 50-75 degrees to the stage and had to be walked far in before both ends cleared it: an awkward angle. Its length
 -- is the side road's width along the stage's way (2 x half width / sin of the angle) plus TAPE_PAST each end.
 M.TAPE_PARALLEL_DEG = 45
+-- ... but not below this: at a shallower fork the side road's mouth along the stage (2 x half width / sin, 23 m for a
+-- 6 m road at 15 degrees) is wider than TAPE_LEN_MAX spans, and the parallel line clears the stage road only 57-250 m
+-- down the side road (review of #9). There the tape is square to the side road within TAPE_IN_MAX, as before #9, or
+-- left out and said so. props.DRESS_TAPE_OBLIQUE_MAX_DEG is 90 less this.
+M.TAPE_PARALLEL_MIN_DEG = 15
 M.CLEAR_CELL_M = 50       -- (the whole line's clearance looked up in cells of this size)
 M.BOARD_BEFORE = 75       -- direction board before a turn / fork
 M.WARN_BEFORE = 100       -- radio / medical warning board
@@ -366,10 +371,12 @@ local function solveJunction(L, j)
       local sinA, s0, sMax = nil, M.TAPE_IN, M.TAPE_IN_MAX
       if cosL > math.cos(math.rad(M.TAPE_PARALLEL_DEG)) then
         sinA = sqrt(max(0, 1 - cosL * cosL))
-        if sinA > 1e-3 then
+        local s0p = (jh + M.TAPE_CLEAR) / max(sinA, 1e-9) + 1e-6   -- (a hair in: exactly TAPE_CLEAR off a straight stage)
+        -- (below TAPE_PARALLEL_MIN_DEG the mouth is wider along the stage than TAPE_LEN_MAX spans, and the parallel
+        -- line clears the stage only far down the side road: the square tape as before, within TAPE_IN_MAX)
+        if sinA >= math.sin(math.rad(M.TAPE_PARALLEL_MIN_DEG)) - 1e-9 and s0p <= sMax then
           rx, ry = lx, ly
-          s0 = (jh + M.TAPE_CLEAR) / sinA + 1e-6      -- (a hair in: exactly TAPE_CLEAR off a straight stage)
-          sMax = max(M.TAPE_IN_MAX, s0 + 10)
+          s0 = s0p
         else
           sinA = nil
         end
