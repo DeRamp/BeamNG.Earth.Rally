@@ -53,7 +53,7 @@ class Refuse(Exception):
 def run(*args, check=True, binary=False):
     if not shutil.which(args[0]) and not os.path.exists(args[0]):
         raise Refuse(f'{args[0]} not found')
-    p = subprocess.run(list(args), cwd=ROOT, capture_output=True, **({} if binary else {'text': True, 'encoding': 'utf-8'}))
+    p = subprocess.run(list(args), cwd=ROOT, capture_output=True, **({} if binary else {'text': True, 'encoding': 'utf-8', 'errors': 'replace'}))
     if check and p.returncode != 0:
         err = p.stderr.decode('utf-8', 'replace') if binary else p.stderr or p.stdout
         raise Refuse(f'`{" ".join(args)}` failed: {err.strip()}')
@@ -161,14 +161,28 @@ def build_zip(tag, version):
 
 def publish(version, sha, name, body):
     tag = 'v' + version
+    on_origin = bool(run('git', 'ls-remote', '--tags', 'origin', f'refs/tags/{tag}'))
     if not run('git', 'rev-parse', '-q', '--verify', tag, check=False):
-        run('git', 'tag', '-a', tag, sha, '-m', f'Earth Rally {version}: {name}')
-        print(f'release.py: tagged {tag} on {sha[:7]}')
-    if not run('git', 'ls-remote', '--tags', 'origin', f'refs/tags/{tag}'):
+        if on_origin:  # an earlier run pushed it: take origin's tag object, do not make a second one
+            run('git', 'fetch', '-q', 'origin', f'refs/tags/{tag}:refs/tags/{tag}')
+        else:
+            run('git', 'tag', '-a', tag, sha, '-m', f'Earth Rally {version}: {name}')
+            print(f'release.py: tagged {tag} on {sha[:7]}')
+    if not on_origin:
         run('git', 'push', 'origin', f'refs/tags/{tag}')
         print(f'release.py: pushed {tag}')
+    zip_name = f'earth_rally-{version}.zip'
     if ok(gh_exe(), 'release', 'view', tag, '-R', REPO):
-        return run(gh_exe(), 'release', 'view', tag, '-R', REPO, '--json', 'url', '-q', '.url') + ' (already published)'
+        # gh makes a draft, uploads, then publishes: a killed run can leave a draft without the zip
+        state = run(gh_exe(), 'release', 'view', tag, '-R', REPO, '--json', 'isDraft,assets,url',
+                    '-q', '[.isDraft, ([.assets[].name] | join(",")), .url] | join(" ")').split(' ')
+        draft, assets, url = state[0] == 'true', state[1].split(','), state[-1]
+        if not draft and zip_name in assets:
+            return url + ' (already published)'
+        zip_path, n = build_zip(tag, version)
+        run(gh_exe(), 'release', 'upload', tag, zip_path, '-R', REPO, '--clobber')
+        run(gh_exe(), 'release', 'edit', tag, '-R', REPO, '--draft=false', '--prerelease')
+        return url + ' (finished an incomplete release)'
     zip_path, n = build_zip(tag, version)
     print(f'release.py: {zip_path}: {n} files')
     with tempfile.NamedTemporaryFile('w', suffix='.md', delete=False, encoding='utf-8') as f:

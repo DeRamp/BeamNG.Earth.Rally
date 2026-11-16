@@ -60,7 +60,9 @@ arrive. Tell the sender "received, reviewing #N" with SendMessage first.
    the same version. This read is the only one that counts: a line added after it is ignored. A release PR must
    carry its own release text: its diff has the top `CHANGELOG.md` entry `## X.Y.Z-alpha: ...` and `M.VERSION`
    set to it. If not, or the two versions differ, send it back. Review the CHANGELOG entry like code: wording that
-   is wrong for players is a CONFIRMED defect.
+   is wrong for players is a CONFIRMED defect. Check the DeRamp fork's latest release
+   (`gh release view -R DeRamp/BeamNG.Earth`) has the modding API the release needs (`docs/writing-standard.md`,
+   the fork section); `tools/release.py` checks only that it has an installer.
 2. **Build the merge result** in the review worktree:
    `git -C .claude/worktrees/maintainer-review fetch origin main +pull/<N>/head:refs/maintainer/pr-<N>`. Check
    `git -C .claude/worktrees/maintainer-review rev-parse refs/maintainer/pr-<N>` is the SHA from step 1; if not, the PR moved: start again.

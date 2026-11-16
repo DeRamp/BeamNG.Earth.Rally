@@ -10,7 +10,7 @@ would change `main` of this repo (origin URL contains REPO) is blocked with exit
 - `git branch -f/-D/-m/-M ... main`, `git update-ref refs/heads/main`
 - `git commit/merge/rebase/cherry-pick/revert/am/pull/reset` while on `main`, except `pull --ff-only` from
   origin's main, `--abort`/`--quit`, and a `reset` that only unstages paths
-- `tools/release.py` (commits, tags and pushes `main` itself, so only the maintainer may run it)
+- `tools/release.py` (tags, pushes a tag and publishes a release, so only the maintainer may run it)
 
 `git checkout X`/`git switch X` and `cd` earlier in the same command line are followed.
 This is a guardrail against mistakes, not a security boundary: aliases, `sh -c` and scripts get past it.
