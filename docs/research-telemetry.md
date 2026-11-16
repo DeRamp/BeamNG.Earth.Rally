@@ -1,6 +1,6 @@
 # Research: player stats, bug reports, log upload
 
-Research 2026-11-16; decisions taken the same day (end of page). Planned for **1.9.0**. Nothing is built. Mock-up: [`mockups-telemetry/telemetry.html`](mockups-telemetry/telemetry.html).
+Research 2026-11-16; decisions taken the same day (end of page). Planned as the feature build **`1.6.2-alpha+stats`** (lands as the next minor). Nothing is built. Mock-up: [`mockups-telemetry/telemetry.html`](mockups-telemetry/telemetry.html).
 A new system, so it goes in a minor after the alpha MVP (bug fixes only until then).
 
 ## What the owner asked for
@@ -129,7 +129,7 @@ mod list, timezone. Before saving or sending:
    `https://github.com/DeRamp/BeamNG.Earth.Rally/issues/new`, so they land in GitHub issues. No direct send, no
    report server: the Worker only takes stats.
 3. **The pop-up appears when the rally menu first opens.**
-4. **Its own feature version: 1.9.0** "player stats and bug reports" (docs/roadmap.md), after the alpha MVP.
+4. **Its own feature build: `1.6.2-alpha+stats`**, built on 1.6.2; gets the next minor number when the owner merges and releases it (docs/roadmap.md), after the alpha MVP.
 5. **Owner of `PRIVACY.md` and deletion requests: DeRamp.**
 
 ## Unverified

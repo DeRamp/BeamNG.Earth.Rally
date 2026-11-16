@@ -147,7 +147,9 @@ From a single stage to a whole event.
 | Weather and time of day per stage (25) | M |
 | Split times (15) | S |
 
-## 1.9.0: player stats and bug reports
+## Feature `+stats`: player stats and bug reports (built on 1.6.2, lands as the next minor)
+
+No number until it merges: see "Feature builds" in CLAUDE.md. Builds are called `1.6.2-alpha+stats`.
 
 Know how many people play and what they drive, and get bug reports on GitHub. Research, rules and the owner's
 decisions (2026-11-16): docs/research-telemetry.md. Mock-up: docs/mockups-telemetry/telemetry.html.
