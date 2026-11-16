@@ -22,5 +22,13 @@
 "onDown": "if earthRally_main then earthRally_main.flipUpright() end",
 "title": "Earth Rally: flip upright",
 "desc": "Turns the car back onto its wheels where it is (no penalty)."
+},
+"earthRally_rallyRecover": {
+"cat": "gameplay",
+"order": 123,
+"ctx": "tlua",
+"onDown": "if earthRally_main then earthRally_main.rallyRecover() end",
+"title": "Earth Rally: full rally recovery",
+"desc": "The full rally's recovery, for a pad (D-pad right by default, where the game's own reset sits: it is off during a rally). Does nothing outside a full rally."
 }
 }

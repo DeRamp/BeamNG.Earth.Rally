@@ -145,10 +145,12 @@ local INACTIVE = { activeState = 'inactive', showStageApps = false }
 -- screen only in the stage layout, so this is for a run that is over with its layout still up (the results card);
 -- with none, the player's own layout is up and main.lua says the same line through the game's Messages app
 -- (M.approachText). An armed route waits while a run is under way (runner.stepApproach): nothing then.
+-- (1.7.0) A full rally's transit (a.rally) says so: 'Transit', and what happens on arrival.
 function M.approachLine(ours, ctx)
   local a = ctx.approach
   if type(a) ~= 'table' or ctx.uiHidden then return end
-  ours.approach = { name = a.name, distM = a.distM }
+  ours.approach = { name = a.name, distM = a.distM, label = a.rally and 'Transit' or 'Route',
+    sub = a.rally and 'follow the arrows' or 'gets ready as you arrive' }
   ours.show.approach = true
 end
 
@@ -156,7 +158,24 @@ end
 function M.approachText(a, units)
   if type(a) ~= 'table' then return nil end
   local d = a.distM and (' · ' .. M.lengthText(a.distM, units) .. (units == 'mi' and ' mi' or ' km')) or ''
+  if a.rally then return 'Transit to ' .. tostring(a.name or 'the stage') .. d .. ' · follow the arrows' end
   return 'Route to ' .. tostring(a.name or 'the stage') .. d .. ' · gets ready as you arrive'
+end
+
+-- (1.7.0, #27) The controls for what the player can do now, a short strip at the foot of the screen: { { keys,
+-- what }... } or nil. ctx.rally: a full rally is under way (its recovery has a pad button, D-pad right).
+function M.hintsFor(state, ctx)
+  local rallyOn = ctx and ctx.rally
+  local recover = { keys = rallyOn and 'Backspace · D-pad →' or 'Backspace', what = 'Recover' }
+  local menuKey = { keys = 'Ctrl+Alt+K', what = rallyOn and 'Time card' or 'Menu' }
+  if state == 'transit' then
+    return { recover, menuKey }
+  elseif state == 'toAtc' or state == 'toStart' or state == 'running' or state == 'toStop' then
+    return { recover, { keys = 'Shift+Backspace', what = 'Flip upright' }, menuKey }
+  elseif state == 'waitStart' then
+    return { { keys = 'Shift+E · RB+Y', what = 'Skip the wait' }, menuKey }
+  end
+  return nil
 end
 
 -- The approach line's part of our stream key: the stage, and the distance as drawn (0.1 km / 0.1 mi).
@@ -193,7 +212,15 @@ function M.build(run, ctx)
   c.jumpStartS, c.resetS, c.missedAtcS = c.jumpStartS or 10, c.resetS or 10, c.missedAtcS or 60
   local units = ctx.units == 'mi' and 'mi' or 'km'
   local ours = { v = 1, state = run and run.state or 'idle', units = units, preview = ctx.preview or nil, show = {} }
-  if not run then return (not ctx.noRallyLoop) and INACTIVE or nil, ours end
+  if not run then
+    -- (1.7.0: a full rally's transit, no stage loaded: the line to where the car is going, and its controls)
+    if ctx.rally and type(ctx.approach) == 'table' and not ctx.uiHidden then
+      M.approachLine(ours, ctx)
+      ours.hints = M.hintsFor('transit', ctx)
+      ours.show.hints = ours.hints and true or nil
+    end
+    return (not ctx.noRallyLoop) and INACTIVE or nil, ours
+  end
 
   local s = run.state
   local now = ctx.now or 0
@@ -329,6 +356,9 @@ function M.build(run, ctx)
   end
 
   if s == 'finished' or s == 'failed' then M.approachLine(ours, ctx) end
+  -- the controls for now (#27)
+  ours.hints = M.hintsFor(s, { rally = run.inRally })
+  show.hints = ours.hints and not ctx.preview and true or nil
 
   -- a menu is up: ours draws nothing (the stock apps are the game's own business)
   if ctx.uiHidden then ours.show = {} end

@@ -100,6 +100,7 @@ beamngEarth_core = {
 local sounds, frozen, inputs, routes, lines = {}, nil, {}, {}, {}
 local veh = {
   getPosition = function() local x, y, z = toGame(car.lat, car.lon, car.alt) return vec3(x, y, z) end,
+  getDirectionVector = function() return vec3(0, 1, 0) end,
   setPositionRotation = function(_, x, y, z) car.lat, car.lon = toGeo(x, y) car.alt = z end,
   queueLuaCommand = function(_, cmd) inputs[#inputs + 1] = cmd end,
 }
@@ -2879,6 +2880,94 @@ do
   T.check(runner.current() == nil and runner.approaching() == nil, 'driven away, the GPS cleared: not armed again')
   T.check(toasts[#toasts] and tostring(toasts[#toasts].msg):find('Route to start to run it') ~= nil,
     'driven away, no route: told to route again (' .. tostring(toasts[#toasts] and toasts[#toasts].msg) .. ')')
+
+  -- 3b. (1.7.0) a full rally's transit: sticky -- armed with no GPS route at all, kept when the GPS is cleared,
+  -- loaded as a rally pass, and armed again when driven away from
+  runner.abort(true)
+  gpsDest = nil
+  car.lat, car.lon, car.speed = atcLat - 5000 / 111195, full[11][2], 0
+  local started = 0
+  T.check(runner.armApproach(ev, st, { sticky = true, title = 'SS4 Hill', rally = true,
+    startOpts = { rally = true, ssLabel = 'SS4', keepDamage = true }, onStart = function() started = started + 1 end }),
+    'rally transit: armed with no GPS route')
+  frames(10)
+  T.check(runner.approaching() ~= nil and runner.current() == nil, 'rally transit: kept with the GPS cleared, nothing loaded')
+  local ai = runner.approachInfo()
+  T.check(ai and ai.name == 'SS4 Hill' and ai.rally == true, 'rally transit: the HUD names the pass')
+  drive(30, function() return runner.current() ~= nil end)
+  T.check(runner.current() and runner.current().inRally and runner.current().ssLabel == 'SS4' and started == 1,
+    'rally transit: loaded as the rally\'s pass, the rally told')
+  car.lat = atcLat - 2500 / 111195 frames(10)
+  T.check(runner.current() == nil and runner.approaching() ~= nil and runner.approaching().sticky,
+    'rally transit: driven away before checking in, armed again with no GPS')
+  car.lat = atcLat - 900 / 111195 frames(10)
+  T.check(runner.current() ~= nil and started == 2, 'rally transit: back again, loaded again')
+  runner.abort(true)
+  runner.disarmApproach('test')
+
+  -- 3c. (1.7.0) the full rally through rallyRun: the start on the map, the transit driven, the stage loaded as a
+  -- rally pass, a Realistic recovery taking the car to the service it rejoins at (#26, #31, #33)
+  do
+    local rally = require('earthRally/rally')
+    local rallyRun = require('earthRally/rallyRun')
+    local parkLat, parkLon = atcLat - 8000 / 111195, full[11][2]
+    local evR = { format = 1, id = 'test19r', name = 'Test Rally 19R', stages = ev.stages,
+      itinerary = { { ss = 'SS1', stage = 'hill', run = 1, day = 1, km = 3 }, { ss = 'SS2', stage = 'hill', run = 2, day = 1, km = 3 } },
+      rallyStops = { { after = 1, kind = 'service', label = 'Service A', name = 'Park',
+        place = { name = 'Park', lat = parkLat, lon = parkLon } } },
+      rallyStart = { name = 'Park', lat = parkLat, lon = parkLon } }
+    files['/earthRally/events/test19r.json'] = evR
+    files['/earthRally/matched/test19r__hill.json'] = { format = 1, points = recFrom }
+    events.list(true)
+    local opened = 0
+    rallyRun.ui.openCard = function() opened = opened + 1 end
+    rallyRun.ui.closeMenu = function() end
+    FS.directoryExists = FS.directoryExists or function() return true end
+    FS.directoryCreate = FS.directoryCreate or function() return true end
+    local blockedOn = nil
+    core_input_actionFilter = { setGroup = function() end, addAction = function(_, _, on) blockedOn = on end }
+    local function rframes(n) for _ = 1, n do rallyRun.update(0.1) frames(1) end end
+    car.lat, car.lon, car.speed = atcLat - 30000 / 111195, full[11][2], 0
+    local okR, whyR = rallyRun.start('test19r', { mode = 'realistic', class = 'L4WD' })
+    T.check(okR and blockedOn == true, 'rally: started, the game\'s own recovery blocked (' .. tostring(whyR) .. ')')
+    T.check(geo_m(car.lat, car.lon, parkLat, parkLon) < 1, 'rally: the car taken to the start on the map (#26)')
+    T.check(rallyRun.uiCard().phase == 'moving', 'rally: on the way while the world loads')
+    rframes(60)
+    local cardR = rallyRun.uiCard()
+    T.check(opened == 1 and cardR.phase == 'stop' and cardR.at.kind == 'start', 'rally: at the start, the time card up')
+    T.check(files['/earthRally/rallies/test19r.json'] and files['/earthRally/rallies/test19r.json'].current,
+      'rally: saved at the start')
+    T.check(rallyRun.goNext() and runner.approaching() and runner.approaching().sticky, 'rally: out of the start, the transit armed')
+    T.check(rallyRun.uiCard().phase == 'transit', 'rally: on a transit')
+    drive(30, function() return runner.current() ~= nil end)
+    local cur = runner.current()
+    T.check(cur and cur.inRally and cur.ssLabel == 'SS1' and cur.rally and cur.rally.mode == 'realistic',
+      'rally: SS1 loaded as the car drives up, the rally\'s pass')
+    -- a Realistic recovery during the stage: asked first, then the stage given up, the car to Service A (#31)
+    cur.state = 'running'
+    T.check(rallyRun.recoverKey() and cur.rally.ask ~= nil, 'rally: the recovery key asks first')
+    rallyRun.update(1.5)
+    T.check(rallyRun.recoverKey(), 'rally: pressed again, answered')
+    T.check(runner.current() == nil and geo_m(car.lat, car.lon, parkLat, parkLon) < 1,
+      'rally: the stage given up, the car taken to the service park')
+    rframes(60)
+    cardR = rallyRun.uiCard()
+    T.check(opened == 2 and cardR.phase == 'stop' and cardR.at.label == 'Service A' and cardR.superRally,
+      'rally: at Service A with the Super Rally card')
+    T.check(rallyRun.active().results.SS1.superRally, 'rally: SS1 scored under Super Rally')
+    T.check(rallyRun.goNext() and rally.current(rallyRun.active()).ss == 'SS2' and runner.approaching(),
+      'rally: service out, the transit to SS2 armed')
+    local li = rallyRun.leaveInfo()
+    T.check(li and li.at == 'Service A', 'rally: leaving now continues from Service A')
+    rallyRun.quit()
+    T.check(blockedOn == false and runner.approaching() == nil and rallyRun.active() == nil,
+      'rally: left, the game\'s recovery back, the transit gone')
+    T.check(rallyRun.saved('test19r') and rallyRun.saved('test19r').at == 'Service A', 'rally: the save is at Service A')
+    rallyRun.abandon('test19r')
+    T.check(rallyRun.saved('test19r') == nil, 'rally: retired, the save deleted')
+    core_input_actionFilter = nil
+    teleports, moved = 0, false
+  end
 
   -- 4. a stage with no ATC, the car standing still on the start line when it loads: not counted down until driven
   local lx, ly = toGame(full[11][1], full[11][2])

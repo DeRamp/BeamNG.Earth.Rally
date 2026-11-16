@@ -1,0 +1,9 @@
+{
+  "displayName": "XInput Device",
+  "bindings": [
+    {
+      "control": "rpov",
+      "action": "earthRally_rallyRecover"
+    }
+  ]
+}

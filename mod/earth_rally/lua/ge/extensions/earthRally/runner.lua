@@ -1671,9 +1671,10 @@ function M.closeResults()
   if run.state == 'finished' and not run.tidyIn then layoutOff() end
 end
 resultsUpdate = function(dt)
-  if run.inRally then return end    -- (a full rally's card waits for Continue or Close: it is the way on)
+  -- (a full rally's card does not time out -- it carries the stage's places -- but driving on to the next stage
+  -- closes it, as on a single stage: the transit is the way on, 1.7.0)
   run.resultsT = (run.resultsT or 0) + dt
-  if run.resultsT > M.RESULTS_TIMEOUT_S then M.closeResults() return end
+  if not run.inRally and run.resultsT > M.RESULTS_TIMEOUT_S then M.closeResults() return end
   local p = carPos()
   if not p then return end
   if not run.restPos then
@@ -1693,13 +1694,18 @@ end
 --   Waits while another run is under way; a finished one (its results card) is put away for it.
 
 -- Armed for this stage. Returns true, or false with no place to go.
-function M.armApproach(event, stage)
+-- opts (1.7.0, a full rally's transit, rallyRun.lua): { sticky = true (kept whatever the GPS says, and armed again
+-- when the stage is driven away from), title (the HUD's name for it), rally = true, startOpts (M.start's opts),
+-- onStart() (called once the stage is loaded) }.
+function M.armApproach(event, stage, opts)
   local lat, lon, kind = M.arrivalPoint(stage)
   if not lat then approach = nil return false end
+  opts = type(opts) == 'table' and opts or {}
   -- (a BeamNG.Earth that cannot say where its GPS goes: a cleared or changed route could not be told, and the stage
   --  would load whenever the car came by. The route alone then, as before 1.6.2)
-  if earth.gps() == false then approach = nil return false end
-  approach = { event = event, stage = stage, lat = lat, lon = lon, kind = kind, t = 0 }
+  if not opts.sticky and earth.gps() == false then approach = nil return false end
+  approach = { event = event, stage = stage, lat = lat, lon = lon, kind = kind, t = 0, sticky = opts.sticky,
+    title = opts.title, rally = opts.rally, startOpts = opts.startOpts, onStart = opts.onStart }
   log('I', logTag, string.format('route to %s: armed, the stage loads %d m from its %s', stage.name, M.APPROACH_M, kind))
   return true
 end
@@ -1717,6 +1723,7 @@ local function stepApproach(dt)
   local p = earth.pose()
   if not (p and p.lat) then return end
   if geo.metres(p.lat, p.lon, a.lat, a.lon) > M.APPROACH_M then
+    if a.sticky then return end
     -- (false: this BeamNG.Earth cannot say where its GPS goes any more: not armed without it, armApproach)
     local g = earth.gps()
     if not (type(g) == 'table' and g.lat and g.lon and geo.metres(g.lat, g.lon, a.lat, a.lon) <= M.GPS_SAME_M) then
@@ -1728,10 +1735,21 @@ local function stepApproach(dt)
     if run.stage.id == a.stage.id and run.event.id == a.event.id then M.disarmApproach('the stage is already loaded') end
     return
   end
+  -- (a rally's results card waits for its answer: the next stage is not loaded over it)
+  if run and run.inRally and run.resultsOpen then return end
   approach = nil
   log('I', logTag, 'route to ' .. a.stage.name .. ': near its ' .. a.kind .. ', the stage loads')
-  local ok, why = M.start(a.event, a.stage, { drivenIn = { lat = a.lat, lon = a.lon } })
-  if not ok then say('Could not get ' .. a.stage.name .. ' ready: ' .. tostring(why), 6, 'warning', 'Earth Rally') end
+  local opts = {}
+  for k, v in pairs(a.startOpts or {}) do opts[k] = v end
+  opts.drivenIn = { lat = a.lat, lon = a.lon }
+  local ok, why = M.start(a.event, a.stage, opts)
+  if not ok then
+    say('Could not get ' .. a.stage.name .. ' ready: ' .. tostring(why), 6, 'warning', 'Earth Rally')
+    if a.sticky then a.t = 5 approach = a end     -- (a rally's transit: tried again shortly)
+    return
+  end
+  if a.sticky and run then run.rearm = a end
+  if a.onStart then pcall(a.onStart) end
 end
 
 -- A stage loaded as the car drove up and then driven away from before checking in (or stopping on the line):
@@ -1747,7 +1765,15 @@ local function leftBehind(dt)
   end
   local name, ev, st, at = run.stage.name, run.event, run.stage, run.drivenIn
   log('I', logTag, 'route to ' .. name .. ': driven away before checking in, the stage unloaded')
+  local again = run.rearm
   M.abort(true)
+  -- (a rally's transit: armed again whatever the GPS says, the stage loads when the car comes back)
+  if again then
+    again.t = 0
+    approach = again
+    say(name .. ' put away: you drove off. Drive back to its time control to run it.', 6, 'info', 'Earth Rally')
+    return true
+  end
   -- (BeamNG.Earth's GPS still showing the way there: armed again, so following its arrows back loads it again)
   local g = earth.gps()
   if type(g) == 'table' and g.lat and g.lon and geo.metres(g.lat, g.lon, at.lat, at.lon) <= M.GPS_SAME_M
@@ -2036,6 +2062,36 @@ function M.backOnRoad()
   return true
 end
 
+-- (1.7.0) A full rally's transit: the game's own recovery is blocked, so the rally's key puts the car back on the
+-- nearest road the road map knows, facing along it the way the car faced. Returns true when moved.
+M.TRANSIT_RECOVER_M = 150
+function M.recoverToRoad()
+  local p, veh = carPos()
+  if not p then return false end
+  local okD, d = pcall(function() return veh:getDirectionVector() end)
+  local dir = (okD and d) and { x = d.x, y = d.y } or { x = 0, y = 1 }
+  local spot = props.roadAt(p.x, p.y, dir, M.TRANSIT_RECOVER_M)
+  if not spot then return false end
+  local pos = { x = spot.x, y = spot.y }
+  pos.z = groundNear(pos.x, pos.y, spot.z or p.z) + M.RECOVER_UP_M
+  return recoverTo(veh, pos, { x = spot.dx, y = spot.dy })
+end
+
+-- (1.7.0, the developer panel: testing long rallies, #29) The car moved on the stage line to `beforeM` before the
+-- flying finish, the timing carrying on from there. Returns true when moved.
+function M.debugJump(beforeM)
+  if not (run and run.line and run.state == 'running' and run.finishM) then return false end
+  local _, veh = carPos()
+  if not veh then return false end
+  local along = math.max(run.startM or 0, run.finishM - (beforeM or 500))
+  local dir, at = aheadDir(run.line, run.cum, along)
+  local pos = { x = at.x, y = at.y }
+  pos.z = groundNear(pos.x, pos.y, at.z or 0) + M.RECOVER_UP_M
+  run.prevAlong, run.along = along, along
+  log('I', logTag, string.format('developer: jumped to %.0f m before the finish', run.finishM - along))
+  return recoverTo(veh, pos, dir)
+end
+
 -- Flip upright: the car turned back onto its wheels where it is, facing the way it faced. No penalty: it gains
 -- nothing (the time lost on its roof is the cost), as a push back over by the marshals.
 function M.flipUpright()
@@ -2072,7 +2128,8 @@ function M.uiFrame()
   return hudFrame.build(run, {
     now = M.clock() or 0, speed = run and speed() or 0, canSkip = M.canSkip(), units = settings.get('units'),
     uiHidden = M.uiHidden, place = earthAsked.place, earthBanner = earthAsked.banner, loading = earthAsked.loading,
-    approach = M.approachInfo(),
+    approach = M.approachInfo() or (M.transitSource and M.transitSource()) or nil,
+    rally = M.rallyOn and M.rallyOn() or nil,
     noRallyLoop = extensions and extensions.isExtensionLoaded and extensions.isExtensionLoaded('gameplay_rallyLoop')
       or false,
     c = uiConsts,
@@ -2131,7 +2188,7 @@ function M.approachInfo()
   if apFor ~= a or t - apAt >= M.APPROACH_POLL_S or t < apAt then
     apFor, apAt = a, t
     local p = earth.pose()
-    apInfo = { name = a.stage and a.stage.name or '',
+    apInfo = { name = a.title or (a.stage and a.stage.name) or '', rally = a.rally or nil,
       distM = (p and p.lat) and geo.metres(p.lat, p.lon, a.lat, a.lon) or nil }
   end
   return apInfo

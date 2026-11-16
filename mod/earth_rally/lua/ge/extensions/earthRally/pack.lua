@@ -364,17 +364,48 @@ local function stopsOf(evFile, rows)
   for _, l in ipairs(type(evFile.locations) == 'table' and evFile.locations or {}) do
     if type(l) == 'table' and l.id then places[l.id] = l end
   end
-  local function placeName(row, entry)
-    local id = (entry and entry.location) or row.location
-    local l = id and places[id]
-    local n = l and type(l.name) == 'string' and l.name or nil
+  local function shortName(n)
     -- ("Big Park Service Area (Saturday), Town" -> "Big Park Service Area": the time card's row is short)
     n = n and (n:match('^([^,]+)') or n)
     n = n and (n:match('^(.-)%s+%(') or n)
     return n
   end
+  local function placeName(row, entry)
+    local id = (entry and entry.location) or row.location
+    local l = id and places[id]
+    return shortName(l and type(l.name) == 'string' and l.name or nil)
+  end
+  -- (1.7.0, the service on the map: where a stop is. Each row between two passes that names a place with a position
+  -- is a candidate, ranked: the service area itself (a service entry's place, then Service Out / In), then the
+  -- day's start (MTC out) and end (MTC in), then any other. An overnight takes the next morning's start first.)
+  local RANK = { svcEntry = 1, SVC_OUT = 2, SVC_IN = 3, MTC_OUT = 4, PE_OUT = 4, MTC_IN = 5, PE_IN = 6 }
+  local function located(id)
+    local l = id and places[id]
+    if l and type(l.lat) == 'number' and type(l.lon) == 'number' then return l end
+    return nil
+  end
+  local function offer(bag, row, entry)
+    if entry then
+      local l = located(entry.location)
+      if l then bag[#bag + 1] = { rank = RANK.svcEntry, l = l, type = 'svcEntry' } end
+    end
+    local l = located(row.location)
+    if l then bag[#bag + 1] = { rank = RANK[row.type] or 7, l = l, type = row.type } end
+  end
+  local function best(bag, overnight)
+    local pick = nil
+    for _, c in ipairs(bag or {}) do
+      local rank = c.rank
+      if overnight and (c.type == 'MTC_OUT' or c.type == 'PE_OUT') then rank = 0 end
+      if not pick or rank < pick.rank then pick = { rank = rank, l = c.l } end
+    end
+    if not pick then return nil end
+    return { name = shortName(type(pick.l.name) == 'string' and pick.l.name or nil), lat = pick.l.lat,
+      lon = pick.l.lon }
+  end
   local stops, nSvc = {}, 0
   local count, lastDay, copy = 0, nil, false
+  local bags = { [0] = {} }   -- (the candidate places after each pass, by its number; 0: before the first)
   local function lastStop() return stops[#stops] end
   for _, row in ipairs(rows) do
     if row.kind == 'SS' then
@@ -385,13 +416,15 @@ local function stopsOf(evFile, rows)
           else stops[#stops + 1] = { after = count, kind = 'overnight' } end
         end
         count, copy, lastDay = row.n, false, row.day or lastDay
+        bags[count] = bags[count] or {}
       else
         copy = true
       end
-    elseif not copy and count > 0 then
+    elseif not copy then
       local r = row.raw
       local entry = svcControls[tostring(r.control)]
-      if r.type == 'SVC_IN' or r.type == 'SVC_OUT' or entry then
+      offer(bags[count], r, entry)
+      if count > 0 and (r.type == 'SVC_IN' or r.type == 'SVC_OUT' or entry) then
         local l = lastStop()
         if not (l and l.after == count) then
           stops[#stops + 1] = { after = count, kind = 'service', name = placeName(r, entry) }
@@ -404,6 +437,15 @@ local function stopsOf(evFile, rows)
   -- (a stop after the last pass is the finish, not a stop)
   if lastStop() and lastStop().after >= count then stops[#stops] = nil end
   for _, st in ipairs(stops) do
+    st.place = best(bags[st.after], st.kind == 'overnight')
+    if st.place and not st.name then st.name = st.place.name end
+  end
+  -- the rally's start: before the first pass, else the first service's place
+  local start = best(bags[0], true)
+  if not start then
+    for _, st in ipairs(stops) do if st.place then start = st.place break end end
+  end
+  for _, st in ipairs(stops) do
     if st.kind == 'service' then
       nSvc = nSvc + 1
       st.label = 'Service ' .. string.char(64 + math.min(nSvc, 26))
@@ -411,7 +453,7 @@ local function stopsOf(evFile, rows)
       st.label = 'Overnight'
     end
   end
-  return stops
+  return stops, start
 end
 M._stopsOf = stopsOf
 
@@ -436,7 +478,10 @@ local function itineraryOf(evFile, stages, lineId, warn)
         rows[#rows + 1] = { kind = 'other', raw = row }
       end
     end
-    if #out > 0 then return out, stopsOf(evFile, rows) end
+    if #out > 0 then
+      local stops, start = stopsOf(evFile, rows)
+      return out, stops, start
+    end
   end
   for i, s in ipairs(stages) do
     out[i] = { ss = 'SS' .. i, stage = s.id, run = 1, km = round2(s.lengthM / 1000), cancelled = false }
@@ -560,7 +605,8 @@ local function makeRally(src, spec, base, ctx, kind)
   end
   local info = evFile and type(evFile.event) == 'table' and evFile.event or {}
   -- (rallyStops: the full rally's services and overnights, 1.7.0; nil without an event file: no full rally)
-  event.itinerary, event.rallyStops = itineraryOf(evFile, event.stages, lineId, warn)
+  -- (rallyStart, 1.7.0 service on the map: where the full rally starts, { name, lat, lon }, or nil)
+  event.itinerary, event.rallyStops, event.rallyStart = itineraryOf(evFile, event.stages, lineId, warn)
   event.dates = type(spec.dates) == 'table' and spec.dates or type(info.dates) == 'table' and info.dates or nil
   local hq = type(info.hq) == 'table' and info.hq or {}
   local place = {}
@@ -829,7 +875,7 @@ end
 -- (1.7.0: the event file's services read too) a pack last imported by an older reader -- or by an older Earth Rally
 -- sharing the user folder -- is imported again, whatever its fingerprint. Kept per pack, and set only by an import
 -- that went through.
-M.READER = 2
+M.READER = 3
 local function importPack(p, index, force, gone)
   local entry = index.packs[p.name]
   if entry and entry.reader ~= M.READER then force = true end

@@ -4,14 +4,17 @@
 --
 -- What is read:
 --   event   earthRally/events/<rallyId>.json: id, name, itinerary [{ ss, stage, run, km, day, cancelled }],
---           rallyStops [{ after, kind = 'service' | 'overnight', name, label }] (pack.lua; nil: no event file, so no
---           full rally)
+--           rallyStops [{ after, kind = 'service' | 'overnight', name, label, place = { name, lat, lon } }] (pack.lua;
+--           nil: no event file, so no full rally), rallyStart { name, lat, lon } (where the rally starts, or nil)
 --   board   earthRally/boards/<rallyId>.json: passes [{ ss, field = [[seconds, driver, car, class, championship,
 --           notional]...] }] (may be nil: no real results, so no Super Rally times from the field and no places)
 --
 -- A rally in progress (`r`, saved as it is at each service by rallyRun.lua):
 --   { format, eventId, name, mode = 'realistic' | 'casual', class, cancelled = 'real' | 'all', car = { name },
---     order = [{ kind = 'stage', ss, stageId, run, km, day } | { kind = 'service' | 'overnight', label, name }],
+--     order = [{ kind = 'stage', ss, stageId, run, km, day } | { kind = 'start' | 'service' | 'overnight', label, name,
+--     place = { name, lat, lon } or nil }] (order[1] is always the start: the rally begins at its start or service
+--     park, and the first stage is driven to from there), heldOut = [{ ss, stageId, why }] (stages taken out of the
+--     rally: their road is not all on the map),
 --     pos (the item to do next; #order + 1 when the rally is over), results = { [ss] = { timeS, stageS, penaltyS,
 --     superRally, classBestS, addS } }, missed (stages missed so far: Super Rally), serviced = { ['<pos>'] = true }
 --     (string keys: the save is JSON),
@@ -65,10 +68,10 @@ local function orderOf(event, cancelled)
         -- (nothing driven yet: no stop)
       elseif lastIsStop() then
         local l = out[#out]
-        if kind == 'overnight' then l.kind, l.label = 'overnight', 'Overnight' end
+        if kind == 'overnight' then l.kind, l.label, l.place = 'overnight', 'Overnight', s.place or l.place end
       else
         out[#out + 1] = { kind = kind, label = s.label or (kind == 'overnight' and 'Overnight' or 'Service'),
-          name = s.name }
+          name = s.name, place = s.place }
       end
     end
   end
@@ -110,10 +113,52 @@ function M.new(event, opts)
   local nStages = 0
   for _, it in ipairs(order) do if it.kind == 'stage' then nStages = nStages + 1 end end
   if nStages == 0 then return nil, 'no stage of this rally is left to drive' end
+  -- (the start: where the rally begins, at its start or service park when the event file says where that is)
+  local st = type(event.rallyStart) == 'table' and type(event.rallyStart.lat) == 'number' and event.rallyStart or nil
+  table.insert(order, 1, { kind = 'start', label = 'Start', name = st and st.name or nil,
+    place = st and { name = st.name, lat = st.lat, lon = st.lon } or nil })
   return { format = M.FORMAT, eventId = event.id, name = event.name, mode = mode,
     class = type(opts.class) == 'string' and opts.class ~= '' and opts.class or 'L4WD', cancelled = cancelled,
     car = type(opts.car) == 'table' and { name = opts.car.name } or nil,
-    order = order, pos = 1, results = {}, missed = 0, serviced = {}, done = false }
+    order = order, pos = 1, results = {}, missed = 0, serviced = {}, done = false, heldOut = {} }
+end
+
+-- Every pass of a stage still to come taken out of the rally (#30: its road is not all on the map, so it cannot be
+-- driven): not scored, listed in r.heldOut. Two stops left side by side are one (an overnight if either was), and a
+-- stop with no stage after it goes. The stop the rally is at stays. Returns how many passes went.
+function M.holdOut(r, stageId, why)
+  local n = 0
+  r.heldOut = type(r.heldOut) == 'table' and r.heldOut or {}
+  for i = #r.order, r.pos, -1 do
+    local it = r.order[i]
+    if it.kind == 'stage' and it.stageId == stageId and not r.results[it.ss] then
+      table.remove(r.order, i)
+      table.insert(r.heldOut, 1, { ss = it.ss, stageId = stageId, why = why })
+      n = n + 1
+    end
+  end
+  if n == 0 then return 0 end
+  local i = math.max(2, r.pos + 1)
+  while i <= #r.order do
+    local a, b = r.order[i - 1], r.order[i]
+    if a.kind ~= 'stage' and b.kind ~= 'stage' then
+      if b.kind == 'overnight' and a.kind == 'service' then a.kind, a.label, a.place = 'overnight', 'Overnight', b.place or a.place end
+      table.remove(r.order, i)
+    else
+      i = i + 1
+    end
+  end
+  while #r.order > r.pos and r.order[#r.order].kind ~= 'stage' do r.order[#r.order] = nil end
+  -- (nothing left to drive: the rally is over)
+  if M.stagesLeft(r) == 0 then r.pos, r.done = #r.order + 1, true end
+  return n
+end
+
+-- How many stages are left to drive from where the rally is.
+function M.stagesLeft(r)
+  local n = 0
+  for i = r.pos, #r.order do if r.order[i].kind == 'stage' then n = n + 1 end end
+  return n
 end
 
 -- A rally read back from its save: r, or nil when it is not one this reader knows.

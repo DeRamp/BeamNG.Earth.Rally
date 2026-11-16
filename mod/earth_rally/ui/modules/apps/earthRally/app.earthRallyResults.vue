@@ -23,7 +23,7 @@
         <BngButton class="er-main" :class="{ 'er-picked': ring('recover') }" :accent="ACCENTS.main" @click="act('recover')">Recover · Super Rally</BngButton>
         <BngButton :class="{ 'er-picked': ring('keep') }" :accent="ACCENTS.secondary" @click="act('keep')">Keep going</BngButton>
       </div>
-      <div class="er-foot">Press the recovery key (Backspace) again to recover. Drive on and the question goes after 10 s.</div>
+      <div class="er-foot">Backspace or D-pad → again to recover. Drive on and it goes after 10 s.</div>
     </template>
     <template v-else>
     <div class="er-top">
@@ -59,7 +59,7 @@
       </div>
     </div>
     <div v-if="rc" class="er-buttons">
-      <BngButton class="er-main" :class="{ 'er-picked': ring('continue') }" :accent="ACCENTS.main" @click="act('continue')">{{ rc.last ? "Continue · the finish" : "Continue · time card" }}</BngButton>
+      <BngButton class="er-main" :class="{ 'er-picked': ring('continue') }" :accent="ACCENTS.main" @click="act('continue')">{{ rc.last ? "Continue · the finish" : "Time card" }}</BngButton>
       <BngButton v-if="rc.canRestart" :class="{ 'er-picked': ring('restart') }" :accent="ACCENTS.secondary" @click="act('restart')">Restart stage</BngButton>
       <BngButton class="er-close" :class="{ 'er-picked': ring('close') }" :accent="ACCENTS.outlined" @click="act('close')">Close</BngButton>
     </div>
@@ -72,7 +72,7 @@
       <!-- (1.6.2, #18) just the card gone, back to driving: runner.resultsAction's last case -->
       <BngButton class="er-close" :class="{ 'er-picked': ring('close') }" :accent="ACCENTS.outlined" @click="act('close')">Close</BngButton>
     </div>
-    <div class="er-foot">{{ rc ? "Close leaves the card so you can look at the car; Ctrl+Alt+K opens the time card." : "Or just drive off: the card closes." }}</div>
+    <div class="er-foot">{{ rc ? (rc.next && !rc.last ? `Next: ${rc.next}. Close and follow the arrows.` : "") : "Or just drive off: the card closes." }}</div>
     </template>
   </div>
 </template>

@@ -109,10 +109,15 @@
     <!-- 6 a Route to start armed, the run before it over (its results card up): one line in the rally block's
          corner. With no run our HUD is off screen, and main.lua says it in the game's Messages app instead. -->
     <div v-if="show.approach && f.approach" class="er-panel er-approach">
-      <span class="er-approach-l">Route</span>
+      <span class="er-approach-l">{{ f.approach.label || "Route" }}</span>
       <span class="er-approach-n">{{ f.approach.name }}</span>
       <span v-if="f.approach.distM !== null && f.approach.distM !== undefined" class="er-approach-d">{{ fmt.len(f.approach.distM, units) }}</span>
-      <span class="er-approach-s">gets ready as you arrive</span>
+      <span class="er-approach-s">{{ f.approach.sub || "gets ready as you arrive" }}</span>
+    </div>
+
+    <!-- 7 (1.7.0, #27) the controls for now, a quiet strip at the foot of the screen: keys, then what they do -->
+    <div v-if="show.hints && hints.length" class="er-hints">
+      <span v-for="(h, i) in hints" :key="i" class="er-hint"><span class="er-hint-k">{{ h.keys }}</span>{{ h.what }}</span>
     </div>
 
     <div v-if="f.preview && f.previewLabel" class="er-preview">HUD preview: {{ f.previewLabel }}</div>
@@ -134,6 +139,10 @@ const show = computed(() => (f.value && f.value.show && !Array.isArray(f.value.s
 const stage = computed(() => (f.value && f.value.stage) || {})
 const units = computed(() => (f.value && f.value.units) || "km")
 const fin = computed(() => f.value && f.value.finish)
+const hints = computed(() => {
+  const h = f.value && f.value.hints
+  return h ? (Array.isArray(h) ? h : Object.values(h)) : []
+})
 
 const wayBack = computed(() => {
   const b = f.value && f.value.backBearing
@@ -327,6 +336,12 @@ const penWords = computed(() => {
 .er-best { background: var(--er-go); color: #002a00; }
 .er-slower { background: rgba(255, 176, 0, 0.95); color: #1a1000; }
 
+.er-hints {
+  position: absolute; left: 20px; bottom: 20px; display: flex; gap: 18px; padding: 6px 12px; border-radius: 4px;
+  background: rgba(0, 0, 0, 0.45); color: #e8e8e8; font-size: 14px; white-space: nowrap;
+  .er-hint-k { font: 700 13px "Overpass Mono", monospace; padding: 1px 6px; margin-right: 6px; border-radius: 3px;
+    background: rgba(255, 255, 255, 0.14); }
+}
 .er-preview {
   position: absolute; left: 50%; transform: translateX(-50%); bottom: 90px; padding: 6px 14px; border-radius: 4px;
   background: rgba(255, 250, 150, 0.95); color: #222; font-weight: 600;

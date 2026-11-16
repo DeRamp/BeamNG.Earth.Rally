@@ -91,6 +91,7 @@ function M.closeMenu()
 end
 -- (the full rally's time card is a view of the menu page: rallyRun opens it after a recovery and from Continue)
 rallyRun.ui.openCard = function() return M.openMenu('timecard') end
+rallyRun.ui.closeMenu = function() if menuOpen then pcall(menuPause.suspend) return M.closeMenu() end end
 -- Ctrl+Alt+K
 function M.toggleMenu()
   if menuOpen then return M.closeMenu() end
@@ -189,6 +190,27 @@ local function drawRun()
   end
 end
 
+-- (1.7.0, #29) The full rally's testing tools: long rallies stepped through without driving every metre.
+local function drawRally()
+  local line = rallyRun.debugLine()
+  if not line then return end
+  im.Separator()
+  im.TextColored(GREEN, 'Full rally (testing)')
+  im.TextWrapped(line)
+  local r = runner.current()
+  if r and r.inRally and r.state == 'running' then
+    if im.Button('Jump to 500 m before the finish') then
+      message = runner.debugJump(500) and 'Jumped: drive the last 500 m.' or 'Could not jump.'
+    end
+    im.SameLine()
+    if im.Button('100 m') then message = runner.debugJump(100) and 'Jumped: drive the last 100 m.' or 'Could not jump.' end
+  end
+  if im.Button('Skip the transit (teleport there)') then
+    local ok, why = rallyRun.debugSkipTransit()
+    message = ok and 'Transit skipped.' or ('Not skipped: ' .. tostring(why))
+  end
+end
+
 -- (the actions below, shared with the menu page)
 local doAction
 
@@ -258,6 +280,7 @@ local function drawWindow()
   end
   if message then im.TextWrapped(message) end
   drawRun()
+  drawRally()
   im.End()
 end
 
@@ -679,7 +702,7 @@ doAction = function(what, eventId, stageId, fromPanel)
     --  free restart)
     local cur, rr = runner.current(), rallyRun.active()
     if cur and cur.inRally and rr and rr.mode == 'realistic' and cur.state == 'running' then
-      return res(false, 'In a Realistic rally, give the stage up with the recovery key (Backspace): Super Rally applies.')
+      return res(false, 'In a Realistic rally, give the stage up with the recovery key (Backspace, D-pad right), or leave the rally from its time card.')
     end
     runner.abort()
     return res(true, 'Run stopped.')
@@ -711,8 +734,8 @@ doAction = function(what, eventId, stageId, fromPanel)
   if not stage then return res(false, 'That stage is not on this computer any more.') end
   -- (1.7.0) a full rally under way holds the car: no other stage, recce or teleport until it is quit (its time card)
   local rr = rallyRun.active()
-  if rr and not rr.done and what ~= 'reset' then
-    return res(false, 'A full rally is under way: quit it from its time card first.')
+  if rr and not rr.done and what ~= 'reset' and not (what == 'autoRecce' and rallyRun.preparing()) then
+    return res(false, 'A full rally is under way: leave it from its time card first.')
   end
   local busy = recce.active() or (runner.current() and runner.state() ~= 'finished' and runner.state() ~= 'failed')
   if busy then return res(false, recce.active() and 'A recce is under way: save or cancel it first.' or
@@ -986,8 +1009,8 @@ function M.uiRallyCard()
   return r or { none = true }
 end
 
--- The full rally's buttons: start (opts: mode, class, cancelled), resume, go (out of service / to the next start),
--- quit, abandon. Returns { ok, message, view }.
+-- The full rally's buttons: start (opts: mode, class, cancelled), resume, go (out of service, on to the next stage),
+-- quit (Leave rally: its save kept), abandon (Retire: its save deleted). Returns { ok, message, view }.
 function M.uiRallyAction(what, eventId, opts)
   local function go(ok, why, view)
     if not ok and why then message = why end
@@ -1008,14 +1031,14 @@ function M.uiRallyAction(what, eventId, opts)
     elseif what == 'go' then
       pcall(menuPause.suspend)
       local okS, why = rallyRun.goNext()
-      if okS then M.closeMenu() end
+      if okS and menuOpen then M.closeMenu() end
       return go(okS, why)
-    elseif what == 'quit' then
+    elseif what == 'quit' then          -- Leave rally: continue later from the last service
       rallyRun.quit()
       return go(true, nil, 'rally')
-    elseif what == 'abandon' then
+    elseif what == 'abandon' then       -- Retire: the saved rally deleted
       rallyRun.abandon(eventId)
-      return go(true, nil)
+      return go(true, nil, 'rally')
     end
     return go(false, 'unknown rally action ' .. tostring(what))
   end)
@@ -1091,7 +1114,7 @@ M.ROUTE_MSG_S = 2
 local routeMsgKey, routeMsgT = nil, 0
 local routeAp, routeApKey = nil, nil
 local function routeMessage(gh, dt, on)
-  local ap = on and not runner.uiHidden and runner.approachInfo() or nil
+  local ap = on and not runner.uiHidden and (runner.approachInfo() or rallyRun.transitInfo()) or nil
   local units, key
   if ap and ap == routeAp then key = routeApKey
   elseif ap then units = settings.get('units'); key = hudFrame.approachKey(ap, units); routeAp, routeApKey = ap, key
@@ -1186,8 +1209,30 @@ M._sendStreams = sendStreams
 
 ------------------------------------------------------------------------------------------ hooks
 
+-- (1.7.0, #23) A full rally getting its stages ready: the auto recce run on each stage with no line, one after the
+-- other, its download question answered yes (the player asked for the rally), then the rally told.
+local prepWas = nil
+local function stepRallyPrep()
+  local pr = rallyRun.preparing()
+  if not pr then prepWas = nil return end
+  if autoSeq or autoRecce.active() then
+    if autoSeq and autoSeq.phase == M.ASKING then autoSeqStep('answer', true) end
+    return
+  end
+  local rr = rallyRun.active()
+  local st, i, n = rallyRun.prepNext()
+  if not (rr and st) then rallyRun.prepDone() return end
+  runner.say(string.format('%s (%d of %d): making its line on the roads.', st.name, i, n), 6, 'info', 'Auto recce')
+  local r = doAction('autoRecce', rr.eventId, st.id, true)
+  if not (r and r.ok) then
+    log('W', logTag, 'rally: the auto recce of ' .. tostring(st.name) .. ' did not start: ' .. tostring(r and r.message))
+  end
+end
+
 function M.onUpdate(dtReal, dtSim)
   pcall(rallyRun.update, dtReal)
+  local okP, errP = pcall(stepRallyPrep)
+  if not okP then log('E', logTag, 'rally prep: ' .. tostring(errP)) end
   -- switched off a frame ago: stop running (see onModDeactivated)
   if unloadNext then
     unloadNext = false
@@ -1263,6 +1308,13 @@ function M.backOnRoad()
   if okR and mine then return true end
   local ok, r = pcall(runner.backOnRoad) return ok and r end
 function M.flipUpright() local ok, r = pcall(runner.flipUpright) return ok and r end
+-- (1.7.0, #25) The pad's rally recovery (D-pad right): the rally's recovery key, and nothing outside a full rally --
+-- there the same button is the game's own reset, which a stage counts already.
+function M.rallyRecover()
+  if not rallyRun.active() then return false end
+  local ok, r = pcall(rallyRun.recoverKey)
+  return ok and r
+end
 
 -- A reset by the player (the game's trackVehReset hook: once a press, a held rewind included): +10 s during the timed
 -- stage (setting resetPenalty).

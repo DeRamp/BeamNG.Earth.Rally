@@ -516,4 +516,27 @@ do
   end
 end
 
+------------------------------------------------------------------------------------------ 1.7.0: hints, transits
+
+do
+  local h = hud.hintsFor('running', { rally = true })
+  T.check(h and h[1].what == 'Recover' and h[1].keys:find('D-pad') ~= nil, 'a rally stage: recovery on the pad named')
+  local h1 = hud.hintsFor('running', {})
+  T.check(h1 and h1[1].keys == 'Backspace', "a single stage: Backspace only (D-pad right is the game's own reset)")
+  T.check(hud.hintsFor('finished', {}) == nil, 'no hints once the stage is over')
+  local rl, ours = hud.build({ state = 'running', stage = { name = 'X', lengthM = 1000 }, startM = 0, finishM = 1000,
+    clock = 30, along = 100, off = 0, inRally = true }, { now = 100 })
+  T.check(ours.show.hints and ours.hints[1].keys:find('D-pad') ~= nil, 'the strip is in the stream on a rally stage')
+  local _, hidden = hud.build({ state = 'running', stage = { name = 'X', lengthM = 1000 }, startM = 0, finishM = 1000,
+    clock = 30, along = 100, off = 0 }, { now = 100, uiHidden = true })
+  T.check(not hidden.show.hints, 'a menu up: no strip')
+  -- a rally's transit with no stage loaded: the line to where the car is going, said as a transit
+  local _, tr = hud.build(nil, { rally = true, approach = { name = 'SS4 Hill', distM = 4200, rally = true } })
+  T.check(tr.show.approach and tr.approach.label == 'Transit' and tr.approach.name == 'SS4 Hill', 'a transit: its line')
+  local _, none = hud.build(nil, { approach = { name = 'Hill', distM = 4200 } })
+  T.check(not none.show.approach, 'a plain Route to start with no run: left to the Messages app, as before')
+  T.check(hud.approachText({ name = 'SS4 Hill', distM = 4200, rally = true }, 'km'):find('^Transit to SS4 Hill') ~= nil,
+    'the Messages app line says transit')
+end
+
 T.done('test_hud')

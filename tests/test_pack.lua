@@ -787,6 +787,7 @@ else
   -- has -- a service, a stage after it
   local R = require('earthRally/rally')
   local allRun = true
+  local placesMissing = {}     -- (1.7.0, service on the map: '@' in the print is a stop with its place)
   for r = 1, 8 do
     local ev = mem['/earthRally/events/' .. tostring(rounds[r]) .. '.json']
     local rr = ev and R.new(ev, { cancelled = 'all' })
@@ -794,14 +795,17 @@ else
     for _, it in ipairs(rr and rr.order or {}) do
       if it.kind == 'stage' then parts[#parts + 1] = it.ss .. (it.cancelledReal and '(x)' or '')
       else
-        parts[#parts + 1] = '[' .. it.label .. ']'
+        parts[#parts + 1] = '[' .. it.label .. (it.place and '@' or '') .. ']'
         if it.kind == 'service' then svc = svc + 1 end
+        if not it.place then placesMissing[#placesMissing + 1] = (ev and ev.name or '?') .. ' ' .. it.label end
       end
     end
     if not (rr and svc > 0) then allRun = false end
     print(string.format('test_pack: full rally %s: %s', ev and ev.name or tostring(rounds[r]), table.concat(parts, ' ')))
   end
   T.check(allRun, 'ARA: every round runs as a full rally, with at least one service')
+  print('test_pack: stops with no place on the map: ' .. (#placesMissing > 0 and table.concat(placesMissing, '; ') or 'none'))
+  T.check(#placesMissing == 0, 'ARA: every start, service and overnight has its place on the map')
 end
 
 T.done('test_pack')

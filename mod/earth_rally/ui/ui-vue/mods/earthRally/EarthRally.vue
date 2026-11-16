@@ -80,9 +80,16 @@
             <span v-if="rly.rallyFinished" class="er-muted">Best: {{ longTime(rly.rallyFinished.totalS) }}<template v-if="rly.rallyFinished.pos"> · P{{ rly.rallyFinished.pos }} of {{ rly.rallyFinished.of }} · {{ rly.rallyFinished.class }} {{ ord(rly.rallyFinished.classPos) }}</template><template v-if="rly.rallyFinished.unclassified"> · not classified</template> · {{ rly.rallyFinished.mode === "realistic" ? "Realistic" : "Casual" }}</span>
           </div>
           <BngButton v-if="rly.rallyActive && rly.rallyActive.id === rly.id" :accent="ACCENTS.main" @click="openCard">Time card</BngButton>
+          <!-- (#28) Retire: the saved rally deleted, after a confirm in the bar itself -->
+          <template v-else-if="retireAsk === rly.id">
+            <span class="er-fb-warn">Retire? Your saved progress is deleted.</span>
+            <BngButton :accent="ACCENTS.main" :disabled="busy" @click="retireRally(rly.id)">Retire</BngButton>
+            <BngButton :accent="ACCENTS.outlined" @click="retireAsk = null">Cancel</BngButton>
+          </template>
           <template v-else>
             <BngButton v-if="rly.rallySaved" :accent="ACCENTS.main" :disabled="busy" @click="resumeRally(rly.id)">Continue</BngButton>
             <BngButton :accent="rly.rallySaved ? ACCENTS.outlined : ACCENTS.main" :disabled="busy" @click="openStart(rly.id)">{{ rly.rallySaved ? "Start again" : "Start the rally" }}</BngButton>
+            <BngButton v-if="rly.rallySaved" :accent="ACCENTS.outlined" :disabled="busy" @click="retireAsk = rly.id">Retire</BngButton>
           </template>
         </div>
         <!-- Results (with real results) and Rules (when the file has any): no tabs at all on a rally with neither -->
@@ -652,6 +659,12 @@ function openCard() {
 function resumeRally(id) {
   rallyAction("resume", id, null, r => { if (r.ok) openCard() })
 }
+// (#28) Retire from the rally page: its confirm is in the bar (retireAsk = the rally's id while it is up)
+const retireAsk = ref(null)
+function retireRally(id) {
+  retireAsk.value = null
+  rallyAction("abandon", id, null, () => loadRally(id))
+}
 // (the full rally's pages asking for another: the time card after Start, the rally's page after Quit)
 function fullView(v, id) {
   if (v === "timecard") openCard()
@@ -756,6 +769,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .er-row { display: flex; gap: 12px; flex-wrap: wrap; }
 .er-banner { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; padding: 12px 18px; border-radius: 0.5rem; background: rgba(31, 143, 255, 0.25); border-left: 4px solid var(--er-blue); font-size: 18px; span { margin-right: auto; } }
 .er-warnline { margin-bottom: 14px; color: #ffd36b; }
+.er-fb-warn { color: #ffd36b; align-self: center; }
 .er-msg { margin-top: 12px; color: #ffd36b; }
 .er-stat .er-v { font-family: "Overpass Mono", monospace; font-size: 32px; font-weight: 700; }
 .er-stat .er-l, .er-tile .er-l, .er-pt .er-l { font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--er-muted); }
