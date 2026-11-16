@@ -25,6 +25,9 @@ local rally = require('earthRally/rally')             -- the full rally (1.7.0):
 local rallyRun = require('earthRally/rallyRun')       -- ... and driving it in the game
 local loadScreen = require('earthRally/loadScreen')   -- the page's loading screen (1.7.0, #49)
 menuPause.holding = earth.holding                    -- (BeamNG.Earth's own holds: our request waits for them)
+-- (#63: the run moving the world's origin needs the physics on: the page's pause waits for it, the screen shows it)
+menuPause.waitFor = function() return runner.originMoving() end
+loadScreen.moving = function() return runner.originMoving() or earth.rebasing() == true end
 
 local M = {}
 local logTag = 'earthRally'
@@ -98,7 +101,9 @@ rallyRun.ui.closeMenu = function() if menuOpen then pcall(menuPause.suspend) ret
 -- Wherever the menu used to close and the world then loaded in view, the page stays up (or opens) on a loading screen
 -- (loadScreen.lua) until the car is placed and the world round it has loaded to the setting's share. The game stays
 -- paused under it: BeamNG.Earth loads while paused (the drive of 2026-11-16, docs/notes-1.7.0.md #10), and the
--- run's loading steps go on real time (runner.update's travel / anchor / build / place).
+-- run's loading steps go on real time (runner.update's travel / anchor / build / place). Except the move of the
+-- world's origin to the stage, which BeamNG.Earth does only with the physics on: the pause waits for it, the car held
+-- still by the run (#63, menuPause.waitFor).
 
 -- Up on the page: opened at `view` when the menu is not up.
 local function showLoading(view)
@@ -172,8 +177,13 @@ rallyRun.ui.loading = function(what, item, stage)
 end
 
 -- (rallyRun's, #40) the time control card: the stage loading behind it, Continue once it and the world are ready.
+-- (#64) Its steps start with the check-in (the time in is the moment the car stopped at the board) and the move of
+-- the world to the stage (#63); the start time is given when Continue is pressed (runner.continueAtc), so the card
+-- says so (tc.startNote) and, once the run has checked in behind it, tc.checkedIn.
 rallyRun.ui.atControl = function(tc, stage)
-  local steps = { 'Map at the start', 'Line, pacenotes, controls', 'Junctions taped, stage dressed', 'Start control ready' }
+  local steps = { 'Checked in', 'Moving the world to the stage', 'Line, pacenotes, controls',
+    'Junctions taped, stage dressed' }
+  tc.startNote = 'given when you continue'
   loadScreen.begin({ kind = 'atc', kick = 'Time control · in', title = tostring(tc.ss) .. ' ' .. tostring(tc.name),
     sub = (tc.km and (tc.km .. ' km · ') or '') .. tostring(tc.rally) .. (tc.day and (' · day ' .. tc.day) or ''),
     steps = steps, card = tc, button = 'Continue', thenView = 'timecard',
@@ -182,10 +192,18 @@ rallyRun.ui.atControl = function(tc, stage)
       if not r then return 1, nil, nil, 'the stage was put away' end
       if r.state == 'failed' then return 1, nil, nil, tostring(r.error or 'the stage could not be got ready') end
       local st = r.state
-      local i = (st == 'travel' and 1) or (st == 'anchor' and 2) or (st == 'build' and 2) or (st == 'place' and 4) or 5
+      if r.atcTime then
+        tc.checkedIn = true
+        tc.startNote = runner.startNote() or tc.startNote
+      end
+      -- (ready only once checked in: the start time is the check-in's, given again at Continue)
+      local i = ((st == 'travel' or st == 'anchor') and 2) or (st == 'build' and 3) or (st == 'place' and 4)
+        or ((st == 'toAtc' and not r.atcTime) and 4) or 5
       return i, (i - 1) / #steps, steps[math.min(i, #steps)]
     end,
     done = function(ok, why)
+      -- (#64: the start time from now, and "Move up to the start line" said, not before)
+      pcall(runner.continueAtc)
       if ok then if menuOpen then M.closeMenu() end
       else runner.say('Could not get the stage ready: ' .. tostring(why), 6, 'warning', tostring(tc.ss)) end
     end })
@@ -982,6 +1000,18 @@ end
 
 -- The results card's buttons: 'next', 'retry', 'menu' (the rally's page), 'close'.
 function M.uiResults(what)
+  -- (#58: "Load the stage?" at the time control's board; #69: Recover? on a transit -- no stage run to route by)
+  if what == 'load' or what == 'notYet' then
+    local ok, why = rallyRun.answerLoad(what)
+    if not ok and why then runner.say(tostring(why), 4, 'warning') end
+    return { ok = ok == true, message = why }
+  end
+  local q = rallyRun.askInfo()
+  if q and q.ask and (what == 'recover' or what == 'keep') then
+    local ok, why = rallyRun.answer(what)
+    if not ok and why then runner.say(tostring(why), 4, 'warning') end
+    return { ok = ok == true, message = why }
+  end
   local r = runner.current()
   if r and r.inRally then
     -- (a full rally's card: Continue to the time card, Restart in Casual, Close; the Recover? question's answers)
@@ -1150,7 +1180,9 @@ function M.uiRallyCard()
 end
 
 -- The full rally's buttons: start (opts: mode, class, cancelled), resume, go (out of service, on to the next stage),
--- quit (Save and quit: its save kept), abandon (Retire: its save deleted). Returns { ok, message, view }.
+-- quit (Save and quit: its save kept), abandon (Retire: its save deleted), endNew / endDrive (#71, the finished card:
+-- done with the rally, kept as finished; the page then opens Home, or the menu closes to plain free roam).
+-- Returns { ok, message, view }.
 function M.uiRallyAction(what, eventId, opts)
   local function go(ok, why, view)
     if not ok and why then message = why end
@@ -1182,6 +1214,11 @@ function M.uiRallyAction(what, eventId, opts)
         if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
       end
     end
+    if what == 'endNew' or what == 'endDrive' then
+      local okE, why = rallyRun.endRally()
+      if okE and what == 'endDrive' and menuOpen then M.closeMenu() end
+      return go(okE, why, okE and what == 'endNew' and 'home' or nil)
+    end
     if what == 'quit' then              -- Save and quit: continue later from the last service
       rallyRun.quit()
       return go(true, nil, 'rally')
@@ -1198,6 +1235,7 @@ end
 ------------------------------------------------------------------------------------------ the HUD's streams
 
 local streamT, streamOn, inactiveSent = 0, false, true
+local askSentKey = nil      -- (the rally question last sent with no run on: #58, #69)
 local hudT, slowT, slowSample, rlKey, hudKey, streamRun = 0, 0, nil, nil, nil, nil
 local previewT = nil
 local previewLayout = nil
@@ -1297,6 +1335,22 @@ local function sendStreams(dt)
   local over = not r or ((r.state == 'finished' or r.state == 'failed') and not r.resultsOpen
     and (r.sinceFinish or 99) > 5)
   routeMessage(gh, dt, over)
+  -- (#58, #69: a rally's question with no stage on screen -- "Load the stage?", Recover? on a transit: our stream
+  -- carries it, sent when it changes and at the floor's pace)
+  local okQ, q = pcall(rallyRun.askInfo)
+  if over and okQ and q then
+    hudT = hudT + dt
+    local key = tostring(q.key) .. '|' .. tostring(runner.uiHidden)
+    if key ~= askSentKey or hudT >= M.STREAM_FLOOR_S then
+      askSentKey, hudT = key, 0
+      local _, ours = runner.uiFrame()
+      gh.queueStream('earthRally', ours)
+      log('I', logTag, M.streamsLine(nil, ours))
+    end
+    inactiveSent = false
+    return
+  end
+  askSentKey = nil
   if over then
     -- (once: the stock apps blank, ours hides)
     if not inactiveSent then
@@ -1402,6 +1456,10 @@ function M.onUpdate(dtReal, dtSim)
     local want = r ~= nil and r.resultsOpen == true and r.state == 'finished' and r.stopCtl ~= nil and not menuOpen
       and not runner.uiHidden
     pcall(menuPause.card, 'earthRally_results', want)
+    -- (#58, #59, #69: a rally's question -- "Load the stage?", Recover? -- paused under it too, so A and the pad
+    -- reach its card and not the car)
+    local okA, asking = pcall(rallyRun.asking)
+    pcall(menuPause.card, 'earthRally_ask', okA and asking == true and not menuOpen and not runner.uiHidden)
   end
   local okL, errL = pcall(loadScreen.update, dtReal or 0)
   if not okL then log('E', logTag, 'loading screen: ' .. tostring(errL)) loadScreen.cancel() end

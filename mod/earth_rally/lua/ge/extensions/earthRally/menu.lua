@@ -490,7 +490,8 @@ end
 --   list[i].passes = { { ss, run, km, cancelled }... }, list[i].notRun = true (in an itinerary that never runs
 --   it), list[i].place = { pos, of, pass } | nil, list[i].placeWhy = 'noTime' | 'lineMismatch' | nil
 --   results (with a board) = { complete, totalS, you = { pos, of, gapS }, winnerS, stages, driven,
---     chips = { { name, done } } (the comparable stages: the ones the result is over),
+--     chips = { { name, done, ss (its first counted pass), timeS (your best on it, nil if not driven) } } (the
+--     comparable stages: the ones the result is over),
 --     rows = top 10 and you, with the crews either side of you below it (boards.menuRows)
 --       { pos, name, car, class, timeS, gapS, you, skipped },
 --     crews = how many crews have a time on every comparable pass, counted / comparable (passes), kmTotal /
@@ -528,7 +529,9 @@ function M.addRallyFiles(out, e)
         seen[p.stageId] = true
         local done = data.bests[p.stageId] ~= nil
         if done then driven = driven + 1 end
-        chips[#chips + 1] = { name = byId[p.stageId] and byId[p.stageId].name or p.stageId, done = done }
+        -- (#54: a driven stage's chip shows your time on it, so the card says something before the total does)
+        chips[#chips + 1] = { name = byId[p.stageId] and byId[p.stageId].name or p.stageId, done = done,
+          ss = p.ss and tostring(p.ss) or nil, timeS = data.bests[p.stageId] }
       end
     end
     local winner, crews = nil, 0

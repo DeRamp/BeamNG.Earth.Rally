@@ -235,7 +235,12 @@ end
 car.lat, car.lon = full[1][1], full[1][2]
 ok, why = runner.start(event, event.stages[1])
 T.check(ok, 'the run starts (' .. tostring(why) .. ')')
+-- (#63) the origin moves with the physics on (the loading screen's pause waits: runner.originMoving), the car frozen
+for _ = 1, 50 do if runner.state() == 'anchor' then break end frames(1) end
+T.check(runner.state() == 'anchor' and runner.originMoving() and frozen == true,
+  'the origin move: the pause waits for it, the car held still (#63)')
 frames(5)
+T.check(not runner.originMoving() and frozen == false, 'the origin moved: the car let go, the pause may come on (#63)')
 T.check(runner.current().checks.originMoved == 'yes', 'the origin moved to the stage centre (' ..
   tostring(runner.current().checks.originMoved) .. ')')
 T.check(math.abs(anchor.lat - 47.009) < 1e-9, 'the anchor is at the centre')
@@ -740,19 +745,31 @@ do
     end
   end
   T.check(stopTent, 'a tent at the stop control')
+  local function stopTentNow(x, y)
+    for _, o in pairs(objects) do
+      if (o.fields.shapeName or ''):find('gazebo_mod_frame') and (o.pos[1] - x) ^ 2 + (o.pos[2] - y) ^ 2 < 15 ^ 2 then
+        return true
+      end
+    end
+    return false
+  end
   car.speed = 0
   frames(20)
   T.check(runner.state() == 'finished' and r2.checks.stopControl:find('stopped') ~= nil,
     'stopped at the stop control: stage complete')
   T.check(countObjects() > 0, 'stage done: the stop control tent still there a moment after stopping')
   frames(100)
-  T.check(countObjects() == 0 and manager == nil,
-    'a few seconds later: boards and co-driver taken away (not left until Close)')
+  T.check(countObjects() > 0 and manager == nil and stopTentNow(sx2, sy2),
+    'a few seconds later: the co-driver taken away, the stop control\'s tent left standing (#66)')
   T.check(layout == 'earthRallyStage' and r2.resultsOpen, 'the stage layout kept for the results card')
   -- drive off: the card closes, BeamNG.Earth's layout back
   car.lat, car.lon = toGeo(sx2 + 150, sy2)
   frames(1)
   T.check(not r2.resultsOpen and layout == 'beamngEarth', 'driven off: the results card closed, the layout back')
+  T.check(countObjects() > 0, 'driven off 150 m: the finish and stop props still there (#66)')
+  car.lat, car.lon = toGeo(sx2 + runner.LEFT_DROP_M + 50, sy2)
+  frames(10)
+  T.check(countObjects() == 0, 'out of their distance: the props left behind taken away (#66)')
   runner.abort(true)
 end
 
@@ -2943,15 +2960,47 @@ do
       'rally: saved at the start')
     T.check(rallyRun.goNext() and runner.approaching() and runner.approaching().sticky, 'rally: out of the start, the transit armed')
     T.check(rallyRun.uiCard().phase == 'transit', 'rally: on a transit')
-    drive(30, function() return runner.current() ~= nil end)
+    -- (#58) rolled past the board at speed: nothing loads, nothing asked
+    drive(30, function() return car.lat >= atcLat + 15 / 111195 end)
+    rframes(3)
+    T.check(runner.current() == nil and rallyRun.askInfo() == nil, 'rally: rolling past the board loads nothing (#58)')
+    car.lat, car.speed = atcLat, 0
+    rframes(3)
+    local q = rallyRun.askInfo()
+    T.check(runner.current() == nil and q and q.loadAsk and q.loadAsk.ss == 'SS1' and rallyRun.asking(),
+      'rally: stopped at the board, "Load the stage?" asked (#58)')
+    T.check(rallyRun.recoverKey() and rallyRun.askInfo() == q, 'rally: the recovery key does nothing while asked (#59)')
+    T.check(rallyRun.answerLoad('notYet') and rallyRun.askInfo() == nil, 'rally: Not yet')
+    rframes(5)
+    T.check(runner.current() == nil and rallyRun.askInfo() == nil, 'rally: Not yet, still stopped there: not asked again')
+    car.lat = atcLat - 60 / 111195 rframes(3)
+    car.lat = atcLat rframes(3)
+    T.check(rallyRun.askInfo() and rallyRun.askInfo().loadAsk, 'rally: left the board and stopped again: asked again')
+    local nToasts = #toasts
+    T.check(rallyRun.answerLoad('load') and rallyRun.askInfo() == nil, 'rally: Load')
     local cur = runner.current()
     T.check(cur and cur.inRally and cur.ssLabel == 'SS1' and cur.rally and cur.rally.mode == 'realistic',
-      'rally: SS1 loaded as the car drives up, the rally\'s pass')
+      'rally: SS1 loaded on the answer, the rally\'s pass')
+    -- (#64) checked in behind the card where it stopped, the start time held for Continue, nothing said behind it
+    rframes(30)
+    T.check(cur.atcTime ~= nil and cur.startHeld and tostring(runner.startNote()):match('^%+%d+ min after Continue$'),
+      'rally: checked in behind the card, the start time given at Continue (#64: ' .. tostring(runner.startNote()) .. ')')
+    local saidAtc = false
+    for k = nToasts + 1, #toasts do
+      local m = tostring(toasts[k].msg)
+      if m:find('Drive to the time control') or m:find('Your start time') then saidAtc = true end
+    end
+    T.check(not saidAtc, 'rally: no "drive to the time control" nor start time said behind the card (#64)')
+    cur.clockRun = cur.clockRun + 120
+    T.check(runner.continueAtc() and not cur.startHeld and cur.startAt >= runner.clock() + runner.START_GAP_S,
+      'rally: Continue: the start time from then, not from the check-in (#64)')
     -- a Realistic recovery during the stage: asked first, then the stage given up, the car to Service A (#31)
     cur.state = 'running'
-    T.check(rallyRun.recoverKey() and cur.rally.ask ~= nil, 'rally: the recovery key asks first')
-    rallyRun.update(1.5)
-    T.check(rallyRun.recoverKey(), 'rally: pressed again, answered')
+    T.check(rallyRun.recoverKey() and cur.rally.ask ~= nil and rallyRun.asking(), 'rally: the recovery key asks first')
+    rallyRun.update(15)
+    T.check(cur.rally.ask ~= nil, 'rally: the question does not time out (#59)')
+    T.check(rallyRun.recoverKey() and runner.current() == cur, 'rally: pressed again, no answer (#59: only the card)')
+    T.check(rallyRun.answer('recover'), 'rally: Recover answered')
     T.check(runner.current() == nil and geo_m(car.lat, car.lon, parkLat, parkLon) < 1,
       'rally: the stage given up, the car taken to the service park')
     rframes(60)
@@ -2961,6 +3010,12 @@ do
     T.check(rallyRun.active().results.SS1.superRally, 'rally: SS1 scored under Super Rally')
     T.check(rallyRun.goNext() and rally.current(rallyRun.active()).ss == 'SS2' and runner.approaching(),
       'rally: service out, the transit to SS2 armed')
+    -- (#69) Realistic, on the transit: the Recover? question, not a free recovery
+    T.check(rallyRun.recoverKey(), 'rally: the recovery key on the transit')
+    local tq = rallyRun.askInfo()
+    T.check(tq and tq.ask and tq.ask.transit and tq.ask.ss == 'SS2' and tq.ask.stop == 'Final service',
+      'rally: Realistic transit: Recover? asked, rejoining at the final service (#69)')
+    T.check(rallyRun.answer('keep') and rallyRun.askInfo() == nil and runner.approaching(), 'rally: Keep going')
     local li = rallyRun.leaveInfo()
     T.check(li and li.at == 'Service A', 'rally: leaving now continues from Service A')
     rallyRun.quit()
@@ -2971,6 +3026,94 @@ do
     T.check(rallyRun.saved('test19r') == nil, 'rally: retired, the save deleted')
     core_input_actionFilter = nil
     teleports, moved = 0, false
+  end
+
+  -- 3d. (1.7.0 rev 4) the rally's end: the start row on day 1 (#57), the final service driven to after the last stage
+  -- and checked in only once stopped (#67), its board and tent (#68), the rally done there and closed (#71)
+  do
+    local rally = require('earthRally/rally')
+    local rallyRun = require('earthRally/rallyRun')
+    local props = require('earthRally/props')
+    local parkLat, parkLon = atcLat - 8000 / 111195, full[11][2]
+    files['/earthRally/events/test19f.json'] = { format = 1, id = 'test19f', name = 'Test Rally 19F', stages = ev.stages,
+      itinerary = { { ss = 'SS1', stage = 'hill', run = 1, day = 1, km = 3 } }, rallyStops = {},
+      rallyStart = { name = 'Park', lat = parkLat, lon = parkLon } }
+    files['/earthRally/matched/test19f__hill.json'] = { format = 1, points = recFrom }
+    events.list(true)
+    local opened = 0
+    rallyRun.ui.openCard = function() opened = opened + 1 end
+    core_input_actionFilter = { setGroup = function() end, addAction = function() end }
+    local function rframes(n) for _ = 1, n do rallyRun.update(0.1) frames(1) end end
+    car.lat, car.lon, car.speed = parkLat, parkLon, 0
+    T.check(rallyRun.start('test19f', { mode = 'casual', class = 'L4WD' }), 'rally end: started')
+    rframes(60)
+    local c = rallyRun.uiCard()
+    local labels = {}
+    for _, row in ipairs(c.rows) do labels[#labels + 1] = row.label end
+    T.check(table.concat(labels, ' ') == 'Start SS1 Final service' and c.rows[3].final,
+      'rally end: the order ends at a final service, back at the start (#71: ' .. table.concat(labels, ' ') .. ')')
+    T.check(c.rows[1].day == 1, 'rally end: the start row on day 1 (#57)')
+    T.check(rallyRun.goNext() and runner.approaching(), 'rally end: on the transit to SS1')
+    -- the stage driven (its finish told to the rally straight away), the final service driven to
+    rallyRun.onFinished({ timeS = 200, stageS = 200, penaltyS = 0 })
+    T.check(not rally.over(rallyRun.active()) and rallyRun.uiCard().phase == 'toStop',
+      'rally end: after the last stage, the drive back to the final service (#71)')
+    T.check(props.site('service') ~= nil, 'rally end: the final service has its board and tent (#68)')
+    car.lat, car.lon, car.speed = parkLat - 60 / 111195, parkLon, 25
+    rframes(10)
+    T.check(not rally.over(rallyRun.active()), 'rally end: driven in at speed: not checked in (#67)')
+    local ti = rallyRun.transitInfo()
+    T.check(ti and ti.stop ~= nil, 'rally end: the HUD line says to stop (#67: ' .. tostring(ti and ti.stop) .. ')')
+    T.check(countObjects() > 0, 'rally end: the board and tent put down as the car came near (#68)')
+    car.speed = 0
+    rframes(5)
+    T.check(rally.over(rallyRun.active()) and rallyRun.uiCard().done and #rallyRun.finishedList('test19f') == 1,
+      'rally end: stopped at the final service, the rally finished and kept (#71)')
+    T.check(rallyRun.endRally() and rallyRun.active() == nil,
+      'rally end: New rally / Continue driving: the rally closed (#71)')
+    car.lat = parkLat + (runner.LEFT_DROP_M + 100) / 111195
+    rframes(10)
+    T.check(props.site('service') == nil, 'rally end: driven away, the board and tent taken away (#68)')
+    core_input_actionFilter = nil
+    rallyRun.abandon('test19f')
+    teleports, moved = 0, false
+  end
+
+  -- 3e. (#70) the direction point before an ATC: on the road into it, walked back along the road map; none where the
+  -- road into it turns sharply (the old straight line landed on the next road there and sent the car round a block)
+  do
+    local rallyRun = require('earthRally/rallyRun')
+    local props = require('earthRally/props')
+    local ax, ay = 1000, 2000
+    local aLat, aLon = toGeo(ax, ay)
+    local sLat, sLon = toGeo(ax, ay + 100)         -- (the start 100 m north: the stage runs north)
+    local stg = { controls = { start = { lat = sLat, lon = sLon } } }
+    local function road(pts)
+      local nodes = {}
+      for k, p in ipairs(pts) do
+        nodes['r' .. k] = { pos = { x = p[1], y = p[2], z = 0 }, radius = 3, links = {} }
+        if k > 1 then nodes['r' .. k].links['r' .. (k - 1)] = {} nodes['r' .. (k - 1)].links['r' .. k] = {} end
+      end
+      return nodes
+    end
+    -- a straight road north through the ATC
+    local straight = {}
+    for k = -10, 10 do straight[#straight + 1] = { ax, ay + k * 20 } end
+    local nodes = road(straight)
+    map = { getMap = function() return { nodes = nodes } end }
+    props.mapChanged()
+    local via = rallyRun.approachVia(stg, aLat, aLon, 'ATC')
+    local vx, vy = 0, 0
+    if via then vx, vy = toGame(via.lat, via.lon) end
+    T.check(via and math.abs(vx - ax) < 0.5 and math.abs(vy - (ay - 60)) < 0.5,
+      'approach point: 60 m before the ATC on its own road (#70)')
+    -- the road into the ATC turns in from the east 20 m before it: no point rather than one on another road
+    nodes = road({ { ax + 200, ay - 20 }, { ax + 100, ay - 20 }, { ax, ay - 20 }, { ax, ay }, { ax, ay + 100 } })
+    props.mapChanged()
+    T.check(rallyRun.approachVia(stg, aLat, aLon, 'ATC') == nil, 'approach point: a sharp turn just before it: none (#70)')
+    map = nil
+    props.mapChanged()
+    T.check(rallyRun.approachVia(stg, aLat, aLon, 'ATC') == nil, 'approach point: no road map yet: none, looked for later')
   end
 
   -- 4. a stage with no ATC, the car standing still on the start line when it loads: not counted down until driven

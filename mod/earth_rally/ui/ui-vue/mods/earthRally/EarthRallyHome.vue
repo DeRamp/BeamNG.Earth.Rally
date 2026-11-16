@@ -80,7 +80,8 @@ function open(r) {
 .er-muted { color: var(--er-muted); }
 .er-home { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 28px; }
 .er-hcard { display: flex; flex-direction: column; overflow: hidden; cursor: pointer; min-width: 0; min-height: 560px;
-  &:hover, &:focus { box-shadow: 0 0 0 3px var(--er-orange); outline: none; } }
+  outline: none;
+  &:focus { box-shadow: 0 0 0 3px var(--er-orange); } }   /* (#51: the focus only; the mouse moves it, store.js pointTo) */
 .er-wide { grid-column: span 2; }
 .er-hpic { height: 300px; flex-shrink: 0; }
 .er-mosaic { display: grid; grid-auto-rows: 1fr; gap: 3px; height: 300px; flex-shrink: 0; background: #000; }

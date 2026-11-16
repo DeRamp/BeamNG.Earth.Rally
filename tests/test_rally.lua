@@ -351,4 +351,57 @@ do
   T.check(on3 and on3.place and on3.place.name == 'Parc Ferme', 'no service before it: the overnight at its own place')
 end
 
+------------------------------------------------------------------------------------------ #71: the final service
+do
+  local function labelsOf(order)
+    local out = {}
+    for _, it in ipairs(order) do out[#out + 1] = it.kind == 'stage' and it.ss or it.label end
+    return table.concat(out, ' ')
+  end
+  -- the last day's service park: Service B (day 2) has a place
+  local ev = event()
+  ev.rallyStops[3].place = { name = 'Park B', lat = 3, lon = 4 }
+  local r = rally.new(ev, {})
+  T.check(labelsOf(r.order) == 'Start SS1 SS2 SS3 Service A SS4 SS5 SS6 Overnight SS8 Service B SS9 SS10 Final service',
+    'after the last stage, a final service (#71): ' .. labelsOf(r.order))
+  local fin = r.order[#r.order]
+  T.check(fin.final and fin.kind == 'service' and fin.place.name == 'Park B', 'at the last day\'s service park')
+  -- a stop after the last pass with a place: there
+  local ev2 = event()
+  ev2.rallyStops[#ev2.rallyStops + 1] = { after = 10, kind = 'service', label = 'Service C', name = 'Finish Park',
+    place = { name = 'Finish Park', lat = 7, lon = 8 } }
+  local fin2 = rally.new(ev2, {}).order
+  fin2 = fin2[#fin2]
+  T.check(fin2.final and fin2.place.name == 'Finish Park', 'the event\'s own stop after the last pass, when it has a place')
+  -- no service park on the map: back at the rally's start
+  local ev3 = event()
+  ev3.rallyStart = { name = 'Start Square', lat = 9, lon = 10 }
+  local o3 = rally.new(ev3, {}).order
+  T.check(o3[#o3].final and o3[#o3].place.name == 'Start Square', 'no service park: the rally\'s start')
+  T.check(not rally.new(event(), {}).order[#rally.new(event(), {}).order].final, 'no place at all: no final service')
+  -- the rally is over only once checked in there
+  local rr = newR(ev3, { mode = 'casual' })
+  while rally.current(rr).kind == 'stage' or not rally.current(rr).final do
+    local it = rally.current(rr)
+    if it.kind == 'stage' then rally.stageDone(rr, { timeS = 100 }) else rally.serviced(rr) rally.serviceOut(rr) end
+  end
+  T.check(not rally.over(rr) and rally.current(rr).final, 'after the last stage: on the way to the final service')
+  rally.serviced(rr)
+  rally.serviceOut(rr)
+  T.check(rally.over(rr) and rr.done, 'checked in at the final service: the rally is over')
+  -- the last stage given up in Realistic: the final service is no stop to rejoin at, unclassified
+  local rl = newR(ev3, { mode = 'realistic', class = 'L4WD' })
+  while rally.current(rl).ss ~= 'SS10' do
+    local it = rally.current(rl)
+    if it.kind == 'stage' then rally.stageDone(rl, { timeS = 100 }) else rally.serviced(rl) rally.serviceOut(rl) end
+  end
+  local out = rally.recover(rl, board)
+  T.check(out and out.stop == nil and rl.done and rl.unclassified, 'SS10 given up: unclassified, not at the final service')
+  -- held out: the stops before the final service merged as before, the final service kept
+  local rh = newR(ev3, {})
+  rally.holdOut(rh, 'e', 'missing')
+  T.check(labelsOf(rh.order) == 'Start SS1 SS2 SS3 Service A SS4 SS5 SS6 Overnight SS9 Final service',
+    'a stage held out: the final service kept last (' .. labelsOf(rh.order) .. ')')
+end
+
 T.done('test_rally')

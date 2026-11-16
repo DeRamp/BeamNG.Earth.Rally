@@ -3,8 +3,11 @@
        world loads somewhere (Drive, Go to start, Recce, Retry / Next stage, a rally's move to a stop, the stage at its
        time control). Its data: earthRally_main.uiLoading() (loadScreen.lua), polled here while the page is up. Steps,
        a bar, and last the world round the car against the "World loaded before driving" setting. At a time control
-       (kind "atc") the card waits for Continue once the stage and the world are ready. -->
-  <div v-if="L" class="er-load-wrap">
+       (kind "atc") the card waits for Continue once the stage and the world are ready. While it is up the menu page
+       under it is not drawn (#60, EarthRally.vue): it is a screen of its own, on its own background.
+       A presses Continue as soon as it is ready, wherever the focus is (#61): the ok handler is on the screen itself,
+       and the game's nav runs the deepest handler in the page's scope when the focused element has none. -->
+  <div v-if="L" class="er-load-wrap" v-bng-on-ui-nav:ok="okPress">
     <div class="er-load-top"><span class="er-accent">Earth</span> Rally</div>
     <div class="er-load-mid">
       <!-- the time control card -->
@@ -13,8 +16,10 @@
           <div class="er-kick">{{ L.kick }}</div>
           <h1>{{ L.title }}</h1>
           <div class="er-sub">{{ L.sub }}</div>
+          <!-- (#64) the start time is given when Continue is pressed, so it cannot run out while the card is up -->
           <div class="er-tcrow"><span>Time in</span><b>{{ (L.card && L.card.timeIn) || "–" }}</b></div>
-          <div class="er-tcrow"><span>Start time</span><b class="er-sm">given at the red board</b></div>
+          <div v-if="L.card && L.card.due" class="er-tcrow"><span>Due</span><b>{{ L.card.due }}</b></div>
+          <div class="er-tcrow"><span>Start time</span><b :class="{ 'er-sm': !L.ready }">{{ (L.card && L.card.startNote) || "given when you continue" }}</b></div>
           <div class="er-tcrow"><span>Then</span><b class="er-sm">move up to the start line</b></div>
         </div>
         <div class="er-r">
@@ -23,10 +28,11 @@
             <li v-for="(s, i) in arr(L.steps).filter(x => !x.world)" :key="i" :class="s.state"><span class="er-dot">{{ s.state === "done" ? "✓" : "" }}</span>{{ s.text }}</li>
           </ul>
           <div class="er-world">
-            <div class="er-wt"><b>World</b><span v-if="L.worldReady" class="er-ok">Ready to drive</span><span v-else>{{ L.world || 0 }}%</span></div>
-            <div class="er-wbar"><i :class="{ full: L.worldReady }" :style="{ width: Math.min(100, L.world || 0) + '%' }"></i><em :style="{ left: L.need + '%' }"></em><u :style="{ left: L.need + '%' }">{{ L.need }}%</u></div>
+            <!-- (#63) while the world's origin moves (L.moving), its count means nothing yet: a moving stripe -->
+            <div class="er-wt"><b>World</b><span v-if="L.moving">Moving the world...</span><span v-else-if="L.worldReady" class="er-ok">Ready to drive</span><span v-else>{{ L.world || 0 }}%</span></div>
+            <div class="er-wbar"><i v-if="L.moving" class="move"></i><i v-else :class="{ full: L.worldReady }" :style="{ width: Math.min(100, L.world || 0) + '%' }"></i><em :style="{ left: L.need + '%' }"></em><u :style="{ left: L.need + '%' }">{{ L.need }}%</u></div>
           </div>
-          <BngButton v-if="L.ready" v-bng-ui-nav-focus="1" class="er-big" :accent="ACCENTS.main" @click="cont">{{ L.button || "Continue" }}</BngButton>
+          <BngButton v-if="L.ready" ref="contBtn" v-bng-ui-nav-focus="1" class="er-big" :accent="ACCENTS.main" @click="cont">{{ L.button || "Continue" }}</BngButton>
           <BngButton v-else class="er-big" :accent="ACCENTS.secondary" disabled>Loading the stage...</BngButton>
         </div>
       </div>
@@ -43,8 +49,9 @@
           <li v-for="(s, i) in arr(L.steps)" :key="i" :class="s.state"><span class="er-dot">{{ s.state === "done" ? "✓" : "" }}</span>{{ s.text }}</li>
         </ul>
         <div class="er-world">
-          <div class="er-wt"><b>World</b><span v-if="L.worldReady" class="er-ok">Ready to drive</span><span v-else>{{ L.world || 0 }}%</span></div>
-          <div class="er-wbar"><i :class="{ full: L.worldReady }" :style="{ width: Math.min(100, L.world || 0) + '%' }"></i><em :style="{ left: L.need + '%' }"></em><u :style="{ left: L.need + '%' }">{{ L.need }}%</u></div>
+          <!-- (#63) while the world's origin moves (L.moving), its count means nothing yet: a moving stripe -->
+          <div class="er-wt"><b>World</b><span v-if="L.moving">Moving the world...</span><span v-else-if="L.worldReady" class="er-ok">Ready to drive</span><span v-else>{{ L.world || 0 }}%</span></div>
+          <div class="er-wbar"><i v-if="L.moving" class="move"></i><i v-else :class="{ full: L.worldReady }" :style="{ width: Math.min(100, L.world || 0) + '%' }"></i><em :style="{ left: L.need + '%' }"></em><u :style="{ left: L.need + '%' }">{{ L.need }}%</u></div>
         </div>
         <div v-if="L.tip" class="er-tip">{{ L.tip }}</div>
       </div>
@@ -57,12 +64,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from "vue"
+import { ref, watch, nextTick, onMounted, onUnmounted } from "vue"
 import { BngButton, ACCENTS } from "@/common/components/base"
-import { vBngUiNavFocus } from "@/common/directives"
-import { engineLua, arr, refreshState } from "./store.js"
+import { vBngUiNavFocus, vBngOnUiNav } from "@/common/directives"
+import { engineLua, arr, refreshState, focusButton } from "./store.js"
 
-const emit = defineEmits(["view"])
+// up: true while the screen is up (the page under it stops drawing itself, #60)
+const emit = defineEmits(["view", "up"])
 const L = ref(null)
 let timer = null
 function poll() {
@@ -76,13 +84,27 @@ function poll() {
     }
   })
 }
-function cont() { engineLua("earthRally_main and earthRally_main.uiLoadingContinue()", () => poll()) }
+// (one press, one Continue: the button's click and A can both arrive for the same press)
+let sent = false
+function cont() {
+  if (sent) return
+  sent = true
+  engineLua("earthRally_main and earthRally_main.uiLoadingContinue()", () => { sent = false; poll() })
+}
+// A on the screen: Continue once ready, else nothing (nothing under a loading screen is to be pressed)
+function okPress() { if (L.value && L.value.kind === "atc" && L.value.ready) cont() }
+// (#61) the ready button takes the real focus as it appears, not only on a controller's first page
+const contBtn = ref(null)
+watch(() => !!(L.value && L.value.ready), r => { if (r) nextTick(() => focusButton(contBtn.value)) })
+watch(() => !!L.value, up => { sent = false; emit("up", up) })
 onMounted(() => { poll(); timer = setInterval(poll, 250) })
 onUnmounted(() => { if (timer) clearInterval(timer) })
 </script>
 
 <style lang="scss" scoped>
-.er-load-wrap { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; background: rgba(10, 12, 16, 0.92); color: #f0f0f0; }
+/* (#60) a background of its own, solid: the game and the menu page never show through */
+.er-load-wrap { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; color: #f0f0f0;
+  background: radial-gradient(ellipse at 70% 30%, #2a2219 0%, #121418 60%, #0b0c0f 100%); }
 .er-load-top { height: 84px; display: flex; align-items: center; padding: 0 64px; font-size: 30px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; background: linear-gradient(180deg, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.35)); }
 .er-accent { color: #f26b1d; margin-right: 10px; }
 .er-load-mid { flex: 1; display: flex; align-items: center; justify-content: center; padding: 28px 64px; }
@@ -103,11 +125,13 @@ h1 { margin: 8px 0 6px; font-size: 52px; line-height: 1.05; text-transform: uppe
 .done .er-dot { background: #3ccf7e; border-color: #3ccf7e; color: #062; }
 .now .er-dot { border-color: #f26b1d; border-top-color: transparent; animation: er-spin 1s linear infinite; }
 @keyframes er-spin { to { transform: rotate(360deg); } }
+@keyframes er-slide { from { left: 0; } to { left: 70%; } }
 .er-world { margin-top: 26px; padding: 18px 20px 30px; border-radius: 8px; background: rgba(255, 255, 255, 0.05); }
 .er-wt { display: flex; justify-content: space-between; font-size: 18px; margin-bottom: 10px; b { font-weight: 600; } span { color: #b8bcc6; } span.er-ok { color: #3ccf7e; } }
 .er-wbar { position: relative; height: 14px; border-radius: 7px; background: rgba(255, 255, 255, 0.12);
   i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 7px; background: #3b8beb; }
   i.full { background: #3ccf7e; }
+  i.move { width: 30%; background: repeating-linear-gradient(90deg, #3b8beb 0 14px, #2a6bb8 14px 28px); animation: er-slide 1.6s linear infinite; }
   em { position: absolute; top: -6px; bottom: -6px; width: 3px; background: #fff; border-radius: 2px; }
   u { position: absolute; top: 20px; transform: translateX(-50%); text-decoration: none; font-size: 14px; color: #fff; white-space: nowrap; } }
 .er-tip { margin-top: 30px; padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, 0.1); color: #b8bcc6; font-size: 17px; }

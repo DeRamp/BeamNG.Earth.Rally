@@ -18,6 +18,10 @@ function routesWith(EarthRally) {
       name: "earthRally",
       component: EarthRally,
       meta: {
+        // (#53) the game's own bottom strip (its version line, the player, its button hints) off on our page: it
+        // drew over our prompt bar, which already says what the buttons do. The router's ui.infoBar, as the
+        // game's own full-screen routes set it (mapview, play: InfoBarDefaultsHidden).
+        infoBar: { visible: false, showSysInfo: false },
         luaRoute: {
           title: "Earth Rally",
           backTarget: "play",

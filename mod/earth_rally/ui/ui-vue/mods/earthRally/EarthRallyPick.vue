@@ -7,8 +7,8 @@
        the panel's numbers from uiRallyStart (rallyRun.startInfo), asked for as a card is picked. -->
   <section class="er-pk">
     <div class="er-pk-cards">
-      <div v-for="(r, i) in list" :key="r.id" class="er-pk-rc" :class="{ on: r.id === selId }" tabindex="0" bng-nav-item
-        v-bng-ui-nav-focus="r.id === firstId ? 1 : undefined"
+      <div v-for="(r, i) in list" :key="r.id" class="er-pk-rc" :class="{ on: cur && r.id === cur.id }" tabindex="0" bng-nav-item
+        v-bng-ui-nav-focus="cur && r.id === cur.id ? 1 : undefined"
         @focus="choose(r.id)" @click="e => (e.detail > 0 ? choose(r.id) : go(r))" @dblclick="go(r)" @keydown.enter.self="go(r)">
         <svg class="er-pk-art" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice">
           <rect width="400" height="300" :fill="ART[i % ART.length].bg"/>
@@ -62,7 +62,8 @@ import { vBngUiNavFocus } from "@/common/directives"
 import EarthRallyPic from "./EarthRallyPic.vue"
 import { state, drive, rallyStart, loadRallyStart, arr, lenNum, units, longTime, ord, days } from "./store.js"
 
-defineProps({ busy: { type: Boolean, default: false } })
+// pickId: the rally to open on, picked (#55: back from its results or its start screen); none: as below
+const props = defineProps({ busy: { type: Boolean, default: false }, pickId: { type: String, default: null } })
 const emit = defineEmits(["start", "continue", "card", "results"])
 
 const MODE = { realistic: "Realistic", casual: "Casual" }
@@ -79,8 +80,8 @@ const isActive = r => !!(r && active.value && active.value.id === r.id)
 const bad = ref({})
 const cover = r => (r.media && (r.media.cover || r.media.photo)) || ""
 
-// the picked rally: the one under way, else the last saved, else the first
-const selId = ref(null)
+// the picked rally: the one asked for, else the one under way, else the last saved, else the first
+const selId = ref(props.pickId)
 const firstId = computed(() => {
   const l = list.value
   if (!l.length) return null
@@ -140,8 +141,12 @@ defineExpose({ results, hasResults })
 .er-pk { display: grid; grid-template-columns: minmax(0, 1fr) 640px; gap: 28px; height: 100%; min-height: 640px; }
 .er-pk-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-content: start; overflow-y: auto; padding: 4px; margin: -4px; }
 .er-pk-rc { position: relative; height: 300px; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end;
-  padding: 18px 20px; cursor: pointer; min-width: 0;
-  &.on, &:hover, &:focus { outline: 4px solid var(--er-orange); outline-offset: -4px; }
+  padding: 18px 20px; cursor: pointer; min-width: 0; outline: none;
+  /* (#52) the highlight on a layer above the picture, art and shade, which cover the card and hid its own outline.
+     (#51) One look for picked and selected: the focus picks (choose on focus) and the mouse moves the focus, so it
+     is the one card lit. */
+  &::after { content: ""; position: absolute; inset: 0; z-index: 2; border: 4px solid transparent; border-radius: 10px; pointer-events: none; }
+  &.on::after, &:focus::after { border-color: var(--er-orange); }
   > :not(.er-pk-art):not(.er-pk-img):not(.er-pk-shade):not(.er-pk-tag) { position: relative; }
   h3 { margin: 0; font-size: 26px; text-transform: uppercase; letter-spacing: 0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }

@@ -2,7 +2,8 @@
   <!-- Earth Rally's settings (docs/mockups-1.2.0/menu.html, Settings): a row per setting with its choices as a
        segmented switch. The rows come from Lua (earthRally/settings.lua uiState: labels, descriptions, options), so
        a new setting needs no change here. In the menu page and in the pause menu's Earth Rally tab. -->
-  <div class="er-settings">
+  <!-- (#51: the mouse moves the one selection here too, in the pause menu's card as on the menu page) -->
+  <div class="er-settings" @mousemove="pointTo">
     <div v-if="card" class="er-set-title">Earth Rally settings</div>
     <div v-for="s in schema" :key="s.id" class="er-set">
       <div class="er-set-text">
@@ -30,7 +31,7 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted } from "vue"
-import { state, setSetting, arr, startPolling, stopPolling } from "./store.js"
+import { state, setSetting, arr, startPolling, stopPolling, pointTo } from "./store.js"
 
 defineProps({
   card: { type: Boolean, default: false },     // in the pause menu (a title of its own)
@@ -55,7 +56,7 @@ onUnmounted(stopPolling)
 .er-seg {
   display: flex; flex-shrink: 0; border-radius: 0.25rem; overflow: hidden; box-shadow: inset 0 0 0 1px #5a6070;
   span { padding: 0.45em 0.9em; cursor: pointer; color: #b8bcc6; white-space: nowrap; }
-  span:hover { background: rgba(255, 255, 255, 0.08); }
+  span:focus { background: rgba(255, 255, 255, 0.08); }   /* (#51: the focus only; the mouse moves it, pointTo) */
   span.on { background: #c75b1e; color: #fff; font-weight: 600; }
 }
 .er-set-note { margin-top: 1em; font-size: 0.9em; line-height: 1.5; color: #b8bcc6; }

@@ -1198,4 +1198,46 @@ do
   T.check(type(SPAWN_MS) == 'number' and SPAWN_MS > 0, 'spawn budget: on as shipped')
   props.clear()
 end
+
+------------------------------------------------------------------------------------------ 1.7.0 rev 4: #66, #68
+do
+  props.clear()
+  ox, oy = 0, 0
+  -- a road running north along x = 10
+  map = { getMap = function()
+    local nodes = {}
+    for k = 0, 20 do
+      nodes['s' .. k] = { pos = { x = 10, y = k * 20, z = 0 }, radius = 4, links = {} }
+      if k > 0 then nodes['s' .. k].links['s' .. (k - 1)] = {} nodes['s' .. (k - 1)].links['s' .. k] = {} end
+    end
+    return { nodes = nodes }
+  end }
+  props.mapChanged()
+  -- (#68) a service's point beside the road, no driving direction: one red board and a tent on the nearest road
+  local s = props.setSite('service', 0, 200, nil)
+  s.rally = true
+  props.update({ x = 0, y = 0, z = 0 }, toGame)
+  T.check(liveCount() == 5 and #shapesLive(props.SHAPES.tc) == 1 and #shapesLive(props.SHAPES.gazeboFrame) == 1,
+    'service: one time control board and a tent (#68: ' .. liveCount() .. ' objects)')
+  local sp = props.sitePoint('service')
+  T.check(sp and math.abs(sp.x - 10) < 1e-6 and math.abs(sp.y - 200) < 1e-6, 'service: its board on the nearest road')
+  -- (#66) a stage's end: the finish and stop left standing, the rest (and the rally's service) as they were
+  props.setSite('stop', 0, 300, { x = 0, y = 1 })
+  props.setSite('start', 0, 100, { x = 0, y = 1 })
+  props.update({ x = 0, y = 0, z = 0 }, toGame)
+  props.leaveBehind({ ff = true, stop = true })
+  T.check(props.site('stop') and props.site('stop').left and props.site('service') and not props.site('service').left
+    and props.site('start') == nil, 'stage end: the stop left behind, the service kept, the start taken away (#66)')
+  props.dropFar({ x = 0, y = 0, z = 0 }, toGame, 400)
+  T.check(props.site('stop') ~= nil, 'left behind: still there while the car is near')
+  props.dropFar({ x = 0, y = -500, z = 0 }, toGame, 400)
+  T.check(props.site('stop') == nil and props.site('service') ~= nil,
+    'left behind: taken away once the car is far; the service, not left yet, stays')
+  props.site('service').left = true
+  props.dropFar({ x = 0, y = -500, z = 0 }, toGame, 400)
+  T.check(props.site('service') == nil and props.siteCount() == 0 and liveCount() == 0, 'the service left: taken away too')
+  map = nil
+  props.mapChanged()
+  props.clear()
+end
 T.done('test_props')

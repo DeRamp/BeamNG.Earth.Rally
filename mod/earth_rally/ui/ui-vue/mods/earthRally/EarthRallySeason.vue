@@ -135,7 +135,8 @@ const pointsLine = computed(() => {
 
 .er-rounds { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 22px; }
 .er-rcard { overflow: hidden; cursor: pointer; display: flex; flex-direction: column;
-  &:hover, &:focus { box-shadow: 0 0 0 3px var(--er-orange); outline: none; }
+  outline: none;
+  &:focus { box-shadow: 0 0 0 3px var(--er-orange); }   /* (#51: the focus only; the mouse moves it, store.js pointTo) */
   &.done .er-bar i { background: #6fd39a; } }
 .er-rpic { position: relative; height: 214px; }
 .er-rpic-in { position: absolute; inset: 0; }

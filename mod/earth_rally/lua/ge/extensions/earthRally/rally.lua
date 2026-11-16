@@ -47,6 +47,13 @@ end
 -- The running order: the itinerary's passes (its cancelled ones left out with cancelled = 'real'), each stop after
 -- the pass it follows. A stop with no pass after it is the finish, not a stop; two stops with nothing between them
 -- (a cancelled pass taken out) are one, an overnight if either was.
+-- (#71) The rally's last stop: a service driven to after the last stage, with a stop at its board; the rally is done
+-- once the car checks in there (rallyRun.arrive).
+function M.finalStop(place, name)
+  return { kind = 'service', label = 'Final service', name = name or place.name, final = true,
+    place = { name = place.name, lat = place.lat, lon = place.lon } }
+end
+
 local function orderOf(event, cancelled)
   local stopsAfter = {}
   for _, s in ipairs(event.rallyStops or {}) do
@@ -79,7 +86,14 @@ local function orderOf(event, cancelled)
       end
     end
   end
-  while lastIsStop() do out[#out] = nil end
+  -- (#71, the owner: after the last stage you still drive back to service, and the rally finishes there. The stop the
+  -- event has after its last pass when it has a place, else the last day's service park (below), else the rally's
+  -- start (M.new, which knows it). A trailing stop with no place is dropped, as before)
+  local trailing = nil
+  while lastIsStop() do
+    if not trailing and out[#out].place then trailing = out[#out] end
+    out[#out] = nil
+  end
   -- (#48, the owner: you always drive back to service at the end of a day, and the overnight is there. An overnight
   -- is at the last service park before it -- driven to like a service, the car repaired and the rally saved -- and at
   -- its own place only where the rally had no service before it)
@@ -95,10 +109,22 @@ local function orderOf(event, cancelled)
       it.name = lastSvc.name or lastSvc.place.name
     end
   end
+  -- (the last day's service park: its last service with a place, the day of the last stage)
+  local lastDay = nil
+  for _, it in ipairs(out) do if it.kind == 'stage' then lastDay = it.day end end
+  local park, dayNow = nil, nil
+  for _, it in ipairs(out) do
+    if it.kind == 'stage' then dayNow = it.day
+    elseif dayNow == lastDay and it.place and (it.kind == 'service' or it.atService) then park = it end
+  end
+  local fin = trailing or park
+  if fin and #out > 0 then
+    out[#out + 1] = M.finalStop(fin.place, fin.kind == 'service' and fin.name or (park and park.name) or fin.name)
+  end
   -- (the services lettered again in this order: one merged away, or the first after a cancelled day, keeps A, B...)
   local n = 0
   for _, it in ipairs(out) do
-    if it.kind == 'service' then
+    if it.kind == 'service' and not it.final then
       n = n + 1
       it.label = 'Service ' .. string.char(64 + math.min(n, 26))
     end
@@ -136,6 +162,8 @@ function M.new(event, opts)
   local st = type(event.rallyStart) == 'table' and type(event.rallyStart.lat) == 'number' and event.rallyStart or nil
   table.insert(order, 1, { kind = 'start', label = 'Start', name = st and st.name or nil,
     place = st and { name = st.name, lat = st.lat, lon = st.lon } or nil })
+  -- (#71: no service park to finish at, the rally finishes back at its start)
+  if st and not order[#order].final then order[#order + 1] = M.finalStop(st, st.name) end
   return { format = M.FORMAT, eventId = event.id, name = event.name, mode = mode,
     class = type(opts.class) == 'string' and opts.class ~= '' and opts.class or 'L4WD', cancelled = cancelled,
     car = type(opts.car) == 'table' and { name = opts.car.name } or nil,
@@ -157,6 +185,10 @@ function M.holdOut(r, stageId, why)
     end
   end
   if n == 0 then return 0 end
+  -- (#71: the final service taken off while the stops left side by side are merged, and put back after: a stop
+  -- before it is not merged into it, nor is it dropped as a stop with no stage after it)
+  local final = nil
+  if #r.order > r.pos and r.order[#r.order].final then final = table.remove(r.order) end
   -- (from after pos: a stop already passed stays as it was; one the rally now stands at is its next stop)
   local i = math.max(2, r.pos + 1)
   while i <= #r.order do
@@ -171,7 +203,8 @@ function M.holdOut(r, stageId, why)
   end
   while #r.order > r.pos and r.order[#r.order].kind ~= 'stage' do r.order[#r.order] = nil end
   -- (nothing left to drive: the rally is over)
-  if M.stagesLeft(r) == 0 then r.pos, r.done = #r.order + 1, true end
+  if M.stagesLeft(r) == 0 then r.pos, r.done = #r.order + 1, true return n end
+  if final then r.order[#r.order + 1] = final end
   return n
 end
 
@@ -307,6 +340,9 @@ function M.recover(r, board)
     i = i + 1
   end
   r.lastPos = nil
+  -- (#71: the final service is where the rally finishes, not a stop to rejoin at: the last stages given up end it
+  -- unclassified, as before there was one)
+  if i <= #r.order and r.order[i].final then i = #r.order + 1 end
   if i > #r.order then
     r.pos, r.done, r.unclassified = #r.order + 1, true, true
   else

@@ -87,8 +87,9 @@ const cont = computed(() => {
 .er-card { background: rgba(0, 0, 0, 0.6); border-radius: 0.5rem; }
 .er-hm { display: grid; grid-template-columns: 1.55fr 1fr; gap: 28px; height: 100%; min-height: 640px; }
 .er-hm-tile { position: relative; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end;
-  padding: 40px 44px; cursor: pointer; min-width: 0;
-  &:hover, &:focus { outline: 4px solid var(--er-orange); outline-offset: 0; }
+  padding: 40px 44px; cursor: pointer; min-width: 0; outline: none;
+  /* (#51) the focus only: the mouse moves the focus (store.js pointTo), so one tile is ever lit */
+  &:focus { outline: 4px solid var(--er-orange); outline-offset: 0; }
   > :not(.er-hm-art):not(.er-hm-shade) { position: relative; }
   h2 { margin: 6px 0 10px; font-size: 76px; line-height: 1; letter-spacing: 0.02em; text-transform: uppercase; font-weight: 800; }
   p { margin: 0 0 22px; font-size: 21px; color: #dfe2e8; max-width: 760px; line-height: 1.4; }
@@ -111,8 +112,8 @@ const cont = computed(() => {
   .er-hm-cw { color: var(--er-muted); font-size: 17px; }
 }
 .er-hm-side { display: grid; grid-template-rows: 1fr auto; gap: 28px; min-width: 0; }
-.er-hm-mini { display: flex; align-items: center; gap: 18px; padding: 22px 26px; font-size: 20px; cursor: pointer;
-  &:hover, &:focus { outline: 4px solid var(--er-orange); outline-offset: 0; }
+.er-hm-mini { display: flex; align-items: center; gap: 18px; padding: 22px 26px; font-size: 20px; cursor: pointer; outline: none;
+  &:focus { outline: 4px solid var(--er-orange); outline-offset: 0; }
   small { display: block; color: var(--er-muted); font-size: 15px; }
 }
 .er-hm-ic { width: 46px; height: 46px; border-radius: 50%; border: 2px solid #6f7480; display: flex; align-items: center; justify-content: center;

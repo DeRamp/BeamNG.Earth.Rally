@@ -29,6 +29,10 @@ local M = {}
 
 M.REQUEST_ID = 'earthRally_menu'
 M.holding = function() return false end
+-- (1.7.0 rev 4, #63) M.waitFor: the physics must run now -- the run moving the world's origin to the stage, which
+-- BeamNG.Earth does only with them on (runner.originMoving, set by main.lua). Our page's request is taken back while
+-- it says so, and put in again once it is over; the car is held still by the run meanwhile.
+M.waitFor = function() return false end
 
 local held, pageUp, suspended = false, false, false
 
@@ -43,7 +47,9 @@ end
 
 local function earthHolds()
   local ok, h = pcall(M.holding)
-  return ok and h == true
+  if ok and h == true then return true end
+  local okW, w = pcall(M.waitFor)
+  return okW and w == true
 end
 
 -- Our request put in, if the page wants one and nothing above says to wait.
@@ -67,13 +73,20 @@ function M.uiState(toState, ourRoute)
 end
 
 -- Every frame (main.onUpdate): a request held back while BeamNG.Earth held the game, put in once its hold is over.
+-- (#63) And ours taken back while the physics must run (M.waitFor: a loading screen already paused when the run
+-- reaches its origin move), put in again here once that is over.
+local pop       -- (below)
 function M.update()
+  if held then
+    local okW, w = pcall(M.waitFor)
+    if okW and w == true then pop() end
+  end
   if pageUp and not held and not suspended then take() end
 end
 
 -- An action that moves the car or loads the world started from the page: our request taken back until the page is
 -- next opened.
-local function pop()
+pop = function()
   if not held then return end
   held = false
   local s = sta()

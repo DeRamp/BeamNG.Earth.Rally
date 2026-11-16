@@ -9,11 +9,13 @@
        between everything marked bng-nav-item and the buttons, A presses, B goes back a page (and closes the menu from
        Home, as the Back / Close at the top does), Start closes the menu, the bumpers switch a rally's or a season's tabs, the
        right stick scrolls. The first row or card of a page takes the focus when it comes up with a controller in use
-       (v-bng-ui-nav-focus; never for a mouse). -->
+       (v-bng-ui-nav-focus; never for a mouse). The mouse moves the same one selection (#51, store.js pointTo). -->
   <div class="er-page" bng-ui-scope="earthRally" v-bng-on-ui-nav:back="back" v-bng-on-ui-nav:menu="closeMenu"
-    v-bng-on-ui-nav:tab_l="tabPrev" v-bng-on-ui-nav:tab_r="tabNext" v-bng-on-ui-nav:context="contextPress">
-    <!-- the loading screen over everything while the world loads (1.7.0, #49 / #40) -->
-    <EarthRallyLoading @view="v => (v === 'timecard' ? openCard() : null)" />
+    v-bng-on-ui-nav:tab_l="tabPrev" v-bng-on-ui-nav:tab_r="tabNext" v-bng-on-ui-nav:context="contextPress" @mousemove="pointTo">
+    <!-- the loading screen while the world loads (1.7.0, #49 / #40): in place of the page, which is not drawn under
+         it (#60) -->
+    <EarthRallyLoading @view="v => (v === 'timecard' ? openCard() : null)" @up="v => (loadingUp = v)" />
+    <template v-if="!loadingUp">
     <div class="er-topbar">
       <div class="er-back" tabindex="0" bng-nav-item @click="back" @keydown.enter="back"><span>‹</span> {{ view === "home" ? "Close" : "Back" }}</div>
       <div class="er-title"><span class="er-accent">Earth</span> Rally</div>
@@ -53,8 +55,8 @@
       <!-- ===== Home and Drive rally (1.7.0, #39): where the menu opens, and the full rallies to pick from ===== -->
       <EarthRallyHomeMenu v-if="view === 'home'" :busy="busy" @pick="openPick" @stages="go('rallies')" @settings="go('settings')"
         @continue="resumeRally" @card="openCard" />
-      <EarthRallyPick v-else-if="view === 'pick'" ref="pickView" :busy="busy" @start="id => openStart(id, 'pick')"
-        @continue="resumeRally" @card="openCard" @results="openResults" />
+      <EarthRallyPick v-else-if="view === 'pick'" ref="pickView" :busy="busy" :pick-id="pickSel" @start="id => openStart(id, 'pick')"
+        @continue="resumeRally" @card="openCard" @results="id => openResults(id, 'pick')" />
 
       <!-- ===== Rallies (Drive stage) ===== -->
       <EarthRallyHome v-else-if="view === 'rallies'" @season="openSeason" @rally="openRally" @stage="openStage" @action="action" />
@@ -83,7 +85,8 @@
           </div>
         </div>
         <!-- the full rally (1.7.0): Start, the one saved (Continue), your best finished one; only with an event file -->
-        <div v-if="rly.fullRally" class="er-card er-fullbar">
+        <!-- (#55: opened for its results from Drive rally or the time card, the page is its results alone) -->
+        <div v-if="rly.fullRally && !resultsFrom" class="er-card er-fullbar">
           <div class="er-fb-text">
             <b>Full rally</b>
             <span v-if="rly.rallyActive && rly.rallyActive.id === rly.id">Under way.</span>
@@ -105,7 +108,7 @@
           </template>
         </div>
         <!-- Results (with real results) and Rules (when the file has any): no tabs at all on a rally with neither -->
-        <div v-if="rallyTabs.length > 1 || legend" class="er-under-banner">
+        <div v-if="(rallyTabs.length > 1 || legend) && !resultsFrom" class="er-under-banner">
           <div v-if="rallyTabs.length > 1" class="er-tabs">
             <span v-for="t in rallyTabs" :key="t.id" tabindex="0" bng-nav-item :class="{ on: curTab === t.id }" @click="rallyTab = t.id" @keydown.enter="rallyTab = t.id">{{ t.label }}</span>
           </div>
@@ -330,6 +333,7 @@
     </div>
 
     <EarthRallyPrompts :top="view === 'home'" :results="view === 'pick' && !!(pickView && pickView.hasResults)" />
+    </template>
   </div>
 </template>
 
@@ -351,7 +355,7 @@ import EarthRallyFull from "./EarthRallyFull.vue"
 import EarthRallyLoading from "./EarthRallyLoading.vue"
 import {
   state, season, rally, stage, busyMsg, action as luaAction, refreshState, takeOpenAt, loadSeason, loadRally, loadStage,
-  closeMenu, lastPlace, loadRallyStart, loadRallyCard, rallyAction, loadDrive,
+  closeMenu, lastPlace, loadRallyStart, loadRallyCard, rallyAction, loadDrive, pointTo,
   arr, units, len, lenNum, riseNum, riseUnit, time, longTime, when, ord, days, ssName, STATUS, AUTO_OUTCOME, RUN_WORDS,
 } from "./store.js"
 
@@ -414,15 +418,19 @@ const outcomeCls = kind => AUTO_OUTCOME[kind] || "flat"
 function rowEnter(e, s) { if (e.target === e.currentTarget) openStage(rly.value.id, s.id) }
 
 // Home > Drive stage > Season > Rally > Stage, Home > Drive rally > Start the rally: { label, go } each, go (a way
-// back) on all but the last (#39)
+// back) on all but the last (#39). Home > Drive rally > X results (#55), Home > Time card > X results.
 const crumbs = computed(() => {
   const home = { label: "Home", go: () => openHome() }
   if (view.value === "home") return [{ label: "Home" }]
   if (view.value === "pick") return [home, { label: "Drive rally" }]
+  if (view.value === "rally" && resultsFrom.value) {
+    const from = resultsFrom.value === "pick" ? { label: "Drive rally", go: () => openPick(true) } : { label: "Time card", go: () => openCard() }
+    return [home, from, { label: `${(rly.value && rly.value.name) || "Rally"} results` }]
+  }
   if (view.value === "settings") return [home, { label: "Settings" }]
   if (view.value === "timecard") return [home, { label: "Time card" }]
   if (view.value === "rallyStart") {
-    if (startFrom.value === "pick") return [home, { label: "Drive rally", go: () => openPick() }, { label: "Start the rally" }]
+    if (startFrom.value === "pick") return [home, { label: "Drive rally", go: () => openPick(true) }, { label: "Start the rally" }]
     return [home, { label: "Drive stage", go: () => go("rallies") },
       { label: (rly.value && rly.value.name) || "Rally", go: () => openRally(sel.value.eventId, false) },
       { label: "Start the rally" }]
@@ -456,6 +464,9 @@ const rallyTabs = computed(() => {
   return t
 })
 const curTab = computed(() => (rallyTabs.value.some(t => t.id === rallyTab.value) ? rallyTab.value : "stages"))
+// (#55) where a rally's results were opened from: 'pick' (Drive rally), 'timecard' (a finished rally's Full results),
+// or null (its own page). Set by openResults, cleared by every other way into a rally's page.
+const resultsFrom = ref(null)
 // the bumpers (a controller's tab_l / tab_r): a rally's tabs, or a season's (EarthRallySeason.vue), round the ends
 const seasonView = ref(null)
 function stepTab(d) {
@@ -464,7 +475,7 @@ function stepTab(d) {
     return
   }
   const t = rallyTabs.value
-  if (view.value !== "rally" || t.length < 2) return
+  if (view.value !== "rally" || t.length < 2 || resultsFrom.value) return
   const i = t.findIndex(x => x.id === curTab.value)
   rallyTab.value = t[(i + d + t.length) % t.length].id
 }
@@ -624,6 +635,7 @@ function openSeason(id) {
 // redirect: a rally of one stage and no season opens on its stage (Back from that stage goes to Rallies, so it never
 // comes back through here; false from the stage's own crumb all the same)
 function openRally(id, redirect = true) {
+  resultsFrom.value = null
   if (sel.value.eventId !== id) rallyTab.value = "stages"
   sel.value = { ...sel.value, eventId: id, stageId: null, pass: null }
   loadRally(id, r => {
@@ -673,21 +685,28 @@ function openHome() {
   loadDrive()
   go("home")
 }
-function openPick() {
+// keep: back to Drive rally from a page it opened (a rally's results, the start screen) with the same rally picked
+// (#55); else Drive rally picks as it always has (the one under way, the last saved, the first)
+const pickSel = ref(null)
+function openPick(keep) {
+  if (!keep) pickSel.value = null
   loadDrive()
   go("pick")
 }
-// Y on Drive rally: the picked rally's Results, its page on the Results tab
+// Y on Drive rally: the picked rally's Results, its page on the Results tab alone (#55)
 const pickView = ref(null)
 function contextPress() { if (view.value === "pick" && pickView.value) pickView.value.results() }
-function openResults(id) {
+function openResults(id, from) {
+  if (from === "pick") pickSel.value = id
   openRally(id, false)
   rallyTab.value = "results"
+  resultsFrom.value = from || null
 }
 // where the start screen was opened from ('pick': Drive rally, else a rally's page), for Back and the crumbs
 const startFrom = ref(null)
 function openStart(id, from) {
   startFrom.value = from || null
+  if (from === "pick") pickSel.value = id
   sel.value = { ...sel.value, eventId: id }
   loadRallyStart(id)
   go("rallyStart")
@@ -705,16 +724,27 @@ function retireRally(id) {
   retireAsk.value = null
   rallyAction("abandon", id, null, () => loadRally(id))
 }
-// (the full rally's pages asking for another: the time card after Start, the rally's page after Quit)
+// (the full rally's pages asking for another: the time card after Start, the rally's page after Quit, a finished
+// rally's Full results and Home after New rally, #71)
 function fullView(v, id) {
   if (v === "timecard") openCard()
   else if (v === "rally") openRally(id || sel.value.eventId, false)
+  else if (v === "results") openResults(id || sel.value.eventId, "timecard")
+  else if (v === "home") openHome()
   else go(v)
 }
+// (the loading screen up: no page under it to go back through, #60)
+const loadingUp = ref(false)
 function back() {
+  if (loadingUp.value) return
   if (view.value === "rallyStart") {
-    if (startFrom.value === "pick") openPick()
+    if (startFrom.value === "pick") openPick(true)
     else openRally(sel.value.eventId, false)
+    return
+  }
+  if (view.value === "rally" && resultsFrom.value) {
+    if (resultsFrom.value === "pick") openPick(true)
+    else openCard()
     return
   }
   // (#39: Drive rally, Drive stage and Settings go back to Home; so does the time card, where Home's Continue strip
@@ -874,12 +904,12 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
   & + .er-srow { border-top: 1px solid rgba(255, 255, 255, 0.06); }
   &.er-hdr { height: 40px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--er-muted); }
   &.er-click { cursor: pointer; }
-  &.er-click:hover, &.er-click:focus { background: rgba(199, 91, 30, 0.22); border-left-color: var(--er-orange); }
+  &.er-click:focus { background: rgba(199, 91, 30, 0.22); border-left-color: var(--er-orange); outline: none; }
   /* The stage being matched, findable while scrolling a long rally: the left border it already has, in blue.
-     This has to beat the hover and focus rules above on SPECIFICITY, not on order -- it is three classes plus the
+     This has to beat the focus rule above on SPECIFICITY, not on order -- it is three classes plus the
      pseudo-class against their two, so it holds wherever it sits in the file. Written the other way round (same
-     specificity, later in the file) the mark would vanish the moment anyone moved this block, or the pointer. */
-  &.er-running, &.er-running.er-click:hover, &.er-running.er-click:focus { border-left-color: var(--er-blue); }
+     specificity, later in the file) the mark would vanish the moment anyone moved this block, or the focus. */
+  &.er-running, &.er-running.er-click:focus { border-left-color: var(--er-blue); }
   .er-ss { font-family: "Overpass Mono", monospace; font-weight: 700; color: var(--er-muted); white-space: nowrap; font-size: 18px;
     s { color: #6f7480; text-decoration-thickness: 2px; } }
   .er-notrun { font-family: "Noto Sans", sans-serif; font-weight: 600; font-size: 15px; color: #6f7480; }

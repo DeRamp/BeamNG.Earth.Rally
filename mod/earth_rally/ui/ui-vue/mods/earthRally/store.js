@@ -58,6 +58,25 @@ export function action(what, eventId, stageId, cb) {
   })
 }
 
+// (#51) One selection for the mouse and the controller: the pointer moving onto a selectable tile, card, row or
+// choice gives it the focus, which is what the controller moves on from and what the orange outline is drawn on
+// (:focus only, never :hover). mousemove rather than mouseover: a list scrolled by the stick under a still pointer
+// must not take the controller's selection away, so only a real move counts.
+let lastXY = ""
+export function pointTo(e) {
+  const xy = `${e.screenX},${e.screenY}`
+  if (xy === lastXY) return
+  lastXY = xy
+  const el = e.target && e.target.closest ? e.target.closest("[bng-nav-item]") : null
+  if (el && el !== document.activeElement && el.focus) el.focus({ preventScroll: true })
+}
+// The real focus on a game button (BngButton's element) that comes up later than its page: a v-bng-ui-nav-focus
+// acts only as its page comes up, and only with a controller in use (#61, #71)
+export function focusButton(b) {
+  const el = b && (b.getElement ? b.getElement() : b.$el)
+  if (el && el.focus && el !== document.activeElement) el.focus({ preventScroll: true })
+}
+
 // ---- the full rally (1.7.0): its start screen, its time card, its buttons (main.lua uiRallyStart / uiRallyCard /
 // uiRallyAction)
 export const rallyStart = ref(null)
@@ -74,7 +93,8 @@ export function loadRallyCard(cb) {
     if (cb) cb(r)
   })
 }
-// what: start (opts: mode, class, cancelled) / resume / go / quit / abandon. cb(r): r.view is the page to show next.
+// what: start (opts: mode, class, cancelled) / resume / go / quit / abandon / endNew / endDrive (#71: a finished
+// rally closed, then Home or free roam). cb(r): r.view is the page to show next.
 export function rallyAction(what, id, opts, cb) {
   busyMsg.value = ""
   engineLua(`earthRally_main and earthRally_main.uiRallyAction(${q(what)}, ${q(id)}, ${luaObj(opts)}) or nil`, r => {

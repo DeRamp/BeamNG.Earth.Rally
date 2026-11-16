@@ -537,6 +537,22 @@ do
   T.check(not none.show.approach, 'a plain Route to start with no run: left to the Messages app, as before')
   T.check(hud.approachText({ name = 'SS4 Hill', distM = 4200, rally = true }, 'km'):find('^Transit to SS4 Hill') ~= nil,
     'the Messages app line says transit')
+  -- (#67) near a control: the line says to stop at its board
+  local _, near = hud.build(nil, { rally = true, approach = { name = 'SS4 Hill', distM = 120, rally = true,
+    stop = "Stop at the time control's red board" } })
+  T.check(near.approach and near.approach.sub == "Stop at the time control's red board" and near.approach.stop ~= nil,
+    'near the time control: the HUD line says to stop at its board (#67)')
+  T.check(hud.approachText({ name = 'Service A', distM = 120, rally = true, stop = 'Stop at the board to check in' }, 'km')
+    == 'Service A · 0.1 km · Stop at the board to check in', 'and the Messages line')
+  T.check(hud.approachKey({ name = 'A', distM = 120, stop = 'x' }, 'km') ~= hud.approachKey({ name = 'A', distM = 150,
+    stop = 'x' }, 'km'), 'near a control the stream follows the distance to 10 m')
+  -- (#58, #69) a rally question with no stage under way: in our stream, and nothing with a menu up
+  local _, la = hud.build(nil, { rally = true, rallyAsk = { mode = 'realistic', loadAsk = { ss = 'SS4', name = 'Hill' } } })
+  T.check(la.rally and la.rally.loadAsk and la.show.loadAsk and not la.show.recoverAsk, '"Load the stage?" sent (#58)')
+  local _, ta = hud.build(nil, { rally = true, rallyAsk = { mode = 'realistic', ask = { transit = true, stop = 'Service B' } } })
+  T.check(ta.rally and ta.rally.ask.transit and ta.show.recoverAsk, 'Recover? on a transit sent (#69)')
+  local _, hid = hud.build(nil, { rally = true, uiHidden = true, rallyAsk = { loadAsk = { ss = 'SS4' } } })
+  T.check(not hid.show.loadAsk and hid.rally == nil, 'a menu up: not drawn')
 end
 
 T.done('test_hud')

@@ -82,4 +82,17 @@ stp = 2
 ls.update(0.1)
 T.check(ended == true and not ls.active(), 'page closed before ready: ends by itself once ready')
 
+-- (#63) the world's origin moving: said on the page (the World bar's "Moving the world...")
+local mv = true
+ls.moving = function() return mv end
+ls.begin({ title = 'm', steps = { 'a' }, button = 'Continue', probe = function() return 1 end })
+ls.update(0.1)
+T.check(ls.ui().moving == true, 'origin moving: moving = true (#63)')
+mv = false
+T.check(ls.ui().moving == nil, 'origin moved: moving gone')
+ls.moving = function() error('boom') end
+T.check(ls.ui().moving == nil, 'a moving check that throws: not moving')
+ls.cancel()
+ls.moving = function() return false end
+
 T.done('test_loadscreen')

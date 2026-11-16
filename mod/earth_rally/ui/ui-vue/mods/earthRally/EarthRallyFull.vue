@@ -6,13 +6,16 @@
        kind "card"   the time card: the running order with your times and stage places, where you are (getting the
                      stages ready, at a service, on a transit, on a stage) with its one button, the Super Rally card
                      after a Realistic recovery, your overall place, and Save and quit / Retire, each with a confirm
-                     (#28). Data: earthRally_main.uiRallyStart / uiRallyCard (store.js). -->
+                     (#28); once finished, the result and New rally / Continue driving (#71).
+       Each page's main button is a big one at the lower right (docs/mockups-1.7.0/rev4.html, #56 #57).
+       Data: earthRally_main.uiRallyStart / uiRallyCard (store.js). -->
   <section class="er-full">
     <!-- ===== start ===== -->
     <template v-if="kind === 'start'">
       <div v-if="!s" class="er-muted">Loading...</div>
       <div v-else-if="!s.canRun" class="er-card er-pad">{{ s.why }}</div>
-      <div v-else class="er-two">
+      <template v-else>
+      <div class="er-two">
         <div class="er-card er-pad">
           <h2>{{ s.name }}</h2>
           <div class="er-muted">{{ s.stages }} stages · {{ s.days }} {{ s.days === 1 ? "day" : "days" }} · {{ s.services }} {{ s.services === 1 ? "service" : "services" }}<template v-if="s.crews"> · real field: {{ s.crews }} National crews</template></div>
@@ -25,6 +28,7 @@
           <div class="er-muted er-small">{{ cls === s.class ? "Picked from your car's drivetrain." : "Your pick." }}</div>
         </div>
         <div class="er-card er-pad er-col">
+          <h3 class="er-sec">Rally settings</h3>
           <div class="er-lbl">Mode</div>
           <div class="er-seg">
             <span tabindex="0" bng-nav-item :class="{ on: mode === 'realistic' }" @click="mode = 'realistic'" @keydown.enter="mode = 'realistic'">Realistic</span>
@@ -45,19 +49,45 @@
           <div class="er-foot">
             <div v-if="s.toRecce" class="er-muted er-small">{{ s.toRecce }} {{ s.toRecce === 1 ? "stage gets its" : "stages get their" }} line first: the auto recce takes you to each.</div>
             <div v-if="arr(s.heldOut).length" class="er-warn er-small">Held out, road missing from the map: {{ arr(s.heldOut).map(h => h.name).join(", ") }}</div>
-            <div v-if="s.saved" class="er-warn">This replaces your saved rally (at {{ s.saved.at }}).</div>
-            <div v-if="s.inProgress && s.inProgress !== s.id" class="er-warn">Another rally is under way: leave it from its time card first.</div>
-            <BngButton v-bng-ui-nav-focus="1" class="er-wide" :accent="ACCENTS.main" :disabled="!s.car" @click="start">Start{{ s.start ? ` · at ${s.start}` : "" }}</BngButton>
           </div>
         </div>
       </div>
+      <!-- (#56) Start out of the settings: the big way in at the lower right, selected as the page opens, its
+           warnings just above it -->
+      <div class="er-corner">
+        <div v-if="s.saved" class="er-warn">This replaces your saved rally (at {{ s.saved.at }}).</div>
+        <div v-if="s.inProgress && s.inProgress !== s.id" class="er-warn">Another rally is under way: leave it from its time card first.</div>
+        <BngButton ref="startBtn" v-bng-ui-nav-focus="1" class="er-huge" :accent="ACCENTS.main" :disabled="!s.car" @click="start">
+          <span class="er-hb">Start the rally<small v-if="!s.car">get in a car first</small><small v-else-if="s.start">first car away {{ s.start }}</small></span>
+        </BngButton>
+      </div>
+      </template>
     </template>
 
     <!-- ===== time card ===== -->
     <template v-else>
       <div v-if="!c" class="er-muted">Loading...</div>
       <div v-else-if="c.none" class="er-card er-pad">No rally is under way.</div>
-      <div v-else class="er-two er-card-grid">
+      <!-- (#71) finished: the result, Full results, and the two ways on, New rally selected -->
+      <template v-else-if="c.done">
+        <div class="er-card er-fin">
+          <div class="er-kick">{{ c.name }}{{ c.unclassified ? "" : " · checked in at the final service" }}</div>
+          <h2>{{ c.unclassified ? "Rally over · not classified" : "Rally finished" }}</h2>
+          <div class="er-fin-t">{{ longTime(c.totalS) }}</div>
+          <div v-if="c.overall && !c.unclassified" class="er-muted er-fin-p">P{{ c.overall.pos }} of {{ c.overall.of }} · {{ c.class }} {{ ord(c.overall.classPos) }} of {{ c.overall.classOf }}<template v-if="c.points != null"> · +{{ c.points }} points in the season</template></div>
+          <BngButton v-if="c.overall" class="er-fin-res" :accent="ACCENTS.outlined" @click="emit('view', 'results', c.id)">Full results</BngButton>
+        </div>
+        <div class="er-corner er-corner-row">
+          <BngButton class="er-huge er-huge-2" :accent="ACCENTS.outlined" :disabled="ending" @click="endRally('endDrive')">
+            <span class="er-hb">Continue driving<small>free roam in BeamNG.Earth</small></span>
+          </BngButton>
+          <BngButton ref="newBtn" v-bng-ui-nav-focus="1" class="er-huge er-huge-2" :accent="ACCENTS.main" :disabled="ending" @click="endRally('endNew')">
+            <span class="er-hb">New rally<small>back to Home</small></span>
+          </BngButton>
+        </div>
+      </template>
+      <template v-else>
+      <div class="er-two er-card-grid">
         <div class="er-card er-pad er-tc">
           <div class="er-tc-head"><h2>{{ c.name }}</h2><span class="er-mode">{{ c.mode === "realistic" ? "Realistic" : "Casual" }} · {{ c.class }}</span></div>
           <div class="er-tc-rows">
@@ -74,14 +104,8 @@
           <div v-if="arr(c.heldOut).length" class="er-muted er-small">Held out, road missing from the map: {{ arr(c.heldOut).map(h => h.ss).join(", ") }}</div>
         </div>
         <div class="er-col er-gap">
-          <!-- finished -->
-          <div v-if="c.done" class="er-card er-pad">
-            <h3>{{ c.unclassified ? "RALLY OVER · NOT CLASSIFIED" : "RALLY FINISHED" }}</h3>
-            <div class="er-big">{{ longTime(c.totalS) }}</div>
-            <div v-if="c.overall && !c.unclassified" class="er-muted">P{{ c.overall.pos }} of {{ c.overall.of }} · {{ c.class }} {{ ord(c.overall.classPos) }} of {{ c.overall.classOf }}</div>
-          </div>
           <!-- the Super Rally card, once, at the service rejoined at -->
-          <div v-else-if="c.superRally && c.phase === 'stop'" class="er-card er-pad">
+          <div v-if="c.superRally && c.phase === 'stop'" class="er-card er-pad">
             <h3>SUPER RALLY · BACK IN AT {{ (c.superRally.at || "").toUpperCase() }}</h3>
             <div class="er-tr er-hd"><span>Missed</span><span></span><span class="er-r">{{ c.class }} fastest</span><span class="er-r">+</span><span class="er-r">Your time</span></div>
             <div v-for="(m, i) in arr(c.superRally.rows)" :key="i" class="er-tr er-sr">
@@ -92,7 +116,6 @@
             </div>
             <div class="er-row2"><b>Penalty</b><b class="er-mono">{{ time(c.superRally.addS) }}</b></div>
             <div v-if="arr(c.superRally.rows).some(m => m.from !== 'class')" class="er-muted er-small">* no {{ c.class }} crew on that pass: the fastest National time.</div>
-            <BngButton v-bng-ui-nav-focus="1" class="er-wide" :accent="ACCENTS.main" @click="goNext">{{ goLabel }}</BngButton>
           </div>
           <!-- where you are and what is next -->
           <div v-else class="er-card er-pad">
@@ -126,7 +149,6 @@
               <h3>{{ c.at ? c.at.label : "" }} UNDER WAY</h3>
               <div v-if="c.at">{{ c.at.name }}</div>
             </template>
-            <BngButton v-if="c.phase !== 'prep' && c.phase !== 'moving'" v-bng-ui-nav-focus="1" class="er-wide" :accent="ACCENTS.main" @click="goNext">{{ goLabel }}</BngButton>
           </div>
           <div class="er-card er-pad">
             <h3>OVERALL</h3>
@@ -139,8 +161,7 @@
           </div>
           <!-- leaving: continue later, or retire (#28) -->
           <div class="er-card er-pad">
-            <BngButton v-if="c.done" :accent="ACCENTS.outlined" @click="leave">Close the rally</BngButton>
-            <template v-else-if="ask === 'leave'">
+            <template v-if="ask === 'leave'">
               <h3>SAVE AND QUIT?</h3>
               <div>You continue later from {{ c.leave ? c.leave.at : "the last service" }}.</div>
               <div v-if="c.leave && c.leave.superRally" class="er-warn">{{ c.leave.superRally }} is under way: it is scored under Super Rally.</div>
@@ -165,16 +186,23 @@
           </div>
         </div>
       </div>
+      <!-- (#57) the card's one way on, the start screen's big button at the lower right, selected as it comes up -->
+      <div v-if="c.phase !== 'prep' && c.phase !== 'moving'" class="er-corner">
+        <BngButton ref="goBtn" v-bng-ui-nav-focus="1" class="er-huge" :accent="ACCENTS.main" @click="goNext">
+          <span class="er-hb">{{ goLabel.t }}<small v-if="goLabel.s">{{ goLabel.s }}</small></span>
+        </BngButton>
+      </div>
+      </template>
     </template>
     <div v-if="busyMsg" class="er-msg">{{ busyMsg }}</div>
   </section>
 </template>
 
 <script setup>
-import { ref, computed, watch } from "vue"
+import { ref, computed, watch, nextTick } from "vue"
 import { BngButton, ACCENTS } from "@/common/components/base"
 import { vBngUiNavFocus } from "@/common/directives"
-import { rallyStart, rallyCard, rallyAction, busyMsg, arr, len, time, longTime, ord } from "./store.js"
+import { rallyStart, rallyCard, rallyAction, busyMsg, closeMenu, focusButton, arr, len, time, longTime, ord } from "./store.js"
 
 const props = defineProps({ kind: { type: String, default: "card" }, id: { type: String, default: null } })
 const emit = defineEmits(["view"])
@@ -204,20 +232,43 @@ function retire() {
   const id = c.value && c.value.id
   rallyAction("abandon", id, null, r => { if (r.ok) emit("view", "rally", id) })
 }
+// (#71) a finished rally closed: New rally opens Home, Continue driving closes the menu (free roam)
+const ending = ref(false)
+function endRally(what) {
+  const id = c.value && c.value.id
+  ending.value = true
+  rallyAction(what, id, null, r => {
+    ending.value = false
+    if (!r.ok) return
+    if (what === "endDrive") closeMenu()
+    else emit("view", "home")
+  })
+}
+// The main button's words, { t, s }: its big line and the small one under it. (#57: "Start transit · to SS4 Name"
+// at the start and out of a service alike, the owner's call)
 const goLabel = computed(() => {
   const x = c.value
-  if (!x) return "Go"
+  if (!x) return { t: "Go" }
   const nx = x.nextStage ? `${x.nextStage.ss} ${x.nextStage.name}` : "the next stage"
   switch (x.phase) {
-    case "stop": return x.at && x.at.kind === "start" ? `Drive to ${nx}` : `Service out · drive to ${nx}`
-    case "toGo": return `Go to ${x.at ? x.at.label : "the next stop"}`
+    case "stop": return { t: "Start transit", s: `to ${nx}` }
+    case "toGo": return { t: `Go to ${x.at ? x.at.label : "the next stop"}` }
     // (#44: says what you go back to)
-    case "stage": return `Back to ${x.at ? `${x.at.label} ${x.at.name || ""}`.trim() : "the stage"}`
+    case "stage": return { t: "Back to the stage", s: x.at ? `${x.at.label} ${x.at.name || ""}`.trim() : "" }
     case "transit":
-    case "toStop": return x.transit && x.transit.name ? `Back to the transit · to ${x.transit.name}` : "Back to the transit"
-    default: return "Back to driving"
+    case "toStop": return { t: "Back to the transit", s: x.transit && x.transit.name ? `to ${x.transit.name}` : "" }
+    default: return { t: "Back to driving" }
   }
 })
+// The main button takes the real focus as the page opens and as the rally moves on (it comes up after the card's
+// data, so v-bng-ui-nav-focus alone misses it): Start, the time card's way on, New rally (#56, #57, #71)
+const startBtn = ref(null)
+const goBtn = ref(null)
+const newBtn = ref(null)
+watch(() => !!(s.value && s.value.canRun), ok => { if (ok) nextTick(() => focusButton(startBtn.value)) }, { immediate: true })
+watch(() => (c.value && !c.value.none ? `${c.value.id}:${c.value.phase}:${!!c.value.done}` : null), k => {
+  if (k && props.kind === "card") nextTick(() => focusButton(c.value && c.value.done ? newBtn.value : goBtn.value))
+}, { immediate: true })
 // (#34) the stage in progress: what its auto recce is doing
 const AUTO_WORDS = { going: "Going to the stage", asking: "Pricing the map data", planning: "Checking the map data",
   downloading: "Downloading the map", matching: "Matching the roads" }
@@ -241,17 +292,38 @@ function prepDetail(p) {
   return t
 }
 const rowCls = r => ({ next: r.next && r.kind === "stage", svc: r.kind !== "stage", here: r.next && r.kind !== "stage", sr: r.superRally, dim: r.done && r.kind !== "stage" })
+// A day's header over its first row of any kind that carries a day (#57: the start carries the first stage's, so
+// Day 1 heads the list above Start). Rows with no day (an older rally's start) take none and break no day.
 const dayHead = i => {
   const rows = arr(c.value && c.value.rows)
   const r = rows[i]
-  if (!r || r.kind !== "stage" || !r.day) return false
-  for (let j = i - 1; j >= 0; j--) if (rows[j].kind === "stage") return rows[j].day !== r.day
+  if (!r || !r.day) return false
+  for (let j = i - 1; j >= 0; j--) if (rows[j].day) return rows[j].day !== r.day
   return true
 }
 </script>
 
 <style lang="scss" scoped>
-.er-full { color: #f0f0f0; }
+/* (room at the bottom so the page scrolls clear of the big button in the corner) */
+.er-full { color: #f0f0f0; padding-bottom: 150px; }
+/* The main button at the lower right (#56, #57, #71; the mock-up's .cornerbtn): fixed above the prompt bar (56px),
+   so a long time card scrolls under it, never takes it away. The game's button made big as Home's is: its margin
+   and min-width through the hooks it reads, its own size rules beaten on specificity (.er-full first). */
+.er-corner { position: fixed; right: 64px; bottom: 90px; z-index: 5; display: flex; flex-direction: column; align-items: flex-end; gap: 12px;
+  .er-warn { margin: 0; font-size: 17px; text-shadow: 0 1px 3px #000; } }
+.er-corner-row { flex-direction: row; align-items: flex-end; gap: 20px; }
+.er-full .er-huge { --bng-button-margin: 0; --bng-button-min-width: 520px; font-size: 30px; line-height: 36px; font-weight: 800; letter-spacing: 0.04em;
+  text-transform: uppercase; padding: 20px 56px; }
+.er-full .er-huge-2 { --bng-button-min-width: 420px; }
+.er-hb { display: flex; flex-direction: column; align-items: center;
+  small { font-size: 17px; line-height: 22px; font-weight: 500; text-transform: none; letter-spacing: 0; opacity: 0.85; margin-top: 2px; } }
+.er-sec { margin: 0 0 4px; font-size: 18px; letter-spacing: 0.16em; text-transform: uppercase; color: #f26b1d; font-weight: 700; }
+.er-kick { font-size: 17px; letter-spacing: 0.18em; text-transform: uppercase; color: #f26b1d; font-weight: 700; }
+.er-fin { width: 900px; max-width: 100%; margin: 40px auto 0; padding: 48px; text-align: center;
+  h2 { font-size: 60px; margin: 10px 0 0; text-transform: uppercase; line-height: 1.1; } }
+.er-fin-t { font: 700 56px "Overpass Mono", monospace; margin: 18px 0 6px; }
+.er-fin-p { font-size: 22px; }
+.er-fin .er-fin-res { margin-top: 22px; }
 .er-card { background: rgba(0, 0, 0, 0.6); border-radius: 0.5rem; }
 .er-pad { padding: 22px 26px; }
 .er-two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
@@ -270,7 +342,6 @@ h3 { margin: 0 0 10px; font-size: 20px; letter-spacing: 0.04em; }
   span:focus { outline: 2px solid #f26b1d; outline-offset: 2px; } }
 .er-wrap { flex-wrap: wrap; span { flex: 0 0 auto; } }
 .er-foot { margin-top: 24px; }
-.er-wide { width: 100%; margin-top: 14px; }
 .er-btns { display: flex; gap: 12px; margin-top: 14px; }
 .er-warn { color: #ffd36b; margin-bottom: 8px; }
 .er-msg { margin-top: 12px; color: #ffd36b; }
@@ -297,5 +368,4 @@ h3 { margin: 0 0 10px; font-size: 20px; letter-spacing: 0.04em; }
 .er-pbar { grid-column: 1 / -1; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.12); overflow: hidden;
   i { display: block; height: 100%; background: #f26b1d; } }
 .er-row2 { display: flex; justify-content: space-between; padding: 5px 0; font-size: 18px; }
-.er-big { font: 700 44px "Overpass Mono", monospace; color: #f26b1d; }
 </style>

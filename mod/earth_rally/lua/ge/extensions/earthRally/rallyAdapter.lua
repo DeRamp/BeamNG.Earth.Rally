@@ -92,7 +92,13 @@ end
 -- the load until GO, as the game's own rally countdown does, so nothing is called on the way to the start.
 function M.notesOn(on)
   local rm = M.manager()
-  if rm and rm.setPacenoteProcessingEnabled then pcall(rm.setPacenoteProcessingEnabled, rm, on and true or false) end
+  -- (#65: said in the log, so a stage with no notes heard shows whether they were ever switched on)
+  if rm and rm.setPacenoteProcessingEnabled then
+    local ok = pcall(rm.setPacenoteProcessingEnabled, rm, on and true or false)
+    log('I', logTag, 'co-driver: pacenotes ' .. (on and 'on' or 'off') .. (ok and '' or ' (the rally engine refused)'))
+  else
+    log('W', logTag, 'co-driver: pacenotes ' .. (on and 'on' or 'off') .. ' asked, but no rally engine is loaded')
+  end
 end
 
 -- One of the co-driver's own lines (the voice pack's system pacenotes: 'countdown5'..'countdown1', 'countdowngo',

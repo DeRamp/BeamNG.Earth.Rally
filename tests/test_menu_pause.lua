@@ -119,6 +119,29 @@ T.check(mp.held(), 'a hold check that throws: taken as no hold')
 mp.uiState('play', ROUTE)
 mp.holding = function() return false end
 
+-- (#63) the world's origin moving (the physics must run): our request taken back, put in again once it is done
+local moving = false
+mp.waitFor = function() return moving end
+mp.uiState(ROUTE, ROUTE)
+T.check(paused and mp.held(), 'origin move: the page up, paused')
+moving = true
+mp.update()
+T.check(not paused and not mp.held(), 'origin move under way: our pause request taken back (#63)')
+mp.update()
+T.check(not paused and not mp.held(), 'origin move under way: not put in again meanwhile')
+moving = false
+mp.update()
+T.check(paused and mp.held(), 'origin moved: paused again')
+moving = true
+mp.uiState('play', ROUTE)
+mp.uiState(ROUTE, ROUTE)
+T.check(not paused and not mp.held(), 'the page opened during the move: not paused until it is done')
+moving = false
+mp.update()
+T.check(paused and mp.held(), 'and paused once it is')
+mp.uiState('play', ROUTE)
+mp.waitFor = function() return false end
+
 -- no request stack (an older game): the page opens, nothing paused, nothing thrown
 simTimeAuthority = nil
 mp.uiState(ROUTE, ROUTE)

@@ -106,6 +106,8 @@ do
   T.check(r.results and r.results.complete == false and r.results.stages == 2 and r.results.driven == 1 and
     r.results.chips[1].done and not r.results.chips[2].done and #r.results.rows == 4 and not r.results.rows[1].you,
     'rally: Results waits for Bravo; the real field is there')
+  T.check(r.results.chips[1].timeS == r.list[1].best and r.results.chips[1].ss == 'SS1' and r.results.chips[2].timeS == nil,
+    'rally: a driven stage chip carries your time and its SS, a stage not driven none (#54)')
   T.check(#r.rules == 4 and r.rules[1].value == '10 / 60 / 180 s' and r.rules[1].inGame and
     r.rules[2].value == '10 s a minute' and r.rules[3].value == '1 min a minute' and r.rules[4].value == 'out' and
     r.rules[4].label:find('30 min'), 'rally: the rules the file has, one short line each')

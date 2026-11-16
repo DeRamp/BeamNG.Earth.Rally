@@ -149,8 +149,10 @@ local INACTIVE = { activeState = 'inactive', showStageApps = false }
 function M.approachLine(ours, ctx)
   local a = ctx.approach
   if type(a) ~= 'table' or ctx.uiHidden then return end
+  -- (#67: a.stop, near a control: what to do there, "Stop at the board to check in", in place of the usual line)
   ours.approach = { name = a.name, distM = a.distM, label = a.waiting and 'Rally' or (a.rally and 'Transit' or 'Route'),
-    sub = a.waiting and 'time card: Ctrl+Alt+K to go on' or (a.rally and 'follow the arrows' or 'gets ready as you arrive') }
+    sub = a.stop or (a.waiting and 'time card: Ctrl+Alt+K to go on' or (a.rally and 'follow the arrows' or 'gets ready as you arrive')),
+    stop = a.stop }
   ours.show.approach = true
 end
 
@@ -163,6 +165,7 @@ function M.approachText(a, units)
   if a.waiting then
     return tostring(a.name) .. ' · open the time card to go on: Ctrl+Alt+K'
   end
+  if a.stop then return tostring(a.name or 'the stage') .. d .. ' · ' .. a.stop end
   if a.rally then
     return 'Transit to ' .. tostring(a.name or 'the stage') .. d ..
       ' · follow the arrows · Recover: Backspace / D-pad → · Time card: Ctrl+Alt+K'
@@ -190,7 +193,20 @@ end
 function M.approachKey(a, units)
   if type(a) ~= 'table' then return 'ap-' end
   local step = units == 'mi' and M.MILE_M / 10 or 100
-  return 'ap' .. tostring(a.name) .. '|' .. (a.distM and tostring(math.floor(a.distM / step + 0.5)) or '-')
+  -- (near a control the line counts down in metres: drawn to 10 m there)
+  if a.stop then step = 10 end
+  return 'ap' .. tostring(a.name) .. '|' .. (a.distM and tostring(math.floor(a.distM / step + 0.5)) or '-') .. '|' ..
+    tostring(a.stop)
+end
+
+-- (#58, #69) A rally's question with no stage under way (ctx.rallyAsk): sent as ours.rally, as a stage's own Recover?
+-- is, with show.loadAsk ("Load the stage?") or show.recoverAsk (Recover? on a transit).
+function M.askOn(ours, ctx)
+  local q = ctx.rallyAsk
+  if type(q) ~= 'table' or ctx.uiHidden then return end
+  ours.rally = q
+  if q.loadAsk then ours.show.loadAsk = true end
+  if q.ask then ours.show.recoverAsk = true end
 end
 
 -- The two streams for `run` (nil: no run). ctx:
@@ -208,7 +224,9 @@ end
 --   loading       the world still arriving: { done, total }, or nil
 --   uiHidden      a menu is up: the HUD draws nothing (it is over the pause menu otherwise)
 --   preview       true in the HUD preview (said in our stream)
---   approach      a Route to start armed (runner.approachInfo): { name, distM }, or nil
+--   approach      a Route to start armed (runner.approachInfo): { name, distM, stop }, or nil
+--   rallyAsk      a full rally's question with no stage under way (rallyRun.askInfo): { mode, ask } (Recover? on a
+--                 transit, ask.transit = true) or { mode, loadAsk = { ss, name, km } } ("Load the stage?", #58)
 -- Returns rallyLoop, earthRally.
 --
 -- (M.streamKeys, below, must change whenever what build gives the screen changes: a value added to build that the
@@ -227,6 +245,7 @@ function M.build(run, ctx)
       ours.hints = M.hintsFor('transit', ctx)
       ours.show.hints = ours.hints and true or nil
     end
+    M.askOn(ours, ctx)
     return (not ctx.noRallyLoop) and INACTIVE or nil, ours
   end
 
@@ -350,6 +369,7 @@ function M.build(run, ctx)
     ours.rally = run.rally
     if run.rally.ask and not ctx.uiHidden then show.recoverAsk = true end
   end
+  M.askOn(ours, ctx)
   -- the jump-start card, a few seconds from the moment
   if run.jumpStart and run.jumpStartAt and now - run.jumpStartAt < M.JUMP_CARD_S and (s == 'waitStart' or s == 'running') then
     show.jump = true

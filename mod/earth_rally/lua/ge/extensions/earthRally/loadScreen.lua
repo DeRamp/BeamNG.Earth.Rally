@@ -8,7 +8,7 @@
 --                   failed (a reason: the screen ends at once), done = fn(ok, why) (called once, at the end),
 --                   button = 'Continue' (wait for M.continue() once ready instead of ending by itself) }
 --   M.update(dt)    every frame (main.onUpdate)
---   M.ui()          the page's data, nil with none
+--   M.ui()          the page's data, nil with none (moving = true while the world's origin moves, #63)
 --   M.continue()    the ready button pressed
 --   M.cancel()      put away with nothing called
 -- The probe is pcall'd: an error ends the screen with the error as the reason.
@@ -22,6 +22,9 @@ local settings = require('earthRally/settings')
 local logTag = 'earthRally'
 
 local cur = nil
+-- (#63) The world's origin on its way to the stage (main.lua sets it: the run's anchor step, BeamNG.Earth rebasing):
+-- the World bar shows "Moving the world..." then, not a stuck 0%.
+M.moving = function() return false end
 
 function M.need()
   local v = tonumber(settings.get('worldLoaded'))
@@ -122,7 +125,8 @@ function M.ui()
   return { kick = c.spec.kick, title = c.spec.title, sub = c.spec.sub, tip = c.spec.tip, kind = c.spec.kind,
     steps = steps, bar = c.bar, barText = c.barText, world = c.world, need = need,
     worldReady = c.ready or (c.step > n and c.world >= need) or nil, ready = c.ready or nil,
-    button = c.spec.button, card = c.spec.card, thenView = c.spec.thenView }
+    button = c.spec.button, card = c.spec.card, thenView = c.spec.thenView,
+    moving = (not c.ready and (function() local ok, m = pcall(M.moving) return ok and m == true end)()) or nil }
 end
 
 return M

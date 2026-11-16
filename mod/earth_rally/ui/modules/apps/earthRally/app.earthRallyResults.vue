@@ -3,27 +3,40 @@
        while the stream 'earthRally' says show.results (Lua: hudFrame.lua; open from the stop control until a button,
        driving off, or a timeout: runner.lua). The buttons go to earthRally_main.uiResults; Close shuts the card. -->
   <!-- a controller (1.6.2), as the game's own prompts over driving take one (its mission/activity prompt,
-       ActivityStart.vue; the drag-race dial, dragDialControl): the card says the game an activity popup is up while
+       ActivityStart.vue; the drag-race dial, dragDialControl): the card says the game a popup is up while
        it shows, which is what lets a controller's menu buttons through on the driving screen at all, and a
        no-nav scope of its own takes them -- the first button picked as it opens, the d-pad moves along them, A presses
-       the picked one, B closes. The sticks and triggers stay the car's: drive off and the card closes as before. -->
+       the picked one, B closes. (1.7.0 rev 4) The game is paused under every card now, so the stick picks too. -->
   <!-- (1.7.0) A pass of a full rally: the card is the rally's (mock-up 3: your stage and class place against the
        real National field, the crews round you; Continue to the time card, Restart in Casual only, Close), and in
-       Realistic mode the Recover? question (mock-up 4) comes up in it from the recovery key during the stage. -->
-  <div v-if="res || ask" ref="cardEl" class="er-results" tabindex="0"
+       Realistic mode the Recover? question (mock-up 4) comes up in it from the recovery key during the stage, or
+       on a transit (#69). (rev 4, #58) "Load the stage?" at a time control's board comes up in it too, the same
+       look as Recover?: docs/mockups-1.7.0/rev4.html, screens "prompt" and "recover". -->
+  <div v-if="res || ask || load" ref="cardEl" class="er-results" tabindex="0"
     v-bng-scoped-nav="{ scopeId: 'earthRallyResults', type: 'nonav', activateOnMount: true, trapPolicy: 'always',
       bubbleWhitelistEvents: ['menu'] }"
-    v-bng-on-ui-nav:ok="pressPicked" v-bng-on-ui-nav:back="() => act(ask ? 'keep' : 'close')"
-    v-bng-on-ui-nav:focus_l="() => pick(-1)" v-bng-on-ui-nav:focus_u="() => pick(-1)"
-    v-bng-on-ui-nav:focus_r="() => pick(1)" v-bng-on-ui-nav:focus_d="() => pick(1)">
+    v-bng-on-ui-nav:ok="onOk" v-bng-on-ui-nav:back="onBack"
+    v-bng-on-ui-nav:focus_l="() => navPick('focus_l', -1)" v-bng-on-ui-nav:focus_u="() => navPick('focus_u', -1)"
+    v-bng-on-ui-nav:focus_r="() => navPick('focus_r', 1)" v-bng-on-ui-nav:focus_d="() => navPick('focus_d', 1)"
+    v-bng-on-ui-nav:focus_lr="e => stick('lr', e)" v-bng-on-ui-nav:focus_ud="e => stick('ud', e)">
+    <!-- (#59) a question over a paused game: A / D-pad / stick work its two buttons, B is the second one -->
     <template v-if="ask">
-      <div class="er-top er-ask-top"><span class="er-name">Recover?</span><span class="er-done">{{ ask.ss }} {{ ask.name }} · Realistic</span></div>
-      <div class="er-ask">Recovering ends this stage. <template v-if="ask.stop">You go to <b>{{ ask.stop }}</b> under Super Rally and carry on from there.</template><template v-else>There is no service left to rejoin at: the rally ends unclassified.</template></div>
+      <div class="er-qtop er-ask-top"><div class="er-kick">{{ askKick }}</div><div class="er-name">Recover?</div></div>
+      <div class="er-ask"><template v-if="ask.transit">Recovering ends your transit.<template v-if="ask.stop"> You rejoin at <b>{{ ask.stop }}</b> under Super Rally.</template></template><template v-else>Recovering ends this stage.<template v-if="ask.stop"> You go to <b>{{ ask.stop }}</b> under Super Rally and carry on from there.</template></template><template v-if="!ask.stop"> There is no service left to rejoin at: the rally ends unclassified.</template></div>
       <div class="er-buttons">
         <BngButton class="er-main" :class="{ 'er-picked': ring('recover') }" :accent="ACCENTS.main" @click="act('recover')">Recover · Super Rally</BngButton>
         <BngButton :class="{ 'er-picked': ring('keep') }" :accent="ACCENTS.secondary" @click="act('keep')">Keep going</BngButton>
       </div>
-      <div class="er-foot">Backspace or D-pad → again to recover. Drive on and it goes after 10 s.</div>
+      <div class="er-foot er-keys"><span><span class="er-k er-ka">A</span>Select</span><span><span class="er-k er-kb">B</span>Keep going</span><span class="er-paused">Game paused</span></div>
+    </template>
+    <template v-else-if="load">
+      <div class="er-qtop er-ask-top"><div class="er-kick">Time control{{ loadSs ? ` · ${loadSs}` : "" }}</div><div class="er-name">Load the stage?</div></div>
+      <div class="er-ask">{{ loadLine }} The game pauses while the stage and the world around you load.</div>
+      <div class="er-buttons">
+        <BngButton class="er-main" :class="{ 'er-picked': ring('load') }" :accent="ACCENTS.main" @click="act('load')">{{ loadSs ? `Load ${loadSs}` : "Load the stage" }}</BngButton>
+        <BngButton :class="{ 'er-picked': ring('notYet') }" :accent="ACCENTS.secondary" @click="act('notYet')">Not yet</BngButton>
+      </div>
+      <div class="er-foot er-keys"><span><span class="er-k er-ka">A</span>Select</span><span><span class="er-k er-kb">B</span>Not yet</span><span class="er-paused">Game paused</span></div>
     </template>
     <template v-else>
     <div class="er-top">
@@ -101,6 +114,30 @@ const units = computed(() => (f.value && f.value.units) || "km")
 const rally = computed(() => (f.value && f.value.rally) || null)
 const rc = computed(() => (res.value && rally.value && rally.value.card) || null)
 const ask = computed(() => (show.value.recoverAsk && rally.value && rally.value.ask) || null)
+// (#69) on a transit the question has no stage of its own to name
+const askKick = computed(() => {
+  const a = ask.value || {}
+  const names = [a.ss, a.name].filter(Boolean).join(" ")
+  return `${a.transit ? "Transit" : names || "Stage"} · Realistic`
+})
+// (#58) stopped at a time control's board: rallyRun's loadAsk = { ss, name, km }, up while show.loadAsk
+const load = computed(() => (show.value.loadAsk && rally.value && rally.value.loadAsk) || null)
+// (the SS as a label "SS2" or a bare number, whichever the stream carries)
+const loadSs = computed(() => {
+  const l = load.value
+  if (!l) return ""
+  const v = typeof l.ssLabel === "string" && l.ssLabel ? l.ssLabel : l.ss
+  if (typeof v === "number" || (typeof v === "string" && /^\d+$/.test(v))) return `SS${v}`
+  return typeof v === "string" ? v : ""
+})
+// "SS2 Cutter Creek, 14.8 km."
+const loadLine = computed(() => {
+  const l = load.value || {}
+  const km = typeof l.km === "number" ? fmt.len(l.km * 1000, units.value) : (l.km || "")
+  const what = [loadSs.value, l.name].filter(Boolean).join(" ")
+  const line = [what, km].filter(Boolean).join(", ")
+  return line ? line + "." : ""
+})
 const rcClass = computed(() => {
   const st = rc.value && rc.value.stage
   const row = st && (Array.isArray(st.rows) ? st.rows : Object.values(st.rows || {})).find(r => r.you)
@@ -124,6 +161,7 @@ const penLines = computed(() => {
 // The controller's pick among the buttons, in their order on the card (Next stage only when there is one).
 const order = computed(() => {
   if (ask.value) return ["recover", "keep"]
+  if (load.value) return ["load", "notYet"]
   if (rc.value) return rc.value.canRestart ? ["continue", "restart", "close"] : ["continue", "close"]
   return next.value ? ["next", "retry", "menu", "close"] : ["retry", "menu", "close"]
 })
@@ -131,7 +169,8 @@ const picked = ref(null)
 // (the pick drawn only with a controller in use, as the game's own focus ring is: a mouse player sees no ring)
 const controls = useControls()
 const padOn = computed(() => !!(controls && controls.focusIfController))
-const ring = what => padOn.value && picked.value === what
+// (#59) a question's pick is always drawn: its buttons are the one selection, mouse or pad
+const ring = what => (padOn.value || up.value === "ask" || up.value === "load") && picked.value === what
 function pick(d) {
   const o = order.value
   const i = o.indexOf(picked.value)
@@ -144,22 +183,65 @@ function pressPicked() {
   else picked.value = order.value[0]
 }
 
-// While the card is up the game is told an activity popup is open (the name has the shape its popup service
-// reports, /popup/<type>/<component>/aside): its input bindings turn its menu buttons on for the driving screen then,
-// and a non-modal ("activity") one leaves the car's own controls alone (core/input/bindings.lua, onUIStateTriggered).
-const POPUP_STATE = "/popup/activity/EarthRallyResults/aside"
+// (#62) Where the game's nav sends a button (ui-vue services/uiNav, eventProcessor + uiNavService): A ("ok") goes
+// to whatever element has the real focus, and only with nothing focused to the active scope's element (this card).
+// The d-pad and stick are different: with the focus outside the active scope they go to the scope anyway. So the
+// d-pad always reached the card, while A went to whatever kept the focus elsewhere on screen. The card itself takes
+// the focus as it comes up and as its buttons change -- the card, not a button: with a button focused the scope's
+// own ok handler would click it as well as ours pressing the pick (BngScopedNav okHandler), two presses.
+function focusCard() {
+  const el = cardEl.value
+  if (!el || (f.value && f.value.preview) || document.activeElement === el) return
+  try { el.focus({ preventScroll: true }) } catch (e) { /* (no focus to take: mouse only, as before) */ }
+}
+function onOk() {
+  gameLog(`results card got ok (${up.value}): press ${picked.value}, focus ${describe(document.activeElement)}`)
+  focusCard()
+  pressPicked()
+}
+function onBack() {
+  gameLog(`results card got back (${up.value})`)
+  act(up.value === "ask" ? "keep" : up.value === "load" ? "notYet" : "close")
+}
+function navPick(name, d) {
+  focusCard()
+  pick(d)
+  gameLog(`results card got ${name} (${up.value}): pick ${picked.value}`)
+}
+// The stick sends a value, not a press (focus_lr / focus_ud, up positive): one pick per push past half way, the next
+// once it is back under the game's own release point (crossfire.js NAV_TRIGGER / NAV_RELEASE_THRESHOLD).
+const stickHeld = { lr: false, ud: false }
+function stick(axis, e) {
+  const v = Number(e && e.detail && e.detail.value) || 0
+  if (Math.abs(v) < 0.35) { stickHeld[axis] = false; return }
+  if (stickHeld[axis] || Math.abs(v) < 0.5) return
+  stickHeld[axis] = true
+  navPick(`stick ${axis} ${v.toFixed(2)}`, axis === "lr" ? (v > 0 ? 1 : -1) : (v > 0 ? -1 : 1))
+}
+
+// While the card is up the game is told a popup is open (the name has the shape its popup service reports,
+// /popup/<type>/<component>/aside): its input bindings turn its menu buttons on for the driving screen then
+// (core/input/bindings.lua, onUIStateTriggered). (#62) A modal one, not an "activity" one: the game is paused under
+// every card now, and a non-modal popup leaves A to the car's interaction triggers too (btn_a is also
+// triggerAction0; core/vehicleTriggers.lua: "modal popups own the controller confirm button").
+const POPUP_STATE = "/popup/normal/EarthRallyResults/aside"
 let reported = false
+let listening = false   // (the nav log's window listener, #62: listenNav below)
 function setReported(on) {
   if (on === reported) return
   reported = on
   try { reportState(POPUP_STATE, on) } catch (e) { /* (an older game: mouse only, as before) */ }
 }
-const up = computed(() => (ask.value ? "ask" : res.value ? "res" : null))
+const up = computed(() => (ask.value ? "ask" : load.value ? "load" : res.value ? "res" : null))
 watch(up, (r, was) => {
   if (r && r !== was) picked.value = order.value[0]
   if (!r) picked.value = null
   setReported(!!r && !(f.value && f.value.preview))
-  if (r && r !== was) logOpen(r)
+  listenNav(!!r && !(f.value && f.value.preview))
+  if (r && r !== was) {
+    nextTick(focusCard)
+    logOpen(r)
+  }
 }, { immediate: true })
 // (#41) The buttons change under the card: a rally's part (continue / restart / close) arrives after the stage's
 // (next / retry / ...), so the pick made as it opened is on no button. A new order picks its first button again.
@@ -167,6 +249,7 @@ watch(up, (r, was) => {
 watch(() => order.value.join(","), (o, was) => {
   if (up.value && o !== was) {
     picked.value = order.value[0]
+    nextTick(focusCard)
     gameLog(`results card buttons now ${o.replace(/,/g, " ")}: pick ${picked.value}`)
   }
 })
@@ -176,14 +259,42 @@ watch(() => order.value.join(","), (o, was) => {
 const cardEl = ref(null)
 function logOpen(r) {
   nextTick(() => setTimeout(() => {
+    // (again here: the nonav scope's activation blurs whatever had the focus, a beat after the card mounts)
+    focusCard()
     let popup = "?"
     try { popup = String(hasReportedPopupState()) } catch (e) { /* (an older game) */ }
     const el = cardEl.value
     const scope = el ? el.getAttribute("data-bng-scoped-nav-state") || "none" : "no card"
     const line = `results card up (${r}): popup state reported ${reported}, popup open ${popup}, nav scope ${scope}, ` +
-      `pick ${picked.value}, buttons ${order.value.join(" ")}`
+      `pick ${picked.value}, buttons ${order.value.join(" ")}, focus ${describe(document.activeElement)}`
     gameLog(line)
   }, 250))
+}
+// (#62) Every A / B / d-pad press while the card is up, wherever the game sends it (a capture listener on the window
+// sees it first): a press the card never got shows here and not in the card's own "got" lines.
+const NAV_LOGGED = ["ok", "back", "focus_l", "focus_r", "focus_u", "focus_d"]
+function onAnyNav(e) {
+  const d = (e && e.detail) || {}
+  if (!NAV_LOGGED.includes(d.name) || !d.value) return
+  gameLog(`nav ${d.name} sent to ${describe(e.target)} (target scope ${d.targetScope || "none"}), ` +
+    `focus ${describe(document.activeElement)}`)
+}
+function listenNav(on) {
+  if (on === listening) return
+  listening = on
+  if (on) window.addEventListener("ui_nav", onAnyNav, true)
+  else window.removeEventListener("ui_nav", onAnyNav, true)
+}
+// (an element as the log can name it: the card, one of its buttons, or a tag.class in a ui scope)
+function describe(el) {
+  if (!el) return "none"
+  if (el === document.body) return "body"
+  const card = cardEl.value
+  if (card && el === card) return "the card"
+  if (card && card.contains(el)) return "a card button"
+  const scope = el.closest ? el.closest("[bng-ui-scope]") : null
+  const cls = typeof el.className === "string" && el.className.trim() ? "." + el.className.trim().split(/\s+/)[0] : ""
+  return `${String(el.tagName || "?").toLowerCase()}${cls}${scope ? " in scope " + scope.getAttribute("bng-ui-scope") : ""}`
 }
 function gameLog(line) {
   console.log("earthRally: " + line)
@@ -191,7 +302,10 @@ function gameLog(line) {
     window.bngApi.engineLua(`log('I', 'earthRally', ${JSON.stringify(line)})`)
   }
 }
-onUnmounted(() => setReported(false))
+onUnmounted(() => {
+  setReported(false)
+  listenNav(false)
+})
 
 function act(what) {
   if (f.value && f.value.preview) return
@@ -241,6 +355,15 @@ function act(what) {
 .er-foot { padding: 0 40px 22px; font-size: 16px; color: var(--er-muted); }
 .er-ask-top { border-top-color: #f26b1d; }
 .er-ask { padding: 4px 40px 8px; font-size: 22px; line-height: 1.5; }
+/* (rev 4) a question's head: the kicker over the question, as the mock-up's Recover? and Load the stage? */
+.er-qtop { padding: 26px 40px 12px; border-top: 6px solid var(--er-theme); }
+.er-kick { font-size: 17px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 700; color: #f26b1d; margin-bottom: 4px; }
+.er-keys { display: flex; align-items: center; gap: 26px; padding-top: 8px; }
+.er-k { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%;
+  font: 700 14px "Noto Sans", sans-serif; color: #111; margin-right: 8px; }
+.er-ka { background: #6cc24a; }
+.er-kb { background: #e5533d; }
+.er-paused { margin-left: auto; font-size: 15px; letter-spacing: 0.12em; text-transform: uppercase; color: #8a909a; }
 .er-rally { margin: 0 40px 10px; }
 .er-rplace { display: flex; justify-content: space-between; font-size: 20px; padding: 6px 0 8px; .er-rov { color: var(--er-muted); } }
 .er-rrow { display: grid; grid-template-columns: 50px minmax(0, 1fr) 80px 120px 110px; gap: 8px; padding: 4px 8px; font-size: 18px;

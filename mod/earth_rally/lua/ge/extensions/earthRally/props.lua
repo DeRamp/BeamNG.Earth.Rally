@@ -93,6 +93,9 @@ M.LAYOUTS = {
   start = join(join(both('start', 0), { { 'startTree', M.TREE_FWD_M, M.TREE_OUT_M, M.TREE_YAW, 1 } }), TENT(-6)),
   ff = join(both('finishEntry', -150, F), both('finish', 0, F)),
   stop = join(both('stop', 0), TENT(4)),
+  -- (#68) a rally's service, overnight or final service: one red time control board and a tent, on the nearest road to
+  -- its point (a full service park is later work)
+  service = join({ { 'tc', 0, B, 0, 1 } }, TENT(4)),
 }
 
 local sites = {}          -- { kind, lat, lon, z, dir = {x, y}, path, objs, failed }
@@ -129,6 +132,7 @@ function M.setSite(kind, lat, lon, dir, z, path)
     if s.kind == kind then
       M.removeSite(s)
       s.lat, s.lon, s.dir, s.z, s.path, s.failed = lat, lon, dir, z, path, nil
+      s.left, s.rally, s.forStage = nil, nil, nil     -- (a site set again is no longer the one left behind)
       return s
     end
   end
@@ -406,7 +410,7 @@ local function placeAlong(s, fwd)
   end
   -- (no road map: straight from the control -- from the auto recce's road point, along its road, when the matched
   -- file has one: s.onRoad)
-  local d = s.onRoad or s.dir
+  local d = s.onRoad or s.dir or { x = 0, y = 1 }
   local l = math.sqrt(d.x * d.x + d.y * d.y)
   local fx, fy = d.x / l, d.y / l
   return { x = s.x0 + fx * fwd, y = s.y0 + fy * fwd, z = s.z, dx = fx, dy = fy, half = M.DEFAULT_HALF_WIDTH_M }
@@ -588,6 +592,38 @@ function M.site(kind)
   return nil
 end
 function M.hasSite(kind) return M.site(kind) ~= nil end
+-- (#66) The end of a stage: the sites of `kinds` ({ ff = true, stop = true }) and a rally's own (s.rally: its service's
+-- board and tent) kept standing, the kept stage ones marked left behind; the rest taken away, the dressing with them.
+function M.leaveBehind(kinds)
+  local keep = {}
+  for _, s in ipairs(sites) do
+    if kinds[s.kind] or s.rally then
+      if kinds[s.kind] then s.left = true end
+      keep[#keep + 1] = s
+    else
+      M.removeSite(s)
+    end
+  end
+  sites = keep
+  M.clearDressing()
+end
+
+-- (#66, #68) The sites left behind (s.left) taken away once the car is more than m from them (game coordinates).
+function M.dropFar(carPos, toGame, m)
+  for i = #sites, 1, -1 do
+    local s = sites[i]
+    if s.left then
+      local x, y = toGame(s.lat, s.lon, 0)
+      if x and (x - carPos.x) ^ 2 + (y - carPos.y) ^ 2 > m * m then
+        M.removeSite(s)
+        table.remove(sites, i)
+        log('I', 'earthRally', 'props: ' .. tostring(s.kind) .. ' taken away, the car has left it')
+      end
+    end
+  end
+end
+function M.siteCount() return #sites end
+
 -- One site taken away, its props with it.
 function M.dropSite(kind)
   for i, s in ipairs(sites) do
