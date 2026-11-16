@@ -99,6 +99,14 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
 .world .wbar em { position: absolute; left: 60%; top: -6px; bottom: -6px; width: 3px; background: #fff; border-radius: 2px; }
 .world .wbar u { position: absolute; left: 60%; top: 20px; transform: translateX(-50%); text-decoration: none; font-size: 14px; color: #fff; white-space: nowrap; }
 .world .ws { margin-top: 26px; color: var(--muted); font-size: 15px; }
+.sett { width: 1240px; padding: 34px 44px; }
+.sett h1 { margin: 0 0 18px; font-size: 34px; }
+.set { display: flex; align-items: center; justify-content: space-between; gap: 30px; padding: 16px 8px; border-bottom: 1px solid rgba(255,255,255,.07); }
+.set .n { font-size: 20px; font-weight: 600; } .set .d { font-size: 16px; color: var(--muted); margin-top: 3px; max-width: 640px; }
+.set.new { background: rgba(242,107,29,.10); border-radius: 6px; outline: 2px solid rgba(242,107,29,.55); }
+.seg { display: flex; flex-shrink: 0; border-radius: 4px; overflow: hidden; box-shadow: inset 0 0 0 1px #5a6070; }
+.seg span { padding: 9px 16px; color: var(--muted); font-size: 17px; white-space: nowrap; } .seg span.on { background: var(--orange-d); color: #fff; font-weight: 600; }
+.newtag { font-size: 12px; font-weight: 700; letter-spacing: .1em; color: var(--orange); margin-left: 10px; vertical-align: middle; }
 .hidden { display: none !important; }
 </style>
 </head>
@@ -114,6 +122,8 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
   <span class="sep"></span>
   <button data-go="atcLoad">#40 · At the ATC, loading</button>
   <button data-go="atcReady">#40 · At the ATC, ready</button>
+  <span class="sep"></span>
+  <button data-go="settings">Settings · world loaded</button>
 </div>
 <div id="who"></div>
 <div class="wrap"><div class="box" id="box"><div class="screen" id="screen">
@@ -122,8 +132,8 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
   <div class="hud-ex" style="right:40px;bottom:40px;width:360px;height:240px">minimap</div>
   <div class="toast" data-m="now"><b>Service A</b><span>On the way to Warden Service Park.</span></div>
 
-  <div class="dimmer" data-m="load loadStage recce atcLoad atcReady"></div>
-  <div class="page" data-m="load loadStage recce atcLoad atcReady">
+  <div class="dimmer" data-m="load loadStage recce atcLoad atcReady settings"></div>
+  <div class="page" data-m="load loadStage recce atcLoad atcReady settings">
     <div class="top">
       <div class="title"><span>Earth</span> Rally</div>
       <div class="crumbs" id="crumbs"></div>
@@ -141,10 +151,10 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
           <li class="done"><span class="dot">✓</span>Rally loaded from your save</li>
           <li class="now"><span class="dot"></span>The map around the service</li>
           <li><span class="dot"></span>Your car at the service</li>
-          <li><span class="dot"></span>The world around you: 60%</li>
+          <li><span class="dot"></span>The world around you: at least 60%</li>
           <li><span class="dot"></span>The time card</li>
         </ul>
-        <div class="world"><div class="wt"><b>The world around you</b><span>0% loaded · needs 60%</span></div><div class="wbar"><i class="" style="width:0%"></i><em></em><u>60%</u></div><div class="ws">The last step. The menu stays up until BeamNG.Earth has loaded 60% of the world around the car.</div></div>
+        <div class="world"><div class="wt"><b>The world around you</b><span>0% loaded · needs at least 60%</span></div><div class="wbar"><i class="" style="width:0%"></i><em></em><u>60%</u></div><div class="ws">The last step. The menu stays up until BeamNG.Earth has loaded at least 60% of the world around the car (set in Settings).</div></div>
         <div class="tip">Damage is repaired at service. The game saves here.</div>
       </div>
 
@@ -158,9 +168,9 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
           <li class="done"><span class="dot">✓</span>The map at the time control</li>
           <li class="now"><span class="dot"></span>The stage: line, pacenotes, controls, dressing</li>
           <li><span class="dot"></span>Your car at the ATC</li>
-          <li><span class="dot"></span>The world around you: 60%</li>
+          <li><span class="dot"></span>The world around you: at least 60%</li>
         </ul>
-        <div class="world"><div class="wt"><b>The world around you</b><span>0% loaded · needs 60%</span></div><div class="wbar"><i class="" style="width:0%"></i><em></em><u>60%</u></div><div class="ws">The last step. The menu stays up until BeamNG.Earth has loaded 60% of the world around the car.</div></div>
+        <div class="world"><div class="wt"><b>The world around you</b><span>0% loaded · needs at least 60%</span></div><div class="wbar"><i class="" style="width:0%"></i><em></em><u>60%</u></div><div class="ws">The last step. The menu stays up until BeamNG.Earth has loaded at least 60% of the world around the car (set in Settings).</div></div>
         <div class="tip">The same panel for Drive, Go to start, Recce, Retry, Next stage and a Casual restart.</div>
       </div>
 
@@ -195,15 +205,15 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
             <li class="now"><span class="dot"></span>Line, pacenotes, controls</li>
             <li><span class="dot"></span>Junctions taped, stage dressed</li>
             <li><span class="dot"></span>Start control ready</li>
-            <li class="now"><span class="dot"></span>The world around you: 60%</li>
+            <li class="now"><span class="dot"></span>The world around you: at least 60%</li>
           </ul>
-          <div data-m="atcLoad"><div class="world"><div class="wt"><b>The world around you</b><span>41% loaded · needs 60%</span></div><div class="wbar"><i class="" style="width:41%"></i><em></em><u>60%</u></div><div class="ws">The last step. The menu stays up until BeamNG.Earth has loaded 60% of the world around the car.</div></div></div>
+          <div data-m="atcLoad"><div class="world"><div class="wt"><b>The world around you</b><span>41% loaded · needs at least 60%</span></div><div class="wbar"><i class="" style="width:41%"></i><em></em><u>60%</u></div><div class="ws">The last step. The menu stays up until BeamNG.Earth has loaded at least 60% of the world around the car (set in Settings).</div></div></div>
           <ul class="steps" data-m="atcReady">
             <li class="done"><span class="dot">✓</span>Map at the start</li>
             <li class="done"><span class="dot">✓</span>Line, pacenotes, controls</li>
             <li class="done"><span class="dot">✓</span>Junctions taped, stage dressed</li>
             <li class="done"><span class="dot">✓</span>Start control ready</li>
-            <li class="done"><span class="dot">✓</span>The world around you: 60%</li>
+            <li class="done"><span class="dot">✓</span>The world around you: at least 60%</li>
           </ul>
           <div data-m="atcReady"><div class="world"><div class="wt"><b>The world around you</b><span>73% loaded · ready</span></div><div class="wbar"><i class="full" style="width:73%"></i><em></em><u>60%</u></div><div class="ws">Ready to drive.</div></div></div>
           <div class="btn big off" data-m="atcLoad">Loading the stage...</div>
@@ -212,6 +222,17 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
         </div>
       </div>
 
+
+      <!-- the setting for the world-loaded threshold -->
+      <div class="card sett" data-m="settings">
+        <h1>Settings</h1>
+        <div class="set"><div><div class="n">Units</div><div class="d">Stage lengths and distances on the HUD</div></div><div class="seg"><span class="on">km</span><span>miles</span></div></div>
+        <div class="set"><div><div class="n">Reset penalty</div><div class="d">+10 s for each car reset during the timed stage</div></div><div class="seg"><span class="on">On</span><span>Off</span></div></div>
+        <div class="set"><div><div class="n">Control-zone brake</div><div class="d">The brakes ease on in a control's zone, so you stop at its board</div></div><div class="seg"><span class="on">On</span><span>Off</span></div></div>
+        <div class="set"><div><div class="n">Start clock view</div><div class="d">Where the close-up of the start clock shows during the countdown</div></div><div class="seg"><span class="on">Right</span><span>Top</span><span>Off</span></div></div>
+        <div class="set new"><div><div class="n">World loaded before driving<span class="newtag">NEW</span></div><div class="d">How much of the world around the car must load before a loading screen lets you drive. Higher: less scenery popping in, a longer wait.</div></div><div class="seg"><span>40%</span><span>50%</span><span class="on">60%</span><span>70%</span><span>80%</span><span>90%</span></div></div>
+        <div class="set"><div><div class="n">Developer panel</div><div class="d">The old Earth Rally window with each run's checks</div></div><div class="seg"><span>On</span><span class="on">Off</span></div></div>
+      </div>
     </div>
     <div class="prompts">
       <span data-m="atcReady"><span class="k a">A</span>Continue</span>
@@ -224,6 +245,7 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
 
 <script>
 const NOTES = {
+  settings: "<b>Settings · World loaded before driving</b> (new). The share of the world around the car a loading screen waits for before you can drive: 40% to 90% in steps of 10, 60% by default. It feeds the last step of every loading screen and #40's ATC card, whose bar's mark moves with it. A row like the others (settings.lua's schema), so the Settings page itself needs no change.",
   now: "<b>Now.</b> Continue, Start, Go, Drive, Recce and the rest close the menu at once. The world loads in view for up to a minute (the car frozen or teleporting, the scenery popping in), with one message in the corner. Then the time card pops back up. With the auto recce on Start, this goes on for several minutes per stage.",
   load: "<b>#49 · One loading panel, Continue.</b> The menu stays up (the game paused: it loads fine paused) and says what is loading, where you're going and what comes next. The bar is BeamNG.Earth's own progress where it reports one (terrain, downloads), otherwise the steps. <b>The last step (the owner): the world around you.</b> The panel doesn't close until BeamNG.Earth has loaded at least 60% of the world around the car, shown as its own bar with the 60% mark. Then it turns into the next screen (here the time card at the service). No buttons: nothing to do while it loads.",
   loadStage: "<b>#49 · The same panel for a stage.</b> Drive stage, Go to start, Recce, Retry, Next stage and a Casual restart all use it. The kicker line says which mode you're in.",
@@ -231,7 +253,7 @@ const NOTES = {
   atcLoad: "<b>#40 · At the ATC.</b> On a transit the stage no longer loads 1 km out in view. The ATC and start boards and tents are still put down as you drive up (the owner's call). Arriving at the ATC brings up the time control card: your time in, whether you're on time, your start time and the car's damage. The stage loads behind it. Go is greyed until it's ready, and the last thing it waits for is 60% of the world around the car (its own bar).",
   atcReady: "<b>#40 · Ready.</b> Continue lights up (A on a pad). The card closes, the game unpauses, and you drive the last metres to the start line. X opens the time card for Leave / Retire."
 };
-const CRUMBS = { load: "Pine Hollow Rally<i>›</i><b>Loading</b>", loadStage: "Drive stage<i>›</i>Pine Hollow Rally<i>›</i><b>Loading</b>",
+const CRUMBS = { settings: "<b>Settings</b>", load: "Pine Hollow Rally<i>›</i><b>Loading</b>", loadStage: "Drive stage<i>›</i>Pine Hollow Rally<i>›</i><b>Loading</b>",
   recce: "Pine Hollow Rally<i>›</i><b>Getting ready</b>", atcLoad: "Pine Hollow Rally<i>›</i><b>SS2 time control</b>", atcReady: "Pine Hollow Rally<i>›</i><b>SS2 time control</b>" };
 function go(m) {
   document.querySelectorAll("[data-m]").forEach(e => e.classList.toggle("hidden", !e.dataset.m.split(" ").includes(m)));

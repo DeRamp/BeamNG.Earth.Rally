@@ -346,6 +346,10 @@ The first drive's findings are now issues #23-#33. This revision answers all of 
       Go waits for it. *To check when built:* what BeamNG.Earth reports for this. Its terrain blocks and tiles loaded
       around the car's anchor are likely, via the modding API or `core` internals as `earthAdapter.holding` reads
       them. If it has no count, add one in the fork (`fork-release`).
+    - **The owner: a setting for the threshold.** "World loaded before driving", 40-90% in steps of 10, default
+      60%. A row in `settings.lua`'s `SCHEMA` / `ORDER`, so `EarthRallySettings.vue` needs no change. The loading
+      screens read it, say "at least N%", and the bar's mark moves with it. Mock-up: the Settings screen in
+      `loading.html`.
     - Files: `main.lua`, `rallyRun.lua`, `runner.lua` (the stage's ready moment), `EarthRally.vue` (a loading
       view), `tests/test_run.lua`. Issue #49.
 
