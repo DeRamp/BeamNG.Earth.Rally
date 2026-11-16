@@ -8,8 +8,9 @@ Only the `maintainer` session changes `main`. A guard hook blocks merges, commit
 other session. To land work, do these in order.
 
 1. **Preconditions.** The owner has asked for this work to land. `/handoff` has been run on it and its fixes are
-   committed. The branch is clean (`git status --porcelain` empty) and is not `main`. Note the head SHA `/handoff`
-   reviewed: it is the `Handed off at` SHA. The owner does not have to have driven it; if they have not, say so in
+   committed. The branch is clean (`git status --porcelain` empty) and is not `main`. Note the SHA `/handoff`'s
+   reviewers were given: it is the `Handed off at` SHA. If you committed fixes after them, it is the commit before
+   those fixes, never the new head: the fixes are what the maintainer reviews. The owner does not have to have driven it; if they have not, say so in
    the PR body.
 2. **Never rebase; back-merge instead.** `git fetch origin`, then if `origin/main` has moved since the branch started,
    `git merge --no-edit origin/main` into the branch now, so the maintainer finds no conflict. Resolve conflicts

@@ -81,12 +81,14 @@ arrive. Tell the sender "received, reviewing #N" with SendMessage first.
    they merged. Your review guards `main`, not the design. Every command below is
    `git -C .claude/worktrees/maintainer-review ...`, one per call, with no `$(...)`: work out each SHA in its own
    call and paste it into the next. `HEAD` there is the step 2 merge result; `refs/maintainer/pr-<N>` is the PR head.
-   - **Reviewed SHA `R`:** `rev-parse -q --verify refs/maintainer/reviewed/pr-<N>` (you write it in step 6; the guard
-     hook blocks other sessions from writing `refs/maintainer/`), else the PR body's `Handed off at` SHA. A sender's
-     handed-off SHA is taken on trust: it names what `/handoff` reviewed, and that is accepted (the owner,
-     2026-11-15). Keep `R` only if `merge-base --is-ancestor R refs/maintainer/pr-<N>` succeeds. Without a usable
-     `R`, review the PR's own changes in full, `diff origin/main...refs/maintainer/pr-<N>`, give that to both agents
-     as the delta, skip the next two bullets, and say why in the verdict comment.
+   - **Reviewed SHA `R`:** `rev-parse -q --verify refs/maintainer/reviewed/pr-<N>` (you write it in step 6; other
+     sessions must not, and the guard hook stops a plain `git update-ref` on `refs/maintainer/`, as a guard against
+     mistakes, not a boundary), else the PR body's `Handed off at` SHA. A sender's handed-off SHA is taken on trust:
+     it names what `/handoff` reviewed, and a first request whose head is that SHA has nothing new to review (the
+     owner, 2026-11-15: review only what is new). Keep `R` only if `merge-base --is-ancestor R
+     refs/maintainer/pr-<N>` succeeds. Without a usable `R`, the delta is the PR's own changes in full,
+     `diff origin/main...refs/maintainer/pr-<N>`, given to both agents instead of the Delta bullet; still do
+     Interaction with main with `B` = `merge-base origin/main refs/maintainer/pr-<N>`; say why in the verdict comment.
    - **Delta:** `rev-list --first-parent --parents refs/maintainer/pr-<N> ^R ^origin/main`, oldest last. Each line
      is a commit and its parents. Group them, oldest first:
      - a run of commits with one parent: one diff for the run, `diff <oldest>^ <newest>`;

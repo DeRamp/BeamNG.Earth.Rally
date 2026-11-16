@@ -110,7 +110,8 @@ def cases(ROOT, WT, OTHER):
         (2, WT, None, 'git update-ref -m msg refs/heads/main HEAD'),
         (2, WT, None, 'git update-ref refs/maintainer/reviewed/pr-5 HEAD'),
         (2, WT, None, 'git update-ref -d refs/maintainer/reviewed/pr-5'),
-        (0, ROOT, ('maintainer', None), 'git -C x update-ref refs/maintainer/reviewed/pr-5 HEAD'),
+        (2, ROOT, None, 'git update-ref refs/maintainer/pr-5 HEAD'),
+        (0, ROOT, ('maintainer', None), 'git update-ref refs/maintainer/reviewed/pr-5 HEAD'),
         (0, WT, None, 'git update-ref refs/heads/mine HEAD'),
         # message bodies are data
         (0, WT, None, "git commit -m @'\nfix: don't push\ngit push origin main\n'@"),
