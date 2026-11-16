@@ -76,14 +76,20 @@ arrive. Tell the sender "received, reviewing #N" with SendMessage first.
    `(cd .claude/worktrees/maintainer-review && python tests/run_tests.py <test_name> ...)`. Never `test_arearoute_e2e` or `test_roadgraph_e2e` unless the diff
    touches BeamNG.Earth downloads or the road graph. Read `tools/selftest.py` checks, not its exit code. There is no
    CI on this repo: this run is the gate.
-4. **Review.** `/handoff` already ran the debugger, the contrarian and `/code-review` on the handed-off SHA. Your
-   review guards `main`, not the design:
-   - Always: the `debugger` agent over the merge result (`origin/main` against `HEAD` in the review worktree), told
-     the PR's intent and asked to look hardest at how it meets what changed on `main` since the PR branched.
-   - Only when the head has commits after the handed-off SHA: also the `contrarian` agent, in parallel, over those
-     commits, given the PR body's reasoning and not your verdict. For a back-merge of `origin/main` (the PR body
-     says `back-merged origin/main at <SHA>`), `git show --remerge-diff <merge>` shows what the resolution changed:
-     give the contrarian only that.
+4. **Review only what is new** (the owner, 2026-11-15). Nothing is reviewed twice: `/handoff` reviewed the
+   handed-off SHA, and every earlier round of yours reviewed the head its verdict comment names. `main`'s own changes
+   were reviewed when they merged. Your review guards `main`, not the design:
+   - **Reviewed SHA:** the head named in your last verdict comment on this PR, or the `Handed off at` SHA on a first
+     request.
+   - **Delta:** the sender's commits after the reviewed SHA, `git log --first-parent <reviewed>..<head>`. Give
+     reviewers each ordinary commit's diff. For a back-merge of `origin/main` (`back-merged origin/main at <SHA>` in
+     the body), give only `git show --remerge-diff <merge>`, which is what the sender's conflict resolution changed.
+   - **Overlap:** on a first request, the files the PR changes that `main` also changed since the branch point
+     (`git diff --name-only <merge-base>..origin/main` against the PR's files), and only those.
+   - The `debugger` agent over the delta and the overlap, told the PR's intent. The `contrarian` agent in parallel
+     over the delta only, given the PR body's reasoning and not your verdict. Never give either agent the whole PR
+     or the whole merge result.
+   - No delta and no overlap: no agent review. The touched tests are the gate. Say so in the verdict comment.
 5. **Decide.**
    - **Merge** when the touched tests pass and no reviewer has a CONFIRMED defect that would break the mod, lose
      data, or break a rule in `CLAUDE.md` (rally data in git, version numbers in public text, and so on).

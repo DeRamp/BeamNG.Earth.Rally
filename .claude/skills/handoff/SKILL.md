@@ -5,8 +5,11 @@ description: Finish an Earth Rally build before it goes to the owner - touched t
 
 Run these in order. Do not install into or start the game at any step.
 
-1. **Scope.** Work out the diff being handed over (`git diff main...HEAD`, or the commits named) and write two or
-   three sentences on what it is meant to do, from the owner's request and the notes.
+1. **Scope.** Work out the diff being handed over and write two or three sentences on what it is meant to do, from
+   the owner's request and the notes. Review only what no reviewer has seen (the owner, 2026-11-15): on a first
+   handoff, the branch's own changes (`git diff main...HEAD`); after an earlier `/handoff` or a maintainer verdict,
+   only the commits since that reviewed SHA. A back-merge of `main` counts only for its conflict resolution
+   (`git show --remerge-diff <merge>`), never for `main`'s own changes.
 
 2. **Touched tests.** Run only the tests for the files changed: `python tests/run_tests.py <test_name> ...`. Skip
    `test_arearoute_e2e` and `test_roadgraph_e2e` unless the diff touches BeamNG.Earth downloads or the road graph.

@@ -41,6 +41,6 @@ other session. To land work, do these in order.
 8. **If it is sent back,** fix it yourself without waiting on the owner (the owner, 2026-11-15: no friction):
    - **Conflict:** back-merge `origin/main` as in step 2, re-run the touched tests, push (a normal push, never
      force), add `back-merged origin/main at <SHA> for a conflict` to the PR body, and send a new request at once.
-   - **CONFIRMED findings:** fix them, re-run the touched tests and `/handoff`, push, and send a new request with the
-     new head SHA. If a finding needs a design decision, give the owner a plan instead and stop.
+   - **CONFIRMED findings:** fix them, re-run the touched tests and `/handoff` over the fix commits only (not the
+     whole branch again), push, and send a new request with the new head SHA. If a finding needs a design decision, give the owner a plan instead and stop.
    Tell the owner what you did in your report.
