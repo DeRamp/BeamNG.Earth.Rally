@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Rally 1.7.0: the home screen (#39)</title>
+<!-- Mock-up for 1.7.0, issue #39 (not built). 1920x1080, the menu page's own look (EarthRally.vue). Rally and stage
+     names here are made up: real event data never goes in git. Inspiration: BeamNG's own Rally mode intro (Stage and
+     Loop side by side, ui-vue mainmenu/RallyDisclaimerContent.vue) and DiRT Rally's big tiles with one clear main
+     button and a prompt bar along the bottom. -->
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700;800&family=Overpass+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root { --orange: #f26b1d; --orange-d: #c75b1e; --muted: #b8bcc6; --dim: #8a909a; --blue: #1f8fff; --amber: #ffd36b; --green: #3ccf7e; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto Sans", system-ui, sans-serif; }
+.mock-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 16px; background: #1a1d22; border-bottom: 1px solid #2a2e35; position: sticky; top: 0; z-index: 10; }
+.mock-bar b { margin-right: 8px; }
+.mock-bar button { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 4px; border: 1px solid #3a3f48; background: #23272e; color: #ddd; cursor: pointer; }
+.mock-bar button.on { background: var(--orange-d); border-color: var(--orange-d); color: #fff; }
+.mock-bar .sep { width: 1px; height: 22px; background: #3a3f48; margin: 0 6px; }
+#who { padding: 10px 16px; color: var(--muted); font-size: 15px; max-width: 1400px; line-height: 1.45; }
+.wrap { padding: 0 16px 16px; }
+.box { position: relative; width: 100%; max-width: 1920px; margin: 0 auto; aspect-ratio: 16/9; overflow: hidden; border-radius: 6px; box-shadow: 0 0 0 1px #2a2e35; }
+.screen { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-size: 16px; overflow: hidden;
+  background: linear-gradient(160deg, #4d6a7d 0%, #7a8a6a 38%, #5d6b45 60%, #3a4430 100%); }
+/* the world behind the menu, dimmed as the page does (rgba(10,12,16,.72)) */
+.world::after { content: ""; position: absolute; inset: 0; background: rgba(10,12,16,.72); }
+.page { position: absolute; inset: 0; display: flex; flex-direction: column; z-index: 1; }
+.top { height: 84px; display: flex; align-items: center; gap: 20px; padding: 0 64px; background: linear-gradient(180deg, rgba(0,0,0,.8), rgba(0,0,0,.35)); }
+.back { padding: 8px 16px 8px 10px; border-radius: 4px; background: rgba(0,0,0,.4); color: var(--muted); font-size: 18px; }
+.title { font-size: 30px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.title span { color: var(--orange); }
+.crumbs { font-size: 18px; color: var(--muted); } .crumbs i { font-style: normal; color: #6f7480; margin: 0 10px; } .crumbs b { color: #fff; font-weight: 400; }
+.right { margin-left: auto; display: flex; gap: 12px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 10px 22px; border-radius: 4px; font-size: 18px; font-weight: 600; background: var(--orange-d); color: #fff; }
+.btn.out { background: transparent; border: 1px solid #6f7480; color: #ddd; font-weight: 500; }
+.btn.big { font-size: 26px; padding: 18px 40px; letter-spacing: .04em; }
+.content { flex: 1; padding: 28px 64px 24px; overflow: hidden; }
+.card { background: rgba(0,0,0,.6); border-radius: 8px; }
+.prompts { height: 56px; display: flex; align-items: center; gap: 30px; padding: 0 64px; background: rgba(0,0,0,.6); color: var(--muted); font-size: 17px; }
+.k { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; font: 700 14px "Noto Sans"; color: #111; margin-right: 8px; }
+.k.a { background: #6cc24a; } .k.b { background: #e5533d; } .k.x { background: #3b8beb; color: #fff; } .k.y { background: #f0c419; }
+.kk { font-family: "Overpass Mono", monospace; font-size: 13px; padding: 1px 7px; margin-right: 6px; border: 1px solid #6f7480; border-radius: 3px; color: #fff; }
+
+/* ---- now: the Rallies list ---- */
+.banner { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; padding: 12px 18px; border-radius: 8px; background: rgba(31,143,255,.25); border-left: 4px solid var(--blue); font-size: 18px; } .banner span { margin-right: auto; }
+.list { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.row { padding: 16px 20px; display: flex; flex-direction: column; gap: 6px; }
+.row h4 { margin: 0; font-size: 20px; } .row .m { color: var(--muted); font-size: 15px; }
+.row .st { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; } .row .st span { font-size: 13px; padding: 2px 8px; border-radius: 3px; background: rgba(255,255,255,.08); color: var(--muted); }
+.row .st span.ok { color: var(--green); } .row .st span.am { color: var(--amber); }
+
+/* ---- proposed: home ---- */
+.home { display: grid; grid-template-columns: 1.55fr 1fr; gap: 28px; height: 100%; }
+.tile { position: relative; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 40px 44px; outline: 0 solid var(--orange); }
+.tile.focus { outline: 4px solid var(--orange); outline-offset: 0; }
+.tile .art { position: absolute; inset: 0; }
+.tile .shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 25%, rgba(0,0,0,.85) 100%); }
+.tile > :not(.art):not(.shade) { position: relative; }
+.tile .kicker { font-size: 18px; letter-spacing: .18em; text-transform: uppercase; color: var(--orange); font-weight: 700; }
+.tile h2 { margin: 6px 0 10px; font-size: 76px; line-height: 1; letter-spacing: .02em; text-transform: uppercase; font-weight: 800; }
+.tile.small h2 { font-size: 56px; }
+.tile p { margin: 0 0 22px; font-size: 21px; color: #dfe2e8; max-width: 760px; line-height: 1.4; }
+.tile ul { margin: 0 0 26px; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 10px; }
+.tile li { font-size: 16px; padding: 6px 12px; border-radius: 4px; background: rgba(255,255,255,.12); color: #eee; }
+.cont { display: flex; align-items: center; gap: 22px; padding: 18px 22px; border-radius: 8px; background: rgba(0,0,0,.55); border-left: 4px solid var(--orange); margin-bottom: 22px; }
+.cont .t { font-size: 15px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; } .cont .n { font-size: 24px; font-weight: 700; } .cont .w { color: var(--muted); font-size: 17px; }
+.cont .btn { margin-left: auto; }
+.side { display: grid; grid-template-rows: 1fr auto; gap: 28px; }
+.mini { display: flex; align-items: center; gap: 18px; padding: 22px 26px; font-size: 20px; }
+.mini .ic { width: 46px; height: 46px; border-radius: 50%; border: 2px solid #6f7480; display: flex; align-items: center; justify-content: center; font-size: 22px; color: var(--muted); }
+.mini small { display: block; color: var(--muted); font-size: 15px; }
+
+/* ---- proposed: choose a rally ---- */
+.pick { display: grid; grid-template-columns: 1fr 640px; gap: 28px; height: 100%; }
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; align-content: start; }
+.rc { position: relative; height: 300px; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 18px 20px; }
+.rc.focus { outline: 4px solid var(--orange); }
+.rc .art, .rc .shade { position: absolute; inset: 0; } .rc .shade { background: linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(0,0,0,.9)); }
+.rc > :not(.art):not(.shade) { position: relative; }
+.rc h3 { margin: 0; font-size: 26px; text-transform: uppercase; letter-spacing: .02em; } .rc .m { color: #d6d9df; font-size: 15px; margin-top: 4px; }
+.rc > .tag.tag { position: absolute; top: 14px; left: 14px; font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 3px; background: var(--orange-d); color: #fff; text-transform: uppercase; letter-spacing: .08em; }
+.rc > .tag.tag.done { background: rgba(60,207,126,.85); color: #062; }
+.detail { padding: 30px 34px; display: flex; flex-direction: column; }
+.detail h2 { margin: 0; font-size: 40px; text-transform: uppercase; } .detail .m { color: var(--muted); font-size: 18px; margin: 6px 0 20px; }
+.facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 22px; }
+.facts div { background: rgba(255,255,255,.06); border-radius: 6px; padding: 12px 14px; } .facts b { display: block; font-size: 30px; } .facts span { color: var(--muted); font-size: 14px; text-transform: uppercase; letter-spacing: .08em; }
+.route { flex: 1; border-radius: 6px; background: rgba(255,255,255,.04); position: relative; margin-bottom: 22px; }
+.days { font-size: 16px; color: var(--muted); line-height: 1.8; margin-bottom: 18px; } .days b { color: #fff; font-weight: 600; }
+.detail .btn.big { width: 100%; }
+.detail .sub { display: flex; gap: 12px; margin-top: 12px; } .detail .sub .btn { flex: 1; }
+.note { color: var(--muted); font-size: 15px; margin-top: 10px; text-align: center; }
+
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="mock-bar">
+  <b>Earth Rally 1.7.0 · home screen (#39)</b>
+  <button data-go="now">Now: the Rallies list</button>
+  <span class="sep"></span>
+  <button data-go="home">Proposed 1 · Home</button>
+  <button data-go="homeSaved">Proposed 1b · Home, a rally saved</button>
+  <button data-go="pick">Proposed 2 · Drive rally: choose</button>
+  <button data-go="stage">Proposed 3 · Drive stage</button>
+</div>
+<div id="who"></div>
+<div class="wrap"><div class="box" id="box"><div class="screen world" id="screen">
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3f6b86"/><stop offset=".5" stop-color="#6f8a5a"/><stop offset="1" stop-color="#2f3a28"/></linearGradient>
+    <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8a6a45"/><stop offset=".6" stop-color="#b98c55"/><stop offset="1" stop-color="#4a3624"/></linearGradient>
+    <linearGradient id="g3" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2f5a3a"/><stop offset=".55" stop-color="#4f7a45"/><stop offset="1" stop-color="#1e2e1c"/></linearGradient>
+    <linearGradient id="g4" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5a6f86"/><stop offset=".6" stop-color="#9aa6b0"/><stop offset="1" stop-color="#39424c"/></linearGradient>
+  </defs>
+</svg>
+
+<div class="page">
+  <div class="top">
+    <div class="back" id="backLbl">‹ Close</div>
+    <div class="title"><span>Earth</span> Rally</div>
+    <div class="crumbs" id="crumbs"></div>
+    <div class="right" data-m="now pick stage"><div class="btn out">Settings</div></div>
+  </div>
+
+  <div class="content">
+    <!-- ===== now ===== -->
+    <div data-m="now stage">
+      <div class="banner" data-m="now"><span>Pine Hollow Rally: rally under way</span><div class="btn">Time card</div></div>
+      <div class="list">
+        <div class="card row"><h4>Pine Hollow Rally</h4><div class="m">Season 2026 · round 3 · 8 stages · 2 days</div><div class="st"><span class="ok">6 ready</span><span class="am">1 needs a recce</span><span class="am">1 road missing</span><span>full rally</span></div></div>
+        <div class="card row"><h4>Red Mesa Rally</h4><div class="m">Season 2026 · round 4 · 10 stages · 2 days</div><div class="st"><span class="ok">10 ready</span><span>full rally</span></div></div>
+        <div class="card row"><h4>Cedar Gap Rally</h4><div class="m">Season 2026 · round 5 · 12 stages · 2 days</div><div class="st"><span class="am">12 need a recce</span><span>full rally</span></div></div>
+        <div class="card row"><h4>Warden Test Rally</h4><div class="m">3 stages · 2 days · your own pack</div><div class="st"><span class="ok">3 ready</span><span>full rally</span></div></div>
+        <div class="card row"><h4>Lakeshore Sprint</h4><div class="m">1 stage · no event file</div><div class="st"><span class="ok">1 ready</span></div></div>
+        <div class="card row"><h4>Season 2026</h4><div class="m">8 rallies · standings</div><div class="st"><span>season</span></div></div>
+        <div class="card row"><h4>Hill Road</h4><div class="m">1 stage · a single map</div><div class="st"><span class="am">needs a recce</span></div></div>
+        <div class="card row"><h4>Quarry Loop</h4><div class="m">1 stage · a single map</div><div class="st"><span class="ok">ready</span></div></div>
+      </div>
+    </div>
+
+    <!-- ===== proposed 1: home ===== -->
+    <div class="home" data-m="home homeSaved">
+      <div class="tile focus">
+        <svg class="art" viewBox="0 0 1100 800" preserveAspectRatio="xMidYMid slice"><rect width="1100" height="800" fill="url(#g1)"/>
+          <path d="M0 380 C200 330 330 420 520 360 S860 280 1100 330 L1100 800 L0 800Z" fill="#2c3a24" opacity=".85"/>
+          <path d="M80 330 C240 240 300 280 420 200 S640 110 760 160 S960 240 1060 110" stroke="#e8d6b0" stroke-width="10" fill="none" stroke-linecap="round" opacity=".75"/>
+          <path d="M80 330 C240 240 300 280 420 200 S640 110 760 160 S960 240 1060 110" stroke="#f26b1d" stroke-width="3" stroke-dasharray="14 12" fill="none" opacity=".9"/>
+          <circle cx="420" cy="200" r="12" fill="#fff"/><circle cx="760" cy="160" r="12" fill="#fff"/></svg>
+        <div class="shade"></div>
+        <div class="kicker">A whole rally</div>
+        <h2>Drive rally</h2>
+        <p>Every stage in order, start to finish. Drive the transits, service between loops, and see your time against the real field.</p>
+        <ul><li>Time card</li><li>Transits &amp; service</li><li>Damage carries over</li><li>Realistic or Casual</li></ul>
+        <div class="cont" data-m="homeSaved">
+          <div><div class="t">Continue</div><div class="n">Pine Hollow Rally</div><div class="w">Realistic · Service A next · SS4 Low Ridge after · 3rd in L4WD</div></div>
+          <div class="btn big">Continue</div>
+        </div>
+        <div data-m="home"><div class="btn big">Choose a rally</div></div>
+      </div>
+      <div class="side">
+        <div class="tile small">
+          <svg class="art" viewBox="0 0 700 600" preserveAspectRatio="xMidYMid slice"><rect width="700" height="600" fill="url(#g2)"/>
+            <path d="M60 300 C180 200 260 250 340 160 S520 60 650 80" stroke="#f3e2c0" stroke-width="9" fill="none" stroke-linecap="round" opacity=".8"/>
+            <rect x="50" y="288" width="22" height="22" fill="#fff"/><path d="M640 68 l14 0 l0 24 l-14 0z" fill="#111"/></svg>
+          <div class="shade"></div>
+          <div class="kicker">One stage</div>
+          <h2>Drive stage</h2>
+          <p>Pick any stage of any rally. Practise it, recce it, beat your best time.</p>
+          <div><div class="btn out" style="font-size:20px;padding:14px 30px">Choose a stage</div></div>
+        </div>
+        <div class="card mini"><div class="ic">⚙</div><div>Settings<small>Units, co-driver, pacenotes, HUD</small></div></div>
+      </div>
+    </div>
+
+    <!-- ===== proposed 2: Drive rally, choose ===== -->
+    <div class="pick" data-m="pick">
+      <div class="cards">
+        <div class="rc focus"><svg class="art" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice"><rect width="400" height="300" fill="url(#g1)"/><path d="M20 250 C90 200 140 230 200 170 S320 120 390 140" stroke="#e8d6b0" stroke-width="5" fill="none"/></svg><div class="shade"></div>
+          <div class="tag">Saved · Service A</div><h3>Pine Hollow Rally</h3><div class="m">Round 3 · 8 stages · 2 days</div></div>
+        <div class="rc"><svg class="art" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice"><rect width="400" height="300" fill="url(#g2)"/><path d="M30 230 C100 160 170 220 240 150 S330 90 380 110" stroke="#f3e2c0" stroke-width="5" fill="none"/></svg><div class="shade"></div>
+          <h3>Red Mesa Rally</h3><div class="m">Round 4 · 10 stages · 2 days</div></div>
+        <div class="rc"><svg class="art" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice"><rect width="400" height="300" fill="url(#g3)"/><path d="M20 200 C110 250 160 150 230 190 S340 230 390 160" stroke="#e8d6b0" stroke-width="5" fill="none"/></svg><div class="shade"></div>
+          <h3>Cedar Gap Rally</h3><div class="m">Round 5 · 12 stages · 2 days</div></div>
+        <div class="rc"><svg class="art" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice"><rect width="400" height="300" fill="url(#g4)"/><path d="M40 240 L140 240 L140 150 L300 150 L300 80" stroke="#f3e2c0" stroke-width="5" fill="none"/></svg><div class="shade"></div>
+          <div class="tag done">Finished · 5th</div><h3>Warden Test Rally</h3><div class="m">Your pack · 3 stages · 2 days</div></div>
+        <div class="rc"><svg class="art" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice"><rect width="400" height="300" fill="url(#g3)"/><path d="M20 120 C120 80 180 200 260 170 S350 100 390 140" stroke="#e8d6b0" stroke-width="5" fill="none"/></svg><div class="shade"></div>
+          <h3>Iron Ridge Rally</h3><div class="m">Round 6 · 9 stages · 2 days</div></div>
+      </div>
+      <div class="card detail">
+        <h2>Pine Hollow Rally</h2>
+        <div class="m">Round 3 of Season 2026 · real field: 38 National crews</div>
+        <div class="facts"><div><b>8</b><span>stages</span></div><div><b>142</b><span>stage km</span></div><div><b>2</b><span>days</span></div></div>
+        <div class="days"><b>Day 1</b> · SS1-SS4 · Service A after SS2<br><b>Day 2</b> · SS5-SS8 · Service B after SS6<br><span style="color:var(--amber)">SS7 held out: road missing from the map</span></div>
+        <svg class="route" viewBox="0 0 560 240" preserveAspectRatio="xMidYMid meet">
+          <path d="M40 200 C110 150 150 190 210 130 S330 70 400 100 S500 160 530 60" stroke="#6f7480" stroke-width="3" stroke-dasharray="6 8" fill="none"/>
+          <path d="M40 200 C110 150 150 190 210 130" stroke="#f26b1d" stroke-width="5" fill="none"/>
+          <path d="M400 100 S500 160 530 60" stroke="#f26b1d" stroke-width="5" fill="none"/>
+          <circle cx="210" cy="130" r="9" fill="#1f8fff"/><text x="222" y="125" fill="#cfd6e0" font-size="16" font-family="Noto Sans">Service</text>
+          <rect x="32" y="192" width="16" height="16" fill="#fff"/><text x="56" y="214" fill="#cfd6e0" font-size="16" font-family="Noto Sans">Start</text>
+        </svg>
+        <div class="btn big">Continue · Service A</div>
+        <div class="sub"><div class="btn out">Start again</div><div class="btn out">Results</div></div>
+        <div class="note">Start again goes to the start screen (car, class, mode) and replaces the save.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="prompts">
+    <span><span class="k a">A</span>Select</span>
+    <span><span class="k b">B</span><span id="bLbl">Close</span></span>
+    <span data-m="pick"><span class="k y">Y</span>Results</span>
+    <span style="margin-left:auto"><span class="kk">Ctrl+Alt+K</span>open / close</span>
+  </div>
+</div>
+</div></div></div>
+
+<script>
+const NOTES = {
+  now: "<b>Now.</b> The menu opens on <b>Rallies</b>: every rally, season, single map and pack in one list, with each stage's readiness under it. The full rally is a button on a rally's page, below the stages. Nothing says which way to go if you just want to play.",
+  home: "<b>Proposed 1 · Home.</b> The menu opens on a choice, as BeamNG's own Rally mode splits <i>Stage</i> and <i>Loop</i>, with DiRT Rally's big tiles. <b>Drive rally</b> is the big tile and takes the focus (A goes straight in). <b>Drive stage</b> is smaller beside it. Settings sits under them. The prompt bar shows the pad's buttons, as everywhere in the menu. The art is a drawn route over the map's colours, not photos: we have no photos of the user's rallies. A real version could use a map tile from BeamNG.Earth.",
+  homeSaved: "<b>Proposed 1b · Home with a rally saved.</b> Continue sits inside the Drive rally tile with where you are and what's next, so one press of A picks your rally back up. With a rally <i>under way</i> (not left), the menu opens on its time card as Ctrl+Alt+K does now, and Back from the time card comes here.",
+  pick: "<b>Proposed 2 · Drive rally: choose.</b> Only rallies with an event file (the ones that can run as a full rally). A big card each, as DiRT Rally's locations: a tag shows a saved or finished rally. The panel on the right is the picked rally: its numbers, its days and services, any stage held out, a route sketch, and one big button. Continue for a saved rally, otherwise Start, which goes on to today's start screen (car, class, Realistic / Casual).",
+  stage: "<b>Proposed 3 · Drive stage.</b> Today's Rallies list, unchanged, one level down: rallies, seasons, single maps and packs. Open one, pick a stage, drive it, as now. The crumbs read Home › Drive stage, and B goes back to Home. The rally-under-way banner moves to Home."
+};
+const CRUMBS = { now: "Rallies", home: "Home", homeSaved: "Home", pick: "Home<i>›</i><b>Drive rally</b>", stage: "Home<i>›</i><b>Drive stage</b>" };
+function go(m) {
+  document.querySelectorAll("[data-m]").forEach(e => e.classList.toggle("hidden", !e.dataset.m.split(" ").includes(m)));
+  document.querySelectorAll(".mock-bar button").forEach(b => b.classList.toggle("on", b.dataset.go === m));
+  document.getElementById("who").innerHTML = NOTES[m];
+  document.getElementById("crumbs").innerHTML = CRUMBS[m].startsWith("Home") && CRUMBS[m] !== "Home" ? CRUMBS[m] : "<b>" + CRUMBS[m] + "</b>";
+  const top = m === "now" || m === "home" || m === "homeSaved";
+  document.getElementById("backLbl").textContent = top ? "‹ Close" : "‹ Back";
+  document.getElementById("bLbl").textContent = top ? "Close" : "Back";
+  history.replaceState(null, "", "#" + m);
+}
+document.querySelectorAll(".mock-bar button").forEach(b => b.onclick = () => go(b.dataset.go));
+function fit() { document.getElementById("screen").style.transform = "scale(" + (document.getElementById("box").clientWidth / 1920) + ")"; }
+addEventListener("resize", fit); fit();
+go(NOTES[location.hash.slice(1)] ? location.hash.slice(1) : "home");
+</script>
+</body>
+</html>

@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Rally 1.7.0: loading screens (#49, #34, #40)</title>
+<!-- Mock-up for 1.7.0, issues #49 (a loading screen wherever the menu closed for a load), #34 (the auto recce
+     tracker) and #40 (the stage loaded at the ATC behind a card). Not built. 1920x1080, the menu page's own look
+     (EarthRally.vue / EarthRallyFull.vue). Names are made up: real event data never goes in git. The game stays
+     paused under all of these: the drive's log shows BeamNG.Earth loads fine while paused (notes, finding 10). -->
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700;800&family=Overpass+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root { --orange: #f26b1d; --orange-d: #c75b1e; --muted: #b8bcc6; --dim: #8a909a; --blue: #1f8fff; --amber: #ffd36b; --green: #3ccf7e; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto Sans", system-ui, sans-serif; }
+.mock-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 16px; background: #1a1d22; border-bottom: 1px solid #2a2e35; position: sticky; top: 0; z-index: 10; }
+.mock-bar b { margin-right: 8px; }
+.mock-bar button { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 4px; border: 1px solid #3a3f48; background: #23272e; color: #ddd; cursor: pointer; }
+.mock-bar button.on { background: var(--orange-d); border-color: var(--orange-d); color: #fff; }
+.mock-bar .sep { width: 1px; height: 22px; background: #3a3f48; margin: 0 6px; }
+#who { padding: 10px 16px; color: var(--muted); font-size: 15px; max-width: 1400px; line-height: 1.45; }
+.wrap { padding: 0 16px 16px; }
+.box { position: relative; width: 100%; max-width: 1920px; margin: 0 auto; aspect-ratio: 16/9; overflow: hidden; border-radius: 6px; box-shadow: 0 0 0 1px #2a2e35; }
+.screen { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-size: 16px; overflow: hidden;
+  background: linear-gradient(180deg, #8fb3cf 0%, #b9c9d2 40%, #6f7f55 41%, #55633d 70%, #3d4630 100%); }
+.road { position: absolute; left: 50%; bottom: 0; width: 1400px; height: 640px; transform: translateX(-50%); background: linear-gradient(180deg, #8c7a5e, #a38e6c); clip-path: polygon(47% 0, 53% 0, 100% 100%, 0 100%); }
+.hud-ex { position: absolute; border: 2px dashed rgba(255,255,255,.3); border-radius: 6px; color: rgba(255,255,255,.55); font-size: 14px; display: flex; align-items: center; justify-content: center; }
+.toast { position: absolute; right: 40px; top: 120px; width: 420px; padding: 14px 18px; border-radius: 6px; background: rgba(20,24,30,.92); border-left: 4px solid var(--blue); }
+.toast b { display: block; margin-bottom: 4px; } .toast span { color: var(--muted); }
+.dimmer { position: absolute; inset: 0; background: rgba(10,12,16,.82); }
+.page { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.top { height: 84px; display: flex; align-items: center; gap: 20px; padding: 0 64px; background: linear-gradient(180deg, rgba(0,0,0,.8), rgba(0,0,0,.35)); }
+.title { font-size: 30px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; } .title span { color: var(--orange); }
+.crumbs { font-size: 18px; color: var(--muted); } .crumbs b { color: #fff; font-weight: 400; } .crumbs i { font-style: normal; color: #6f7480; margin: 0 10px; }
+.content { flex: 1; display: flex; align-items: center; justify-content: center; padding: 28px 64px; }
+.prompts { height: 56px; display: flex; align-items: center; gap: 30px; padding: 0 64px; background: rgba(0,0,0,.6); color: var(--muted); font-size: 17px; }
+.k { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; font: 700 14px "Noto Sans"; color: #111; margin-right: 8px; }
+.k.a { background: #6cc24a; } .k.b { background: #e5533d; } .k.x { background: #3b8beb; color: #fff; }
+.paused { margin-left: auto; font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+.card { background: rgba(0,0,0,.6); border-radius: 10px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; padding: 14px 28px; border-radius: 4px; font-size: 20px; font-weight: 600; background: var(--orange-d); color: #fff; }
+.btn.out { background: transparent; border: 1px solid #6f7480; color: #ddd; font-weight: 500; }
+.btn.off { background: #3a3f48; color: #8a909a; }
+.btn.big { font-size: 26px; padding: 18px 44px; letter-spacing: .03em; }
+
+/* one loading panel for every load */
+.load { width: 980px; padding: 44px 52px; }
+.kick { font-size: 17px; letter-spacing: .18em; text-transform: uppercase; color: var(--orange); font-weight: 700; }
+.load h1 { margin: 8px 0 6px; font-size: 54px; line-height: 1.05; text-transform: uppercase; font-weight: 800; }
+.load .sub { font-size: 21px; color: var(--muted); margin-bottom: 30px; }
+.bar { height: 12px; border-radius: 6px; background: rgba(255,255,255,.12); overflow: hidden; margin: 8px 0 10px; }
+.bar i { display: block; height: 100%; background: var(--orange); border-radius: 6px; }
+.barlbl { display: flex; justify-content: space-between; color: var(--muted); font-size: 17px; }
+.steps { margin: 28px 0 0; padding: 0; list-style: none; display: grid; gap: 12px; font-size: 20px; }
+.steps li { display: flex; align-items: center; gap: 14px; color: var(--dim); }
+.steps li.done { color: #e8eaee; } .steps li.now { color: #fff; font-weight: 600; }
+.dot { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #5a606a; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; }
+.done .dot { background: var(--green); border-color: var(--green); color: #062; }
+.now .dot { border-color: var(--orange); border-top-color: transparent; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.tip { margin-top: 30px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,.1); color: var(--muted); font-size: 17px; }
+
+/* #34: the auto recce tracker */
+.recce { width: 1240px; padding: 40px 48px; }
+.recce h1 { margin: 6px 0 4px; font-size: 46px; text-transform: uppercase; font-weight: 800; }
+.recce .sub { color: var(--muted); font-size: 20px; margin-bottom: 26px; }
+.srow { display: grid; grid-template-columns: 70px 1fr 300px 150px; align-items: center; gap: 18px; padding: 16px 20px; border-radius: 6px; font-size: 20px; }
+.srow + .srow { margin-top: 8px; }
+.srow .ss { font-family: "Overpass Mono", monospace; font-weight: 700; color: var(--muted); }
+.srow .nm small { display: block; color: var(--dim); font-size: 15px; }
+.srow .st { text-align: right; font-size: 17px; }
+.srow.done { background: rgba(60,207,126,.08); } .srow.done .st { color: var(--green); }
+.srow.run { background: rgba(242,107,29,.14); outline: 2px solid rgba(242,107,29,.6); } .srow.run .st { color: #fff; }
+.srow.wait { color: var(--dim); }
+.srow.held { background: rgba(255,211,107,.07); } .srow.held .st { color: var(--amber); }
+.srow .bar { margin: 0; }
+.foot { display: flex; align-items: center; gap: 16px; margin-top: 26px; }
+.foot .t { color: var(--muted); font-size: 18px; margin-right: auto; }
+
+/* #40: the time control card */
+.tc { width: 1080px; display: grid; grid-template-columns: 1fr 1fr; overflow: hidden; }
+.tc .l { padding: 42px 46px; }
+.tc .r { padding: 42px 46px; background: rgba(255,255,255,.04); display: flex; flex-direction: column; }
+.tc h1 { margin: 6px 0 2px; font-size: 52px; line-height: 1.05; text-transform: uppercase; font-weight: 800; }
+.tc .sub { color: var(--muted); font-size: 20px; margin-bottom: 28px; }
+.tcrow { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,.08); font-size: 20px; }
+.tcrow span { color: var(--muted); } .tcrow b { font-family: "Overpass Mono", monospace; font-size: 26px; }
+.tcrow b.ok { color: var(--green); }
+.tc .r h3 { margin: 0 0 14px; font-size: 18px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.tc .r .steps { margin: 0 0 auto; font-size: 18px; }
+.tc .r .btn { width: 100%; margin-top: 24px; }
+.tc .r .hint { color: var(--dim); font-size: 15px; margin-top: 10px; text-align: center; }
+
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="mock-bar">
+  <b>Earth Rally 1.7.0 · loading screens</b>
+  <button data-go="now">Now: the menu closes</button>
+  <span class="sep"></span>
+  <button data-go="load">#49 · Loading (Continue)</button>
+  <button data-go="loadStage">#49 · Loading (a stage)</button>
+  <span class="sep"></span>
+  <button data-go="recce">#34 · Getting the stages ready</button>
+  <span class="sep"></span>
+  <button data-go="atcLoad">#40 · At the ATC, loading</button>
+  <button data-go="atcReady">#40 · At the ATC, ready</button>
+</div>
+<div id="who"></div>
+<div class="wrap"><div class="box" id="box"><div class="screen" id="screen">
+  <div class="road"></div>
+  <div class="hud-ex" style="left:40px;bottom:40px;width:300px;height:300px;border-radius:50%">speed / tacho</div>
+  <div class="hud-ex" style="right:40px;bottom:40px;width:360px;height:240px">minimap</div>
+  <div class="toast" data-m="now"><b>Service A</b><span>On the way to Warden Service Park.</span></div>
+
+  <div class="dimmer" data-m="load loadStage recce atcLoad atcReady"></div>
+  <div class="page" data-m="load loadStage recce atcLoad atcReady">
+    <div class="top">
+      <div class="title"><span>Earth</span> Rally</div>
+      <div class="crumbs" id="crumbs"></div>
+    </div>
+    <div class="content">
+
+      <!-- #49: one loading panel, used everywhere the menu used to close -->
+      <div class="card load" data-m="load">
+        <div class="kick">Pine Hollow Rally · continuing</div>
+        <h1>Going to Service A</h1>
+        <div class="sub">Pine Valley Service Park · then SS4 Low Ridge</div>
+        <div class="bar"><i style="width:62%"></i></div>
+        <div class="barlbl"><span>Loading the map around the service</span><span>62%</span></div>
+        <ul class="steps">
+          <li class="done"><span class="dot">✓</span>Rally loaded from your save</li>
+          <li class="now"><span class="dot"></span>The map around the service</li>
+          <li><span class="dot"></span>Your car at the service</li>
+          <li><span class="dot"></span>The time card</li>
+        </ul>
+        <div class="tip">Damage is repaired at service. The game saves here.</div>
+      </div>
+
+      <div class="card load" data-m="loadStage">
+        <div class="kick">Drive stage · Pine Hollow Rally</div>
+        <h1>SS2 Cutter Creek</h1>
+        <div class="sub">14.8 km · gravel · ATC on the Old Mill road</div>
+        <div class="bar"><i style="width:35%"></i></div>
+        <div class="barlbl"><span>Building the stage</span><span>35%</span></div>
+        <ul class="steps">
+          <li class="done"><span class="dot">✓</span>The map at the time control</li>
+          <li class="now"><span class="dot"></span>The stage: line, pacenotes, controls, dressing</li>
+          <li><span class="dot"></span>Your car at the ATC</li>
+        </ul>
+        <div class="tip">The same panel for Drive, Go to start, Recce, Retry, Next stage and a Casual restart.</div>
+      </div>
+
+      <!-- #34: the auto recce tracker, on Start / Continue -->
+      <div class="card recce" data-m="recce">
+        <div class="kick">Pine Hollow Rally · before the start</div>
+        <h1>Getting the stages ready</h1>
+        <div class="sub">The auto recce matches each stage to the roads. Stage 2 of 4.</div>
+        <div class="srow done"><span class="ss">SS1</span><span class="nm">Hollow Road<small>12.4 km</small></span><span></span><span class="st">✓ Ready</span></div>
+        <div class="srow run"><span class="ss">SS2</span><span class="nm">Cutter Creek<small>Matching the roads · window 7 of 12</small></span><div><div class="bar"><i style="width:58%"></i></div></div><span class="st">58%</span></div>
+        <div class="srow wait"><span class="ss">SS5</span><span class="nm">Long Branch<small>Needs 38 MB of map: asks first</small></span><span></span><span class="st">Waiting</span></div>
+        <div class="srow wait"><span class="ss">SS6</span><span class="nm">Dry Fork<small>16.1 km</small></span><span></span><span class="st">Waiting</span></div>
+        <div class="srow held"><span class="ss">SS7</span><span class="nm">Speedway Sprint<small>900 m of road missing from the map</small></span><span></span><span class="st">Held out</span></div>
+        <div class="foot"><span class="t">SS3, SS4 and SS8 already have their lines. Then: to the start.</span><div class="btn out">Stop · leave the rally</div></div>
+      </div>
+
+      <!-- #40: the time control card -->
+      <div class="card tc" data-m="atcLoad atcReady">
+        <div class="l">
+          <div class="kick">Time control · in</div>
+          <h1>SS2 Cutter Creek</h1>
+          <div class="sub">14.8 km · Pine Hollow Rally · day 1</div>
+          <div class="tcrow"><span>Time in</span><b>08:24:54</b></div>
+          <div class="tcrow"><span>Due</span><b class="ok">On time</b></div>
+          <div class="tcrow"><span>Start</span><b>08:27:00</b></div>
+          <div class="tcrow"><span>Car</span><b style="font-family:Noto Sans;font-size:20px">Light damage · front left</b></div>
+        </div>
+        <div class="r">
+          <h3>The stage</h3>
+          <ul class="steps" data-m="atcLoad">
+            <li class="done"><span class="dot">✓</span>Map at the start</li>
+            <li class="now"><span class="dot"></span>Line, pacenotes, controls</li>
+            <li><span class="dot"></span>Junctions taped, stage dressed</li>
+            <li><span class="dot"></span>Start control ready</li>
+          </ul>
+          <ul class="steps" data-m="atcReady">
+            <li class="done"><span class="dot">✓</span>Map at the start</li>
+            <li class="done"><span class="dot">✓</span>Line, pacenotes, controls</li>
+            <li class="done"><span class="dot">✓</span>Junctions taped, stage dressed</li>
+            <li class="done"><span class="dot">✓</span>Start control ready</li>
+          </ul>
+          <div class="btn big off" data-m="atcLoad">Loading the stage...</div>
+          <div class="btn big" data-m="atcReady">Go to the start</div>
+          <div class="hint">Time card: <span style="color:#fff">X</span> · leave the rally from there</div>
+        </div>
+      </div>
+
+    </div>
+    <div class="prompts">
+      <span data-m="atcReady"><span class="k a">A</span>Go to the start</span>
+      <span data-m="recce"><span class="k b">B</span>Stop</span>
+      <span data-m="atcLoad atcReady"><span class="k x">X</span>Time card</span>
+      <span class="paused">Game paused</span>
+    </div>
+  </div>
+</div></div></div>
+
+<script>
+const NOTES = {
+  now: "<b>Now.</b> Continue, Start, Go, Drive, Recce and the rest close the menu at once. The world loads in view for up to a minute (the car frozen or teleporting, the scenery popping in), with one message in the corner. Then the time card pops back up. With the auto recce on Start, this goes on for several minutes per stage.",
+  load: "<b>#49 · One loading panel, Continue.</b> The menu stays up (the game paused: it loads fine paused) and says what is loading, where you're going and what comes next. The bar is BeamNG.Earth's own progress where it reports one (terrain, downloads), otherwise the steps. It turns into the next screen (here the time card at the service) once the car is placed. No buttons: nothing to do while it loads.",
+  loadStage: "<b>#49 · The same panel for a stage.</b> Drive stage, Go to start, Recce, Retry, Next stage and a Casual restart all use it. The kicker line says which mode you're in.",
+  recce: "<b>#34 · Getting the stages ready</b>, on Start (and Continue, if a stage still has no line). Every stage that needs its line: done, running (what it's doing and its own bar), waiting, or held out with the reason. The running stage says when it needs a download, and the question comes up in this screen. Stop leaves the rally (with a confirm, as today). When the last is done, the same screen becomes the loading panel: \"Going to the start\".",
+  atcLoad: "<b>#40 · At the ATC.</b> On a transit the stage no longer loads 1 km out in view. The ATC and start boards and tents are still put down as you drive up (the owner's call). Arriving at the ATC brings up the time control card: your time in, whether you're on time, your start time and the car's damage. The stage loads behind it. Go is greyed until it's ready.",
+  atcReady: "<b>#40 · Ready.</b> Go to the start lights up (A on a pad). The card closes, the game unpauses, and you drive the last metres to the start line. X opens the time card for Leave / Retire."
+};
+const CRUMBS = { load: "Pine Hollow Rally<i>›</i><b>Loading</b>", loadStage: "Drive stage<i>›</i>Pine Hollow Rally<i>›</i><b>Loading</b>",
+  recce: "Pine Hollow Rally<i>›</i><b>Getting ready</b>", atcLoad: "Pine Hollow Rally<i>›</i><b>SS2 time control</b>", atcReady: "Pine Hollow Rally<i>›</i><b>SS2 time control</b>" };
+function go(m) {
+  document.querySelectorAll("[data-m]").forEach(e => e.classList.toggle("hidden", !e.dataset.m.split(" ").includes(m)));
+  document.querySelectorAll(".mock-bar button").forEach(b => b.classList.toggle("on", b.dataset.go === m));
+  document.getElementById("who").innerHTML = NOTES[m];
+  document.getElementById("crumbs").innerHTML = CRUMBS[m] || "";
+  history.replaceState(null, "", "#" + m);
+}
+document.querySelectorAll(".mock-bar button").forEach(b => b.onclick = () => go(b.dataset.go));
+function fit() { document.getElementById("screen").style.transform = "scale(" + (document.getElementById("box").clientWidth / 1920) + ")"; }
+addEventListener("resize", fit); fit();
+go(NOTES[location.hash.slice(1)] ? location.hash.slice(1) : "load");
+</script>
+</body>
+</html>

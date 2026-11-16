@@ -136,8 +136,7 @@ The first drive's findings are now issues #23-#33. This revision answers all of 
    - Single-stage packs and seasons stay under Drive stage.
    - Settings stays reachable from the home screen.
    - A rally under way opens straight on its time card (as Ctrl+Alt+K does now) or on the home screen.
-   - The owner described the layout but not the look, so a mock-up comes first (`docs/mockups-1.7.0/`), unless
-     they say skip it. Issue #39.
+   - Mock-up: `docs/mockups-1.7.0/home.html`, awaiting OK. Issue #39.
    *The owner, adding to it:*
    - Make Start, the rally button and the rest of the full rally much more obvious. That is what the player cares
      about, not all the little stages.
@@ -306,13 +305,15 @@ The first drive's findings are now issues #23-#33. This revision answers all of 
     - The finish card's foot then says "Time card (Ctrl+Alt+K) to go on". Close leaves you with no route and no
       prompt.
     - The same gap as finding 2 (#35): a rally phase with nothing on screen.
-    *Fix idea (owner's call):*
-    - Drive to the overnight like a service: GPS to its place; arriving repairs and saves.
-    - Or keep the teleport, but put a clear HUD prompt up after Close: "Overnight next · [key] to go".
-    - Either way, after Close the next step is always on screen. Fixing #42 (the GPS wiped when the run is put
-      away) is needed for the drive-to version.
-    - Files: `rallyRun.lua` (`onFinished`, `driveToStop` for overnights), `hudFrame.lua`, `tests/test_run.lua`.
-      Issue #48.
+    *The owner's decision:* you always drive back to service at the end of a day, and the overnight happens there.
+    - After the day's last stage, the next stop is the service, driven to (GPS, as finding 9 / #42).
+    - Arriving at the service repairs the car and saves. Then the overnight follows at the service: full repair,
+      the save, day 2's time card. No teleport to a separate parc fermé.
+    - Where the event file lists the overnight with no service before it, the rally adds one (`rally.lua` builds the
+      running order), with its place the overnight's place or the day's service park.
+    - Needs #42 fixed (the GPS wiped when the run is put away).
+    - Files: `rally.lua` (the running order: a service before each overnight), `rallyRun.lua` (`onFinished`),
+      `tests/test_rally.lua`, `tests/test_run.lua`. Issue #48.
 
 16. **A loading screen wherever the menu closes for a load** (next version). Continue on a left rally closes the
     menu for about a minute while the world loads, then the time card comes back. The owner wants a loading screen
@@ -337,7 +338,26 @@ The first drive's findings are now issues #23-#33. This revision answers all of 
     - It closes, or turns into the next card, once the car is placed and the world is ready.
     - One helper for all the places above, rather than each closing the menu itself: `ui.loading(text)` →
       `ui.loaded()`.
-    - Mock-up first, unless the owner skips it. Related: findings 1 (#34) and 7 (#40), which are this same loading
-      screen in two places.
+    - Mock-up: `docs/mockups-1.7.0/loading.html` (with #34 and #40), awaiting OK. The owner: all the loading
+      screens are built together.
     - Files: `main.lua`, `rallyRun.lua`, `runner.lua` (the stage's ready moment), `EarthRally.vue` (a loading
       view), `tests/test_run.lua`. Issue #49.
+
+17. **A rally whose file is removed from the import folder stays in the game** (bug fix, this version). Keep its
+    data (times, recces, lines, saves). Show only the rallies whose file is in `earthRally/import/`, so a pack the
+    player updates or removes no longer shows.
+    *Diagnosis:*
+    - `importer.lua` turns each file in `/earthRally/import/` into `earthRally/events/<id>.json`, and
+      `events.list` (`events.lua:46`) lists every file in `events/`. Nothing checks that the source is still there.
+    - Each event records its source: `pack = { file = "Warden-Test-Rally.zip", fingerprint }` (a pack) or
+      `source.file`.
+    *Fix idea:*
+    - `events.list` skips an event whose `pack.file` / `source.file` is no longer in the import folder. Check
+      against the importer's scan (`importIndex.json`), not a disk check per event per frame.
+    - Its data stays on disk, so putting the file back brings the rally back with its times.
+    - An updated pack (same name, new fingerprint) already re-imports. Check that the old event isn't left beside
+      the new one when the ids differ.
+    - Events with no source record (made by `tools/import_kml.py` before the import folder): keep showing them, or
+      the owner's own dev rallies vanish.
+    - A rally under way or saved whose file is removed: hide it too, but don't delete the save.
+    - Files: `events.lua`, `importer.lua`, `tests/test_import.lua`. Issue #50.
