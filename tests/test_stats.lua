@@ -44,6 +44,7 @@ package.preload['socket'] = function()
 end
 
 local stats = require('earthRally/stats')
+stats.ENDPOINT = ''          -- (the real address is set in the mod; the test starts with none)
 stats.init('1.6.2-alpha+stats')
 local function frames(n) for _ = 1, n or 10 do stats.update(0.1, true) end end
 

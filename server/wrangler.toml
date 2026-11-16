@@ -5,6 +5,8 @@ compatibility_date = "2026-11-01"
 # The mod sends plain HTTP (the game's Lua has no TLS). workers.dev answers it; a custom domain must NOT have
 # "Always Use HTTPS" on, or the game's requests are redirected and fail.
 workers_dev = true
+# (no per-version preview addresses: one public address only)
+preview_urls = false
 
 # No request logs kept (they would hold IP addresses)
 [observability]
@@ -17,4 +19,4 @@ crons = ["17 3 * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "earth-rally-stats"
-database_id = "PASTE-THE-ID-FROM-wrangler-d1-create-HERE"
+database_id = "8fdc1a11-967b-49d6-806a-12766fee787e"

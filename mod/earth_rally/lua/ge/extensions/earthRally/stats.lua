@@ -22,7 +22,7 @@
 local M = {}
 
 -- The stats Worker's address (server/README.md). Empty: stats are asked about and kept, but nothing is sent.
-M.ENDPOINT = ''
+M.ENDPOINT = 'http://earth-rally-stats.station68.workers.dev'
 M.DIR = '/earthRally/telemetry/'
 M.STATE_FILE = M.DIR .. 'state.json'
 M.QUEUE_FILE = M.DIR .. 'queue.json'

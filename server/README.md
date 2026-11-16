@@ -22,7 +22,7 @@ Run these from this `server` folder. Node is already installed on the desktop.
 8. **Give Claude the address.** It goes into `M.ENDPOINT` in `mod/.../earthRally/stats.lua`, as `http://...`, and
    the build is made again.
 
-Until step 8, the mod still asks the question and keeps stats on the player's PC, but sends nothing.
+Until step 8 (done 2026-11-16: http://earth-rally-stats.station68.workers.dev), the mod still asks the question and keeps stats on the player's PC, but sends nothing.
 
 ## Your dashboard
 
