@@ -54,6 +54,17 @@ The first drive's findings are now issues #23-#33. This revision answers all of 
 9. **BeamNG's recovery off** during the rally; back after Leave or Retire.
 10. **Finish** (if you get that far): the finish card, then the Results tab.
 
+## Revision 3 (issues #34-#50, built 2026-11-16)
+
+All 17 findings below are built on `full-rally-mvp`. Not yet driven. Changes from the plan:
+- #40: a stage with an ATC loads when the car stops at the ATC's board, behind the time control card. Only the ATC's
+  boards and tent go out ahead; the start's props appear behind the card.
+- #43: the game pauses under the finish card only at a stop control. Ctrl+Alt+K takes the card's Continue.
+- #46: tape from the ATC reaches only about 30 m before the start (the stage line starts 30 m before it).
+- #48: the overnight is at the same day's service park, driven to; with none that day, at its own place, driven to.
+- #49: the World bar reads BeamNG.Earth's load counts round the car (ground, roads, trees). No fork change needed.
+- #50: the rally under way is never hidden by a rescan; a saved one whose file is gone is.
+
 ## Findings
 
 (Logged here while the owner drives, with the diagnosis. Not fixed during the drive.)

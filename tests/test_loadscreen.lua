@@ -70,4 +70,16 @@ T.check(not ended, 'the world at 1%: waiting')
 ls.update(ls.WORLD_WAIT_S + 1)
 T.check(ended == true, 'let go after WORLD_WAIT_S anyway')
 
+-- the page closed while the time control card is still loading: it ends by itself once ready (#40)
+ended = nil
+lp.roads = { 100, 100 }
+local stp = 1
+ls.begin({ title = 'z', steps = { 'a' }, button = 'Continue', probe = function() return stp end,
+  done = function(ok) ended = ok end })
+ls.update(0.1)
+ls.pageClosed()
+stp = 2
+ls.update(0.1)
+T.check(ended == true and not ls.active(), 'page closed before ready: ends by itself once ready')
+
 T.done('test_loadscreen')

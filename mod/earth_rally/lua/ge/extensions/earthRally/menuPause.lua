@@ -83,6 +83,11 @@ function M.suspend()
   if pageUp then suspended = true end
   pop()
 end
+-- The request put back in while the page is still up (a loading screen after the rally's auto recces, 1.7.0).
+function M.resume()
+  suspended = false
+  take()
+end
 
 -- (1.7.0, #43) A pause request of its own for a card over driving (the stage's finish card at the stop box): held
 -- while on is true, taken back when false. Not while BeamNG.Earth holds the game (its holds take the plain pause

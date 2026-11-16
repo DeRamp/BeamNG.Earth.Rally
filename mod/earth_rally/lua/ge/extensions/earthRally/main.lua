@@ -102,6 +102,8 @@ rallyRun.ui.closeMenu = function() if menuOpen then pcall(menuPause.suspend) ret
 
 -- Up on the page: opened at `view` when the menu is not up.
 local function showLoading(view)
+  -- (the page's pause put back if an auto recce from it had taken it back: the rally's prep, #34)
+  pcall(menuPause.resume)
   if not menuOpen then M.openMenu(view) end
 end
 
@@ -216,10 +218,7 @@ function M.onUiChangedState(toState)
   if type(toState) ~= 'string' then return end
   menuOpen = toState == M.ROUTE
   -- (the page closed under a time control card that is ready: taken as its Continue, #40)
-  if not menuOpen then
-    local lsu = loadScreen.ui()
-    if lsu and lsu.ready then pcall(loadScreen.continue) end
-  end
+  if not menuOpen then pcall(loadScreen.pageClosed) end
   -- Our own full-screen page counts too: it is not called 'menu...' but it is just as much in the way. So does
   -- BeamNG.Earth's world map, a route of its own ('beamngEarthMap', its credits.lua MAP_ROUTE).
   -- 'pause' is the in-game Escape menu in 0.40 ('menu' is the main menu); this check missed it, as BeamNG.Earth's does.

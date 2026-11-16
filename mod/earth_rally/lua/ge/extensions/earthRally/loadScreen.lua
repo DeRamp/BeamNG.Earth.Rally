@@ -100,6 +100,14 @@ end
 
 function M.cancel() cur = nil end
 
+-- The page closed under the screen: one waiting for its button ends at once if ready, else by itself once ready
+-- (nobody is there to press it).
+function M.pageClosed()
+  if not cur then return end
+  if cur.ready then M.continue() return end
+  cur.spec.button = nil
+end
+
 function M.ui()
   local c = cur
   if not c then return nil end
