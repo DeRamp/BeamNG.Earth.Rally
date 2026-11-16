@@ -20,8 +20,8 @@ other session. To land work, do these in order.
    - what `/handoff` found, what was fixed, and the objections not acted on with the reason.
    If a PR for the branch is already open, reuse it (`gh pr view <branch>`).
 5. **Find the maintainer.** ListAgents. If no session named `maintainer` is listed, start it (the owner approved
-   this, 2026-11-15): `powershell -ExecutionPolicy Bypass -File tools/maintainer.ps1`, from any checkout. Use forward
-   slashes; Git Bash eats backslashes. The script always starts it in the main checkout as a background session and
+   this, 2026-11-15): `powershell -ExecutionPolicy Bypass -File "$(git rev-parse --show-toplevel)/tools/maintainer.ps1"`
+   from any checkout of this repo. Use forward slashes; Git Bash eats backslashes. The script always starts it in the main checkout as a background session and
    will not start a second one. Wait a minute for its startup checks, then ListAgents again. If it is still not
    listed, tell the owner (they can also merge the PR by hand on GitHub) and stop here.
 6. **Send the request** with SendMessage to `maintainer`, plain text, one message:
