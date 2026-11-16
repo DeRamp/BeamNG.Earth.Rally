@@ -22,7 +22,7 @@ local earthMenuFix = require('earthRally/earthMenuFix') -- STOPGAP: remove with 
 
 local M = {}
 local logTag = 'earthRally'
-M.VERSION = '1.6.0-alpha'
+M.VERSION = '1.6.1-alpha'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_FLOOR_S = 1             -- the HUD's streams sent when what they show changes, and at least this often
 M.STREAM_GAP_S = 0.1              -- ... the stock stream at most this often outside waitStart / running

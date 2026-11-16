@@ -87,7 +87,7 @@ graphics settings and versions. Ends 60 s after the run leaves `running`, or at 
 
 ## Also for 1.6.1: seen during the 1.6.0 screenshot session
 
-Logged, not fixed (the owner is bug testing; the owner decides which go in before the 1.6.0 launch). Found on 2026-11-14 while
+Logged, not fixed (the owner is bug testing; the owner decides which go in 1.6.1 or later). Found on 2026-11-14 while
 driving 1.6.0 through BeamNG's in-game MCP server for the marketing screenshots: Weaver Bend (Overmountain), Maryhill
 Up (OTR 2024), Valley of the Gods Eastbound (Colorado).
 
