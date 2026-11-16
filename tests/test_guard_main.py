@@ -112,6 +112,22 @@ def cases(ROOT, WT, OTHER):
         (0, WT, None, "git commit -m @'\nfix: don't push\ngit push origin main\n'@"),
         (0, WT, None, "git commit -F - <<'EOF'\nfix things\ngit push origin main\nEOF\ngit log -1"),
         (2, WT, None, "git commit -F - <<'EOF'\nmsg\nEOF\ngit push origin main"),
+        # the release script
+        (2, ROOT, None, 'python tools/release.py 1.6.1-alpha'),
+        (0, WT, None, 'python tools/release.py 1.6.1-alpha --check'),
+        (0, WT, None, 'python -m py_compile tools/release.py'),
+        (0, WT, None, 'git diff tools/release.py'),
+        (2, WT, None, 'uv run python tools/release.py 1.6.1-alpha'),
+        (2, WT, None, r'py -3 tools\release.py 1.6.1-alpha'),
+        (0, ROOT, ('maintainer', None), 'python tools/release.py 1.6.1-alpha'),
+        (2, ROOT, ('maintainer', 'sub1'), 'python tools/release.py 1.6.1-alpha'),
+        (0, WT, None, 'python tools/package.py 1.6.1-alpha'),
+        (0, OTHER, None, 'python tools/release.py 1.0.0'),
+        (2, WT, None, 'py -3 -u tools/release.py 1.6.1-alpha'),
+        (2, WT, None, 'python -X utf8 tools/release.py 1.6.1-alpha'),
+        (2, WT, None, 'python3.12 tools/release.py 1.6.1-alpha'),
+        (2, OTHER, None, f'python {ROOT}/tools/release.py 1.6.1-alpha'),
+        (2, OTHER, None, f'cd {OTHER} && python {unix_root}/tools/release.py 1.6.1-alpha'),
         # other repos are not guarded
         (0, OTHER, None, 'git commit -m x'),
     ]
