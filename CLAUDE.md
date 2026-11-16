@@ -6,7 +6,9 @@ BeamNG.drive 0.40.5 mod (Lua, `mod/earth_rally/`) that runs real rally stages on
 ## How the owner works
 
 - **An issue means a plan, not a change.** When the owner reports a problem or idea, give the diagnosis, the fix and
-  the files it touches, then stop. Build only when told. Small fixes go in the next patch, new systems in a later minor.
+  the files it touches, then stop. Build only when told. Exception (the owner, 2026-11-15): findings the maintainer
+  sends back on your own merge request are fixed without asking (`/merge-request` step 8), unless one needs a
+  design decision. Small fixes go in the next patch, new systems in a later minor.
 - **UI: mock-up first** (`docs/mockups-<version>/*.html`, 1920x1080, now/proposed toggle; `docs/mockups-1.2.0/hud.html`
   is the pattern) and wait for OK. Skip the mock-up when the owner has already specified the design.
 - **While the owner is testing, log, don't fix:** findings go in `docs/notes-<next version>.md` with the diagnosis.

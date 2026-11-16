@@ -10,7 +10,7 @@ would change `main` of this repo (origin URL contains REPO) is blocked with exit
 - `git branch -f/-D/-m/-M ... main`, `git update-ref refs/heads/main`
 - `git commit/merge/rebase/cherry-pick/revert/am/pull/reset` while on `main`, except `pull --ff-only` from
   origin's main, `--abort`/`--quit`, and a `reset` that only unstages paths
-- `tools/release.py` (tags, pushes a tag and publishes a release, so only the maintainer may run it)
+- `tools/release.py` without `--check` (tags, pushes a tag and publishes a release: only the maintainer runs it)
 
 `git checkout X`/`git switch X` and `cd` earlier in the same command line are followed.
 This is a guardrail against mistakes, not a security boundary: aliases, `sh -c` and scripts get past it.
@@ -259,6 +259,22 @@ def gh_blocked(toks, state):
     return "gh pr merge" if state.ours() else None
 
 
+def release_script(toks, head):
+    """The release.py token when it is the script being run, else None (`python -m py_compile release.py` is not)."""
+    if head == "release.py":
+        return toks[0]
+    args = toks[1:]
+    if head == "uv" and args[:1] == ["run"]:
+        args = args[1:]
+    rest = without_values(args, {"-X", "-W"})
+    if any(a in ("-c", "-m") for a in rest):
+        return None
+    first = next((a for a in rest if not a.startswith("-")), "")
+    if exe(first) in ("python", "python3", "py"):  # uv run python tools/release.py
+        first = next((a for a in rest[rest.index(first) + 1:] if not a.startswith("-")), "")
+    return first if exe(first) == "release.py" else None
+
+
 def check(command, cwd):
     state = State(cwd)
     for seg in segments(command):
@@ -276,15 +292,14 @@ def check(command, cwd):
             reason = gh_blocked(toks, state)
         elif head == "git":
             reason = git_blocked(toks[1:], state)
-        elif PYTHON.match(head) or head == "release.py":
-            for t in toks:
-                if exe(t) == "release.py":
-                    where = os.path.dirname(join(state.dir, t)) or state.dir
-                    while not os.path.isdir(where) and os.path.dirname(where) != where:
-                        where = os.path.dirname(where)  # git -C needs a folder that exists
-                    script = State(where)
-                    if script.ours():
-                        reason = "tools/release.py"
+        elif (PYTHON.match(head) or head == "release.py") and "--check" not in toks:  # --check only reads
+            t = release_script(toks, head)
+            if t:
+                where = os.path.dirname(join(state.dir, t)) or state.dir
+                while not os.path.isdir(where) and os.path.dirname(where) != where:
+                    where = os.path.dirname(where)  # git -C needs a folder that exists
+                if State(where).ours():
+                    reason = "tools/release.py"
         if reason:
             return reason
     return None

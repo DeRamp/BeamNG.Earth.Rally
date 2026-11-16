@@ -114,7 +114,10 @@ def cases(ROOT, WT, OTHER):
         (2, WT, None, "git commit -F - <<'EOF'\nmsg\nEOF\ngit push origin main"),
         # the release script
         (2, ROOT, None, 'python tools/release.py 1.6.1-alpha'),
-        (2, WT, None, 'python tools/release.py 1.6.1-alpha --check'),
+        (0, WT, None, 'python tools/release.py 1.6.1-alpha --check'),
+        (0, WT, None, 'python -m py_compile tools/release.py'),
+        (0, WT, None, 'git diff tools/release.py'),
+        (2, WT, None, 'uv run python tools/release.py 1.6.1-alpha'),
         (2, WT, None, r'py -3 tools\release.py 1.6.1-alpha'),
         (0, ROOT, ('maintainer', None), 'python tools/release.py 1.6.1-alpha'),
         (2, ROOT, ('maintainer', 'sub1'), 'python tools/release.py 1.6.1-alpha'),

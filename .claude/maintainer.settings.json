@@ -16,7 +16,8 @@
       "Bash(git symbolic-ref *)",
       "Bash(python tests/run_tests.py *)",
       "Bash(cd .claude/worktrees/maintainer-review && python tests/run_tests.py *)",
-      "Bash(python tools/release.py *)"
+      "Bash(python tools/release.py *)",
+      "Bash(cd .claude/worktrees/maintainer-review && python tools/release.py *)"
     ]
   }
 }
