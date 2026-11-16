@@ -699,3 +699,19 @@ All 17 findings below are built on `full-rally-mvp`. Not yet driven. Changes fro
       (`layoutOff`, as `tidy`).
     - New rally: the same, then open Home.
     - Mock-up first (with #56 / #57's buttons).
+
+### Owner's decisions on the third drive (2026-11-16, after the rev 4 mock-ups)
+
+The mock-ups (`docs/mockups-1.7.0/rev4.html`) are OK'd, with these answers:
+1. #56: Class stays with Car (left card). Rally settings = Mode and Cancelled stages.
+2. #57: the button reads "Start transit · to SS4 Name" from a service too (no "Service out").
+3. #59: no "press the key again to recover": only A on the card.
+4. #68: one board and a tent at the service point for now (a full service park is later work). Overnight and
+   regroup: the same single board / tent.
+5. #54: keep the stage chips. Once a stage is driven, its chip shows your time on it (e.g. "SS3 6:12.4"). Total
+   "--" until complete.
+6. #71: the finished card opens with **New rally** selected (not Continue driving).
+7. #69: Realistic has no free recovery on a transit. The recovery key on a transit gives the same Recover? card
+   as on a stage: recover = back to the next service under Super Rally. Casual unchanged.
+8. #63: do the origin move with the car held still before the pause comes on (no fork change). The owner expects
+   this to also fix #65 (no pacenotes after a paused load).

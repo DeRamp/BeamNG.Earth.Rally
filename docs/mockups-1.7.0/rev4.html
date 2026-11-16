@@ -306,7 +306,7 @@ h3.sec { margin: 0 0 4px; font-size: 18px; letter-spacing: .16em; text-transform
           <h3 class="sec">Your rally</h3>
           <div class="big">--<small>of 38</small></div>
           <div class="muted" style="font-size:20px">5 of 12 stages driven</div>
-          <div class="chips"><span class="chip done">✓ SS1</span><span class="chip done">✓ SS2</span><span class="chip done">✓ SS3</span><span class="chip done">✓ SS4</span><span class="chip done">✓ SS5</span><span class="chip">SS6</span><span class="chip">SS7</span><span class="chip">SS8</span><span class="chip">SS9</span><span class="chip">SS10</span><span class="chip">SS11</span><span class="chip">SS12</span></div>
+          <div class="chips"><span class="chip done">SS1 7:48.2</span><span class="chip done">SS2 9:12.6</span><span class="chip done">SS3 6:12.4</span><span class="chip done">SS4 8:55.0</span><span class="chip done">SS5 7:51.9</span><span class="chip">SS6</span><span class="chip">SS7</span><span class="chip">SS8</span><span class="chip">SS9</span><span class="chip">SS10</span><span class="chip">SS11</span><span class="chip">SS12</span></div>
           <div class="lbl">Total</div><div class="mono" style="font-size:34px">--</div>
         </div>
         <div class="card pad" style="padding-top:16px">
@@ -332,8 +332,8 @@ h3.sec { margin: 0 0 4px; font-size: 18px; letter-spacing: .16em; text-transform
         <div class="btn out" style="margin-top:22px">Full results</div>
       </div>
       <div class="cornerbtn" style="flex-direction:row;align-items:flex-end;gap:20px">
-        <div class="btn huge out col" style="min-width:420px">New rally<small>back to Home</small></div>
-        <div class="btn huge col sel" style="min-width:420px">Continue driving<small>free roam in BeamNG.Earth</small></div>
+        <div class="btn huge out col" style="min-width:420px">Continue driving<small>free roam in BeamNG.Earth</small></div>
+        <div class="btn huge col sel" style="min-width:420px">New rally<small>back to Home</small></div>
       </div>
     </div>
 
@@ -352,20 +352,18 @@ h3.sec { margin: 0 0 4px; font-size: 18px; letter-spacing: .16em; text-transform
 const NOTES = {
   pick: `<b>#51 #52 · Drive rally: one highlight.</b> The orange border is drawn above the card's picture (it was hidden under it). The mouse and the controller share one selection: pointing at a card moves the selection there, so only one card is ever lit, on every page. The mouse pointer here is on Red Mesa, and that's the lit card. <b>#55:</b> Results (Y) from here comes back here with B, and the trail reads "Home › Drive rally › Red Mesa Rally results".`,
   start: `<b>#56 · Start the rally.</b> The settings get a <b>Rally settings</b> header. Start leaves the card and becomes a big button at the lower right, selected when the page opens (A starts). It keeps the first car's time and is greyed out without a car. The warnings sit just above it.
-    <ul><li class="q">Decide: Class stays with Car (shown, my pick: it follows the car), or moves under Rally settings?</li></ul>`,
-  timecard: `<b>#57 · Time card at the start.</b> "Day 1" now heads the list, above Start. The main action is the same big lower-right button, selected on open: <b>Start transit · to SS1 Hollow Road</b>. Leaving a service it would read <b>Service out · start transit to SS4 ...</b>. Save and quit / Retire stay small in the card.
-    <ul><li class="q">Decide: the service label: "Service out · start transit to SS4 Name" (my pick), or just "Start transit · to SS4 Name"?</li></ul>`,
+    Class stays with Car (decided).`,
+  timecard: `<b>#57 · Time card at the start.</b> "Day 1" now heads the list, above Start. The main action is the same big lower-right button, selected on open: <b>Start transit · to SS1 Hollow Road</b>. From a service it reads the same: <b>Start transit · to SS4 ...</b> (decided). Save and quit / Retire stay small in the card.`,
   roll: `<b>#58 #67 · Rolling up to a control.</b> Nothing happens until the car has stopped at the board. The HUD says "Stop at the time control's red board" with the distance (and your speed if you're still moving). Driving through does nothing: the GPS keeps pointing back to it. The same applies to every control: ATC, service, overnight, regroup.`,
   prompt: `<b>#58 · Stopped at the board: "Load the stage?"</b> The game pauses only after you say yes. Load (A) is selected. Not yet (B) leaves you parked with the HUD line, so stopping again or pressing A brings it back. Your time in is the moment you stopped.`,
   atc: `<b>#60 #63 · The ATC card while loading.</b> A solid background of its own: the menu page is not drawn behind it (#60). BeamNG's own bottom strip is off while it's up (#53). The steps start with <b>Checked in</b>, then <b>Moving the world to the stage</b>. That move happens before the pause (the car held still for a moment) and the World bar shows it as a moving stripe instead of a stuck 0% (#63). The start time isn't given yet, so it can't run out while you wait (#64).`,
   atcReady: `<b>#61 #64 · Ready.</b> Continue is selected the moment it appears, so A presses it straight away (#61; the finish card gets the same fix, #62). Your start time is set from when you press Continue (+1 min), and after Continue the HUD only says "Move up to the start line", not the old "Drive to the time control" (#64).`,
-  recover: `<b>#59 · Recover? (Realistic, on a stage).</b> The game pauses. A, the D-pad and the stick work the two buttons like a menu; B is Keep going. No 10-second timeout. Casual and transit recoveries are unchanged (instant).
-    <ul><li class="q">Decide: keep "press the recovery key again = Recover" for keyboard players (my pick: yes, it does no harm)?</li></ul>`,
+  recover: `<b>#59 · Recover? (Realistic, on a stage).</b> The game pauses. A, the D-pad and the stick work the two buttons like a menu; B is Keep going. No 10-second timeout, and no "press the key again": only A (decided). <b>#69:</b> in Realistic the same card now comes up on a transit too (no free recovery there). Casual is unchanged.`,
   service: `<b>#67 #68 · Service.</b> A tent and a red time control board at the service, on the nearest road to the service's point. They appear as you approach and go by distance after you leave (as #66 for the finish). You check in only once stopped at the board.
-    <ul><li class="q">Decide: just the tent and one board (shown), or separate Service in / Service out boards?</li><li class="q">Decide: overnight and regroup get the same tent and board?</li></ul>`,
-  results: `<b>#54 · Results before the rally is complete.</b> No overlay and no greyed table: the top 10 shows plainly. Your card is laid out as if you had a total: position <b>--</b>, one short line "5 of 12 stages driven", total <b>--</b>.
+    One board and a tent for now, overnight and regroup the same (decided); a full service park is later work.`,
+  results: `<b>#54 · Results before the rally is complete.</b> No overlay and no greyed table: the top 10 shows plainly. your card is laid out as if you had a total: position <b>--</b>, one short line "5 of 12 stages driven", total <b>--</b>.
     <ul><li class="q">Decide: keep the stage chips (shown: which stages are left), or drop them?</li><li class="q">Decide: Total as "--" (shown), or left off until complete?</li></ul>`,
-  finished: `<b>#71 · Rally finished.</b> After the last stage you drive back to a final service and check in there (stopped, #67), which ends the rally. Then this card: the result, Full results, and two big buttons. <b>Continue driving</b> (selected) closes the menu and puts you back in plain BeamNG.Earth free roam with its normal screen. <b>New rally</b> takes you to Home.`
+  finished: `<b>#71 · Rally finished.</b> After the last stage you drive back to a final service and check in there (stopped, #67), which ends the rally. Then this card: the result, Full results, and two big buttons. <b>New rally</b> (selected, decided) takes you to Home. <b>Continue driving</b> closes the menu and puts you back in plain BeamNG.Earth free roam with its normal screen.`
 };
 const CRUMBS = { pick: "Home<i>›</i><b>Drive rally</b>", start: "Home<i>›</i>Drive rally<i>›</i><b>Start the rally</b>", timecard: "Home<i>›</i><b>Time card</b>",
   atc: "Red Mesa Rally<i>›</i><b>SS2 time control</b>", atcReady: "Red Mesa Rally<i>›</i><b>SS2 time control</b>",
