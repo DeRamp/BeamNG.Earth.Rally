@@ -3,6 +3,26 @@
 Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/writing-standard.md). Downloads:
 [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
 
+## 1.6.2-alpha: the loop holds (2026-11-15)
+
+Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)
+(official 1.6+ works, without the auto recce).
+
+Fixes to pacenotes, dressing, menus and routing.
+
+### Fixed
+* Open sixes and long bends around tight corners are called as sweepers.
+* Junctions are called only when they matter.
+* Cautions come sooner after a fast straight; short kinks are called a grade more open.
+* ATC and stop boards sit along the road; tape runs parallel at shallow junctions.
+* The rally menu pauses the game; a controller works on menus and the results card.
+* The finish time shows in the top bar; the results card has **Close**.
+* **Route to stage** readies the stage as you arrive.
+
+### Known issues
+* For earlier calls, raise the game's co-driver timing setting.
+* **Start** on a controller opens the game's menu; **B** closes Earth Rally's.
+
 ## 1.6.1-alpha: on the stage (2026-11-15)
 
 Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)
