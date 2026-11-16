@@ -3,6 +3,8 @@
 local T = dofile(TESTS .. '/testlib.lua')
 function log() end
 local props = require('earthRally/props')
+local SPAWN_MS = props.DRESS_SPAWN_MS
+props.DRESS_SPAWN_MS = 1e6      -- (the count caps tested on their own; the time budget has its own test, at the end)
 
 -- the game's setFromDir(dir, up = +Z), for a level direction
 local function gameQuat(dx, dy)
@@ -143,13 +145,13 @@ end
 -- the controls' own count untouched by the dressing
 T.check(props.count() == 0, 'dressing: not counted with the controls\' props')
 
--- 2 km on: everything behind 1400 m gone, everything to 2350 m down
+-- 2 km on: everything more than DRESS_BEHIND_M behind gone, everything to 2350 m down
 car = { x = 0, y = 2000, z = 0 }
 for _ = 1, 20 do props.update(car, toGame, 2000) end
 local _, k = props.dressingCount()
 local want = 0
-for _, s in ipairs(plan) do if s.to >= 1400 and s.from <= 2350 then want = want + 1 end end
-T.check(k == want, 'dressing: the window 600 m behind to 350 m ahead (' .. k .. ' of ' .. want .. ')')
+for _, s in ipairs(plan) do if s.to >= 2000 - props.DRESS_BEHIND_M and s.from <= 2350 then want = want + 1 end end
+T.check(k == want, 'dressing: the window DRESS_BEHIND_M behind to 350 m ahead (' .. k .. ' of ' .. want .. ')')
 T.check(select(1, props.dressingCount()) == liveCount(), 'dressing: those behind really taken away')
 local early = 0
 for _, o in pairs(live) do if o.pos and o.pos[2] < 1300 then early = early + 1 end end
@@ -871,5 +873,110 @@ do
   T.check(liveCount() == #rows, 'showcase: not taken away with a stage')
   props.clearShowcase()
   T.check(liveCount() == 0, 'showcase: cleared')
+end
+
+------------------------------------------------------------------------------------------ 1.6.1's performance fixes
+do
+  -- the road map's index (a map of IDX_MIN_NODES or more): the same roads found as a walk over every node
+  math.randomseed(11)
+  local big, names = {}, {}
+  local i = 0
+  while i < props._IDX_MIN_NODES + 1000 do
+    local x, y, h = math.random() * 6000 - 3000, math.random() * 6000 - 3000, math.random() * 6.283
+    local prev
+    for _ = 1, 40 do
+      i = i + 1
+      local nm = 'b' .. i
+      big[nm] = { pos = { x = x, y = y, z = 0 }, radius = 2 + math.random() * 4, links = {} }
+      names[#names + 1] = nm
+      if prev then big[nm].links[prev] = {} big[prev].links[nm] = {} end
+      prev = nm
+      h = h + (math.random() - 0.5) * 0.6
+      local l = 30 + math.random() * 30
+      x, y = x + math.cos(h) * l, y + math.sin(h) * l
+    end
+  end
+  map = { getMap = function() return { nodes = big } end }
+  props.mapChanged()
+  -- (the reference: every edge of the map, its centre line's distance from (x, y) and the half width there)
+  local function each(x, y, f)
+    for _, a in pairs(big) do
+      for nb in pairs(a.links) do
+        local b = big[nb]
+        local dx, dy = b.pos.x - a.pos.x, b.pos.y - a.pos.y
+        local l2 = dx * dx + dy * dy
+        local t = l2 > 1e-6 and math.max(0, math.min(1, ((x - a.pos.x) * dx + (y - a.pos.y) * dy) / l2)) or 0
+        f(math.sqrt((a.pos.x + dx * t - x) ^ 2 + (a.pos.y + dy * t - y) ^ 2), a.radius * (1 - t) + b.radius * t,
+          (a.pos.x - x) ^ 2 + (a.pos.y - y) ^ 2)
+      end
+    end
+  end
+  local okAt, okCov, okNear = true, true, true
+  for _ = 1, 200 do
+    local nd = big[names[math.random(#names)]]
+    local x, y = nd.pos.x + (math.random() - 0.5) * 60, nd.pos.y + (math.random() - 0.5) * 60
+    -- roadAt with no direction: the nearest edge within SNAP_M (of those from a node within SNAP_M + 40)
+    local best = math.huge
+    local covers, near = false, 0
+    each(x, y, function(d, h, a2)
+      if a2 <= (props.SNAP_M + 40) ^ 2 and d <= props.SNAP_M and d < best then best = d end
+      if a2 <= 250 ^ 2 and d < h + 0.5 then covers = true end
+      if a2 <= 250 ^ 2 and d <= 55 then near = near + 1 end
+    end)
+    local r = props.roadAt(x, y)
+    if (r == nil) ~= (best == math.huge) or (r and math.abs(r.d - best) > 1e-9) then okAt = false end
+    if (props.roadCovers(x, y, 0.5) ~= nil) ~= covers then okCov = false end
+    if #props._nearEdges(x, y, 55) ~= near then okNear = false end
+  end
+  T.check(okAt, 'index: roadAt finds the road a walk over every node finds')
+  T.check(okCov, 'index: roadCovers the same as a walk over every node')
+  T.check(okNear, 'index: nearEdges the same roads as a walk over every node')
+
+  -- a node moved in place (nothing is known to do it): seen once the map is said to have changed
+  local far = { x = 2900, y = -2900 }
+  T.check(props.roadAt(far.x, far.y) == nil, 'index: no road out in the corner')
+  local mv, nb = names[1], next(big[names[1]].links)
+  big[mv].pos = { x = far.x, y = far.y, z = 0 }
+  big[nb].pos = { x = far.x + 20, y = far.y, z = 0 }
+  props.mapChanged()
+  T.check(props.roadAt(far.x + 5, far.y + 1) ~= nil, 'index: rebuilt after mapChanged (the moved road found)')
+  -- another nodes table: rebuilt without being told
+  local small = { s1 = { pos = { x = 0, y = 0, z = 0 }, radius = 3, links = { s2 = {} } },
+                  s2 = { pos = { x = 20, y = 0, z = 0 }, radius = 3, links = { s1 = {} } } }
+  map = { getMap = function() return { nodes = small } end }
+  local r = props.roadAt(5, 1)
+  T.check(r and math.abs(r.d - 1) < 1e-9, 'index: another nodes table taken at once (a small map, walked whole)')
+  map = nil
+  props.mapChanged()
+end
+do
+  -- the time budget: spawning stops for the frame once DRESS_SPAWN_MS has gone, the first object always made
+  props.DRESS_SPAWN_MS = 0
+  local site = { kind = 'spectators', along = 0, from = 0, to = 0, objects = {} }
+  for k = 1, 10 do site.objects[k] = { shape = 'x.dae', x = k, y = 0, dx = 0, dy = 1 } end
+  props.setDressing({ site })
+  local function toG(la, lo, h) return la, lo, h end
+  props.update({ x = 0, y = 0, z = 0 }, toG, 0)
+  T.check(select(1, props.dressingCount()) == 1, 'spawn budget: out of time, one object a frame ('
+    .. select(1, props.dressingCount()) .. ')')
+  for _ = 1, 9 do props.update({ x = 0, y = 0, z = 0 }, toG, 0) end
+  T.check(select(1, props.dressingCount()) == 10, 'spawn budget: the rest the next frames, none lost')
+  -- the sites the car has not passed go down first (a whole window after a world shift, out of time each frame)
+  local behind = { kind = 'spectators', along = 100, from = 100, to = 100, objects = {} }
+  local ahead = { kind = 'spectators', along = 400, from = 400, to = 400, objects = {} }
+  for k = 1, 3 do
+    behind.objects[k] = { shape = 'behind.dae', x = k, y = 100, dx = 0, dy = 1 }
+    ahead.objects[k] = { shape = 'ahead.dae', x = k, y = 400, dx = 0, dy = 1 }
+  end
+  props.setDressing({ behind, ahead })
+  local m0 = #made
+  props.update({ x = 0, y = 300, z = 0 }, toG, 300)
+  T.check(#made == m0 + 1 and made[#made].fields.shapeName == 'ahead.dae',
+    'spawn budget: the site ahead of the car first')
+  for _ = 1, 6 do props.update({ x = 0, y = 300, z = 0 }, toG, 300) end
+  T.check(select(1, props.dressingCount()) == 6, 'spawn budget: then the one behind')
+  props.DRESS_SPAWN_MS = SPAWN_MS
+  T.check(type(SPAWN_MS) == 'number' and SPAWN_MS > 0, 'spawn budget: on as shipped')
+  props.clear()
 end
 T.done('test_props')

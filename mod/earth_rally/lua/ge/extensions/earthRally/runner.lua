@@ -1822,15 +1822,45 @@ end
 
 -- What the screen shows now: the game's rally apps' stream and ours (hudFrame.lua). main.lua queues them.
 -- Returns rallyLoop (nil: leave that stream alone, the game's own rally mode is running), earthRally.
+-- (1.6.1: BeamNG.Earth's place, banner and loading asked for at most EARTH_ASK_S apart, not on every HUD message --
+-- each builds tables in BeamNG.Earth -- and the constants given as one table, not a new one each time)
+M.EARTH_ASK_S = 0.5
+local uiClock = rawget(os, 'clockhp') or os.clock
+local earthAsked, earthAt, earthRun = nil, -math.huge, nil
+local uiConsts = {}
 function M.uiFrame()
+  local t = uiClock()
+  -- (asked afresh for a new run, so a new run never opens on the last one's place or banner)
+  if not earthAsked or earthRun ~= run or t - earthAt >= M.EARTH_ASK_S or t < earthAt then
+    earthAsked, earthAt, earthRun = { place = earth.place(), banner = earth.earthBanner(), loading = earth.loading() },
+      t, run
+  end
+  -- (one table, its values read each time: a constant changed at run time still reaches the HUD)
+  local c = uiConsts
+  c.stoppedMs, c.startZoneBeforeM, c.stopRadiusM = M.STOPPED_MS, M.START_ZONE_BEFORE_M, M.STOP_CONTROL_RADIUS_M
+  c.jumpStartS, c.resetS, c.missedAtcS = M.JUMP_START_PENALTY_S, M.RESET_PENALTY_S, M.MISSED_TC_PENALTY_S
   return hudFrame.build(run, {
     now = M.clock() or 0, speed = run and speed() or 0, canSkip = M.canSkip(), units = settings.get('units'),
-    uiHidden = M.uiHidden, place = earth.place(), earthBanner = earth.earthBanner(), loading = earth.loading(),
+    uiHidden = M.uiHidden, place = earthAsked.place, earthBanner = earthAsked.banner, loading = earthAsked.loading,
     noRallyLoop = extensions and extensions.isExtensionLoaded and extensions.isExtensionLoaded('gameplay_rallyLoop')
       or false,
-    c = { stoppedMs = M.STOPPED_MS, startZoneBeforeM = M.START_ZONE_BEFORE_M, stopRadiusM = M.STOP_CONTROL_RADIUS_M,
-          jumpStartS = M.JUMP_START_PENALTY_S, resetS = M.RESET_PENALTY_S, missedAtcS = M.MISSED_TC_PENALTY_S },
+    c = uiConsts,
   })
+end
+
+-- (main.lua's sendStreams, 1.6.1: what the streams show now, as hudFrame.streamKeys's two strings; `slow` is
+-- M.uiSlow's sample, taken a few times a second because it asks BeamNG.Earth for the car's pose)
+local keyCtx = {}
+function M.uiSlow()
+  local s = run and run.state
+  return { stopped = (s == 'toStart' or s == 'toStop') and speed() < M.STOPPED_MS or nil,
+           canSkip = s == 'waitStart' and M.canSkip() or nil }
+end
+function M.uiKeys(slow)
+  keyCtx.now, keyCtx.uiHidden, keyCtx.units = M.clock() or 0, M.uiHidden, settings.get('units')
+  keyCtx.stopped, keyCtx.canSkip = slow and slow.stopped, slow and slow.canSkip
+  keyCtx.stopRadiusM = M.STOP_CONTROL_RADIUS_M
+  return hudFrame.streamKeys(run, keyCtx)
 end
 
 -- The results card's buttons: 'next' (the rally's next stage), 'retry' (this one again), 'menu' / 'close' (the card

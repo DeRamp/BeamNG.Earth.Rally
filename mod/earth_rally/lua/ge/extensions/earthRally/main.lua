@@ -24,8 +24,12 @@ local M = {}
 local logTag = 'earthRally'
 M.VERSION = '1.6.0-alpha'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
-M.STREAM_HZ = 30                  -- the HUD's streams this often while something moves on it
-M.STREAM_IDLE_HZ = 2              -- ... and this often once the run is over
+M.STREAM_FLOOR_S = 1             -- the HUD's streams sent when what they show changes, and at least this often
+M.STREAM_GAP_S = 0.1              -- ... the stock stream at most this often outside waitStart / running
+M.ARROW_GAP_S = 1 / 30            -- ... ours off route at most this often (the way-back arrow turns with no easing)
+M.HUD_GAP_S = 0.1                 -- ... ours at most this often on the road sections (the distance in metres)
+M.SLOW_SAMPLE_S = 0.25            -- the car stopped and the skip hint looked at this often (they ask for its pose)
+M.STREAM_FIXED_HZ = nil           -- (the bench: both streams on a timer at this rate instead, as before 1.6.1)
 M.FAR_FOR_RECCE_M = 300           -- Recce from further than this from the start: taken there first
 
 local show = im.BoolPtr(false)
@@ -917,6 +921,7 @@ function M.uiSet(key, value) return settings.set(key, value) end
 ------------------------------------------------------------------------------------------ the HUD's streams
 
 local streamT, streamOn, inactiveSent = 0, false, true
+local hudT, slowT, slowSample, rlKey, hudKey, streamRun = 0, 0, nil, nil, nil, nil
 local previewT = nil
 local previewLayout = nil
 local unloadNext = false      -- the mod was switched off: stop being a loaded extension next frame (onModDeactivated)
@@ -1002,17 +1007,47 @@ local function sendStreams(dt)
     return
   end
   inactiveSent = false
-  streamT = streamT + dt
-  local hz = (r.state == 'finished' or r.state == 'failed') and M.STREAM_IDLE_HZ or M.STREAM_HZ
-  if streamT < 1 / hz and r.state == streamOn then return end
-  streamT, streamOn = 0, r.state
+  streamT, hudT, slowT = streamT + dt, hudT + dt, slowT + dt
+  local s = r.state
+  -- (a new run is fresh too, in whatever state: its first frame is sent at once)
+  local fresh = s ~= streamOn or r ~= streamRun
+  streamRun = r
+  -- (1.6.1: each message re-draws the apps, so a stream is sent when what it shows changes (runner.uiKeys), not on
+  -- a timer: the stock stage time's tenths, the countdown's seconds, km done, the cards. Both at once on a new
+  -- state, and each at least every STREAM_FLOOR_S, which also carries what the keys leave out: BeamNG.Earth's place,
+  -- banner and loading. Where a distance in metres moves every frame, at most once per STREAM_GAP_S / HUD_GAP_S)
+  -- (every frame inside the start zone or near the stop: the stock 'staged' / 'stop' badge follows the car there)
+  local closeIn = (s == 'toStart' and r.zone ~= nil)
+    or (s == 'toStop' and (r.toControlM or 1e9) < (runner.STOP_CONTROL_RADIUS_M or 25) + 5)
+  if fresh or closeIn or not slowSample or slowT >= M.SLOW_SAMPLE_S then slowT, slowSample = 0, runner.uiSlow() end
+  local kr, kh = runner.uiKeys(slowSample)
+  local gapR = (s == 'running' or s == 'waitStart') and 0 or M.STREAM_GAP_S
+  local gapH = (s == 'toAtc' or s == 'toStart' or s == 'toStop' or s == 'travel') and M.HUD_GAP_S
+    or (s == 'running' and r.offRoute) and M.ARROW_GAP_S or 0
+  local rlDue = fresh or streamT >= M.STREAM_FLOOR_S or (kr ~= rlKey and streamT >= gapR)
+  local hudDue = fresh or hudT >= M.STREAM_FLOOR_S or (kh ~= hudKey and hudT >= gapH)
+  if M.STREAM_FIXED_HZ then rlDue, hudDue = fresh or streamT >= 1 / M.STREAM_FIXED_HZ, fresh or hudT >= 1 / M.STREAM_FIXED_HZ end
+  if not (rlDue or hudDue) then return end
+  -- (only the stock stream due, and the game's own rally mode has it: nothing of ours to send this time)
+  if not hudDue and not fresh and extensions and extensions.isExtensionLoaded
+    and extensions.isExtensionLoaded('gameplay_rallyLoop') then
+    streamT, rlKey = 0, kr
+    return
+  end
+  streamOn = s
   local rl, ours = runner.uiFrame()
-  if rl then gh.queueStream('rallyLoop', rl) end
-  gh.queueStream('earthRally', ours)
-  local key = M.streamsKey(rl, ours)
-  if key ~= streamLogKey then
-    streamLogKey = key
-    log('I', logTag, M.streamsLine(rl, ours))
+  if rlDue then
+    streamT, rlKey = 0, kr
+    if rl then gh.queueStream('rallyLoop', rl) end
+  end
+  if hudDue then
+    hudT, hudKey = 0, kh
+    gh.queueStream('earthRally', ours)
+    local key = M.streamsKey(rl, ours)
+    if key ~= streamLogKey then
+      streamLogKey = key
+      log('I', logTag, M.streamsLine(rl, ours))
+    end
   end
 end
 M._sendStreams = sendStreams
@@ -1113,6 +1148,12 @@ function M.selfTest(eventId, stageId, opts)
   return ok, why
 end
 function M.selfTestStop() if selftest then selftest.stop('stopped from the console') end end
+
+-- The road map rebuilt (map.reset: BeamNG.Earth's navgraph as roads stream in): the props' index of its nodes
+-- is stale (1.6.1).
+function M.onNavgraphReloaded()
+  pcall(require('earthRally/props').mapChanged)
+end
 
 -- The level left, or back at the menu: the run put away. This is the hook that really fires for a player, so every
 -- call in it is pcall'd and the strips are given back even if something before that throws -- tidy() reaches

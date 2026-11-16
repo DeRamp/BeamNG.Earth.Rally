@@ -1918,7 +1918,7 @@ do
   a = main.uiAction('drive', 'test8', 'hill')
   T.check(a.ok and runner.current() and navs[1] == 'play', 'Drive stage: the run starts, back to the game')
   T.check(not main.uiAction('drive', 'test8', 'hill').ok, 'not a second run while one is under way')
-  -- the streams: both, every frame or so
+  -- the streams: both, sent at once for the state (then as what they show changes)
   streams = {}
   local logged, oldLog = {}, log
   log = function(level, tag, msg) logged[#logged + 1] = tostring(msg) oldLog(level, tag, msg) end
@@ -1936,8 +1936,54 @@ do
     'the streams logged again when off route shows')
   local kinds = {}
   for _, x in ipairs(streams) do kinds[x.k] = (kinds[x.k] or 0) + 1 end
-  T.check((kinds.rallyLoop or 0) >= 5 and (kinds.earthRally or 0) >= 5, 'both streams queued (' ..
+  T.check((kinds.rallyLoop or 0) >= 1 and (kinds.earthRally or 0) >= 1, 'both streams queued (' ..
     tostring(kinds.rallyLoop) .. ', ' .. tostring(kinds.earthRally) .. ')')
+  -- the rates (1.6.1): a stream sent when what it shows changes. One second at 60 fps in each state, the clocks
+  -- moving as in play
+  do
+    local r = runner.current()
+    local was = { r.state, r.offRoute, r.clockBase, r.clockRun, r.clock, r.startAt, r.backBearing }
+    r.clockBase, r.clockRun = r.clockBase or 36000, r.clockRun or 0
+    local function second(state, setup, step)
+      r.state = state
+      if setup then setup() end
+      main._sendStreams(1 / 60)        -- (the state change: both sent at once, not counted)
+      streams = {}
+      for _ = 1, 60 do
+        r.clockRun = r.clockRun + 1 / 60
+        if step then step() end
+        main._sendStreams(1 / 60)
+      end
+      local n, rl = {}, {}
+      for _, x in ipairs(streams) do
+        n[x.k] = (n[x.k] or 0) + 1
+        if x.k == 'rallyLoop' then rl[#rl + 1] = x.v end
+      end
+      return n.rallyLoop or 0, n.earthRally or 0, rl
+    end
+    local a, b = second('toStart')
+    T.check(a <= 3 and b <= 3, 'stream rates: standing before the start, a send or two a second (' .. a .. ', ' .. b .. ')')
+    a, b = second('waitStart', function() r.startAt = runner.clock() + 20.5 end)
+    T.check(a >= 1 and a <= 3 and b >= 1 and b <= 3,
+      'stream rates: on the line, a send as the countdown ticks (' .. a .. ', ' .. b .. ')')
+    local rls
+    a, b, rls = second('running', function() r.offRoute, r.clock = nil, 30.02 end,
+      function() r.clock = r.clock + 1 / 60 end)
+    T.check(a >= 9 and a <= 12, 'stream rates: on the stage, the stock stream at its tenths and the clock seconds (' .. a .. ')')
+    T.check(b <= 3, 'stream rates: on the stage, ours only as it changes (' .. b .. ')')
+    local steps = true
+    for k = 2, #rls do
+      local d = math.floor(rls[k].stageData.currentSSTime * 10 + 0.5) - math.floor(rls[k - 1].stageData.currentSSTime * 10 + 0.5)
+      if d ~= 0 and d ~= 1 then steps = false end
+    end
+    T.check(steps, 'stream rates: every tenth of the stage time sent, none skipped')
+    a, b = second('running', function() r.offRoute, r.backBearing = true, 0 end,
+      function() r.clock, r.backBearing = r.clock + 1 / 60, (r.backBearing or 0) + 1 end)
+    T.check(b >= 25 and b <= 31, 'stream rates: off route, ours as the arrow turns, at most 30 a second (' .. b .. ')')
+    r.state, r.offRoute, r.clockBase, r.clockRun, r.clock, r.startAt, r.backBearing =
+      was[1], was[2], was[3], was[4], was[5], was[6], was[7]
+    main._sendStreams(1 / 60)
+  end
   T.check(main.previewHud() == false, 'no HUD preview during a run')
   main.uiAction('abort')
   streams = {}

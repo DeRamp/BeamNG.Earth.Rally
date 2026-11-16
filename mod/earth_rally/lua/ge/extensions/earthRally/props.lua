@@ -196,6 +196,64 @@ local function mapNodes()
   return ok and m and m.nodes or nil
 end
 
+-- The road map's nodes by grid cell (1.6.1's performance fix): roadAt, roadCovers and nearEdges looked at every node
+-- of the map for each object, dozens of whole-map walks in one frame as a site went down -- the hitch on arriving
+-- at a stretch of the stage. The cells only pick which nodes to look at: every test is still made on the node's own
+-- position, so the answer is the one a whole-map walk gives. Built when first asked for, and again when the map is
+-- another table, after onNavgraphReloaded or a world shift (M.mapChanged), or once it is IDX_MAX_AGE_S old (a node
+-- moved in place, which nothing is known to do). A map of fewer than IDX_MIN_NODES nodes (BeamNG.Earth's navgraph
+-- round the car: about 250-300 in the 1.6.1 baseline) is walked whole as before, in the same order: its walk costs
+-- microseconds, and the index's lists would only add garbage.
+local IDX_CELL_M = 64
+local IDX_MAX_AGE_S = 10
+local IDX_MIN_NODES = 2000
+local clock = rawget(os, 'clockhp') or os.clock
+local idx = nil      -- { nodes, at, small, cells = { [cell key] = { node name, ... } } }
+local function cellKey(cx, cy) return (cx + 32768) * 65536 + (cy + 32768) end
+local function nodeIndex(nodes)
+  local now = clock()
+  if idx and idx.nodes == nodes and now - idx.at <= IDX_MAX_AGE_S and now >= idx.at then return idx end
+  local n = 0
+  for _ in pairs(nodes) do
+    n = n + 1
+    if n >= IDX_MIN_NODES then break end
+  end
+  if n < IDX_MIN_NODES then
+    idx = { nodes = nodes, at = now, small = true }
+    return idx
+  end
+  local cells = {}
+  for name, nd in pairs(nodes) do
+    local p = nd.pos
+    if p and p.x and p.y and p.x == p.x and p.y == p.y then      -- (NaN would be a NaN table key)
+      local k = cellKey(math.floor(p.x / IDX_CELL_M), math.floor(p.y / IDX_CELL_M))
+      local c = cells[k]
+      if not c then c = {} cells[k] = c end
+      c[#c + 1] = name
+    end
+  end
+  idx = { nodes = nodes, at = now, cells = cells }
+  return idx
+end
+-- (the names of the nodes to look at for a point (x, y) +- r, as `for name in candidates(...)`: on a small map
+-- every node, in the map's own order; else those in the cells that (x, y) +- r touches, every node within r of it
+-- among them)
+local function candidates(nodes, x, y, r)
+  local ix = nodeIndex(nodes)
+  if ix.small then return next, nodes, nil end
+  local cells, out = ix.cells, {}
+  for cx = math.floor((x - r) / IDX_CELL_M), math.floor((x + r) / IDX_CELL_M) do
+    for cy = math.floor((y - r) / IDX_CELL_M), math.floor((y + r) / IDX_CELL_M) do
+      local c = cells[cellKey(cx, cy)]
+      if c then for i = 1, #c do out[c[i]] = true end end
+    end
+  end
+  return next, out, nil
+end
+M._IDX_MIN_NODES = IDX_MIN_NODES
+-- The road map has changed under the index (main.lua's onNavgraphReloaded, M.reset after a world shift).
+function M.mapChanged() idx = nil end
+
 -- The road-map edge beside (x, y) in plan (heights are not trusted: the car may be far above or below the spot), the
 -- one best aligned with dir (dx, dy) when given among those within SNAP_M: { a, b (node names, oriented along dir),
 -- t, x, y, z, half, dx, dy, d }, or nil.
@@ -206,8 +264,9 @@ function M.roadAt(x, y, dir, snap)
   local best, bestScore = nil, math.huge
   local r2 = (snap + 40) ^ 2
   local dl = dir and math.sqrt(dir.x * dir.x + dir.y * dir.y) or 0
-  for na, a in pairs(nodes) do
-    local pa = a.pos
+  for na in candidates(nodes, x, y, snap + 40) do
+    local a = nodes[na]
+    local pa = a and a.pos
     if pa and (pa.x - x) ^ 2 + (pa.y - y) ^ 2 <= r2 and a.links then
       for nb in pairs(a.links) do
         local b = nodes[nb]
@@ -408,6 +467,7 @@ end
 
 -- After a world shift: everything put down again where it belongs (directions re-given by the caller).
 function M.reset()
+  M.mapChanged()
   for _, s in ipairs(sites) do M.removeSite(s) s.edge = nil end
   M.resetDressing()
 end
@@ -452,6 +512,9 @@ M.DRESS_MAX_OBJS = 64        -- every dressing site's budget, whatever it asks f
 -- (objects put down a frame, a site carried on into the next: a whole window at once, after a shift, is a hitch, and
 -- one spectator area alone is 64 objects)
 M.DRESS_OBJS_PER_UPDATE = 24
+-- ... and no more objects in a frame once this much of it has gone on them (1.6.1: each object casts rays and makes
+-- a scene object, whose cost the count alone does not hold down). The first object of a frame always goes down.
+M.DRESS_SPAWN_MS = 3
 M.DRESS_GROUND_ABOVE_M = 2   -- a dressing object's ground: a hit at most this above its planned height (not a roof)
 -- ... and, for an object moved off its planned spot (the edge shift, the push, the slide below), this much more for
 -- each metre it moved (review round 4: pushed 6 m up a bank, its ground is well above the planned height); one moved
@@ -644,8 +707,9 @@ function M.roadCovers(x, y, margin)
   local nodes = mapNodes()
   if not nodes then return nil end
   margin = margin or 0
-  for _, a in pairs(nodes) do
-    local pa = a.pos
+  for na in candidates(nodes, x, y, 250) do
+    local a = nodes[na]
+    local pa = a and a.pos
     if pa and a.links and (pa.x - x) ^ 2 + (pa.y - y) ^ 2 <= 250 ^ 2 then
       for nb in pairs(a.links) do
         local b = nodes[nb]
@@ -756,8 +820,9 @@ local function nearEdges(x, y, within)
   local nodes = mapNodes()
   if not nodes then return nil end
   local out = {}
-  for _, a in pairs(nodes) do
-    local pa = a.pos
+  for na in candidates(nodes, x, y, 250) do
+    local a = nodes[na]
+    local pa = a and a.pos
     if pa and a.links and (pa.x - x) ^ 2 + (pa.y - y) ^ 2 <= 250 ^ 2 then
       for nb in pairs(a.links) do
         local b = nodes[nb]
@@ -938,8 +1003,9 @@ local function spawnItem(s, it, toGame, carZ)
   return true
 end
 
--- A site's objects put down from where it got to, up to `budget` of them. Returns the budget left.
-local function spawnDress(s, toGame, carZ, budget)
+-- A site's objects put down from where it got to, up to `budget` of them, and (deadline, a clock() time: optional)
+-- none once that time has passed. Returns the budget left (0 once the deadline has passed).
+local function spawnDress(s, toGame, carZ, budget, deadline)
   s.objs = s.objs or {}
   s.at = s.at or 1
   while s.at <= #s.items and budget > 0 do
@@ -947,6 +1013,7 @@ local function spawnDress(s, toGame, carZ, budget)
     s.at = s.at + 1
     if not spawnItem(s, it, toGame, carZ) then s.at = #s.items + 1 break end
     budget = budget - 1
+    if deadline and clock() >= deadline then return 0 end
   end
   return budget
 end
@@ -956,18 +1023,28 @@ M._spawnDress = spawnDress
 -- DRESS_OBJS_PER_UPDATE objects a frame; a site part way down goes on next frame.
 function updateDressing(carPos, toGame, carAlong)
   local budget = M.DRESS_OBJS_PER_UPDATE
+  local deadline = M.DRESS_SPAWN_MS and clock() + M.DRESS_SPAWN_MS / 1000 or nil
+  if carAlong then
+    -- (the sites the car has not passed first, then those behind it: with the time budget a whole window -- after a
+    -- world shift -- goes down over several frames, and what is ahead is what the player sees)
+    for pass = 1, 2 do
+      for _, s in ipairs(dress) do
+        local going = s.objs ~= nil and (s.at or 1) <= #s.items
+        local want = carAlong >= s.from - M.DRESS_AHEAD_M and carAlong <= s.to + M.DRESS_BEHIND_M
+        if pass == 1 and s.objs and not want then removeDress(s)
+        elseif want and (going or not s.objs) and budget > 0 and (pass == 1) == (s.to >= carAlong) then
+          budget = spawnDress(s, toGame, carPos.z, budget, deadline)
+        end
+      end
+    end
+    return
+  end
   for _, s in ipairs(dress) do
     local going = s.objs ~= nil and (s.at or 1) <= #s.items
-    if carAlong then
-      local want = carAlong >= s.from - M.DRESS_AHEAD_M and carAlong <= s.to + M.DRESS_BEHIND_M
-      if s.objs and not want then removeDress(s)
-      elseif want and (going or not s.objs) and budget > 0 then
-        budget = spawnDress(s, toGame, carPos.z, budget)
-      end
-    elseif budget > 0 and (going or not s.objs) then
+    if budget > 0 and (going or not s.objs) then
       local x, y = itemNow(s.items[1], toGame)
       if going or (x and (x - carPos.x) ^ 2 + (y - carPos.y) ^ 2 <= M.DRESS_AHEAD_M ^ 2) then
-        budget = spawnDress(s, toGame, carPos.z, budget)
+        budget = spawnDress(s, toGame, carPos.z, budget, deadline)
       end
     end
   end

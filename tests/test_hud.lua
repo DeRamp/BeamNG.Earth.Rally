@@ -389,4 +389,90 @@ do
   T.check(menu.stage('ev', 'zzz') == nil and menu.rally('nope') == nil, 'unknown ids: nil')
 end
 
+------------------------------------------------------------------------------------------ 1.6.1: the stream keys
+-- main.lua sends a stream only when hudFrame.streamKeys's string for it changes. The contract: whenever what the
+-- apps draw from build's frame changes, at the precision they draw it, the key changes too. Sample runs stepped at
+-- 60 fps through the states, the drawn text compared frame by frame. (The stock progress bar moves with the stage
+-- time's tenths, so its distPct is not in the drawn text.)
+do
+  local function r10(v) return v and tostring(math.floor(v * 10 + 0.5)) or '-' end
+  local function r1(v) return v and tostring(math.floor(v + 0.5)) or '-' end
+  local function flags(t)
+    local ks = {}
+    for k, v in pairs(t or {}) do if v then ks[#ks + 1] = k .. '=' .. tostring(v) end end
+    table.sort(ks)
+    return table.concat(ks, ',')
+  end
+  local function drawn(rl, ours)
+    local o = ours or {}
+    local parts = { o.state, flags(o.show), o.clockText, tostring(o.countdown), tostring(o.canSkip),
+      (o.show and o.show.next) and r1(o.toControlM) or '-',
+      r10(o.doneM and o.doneM / 1000), r1(o.offM), r1(o.backBearing and o.backBearing / 2), r1(o.atcTime), r1(o.startAt),
+      tostring(o.missedAtc), o.finish and r10(o.finish.time) or '-' }
+    local mine = table.concat(parts, '#')
+    parts = {}
+    if rl then
+      local sd, vp, cd, sc = rl.stageData or {}, rl.vehicleProximity or {}, rl.countdownData or {}, rl.scheduleData or {}
+      parts[#parts + 1] = table.concat({ tostring(rl.activeState), tostring(rl.showStageApps), r10(sd.currentSSTime),
+        tostring(sd.isActive), tostring(sd.isComplete), tostring(cd.countdown), tostring(sc.timeDiff),
+        vp.distance and (math.abs(vp.distance) < 5 and string.format(vp.isStartLine and '%.2f' or '%.1f', vp.distance) or r1(vp.distance)) or '-',
+        tostring(vp.isNear), tostring(vp.isStopped), tostring(vp.isFrozen),
+        rl.rallyClock and rl.rallyClock.wallClockTime and rl.rallyClock.wallClockTime.time or '-' }, '|')
+    end
+    return table.concat(parts, '#'), mine
+  end
+  local stage = { name = 'Weaver Bend', lengthM = 6800 }
+  -- each case: a run, and a step(run, t) moving it as play would; ctx's now is the rally clock
+  local cases = {
+    { 'on the line', { state = 'waitStart', startM = 0, finishM = 6800, stage = stage, startAt = 36025.3 },
+      function(r, t) end, 36000 },
+    { 'on the stage', { state = 'running', startM = 0, finishM = 6800, stage = stage, startAt = 36000, along = 0, clock = 0 },
+      function(r, t) r.clock, r.along = t, 32 * t end, 36000 },
+    { 'off route', { state = 'running', startM = 0, finishM = 6800, stage = stage, startAt = 36000, along = 900,
+      clock = 40, offRoute = true, off = 20, backBearing = 0 },
+      function(r, t) r.clock, r.off, r.backBearing = 40 + t, 20 + 3 * t, (t * 70) % 360 end, 36040 },
+    { 'to the time control', { state = 'toAtc', startM = 0, finishM = 6800, stage = stage, toControlM = 900 },
+      function(r, t) r.toControlM = math.max(0, 900 - 25 * t) end, 35900 },
+    { 'onto the start line', { state = 'toStart', startM = 0, finishM = 6800, stage = stage, startAt = 36090,
+      toControlM = 6, atcTime = 35990, zone = {} },
+      function(r, t) r.toControlM = 6 - 0.4 * t end, 36000 },
+    { 'to the start', { state = 'toStart', startM = 0, finishM = 6800, stage = stage, startAt = 36090, toControlM = 300,
+      atcTime = 35990 },
+      function(r, t) r.toControlM = math.max(0, 300 - 15 * t) if r.toControlM < 10 then r.zone = { held = t > 21 } end end,
+      36000 },
+    { 'to the stop', { state = 'toStop', startM = 0, finishM = 6800, stage = stage, startAt = 36000, finalTime = 300.4,
+      stageTime = 300.4, sinceFinish = 0, toControlM = 200 },
+      function(r, t) r.sinceFinish, r.toControlM = t, math.max(0, 200 - 20 * t) end, 36300 },
+  }
+  for _, cs in ipairs(cases) do
+    local name, run, step, t0 = cs[1], cs[2], cs[3], cs[4]
+    local prevD, prevK, prevO, prevKo, misses, frames = nil, nil, nil, nil, 0, 0
+    local changes, sawRl = { 0, 0 }, false
+    for f = 0, 60 * 25 do
+      local t = f / 60
+      step(run, t)
+      local now = t0 + t
+      local speed = run.state == 'toStart' and math.max(0, 15 - t) or 20
+      local ctx = { now = now, speed = speed, units = 'km', canSkip = false }
+      local rl, ours = hud.build(run, ctx)
+      local kr, ko = hud.streamKeys(run, { now = now, units = 'km', stopped = speed < 1.0, canSkip = false, stopRadiusM = 25 })
+      local d, o = drawn(rl, ours)
+      sawRl = sawRl or (rl ~= nil and rl.activeState ~= 'inactive')
+      for _, pr in ipairs({ { prevD, d, prevK, kr, 'stock' }, { prevO, o, prevKo, ko, 'ours' } }) do
+        if pr[1] and pr[2] ~= pr[1] then changes[pr[5] == 'stock' and 1 or 2] = changes[pr[5] == 'stock' and 1 or 2] + 1 end
+        if pr[1] and pr[2] ~= pr[1] and pr[4] == pr[3] then
+          misses = misses + 1
+          if misses == 1 then print('  first miss, ' .. name .. ' (' .. pr[5] .. ') at ' .. t .. ' s:\n    ' .. pr[1]
+            .. '\n    ' .. pr[2]) end
+        end
+      end
+      prevD, prevK, prevO, prevKo, frames = d, kr, o, ko, frames + 1
+    end
+    T.check((changes[1] > 0 or not sawRl) and changes[2] > 0, 'stream keys: ' .. name .. ', the drawn text moves (' .. changes[1]
+      .. ', ' .. changes[2] .. ')')
+    T.check(misses == 0, 'stream keys: ' .. name .. ', every change drawn changes the key (' .. misses .. ' missed in '
+      .. frames .. ' frames)')
+  end
+end
+
 T.done('test_hud')
