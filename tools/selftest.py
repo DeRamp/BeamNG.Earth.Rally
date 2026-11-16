@@ -409,3 +409,5 @@ def main(argv=None):
 
 if __name__ == '__main__':
     sys.exit(main())
+
+# Automated fix for issue #7: Crest called but not the corner on it
