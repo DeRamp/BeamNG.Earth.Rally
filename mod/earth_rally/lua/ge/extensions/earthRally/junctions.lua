@@ -188,7 +188,9 @@ end
 -- could take by mistake: within OBVIOUS_DEG of the way the stage comes in (straight on at a turn, or a shallow split
 -- off a straight), or as wide as the stage road (OBVIOUS_WIDE of its half width, both widths known: a road as big as
 -- the stage's own) and within OBVIOUS_WIDE_DEG. A track off at right angles, or one going back, is not called. A
--- junction the file kept no side roads for (format 1) is called, as before.
+-- junction where the stage itself turns ('turn') is always called: the road the driver is on goes another way, so
+-- the wrong way is right there, however narrow the side road (a T with no widths stored). A junction the file kept
+-- no side roads for (format 1) is called, as before.
 M.OBVIOUS_DEG = 60
 M.OBVIOUS_WIDE = 0.9
 M.OBVIOUS_WIDE_DEG = 100
@@ -196,7 +198,7 @@ M.OBVIOUS_WIDE_DEG = 100
 -- j: a junction as M.decode gives it. True when the co-driver should call it.
 function M.obvious(j)
   if not j then return false end
-  if j.kind == 'fork' then return true end
+  if j.kind == 'fork' or j.kind == 'turn' then return true end
   if not j.inDeg or not j.sides or #j.sides == 0 then return true end
   for _, s in ipairs(j.sides) do
     local off = abs(M.turnDeg(j.inDeg, s.deg))

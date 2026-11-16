@@ -151,17 +151,33 @@ Tuning constants, all to be set after the owner drives them:
   `SWEEP_OPEN_MIN_M` 60 m, tightest `SWEEP_OPEN_R` 250 m or less, is a sweeper. So is the rest of a long bend either
   side of a tighter corner inside it, when that part qualifies on its own. Its end next to the corner is cut back by
   half the smoothing. #7 is the same gap: a crest goes on the note of any corner near it, so it is alone only where
-  no corner was found. The game never drops a corner it measures: its six has no upper limit.
+  no corner was found. The game never drops a corner it measures: its six has no upper limit. Such a piece sits
+  25 m from its corner, the same way ("right six long and right four"): 5 times on the five matched stages (of 23
+  sweepers, 44.8 km), so it stays a note of its own, not a "long" on the corner.
 - **Junctions (#10)** (`junctions.obvious`, read by `events.landmarks`). A fork is always called. Any other junction
   is called only for a side road within `OBVIOUS_DEG` 60 degrees of the way in, or one as wide as the stage road
-  (`OBVIOUS_WIDE` 0.9 of its half width) within `OBVIOUS_WIDE_DEG` 100 degrees.
+  (`OBVIOUS_WIDE` 0.9 of its half width) within `OBVIOUS_WIDE_DEG` 100 degrees. A junction where the stage itself
+  turns is always called: the wrong way is straight on. Five stages: 77 junction calls on main, 37 now.
 - **Cautions after a long straight (#11)** (`pacenotes.caution`). After `LONG_STRAIGHT_M` 300 m with no corner, at
   `LONG_V_MS` 30 m/s or more, the levels are `CAUTION_LONG` 55 / 40 / 28 % of the approach speed, not 40 / 30 / 22 %.
+  The straight runs back to the last corner called tighter than a six (`pacenotes.measuredGrade`, with #12's step):
+  sweepers and sixes, taken flat, do not start it again. Five stages: 17 cautions on main, 25 now (20 when only
+  sweepers were skipped; #6 changes none). Earlier calls: the game has no lever per note. It starts a note when the
+  time to its corner start falls under the co-driver delay plus the note's own length (`driveline/drivelineRoute.lua`
+  1140, 1154, 1160); the delay is one setting for all notes, `rallyCodriverTiming`, plus 0.5 s from 40 to 80 mph
+  (`codriverTiming.lua` 17-49). The note's `triggerType` offers only dynamic and immediate (`enums.lua` 52-59).
+  Moving the corner start earlier would change the corner's number: the game measures the corner from that waypoint
+  (`snaproad/geoPacenotes.lua` 806-819). A caution word makes the note longer, so it starts that much earlier.
 - **Short kinks (#12)** (`pacenotes.racingOpen`). A corner `RACING_ARC_M` 30 m or shorter and `RACING_MAX_DEG` 45
   degrees or less, whose racing line (`RACING_SWING_M` 3 m of the road used, `RACING_ROOM_M` 60 m of straight at
   most) is a grade more open on the game's ladder, gets `riskIntensity = -1`. That is one grade more open, the most
   the game's notes allow. The swing barely matters (1.5 m flags the same corners), so the knobs that count are
-  the length and the angle.
+  the length and the angle. Checked in the game's Lua: `compositors/helpers/compositorUtil.lua` 218-229 moves the
+  measured entry `index - riskIntensity` on the style's ladder, which runs one to six
+  (`compositors/styles/english/numbering/one_to_six.lua` 9-16), so -1 is one grade more open, a six stays a six. Every
+  corner call goes through it (`getCornerCall`, 246-262; `emitCorner`, 350); no setting gates it. The length word
+  is read off the measured grade (`getCornerLengthForItem`, 290-293). The room either side is measured to the next
+  real corner, not to a sweeper: on the five stages that changes none of the 54.
 
 ## Not done, for the user to decide
 

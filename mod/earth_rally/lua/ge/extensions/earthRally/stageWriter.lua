@@ -231,6 +231,28 @@ function M.build(line, opts)
     end
     corners = out
   end
+  -- (each corner's call, ahead of the notes: whether its number is said a grade more open -- pacenotes.racingOpen,
+  --  the room for the line either side measured to the next real corner, not to a sweeper: the open bend a short
+  --  corner sits in is room for the line -- and whether it is called tighter than a six. A corner the driver hears as
+  --  a six is taken flat: the straight before a caution runs back past it, as past a sweeper)
+  local opened, slows = {}, {}
+  do
+    local function realNext(ci, d)
+      local j = ci + d
+      while corners[j] and corners[j].sweeper do j = j + d end
+      return corners[j]
+    end
+    for ci, c in ipairs(corners) do
+      if c.group ~= 'chicane' and not c.sweeper and not pacenotes.descriptor(c, step) then
+        local p, n = realNext(ci, -1), realNext(ci, 1)
+        local before = p and (c.i0 - p.i1) * step or (c.i0 - 1) * step
+        local after = n and (n.i0 - c.i1) * step or (np - c.i1) * step
+        opened[ci] = pacenotes.racingOpen(c, stagePts, step, before, after) or nil
+      end
+      local g = pacenotes.measuredGrade(c, stagePts) + (opened[ci] and 1 or 0)
+      slows[ci] = not c.sweeper and (c.group == 'chicane' or g < #pacenotes.GRADE_DIAMETERS + 1)
+    end
+  end
   local entries = {}
   for ci, c in ipairs(corners) do
     local e = { i0 = c.i0, i1 = c.i1, corner = c, pre = {}, post = {} }
@@ -241,11 +263,7 @@ function M.build(line, opts)
       item.descriptor = pacenotes.descriptor(c, step)
       -- (a short corner the driven line takes a grade more open than the game measures it off the road's middle:
       --  one grade more open -- the number only, so not where a descriptor takes its place)
-      if not item.descriptor and not c.sweeper then
-        local before = ci > 1 and (c.i0 - corners[ci - 1].i1) * step or (c.i0 - 1) * step
-        local after = ci < #corners and (corners[ci + 1].i0 - c.i1) * step or (np - c.i1) * step
-        if pacenotes.racingOpen(c, stagePts, step, before, after) then item.riskIntensity = -1 end
-      end
+      if opened[ci] then item.riskIntensity = -1 end
       local shape = pacenotes.shape(c, k, step)
       -- (a crest inside the corner is part of its shape: "over crest", "tightens over crest", "opens over crest" --
       --  when the voice says corner shapes; one that does not (the casual ones) hears "over crest" after the corner)
@@ -276,10 +294,11 @@ function M.build(line, opts)
       item.shape = saidShape(shape)
       e.item = item
       -- (the caution reads the corner as it is, said in its shape or not; the straight before it runs back to the
-      --  last corner found, not to a long sweeper, which the car takes at speed -- and a sweeper has none of its own)
+      --  last corner called tighter than a six, not to a six or a long sweeper, which the car takes at speed -- and a
+      --  sweeper has none of its own)
       local prev = nil
       for pj = ci - 1, 1, -1 do
-        if not corners[pj].sweeper then prev = corners[pj] break end
+        if slows[pj] then prev = corners[pj] break end
       end
       e.caution = (not c.sweeper) and pacenotes.caution(c, v, step, prev and prev.i1,
                                     over == 'tightensOverCrest' and over or shape,
