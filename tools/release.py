@@ -116,18 +116,22 @@ def checks(version, commit):
     run('git', 'fetch', '-q', 'origin', 'main')
     remote = remote_tags()
     sha = run('git', 'rev-parse', '--verify', commit + '^{commit}')
-    if not ok('git', 'merge-base', '--is-ancestor', sha, 'origin/main'):
-        raise Refuse(f'{commit} ({sha[:7]}) is not on origin/main')
+    # main's own line (merge commits), not a commit of some branch that main merged
+    if sha not in run('git', 'rev-list', '--first-parent', 'origin/main').split():
+        raise Refuse(f'{commit} ({sha[:7]}) is not on the first-parent line of origin/main')
     tag = 'v' + version
     local = run('git', 'rev-parse', '-q', '--verify', tag + '^{commit}', check=False)
     for where, tagged in (('origin', remote.get(tag)), ('locally', local)):
         if tagged and tagged != sha:
             raise Refuse(f'{tag} exists {where} already, on {tagged[:7]}, not {sha[:7]}')
-    if not (local or remote.get(tag)):  # a resumed run has its own tag already; else it must be the next version
-        latest = max((vkey(t[1:]) for t in remote if vkey(t[1:])), default=None)
-        if latest and key not in next_versions(latest):
-            want = ', '.join(f'{a}.{b}.{c}-alpha' for a, b, c in sorted(next_versions(latest)))
-            raise Refuse(f'{version} is not the next version after the latest tag (want one of {want})')
+    released = {t: c for t, c in remote.items() if vkey(t[1:]) and t != tag}
+    if released:
+        latest = max(released, key=lambda t: vkey(t[1:]))
+        if not ok('git', 'merge-base', '--is-ancestor', released[latest], sha):
+            raise Refuse(f'{sha[:7]} does not descend from the latest release {latest}')
+        if not remote.get(tag) and key not in next_versions(vkey(latest[1:])):  # origin's tag means a resumed run
+            want = ', '.join(f'{a}.{b}.{c}-alpha' for a, b, c in sorted(next_versions(vkey(latest[1:]))))
+            raise Refuse(f'{version} is not the next version after {latest} (want one of {want})')
     name, entry = changelog_entry(show(sha, 'CHANGELOG.md'), version)
     limit = 150 if key[2] else 400
     words = len(entry.split())
@@ -172,16 +176,20 @@ def publish(version, sha, name, body):
         run('git', 'push', 'origin', f'refs/tags/{tag}')
         print(f'release.py: pushed {tag}')
     zip_name = f'earth_rally-{version}.zip'
-    if ok(gh_exe(), 'release', 'view', tag, '-R', REPO):
-        # gh makes a draft, uploads, then publishes: a killed run can leave a draft without the zip
-        state = run(gh_exe(), 'release', 'view', tag, '-R', REPO, '--json', 'isDraft,assets,url',
-                    '-q', '[.isDraft, ([.assets[].name] | join(",")), .url] | join(" ")').split(' ')
-        draft, assets, url = state[0] == 'true', state[1].split(','), state[-1]
-        if not draft and zip_name in assets:
+    # Looked up in the full list, which holds drafts too: gh makes a draft, uploads, then publishes, so a failed
+    # or killed run can leave a draft without the zip.
+    found = run(gh_exe(), 'api', f'repos/{REPO}/releases', '--paginate', '-q',
+                f'.[] | select(.tag_name == "{tag}") | [.id, .draft, .prerelease, .html_url, '
+                f'([.assets[].name] | join(","))] | map(tostring) | join(" ")')
+    if found:
+        rid, draft, pre, url, *assets = found.splitlines()[0].split(' ')
+        assets = ','.join(assets).split(',')
+        if draft == 'false' and pre == 'true' and zip_name in assets:
             return url + ' (already published)'
-        zip_path, n = build_zip(tag, version)
-        run(gh_exe(), 'release', 'upload', tag, zip_path, '-R', REPO, '--clobber')
-        run(gh_exe(), 'release', 'edit', tag, '-R', REPO, '--draft=false', '--prerelease')
+        if zip_name not in assets:
+            zip_path, n = build_zip(tag, version)
+            run(gh_exe(), 'release', 'upload', tag, zip_path, '-R', REPO, '--clobber')
+        run(gh_exe(), 'api', '-X', 'PATCH', f'repos/{REPO}/releases/{rid}', '-F', 'draft=false', '-F', 'prerelease=true')
         return url + ' (finished an incomplete release)'
     zip_path, n = build_zip(tag, version)
     print(f'release.py: {zip_path}: {n} files')
@@ -213,8 +221,9 @@ def main():
         print('release.py: published ' + publish(version, sha, name, body))
         return 0
     except Refuse as e:
-        print(f'release.py: refused: {e}\nNothing after the last "release.py:" line was done; fix it and run the '
-              f'same command again.', file=sys.stderr)
+        print(f'release.py: refused: {e}\nSteps printed above as "release.py:" are done (a failed `gh release create` '
+              f'may also have left a draft release). Fix the cause and run the same command again: it carries on '
+              f'from what is done.', file=sys.stderr)
         return 1
 
 
