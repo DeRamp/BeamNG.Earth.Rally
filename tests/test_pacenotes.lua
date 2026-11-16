@@ -141,6 +141,20 @@ do
                                   { 'straight', 300 } })))
   local second = slow[#slow - 1]
   T.check(not second:find('caution'), 'a slow corner straight after another slow one: no caution (' .. show(slow) .. ')')
+  -- 1.6.2, issue #11: a corner half the top speed at the end of a long straight is a care; the same corner after a
+  -- short one is not (a hairpin first, so both approaches start from the same slow corner)
+  local function after(straightM)
+    return notes(build(road({ { 'straight', 200 }, { 'arc', 12, 150 }, { 'straight', straightM }, { 'arc', 45, 50 },
+                              { 'straight', 300 } })))
+  end
+  local long, short = after(800), after(150)
+  T.check(long[2] and long[2]:find('^1:caution1,4:corner'), 'a 45 m radius bend after 800 m flat out: a care (' ..
+    show(long) .. ')')
+  T.check(short[2] and not short[2]:find('caution'), 'the same bend after 150 m: no caution (' .. show(short) .. ')')
+  local tight = notes(build(road({ { 'straight', 200 }, { 'arc', 12, 150 }, { 'straight', 800 }, { 'arc', 25, 50 },
+                                   { 'straight', 300 } })))
+  T.check(tight[2] and tight[2]:find('^1:caution2'), 'a 25 m radius bend after 800 m flat out: a caution (' ..
+    show(tight) .. ')')
 end
 
 ------------------------------------------------------------------------------------------ the height profile
@@ -434,8 +448,9 @@ do
   for _, n in ipairs(cn2) do if n:find('4:corner') then corners2 = corners2 + 1 end end
   T.check(corners2 == 2 and not has(cn2, 'chicane'), 'a chicane, a voice with no chicane call: two corners (' ..
     show(cn2) .. ')')
-  -- a corner that only tightens, on a fast approach: its shape says it, no caution for that alone
-  local tt = notes(build(road({ { 'straight', 500 }, { 'arcs', { { 120, 40 }, { 60, 50 } } }, { 'straight', 400 } })))
+  -- a corner that only tightens, on a fast approach: its shape says it, no caution for that alone (200 m: under
+  -- LONG_STRAIGHT_M, where a corner this much slower than the top speed is a care, below)
+  local tt = notes(build(road({ { 'straight', 200 }, { 'arcs', { { 120, 40 }, { 60, 50 } } }, { 'straight', 400 } })))
   T.check(has(tt, 'tightens') and not has(tt, 'caution'), 'a fast corner that tightens: "tightens", no caution (' ..
     show(tt) .. ')')
   -- rallyAdapter.speaks: the style's modifiers, aliases, shapes and descriptors; and the voice settings untouched
@@ -483,6 +498,56 @@ do
     end
   end
   T.check(known, 'only the game\'s own calls')
+end
+
+------------------------------------------------------------------------------------------ 1.6.2: open and short corners
+do
+  local function cornerItems(built)
+    local out = {}
+    for _, p in ipairs(built.notebook.pacenotes) do
+      local c = p.structured.items['4']
+      if c.type == 'corner' then out[#out + 1] = { item = c, meta = p.metadata.earthRally } end
+    end
+    return out
+  end
+  -- issue #6: an open six (22 degrees at 200 m: too open for geo.corners, too short a turn for a 30 degree sweeper)
+  local six = build(road({ { 'straight', 500 }, { 'arc', 200, 22 }, { 'straight', 500 } }))
+  T.check(six.corners == 1, 'a 22 degree bend at 200 m: a corner note, a six (' .. show(notes(six)) .. ')')
+  local wide = build(road({ { 'straight', 500 }, { 'arc', 600, 22 }, { 'straight', 500 } }))
+  T.check(wide.corners == 0, 'a 22 degree bend at 600 m: still none (' .. show(notes(wide)) .. ')')
+  -- ... and a long bend with a tighter corner in it: the bend either side is called too, not just its tight middle
+  local lb = build(road({ { 'straight', 400 }, { 'arcs', { { 300, 40 }, { 40, 60 }, { 300, 40 } } },
+                         { 'straight', 400 } }))
+  local ci = cornerItems(lb)
+  local sweepers, core = 0, nil
+  for _, c in ipairs(ci) do
+    if c.meta.sweeper then sweepers = sweepers + 1 elseif c.meta.minRadius < 60 then core = c end
+  end
+  T.check(#ci == 3 and sweepers == 2 and core, 'a long bend with a tight middle: in, the middle, out -- three notes (' ..
+    show(notes(lb)) .. ')')
+  local seq = true
+  for k = 2, #ci do if ci[k].meta.dir ~= ci[1].meta.dir then seq = false end end
+  T.check(seq, '(all three the same way)')
+  -- issue #7: a crest on such a bend goes on its corner, not on a note of its own
+  local crestBend = notes(build(road({ { 'straight', 500 }, { 'arc', 200, 22 }, { 'straight', 500 } },
+                                     hump(540, 120, 4))))
+  local alone = false
+  for _, n in ipairs(crestBend) do if n:find('rest') and not n:find('4:corner') then alone = true end end
+  T.check(has(crestBend, 'rest') and not alone, 'a crest on an open six: on the corner\'s note (' .. show(crestBend) .. ')')
+  -- issue #12: a short kink is driven a grade more open than the road's middle: riskIntensity -1
+  local kink = cornerItems(build(road({ { 'straight', 300 }, { 'arc', 60, 20 }, { 'straight', 300 } })))
+  T.check(#kink == 1 and kink[1].item.riskIntensity == -1, 'a 20 degree kink over 21 m: one grade more open (' ..
+    tostring(kink[1] and kink[1].item.riskIntensity) .. ')')
+  local longC = cornerItems(build(road({ { 'straight', 300 }, { 'arc', 60, 90 }, { 'straight', 300 } })))
+  T.check(#longC == 1 and longC[1].item.riskIntensity == nil, 'a 90 degree corner over 94 m: as the game measures it')
+  local sharp = cornerItems(build(road({ { 'straight', 300 }, { 'arc', 15, 60 }, { 'straight', 300 } })))
+  T.check(#sharp == 1 and sharp[1].item.riskIntensity == nil, 'a short 60 degree corner: not a kink, as measured')
+  -- (no room either side, no straighter line)
+  local pts = road({ { 'straight', 50 }, { 'arc', 60, 20 }, { 'straight', 50 } })
+  local sp = geo.resample(pts, 5)
+  local c = geo.corners(sp, 5)[1]
+  T.check(c and pn.racingOpen(c, sp, 5, 100, 100) and not pn.racingOpen(c, sp, 5, 0, 100),
+    'racingOpen: with room either side, not without')
 end
 
 T.done('test_pacenotes')

@@ -24,9 +24,10 @@ local M = {}
 
 -- The figures' own version, kept with them (`figures`): a line's saved figures are read back only when they are of
 -- this version, and worked out again otherwise (events.lineFigures). 2: chicanes counted as one corner, as they are
--- one note (1.5.0). 3: long sweepers counted (pacenotes.sweepers). A line saved before has no `figures` and is
--- counted again on its first look.
-M.VERSION = 3
+-- one note (1.5.0). 3: long sweepers counted (pacenotes.sweepers). 4: open sixes, and the rest of a long bend
+-- either side of a corner in it, counted as sweepers (1.6.2). A line saved before has no `figures` and is counted
+-- again on its first look.
+M.VERSION = 4
 
 M.CONTROL_OFF_LINE_M = 200  -- a start or finish control further than this from the line is not on it (runner.lua's
                             -- own rule where it cuts a line round a stage: stageLatLon)

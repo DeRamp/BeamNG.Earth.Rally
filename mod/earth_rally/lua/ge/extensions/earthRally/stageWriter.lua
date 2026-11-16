@@ -239,6 +239,13 @@ function M.build(line, opts)
     else
       local item = { type = 'corner' }
       item.descriptor = pacenotes.descriptor(c, step)
+      -- (a short corner the driven line takes a grade more open than the game measures it off the road's middle:
+      --  one grade more open -- the number only, so not where a descriptor takes its place)
+      if not item.descriptor and not c.sweeper then
+        local before = ci > 1 and (c.i0 - corners[ci - 1].i1) * step or (c.i0 - 1) * step
+        local after = ci < #corners and (corners[ci + 1].i0 - c.i1) * step or (np - c.i1) * step
+        if pacenotes.racingOpen(c, stagePts, step, before, after) then item.riskIntensity = -1 end
+      end
       local shape = pacenotes.shape(c, k, step)
       -- (a crest inside the corner is part of its shape: "over crest", "tightens over crest", "opens over crest" --
       --  when the voice says corner shapes; one that does not (the casual ones) hears "over crest" after the corner)
@@ -491,7 +498,8 @@ function M.build(line, opts)
     pacenotes_[n] = {
       audioMode = 1, distanceBeforeModifier = false, ignoreDistanceCalls = false, includeLinkWord = e.item ~= nil,
       isolate = false,
-      metadata = { earthRally = c and { dir = c.dir, angleDeg = c.angleDeg, minRadius = c.minRadius, group = c.group }
+      metadata = { earthRally = c and { dir = c.dir, angleDeg = c.angleDeg, minRadius = c.minRadius, group = c.group,
+                                        sweeper = c.sweeper }
                    or { landmark = true } },
       name = 'Pacenote ' .. n, oldId = noteId,
       pacenoteWaypoints = { wp('corner start', 'cornerStart', e.i0), wp('corner end', 'cornerEnd', e.i1) },
