@@ -2959,4 +2959,64 @@ do
   beamngEarth_api.gps, beamngEarth_api.gpsClear, beamngEarth_api.teleport = hadGps, hadClear, hadTp
 end
 
+
+------------------------------------------------------------------------------------------ 1.7.0: a pass of a full rally
+-- runner.start(..., { rally = true }): the time to runner.onFinished and not to the stage's results; no reset penalty
+-- (the rally's recovery is the rally's); the results card waits for an answer; the next stage left to the rally;
+-- keepDamage: BeamNG.Earth's teleport sets the car down with resetVehicle = false while it is on.
+do
+  settings.reset()
+  local finished, rallyResets = {}, 0
+  runner.onFinished = function(res) finished[#finished + 1] = res end
+  runner.onRallyReset = function() rallyResets = rallyResets + 1 end
+  local calls = {}
+  local oldSpawn = spawn
+  spawn = { safeTeleport = function(v, pos, rot, _, _, _, _, resetVeh)
+    calls[#calls + 1] = { reset = resetVeh }
+    if v.setPositionRotation then v:setPositionRotation(pos.x, pos.y, pos.z) end
+  end }
+  local plain = spawn.safeTeleport
+  runner.keepDamage(true)
+  T.check(spawn.safeTeleport ~= plain, 'keepDamage: the game\'s safeTeleport wrapped')
+  spawn.safeTeleport(getPlayerVehicle(0), vec3(0, 0, 0), nil, nil, nil, false, nil, true)
+  T.check(calls[1] and calls[1].reset == false, 'keepDamage: BeamNG.Earth\'s set-down of the car keeps its damage')
+  spawn.safeTeleport({}, vec3(0, 0, 0), nil, nil, nil, false, nil, true)
+  T.check(calls[2] and calls[2].reset == true, 'keepDamage: another car is reset as asked')
+  runner.keepDamage(false)
+  T.check(spawn.safeTeleport == plain and not runner.keepingDamage(), 'keepDamage off: the game\'s own function back')
+
+  local nRuns = #(events.results('test', 'hill').runs or {})
+  anchor = { lat = 47.0, lon = -123.0 }
+  car.lat, car.lon, car.speed = full[1][1] - 0.02, full[1][2], 0
+  local okR, whyR = runner.start(event, event.stages[1], { rally = true, ssLabel = 'SS4', keepDamage = true })
+  T.check(okR, 'a rally pass starts (' .. tostring(whyR) .. ')')
+  local rr = runner.current()
+  T.check(rr.inRally and rr.ssLabel == 'SS4' and rr.nextStage == nil, 'in a rally: its SS label, no next stage')
+  frames(80)
+  T.check(not runner.keepingDamage(), 'keepDamage off once the stage is placed')
+  car.lat, car.lon, car.speed = full[9][1], full[9][2], 0
+  frames(20)
+  go(rr)
+  T.check(runner.state() == 'running', 'running (rally pass)')
+  T.check(runner.onReset(1) == false and (rr.resets or 0) == 0 and rallyResets == 1,
+    'a reset in a rally: no penalty, handed to the rally')
+  driveTo(11, #full)
+  T.check(runner.state() == 'finished' and #finished == 1 and math.abs(finished[1].timeS - rr.finalTime) < 1e-9,
+    'the finish handed to the rally (' .. runner.state() .. ')')
+  T.check(#(events.results('test', 'hill').runs or {}) == nRuns, 'a rally time is not a single-stage run')
+  frames(50)
+  local _, oursR = runner.uiFrame()
+  T.check(oursR.show.results and oursR.results.next == nil, 'the results card up, no Next stage of its own')
+  rr.rally = { mode = 'realistic', ask = { ss = 'SS4' } }
+  rr.rallyKey = 'ask'
+  _, oursR = runner.uiFrame()
+  T.check(oursR.show.recoverAsk and oursR.rally.ask.ss == 'SS4', 'the Recover? question in the stream')
+  for _ = 1, 20 do frames(10, 10) end
+  T.check(rr.resultsOpen, 'the rally\'s card waits for an answer (no timeout)')
+  runner.abort(true)
+  runner.onFinished, runner.onRallyReset = nil, nil
+  spawn = oldSpawn
+  settings.reset()
+end
+
 T.done('test_run')

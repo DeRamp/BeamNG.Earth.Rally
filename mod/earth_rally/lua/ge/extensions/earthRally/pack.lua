@@ -348,30 +348,102 @@ local function round2(v) return math.floor(v * 100 + 0.5) / 100 end
 
 -- The running order: { { ss, stage (stage id), run, km, cancelled, day, powerStage }... }. From the event file's SS
 -- rows (one per control: a pass run separately by two classes is listed twice there), else the map in order.
+-- Second answer (1.7.0, the full rally): the stops between passes, from the event file only, else nil --
+--   { { after = n (the stop follows itinerary[n]), kind = 'service' | 'overnight', name, label }... }
+-- A service sits where the itinerary has a SVC_IN / SVC_OUT row, or a row whose control is a `service` entry's (one
+-- of "3B-3C"'s controls, or "RZ1" where the services are on refuel-zone controls); an overnight is a change of day
+-- between two passes. Rows after a pass already listed (a class's own copy of the running order) add nothing.
+local function stopsOf(evFile, rows)
+  local svcControls = {}
+  for _, e in ipairs(type(evFile.service) == 'table' and evFile.service or {}) do
+    if type(e) == 'table' and e.type == 'service' and type(e.control) == 'string' then
+      for c in e.control:gmatch('[^%-%s]+') do svcControls[c] = e end
+    end
+  end
+  local places = {}
+  for _, l in ipairs(type(evFile.locations) == 'table' and evFile.locations or {}) do
+    if type(l) == 'table' and l.id then places[l.id] = l end
+  end
+  local function placeName(row, entry)
+    local id = (entry and entry.location) or row.location
+    local l = id and places[id]
+    local n = l and type(l.name) == 'string' and l.name or nil
+    -- ("Big Park Service Area (Saturday), Town" -> "Big Park Service Area": the time card's row is short)
+    n = n and (n:match('^([^,]+)') or n)
+    n = n and (n:match('^(.-)%s+%(') or n)
+    return n
+  end
+  local stops, nSvc = {}, 0
+  local count, lastDay, copy = 0, nil, false
+  local function lastStop() return stops[#stops] end
+  for _, row in ipairs(rows) do
+    if row.kind == 'SS' then
+      if row.new then
+        if lastDay and row.day and row.day ~= lastDay and count > 0 then
+          local l = lastStop()
+          if l and l.after == count then l.kind = 'overnight'
+          else stops[#stops + 1] = { after = count, kind = 'overnight' } end
+        end
+        count, copy, lastDay = row.n, false, row.day or lastDay
+      else
+        copy = true
+      end
+    elseif not copy and count > 0 then
+      local r = row.raw
+      local entry = svcControls[tostring(r.control)]
+      if r.type == 'SVC_IN' or r.type == 'SVC_OUT' or entry then
+        local l = lastStop()
+        if not (l and l.after == count) then
+          stops[#stops + 1] = { after = count, kind = 'service', name = placeName(r, entry) }
+        elseif not l.name then
+          l.name = placeName(r, entry)
+        end
+      end
+    end
+  end
+  -- (a stop after the last pass is the finish, not a stop)
+  if lastStop() and lastStop().after >= count then stops[#stops] = nil end
+  for _, st in ipairs(stops) do
+    if st.kind == 'service' then
+      nSvc = nSvc + 1
+      st.label = 'Service ' .. string.char(64 + math.min(nSvc, 26))
+    else
+      st.label = 'Overnight'
+    end
+  end
+  return stops
+end
+M._stopsOf = stopsOf
+
 local function itineraryOf(evFile, stages, lineId, warn)
-  local out, seen = {}, {}
+  local out, seen, rows = {}, {}, {}
   if evFile and type(evFile.itinerary) == 'table' then
     for _, row in ipairs(evFile.itinerary) do
-      if type(row) == 'table' and row.type == 'SS' and row.control and not seen[row.control] then
+      if type(row) == 'table' and row.type == 'SS' and row.control then
+        local new = not seen[row.control]
         seen[row.control] = true
-        local sid = lineId[row.stage]
+        local sid = new and lineId[row.stage]
         if sid then
           out[#out + 1] = { ss = tostring(row.control), stage = sid, run = tonumber(row.run) or 1,
                             km = tonumber(row.ss_km), cancelled = false, day = tonumber(row.day),
                             powerStage = row.power_stage == true or nil }
-        else
+        elseif new then
           warn(string.format('itinerary %s "%s": no line of that name in the map', tostring(row.control),
             str(row.stage)))
         end
+        rows[#rows + 1] = { kind = 'SS', new = sid ~= nil, n = #out, day = tonumber(row.day) }
+      elseif type(row) == 'table' then
+        rows[#rows + 1] = { kind = 'other', raw = row }
       end
     end
-    if #out > 0 then return out end
+    if #out > 0 then return out, stopsOf(evFile, rows) end
   end
   for i, s in ipairs(stages) do
     out[i] = { ss = 'SS' .. i, stage = s.id, run = 1, km = round2(s.lengthM / 1000), cancelled = false }
   end
-  return out
+  return out, nil
 end
+M._itineraryOf = itineraryOf
 
 -- The results trimmed to what the leaderboards need, fastest first. Rows with no time are left out: there is
 -- nothing to place them by, and a hole would break the row arrays.
@@ -487,7 +559,8 @@ local function makeRally(src, spec, base, ctx, kind)
     if not evFile then warn("can't read the event file " .. evRel) end
   end
   local info = evFile and type(evFile.event) == 'table' and evFile.event or {}
-  event.itinerary = itineraryOf(evFile, event.stages, lineId, warn)
+  -- (rallyStops: the full rally's services and overnights, 1.7.0; nil without an event file: no full rally)
+  event.itinerary, event.rallyStops = itineraryOf(evFile, event.stages, lineId, warn)
   event.dates = type(spec.dates) == 'table' and spec.dates or type(info.dates) == 'table' and info.dates or nil
   local hq = type(info.hq) == 'table' and info.hq or {}
   local place = {}
@@ -888,8 +961,10 @@ end
 -- Every pack in the import folder imported when new or changed (every one with force); packs taken out forgotten,
 -- their rallies kept. index: importer's (its .packs kept here). Returns entries in importer.scan's shape, plus
 -- rallies, seasonId and warnings; and whether the index changed with nothing to report (a file only touched).
+M.READER = 2     -- (1.7.0: the event file's services read too) a newer reader imports every pack again, once
 function M.scan(index, force)
   index.packs = index.packs or {}
+  if index.packReader ~= M.READER then force, index.packReader = true, M.READER end
   local found, seen = M.find(), {}
   for _, p in ipairs(found) do seen[p.name] = true end
   -- (packs gone from the folder leave the index before any id is given, so a pack renamed since the last scan

@@ -309,6 +309,12 @@ function M.build(run, ctx)
           lengthM = nx.lengthM } or nil }
     end
   end
+  -- (1.7.0) a pass of a full rally: rallyRun.lua's card data (run.rally: mode, the stage and overall places, the
+  -- crews round you; ask = the Recover? question in Realistic mode, up while it waits on an answer)
+  if run.rally then
+    ours.rally = run.rally
+    if run.rally.ask and not ctx.uiHidden then show.recoverAsk = true end
+  end
   -- the jump-start card, a few seconds from the moment
   if run.jumpStart and run.jumpStartAt and now - run.jumpStartAt < M.JUMP_CARD_S and (s == 'waitStart' or s == 'running') then
     show.jump = true
@@ -365,7 +371,7 @@ streamKeys = function(run, k)
   local sec = math.floor(now + 0.5)      -- (the clocks round to the nearest second: clockText)
   local common = s .. '|' .. b(k.uiHidden) .. '|' .. tostring(k.units) .. '|' .. b(run.jumpStart and run.jumpStartAt
     and now - run.jumpStartAt < M.JUMP_CARD_S) .. '|' .. i(run.atcTime) .. '|' .. i(run.startAt) .. '|' .. b(run.missedAtc)
-    .. '|' .. tostring(run.finalTime) .. '|'
+    .. '|' .. tostring(run.finalTime) .. '|' .. tostring(run.rallyKey) .. '|'
   if s == 'waitStart' then
     local left = (run.startAt or now) - now
     local n = math.max(0, math.ceil(left - 1e-6))

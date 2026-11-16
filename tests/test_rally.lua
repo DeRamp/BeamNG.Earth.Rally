@@ -1,0 +1,198 @@
+-- The full rally (1.7.0): rally.lua's running order, Super Rally, Casual restarts, the places against the field, a
+-- save that survives JSON, and pack.lua's services read from an event file. All on a made-up rally: every time and
+-- every name is invented. No organisers' data here.
+local T = dofile(TESTS .. '/testlib.lua')
+function log() end
+local rally = require('earthRally/rally')
+local pack = require('earthRally/pack')
+
+------------------------------------------------------------------------------------------ a made-up rally
+
+-- 10 passes over 5 roads, two days: Service A after SS3, overnight after SS6, Service B after SS8. SS7 was cancelled.
+local function event()
+  local it = {}
+  local spec = { { 'SS1', 'a', 1, 1 }, { 'SS2', 'b', 1, 1 }, { 'SS3', 'c', 1, 1 }, { 'SS4', 'a', 2, 1 },
+    { 'SS5', 'b', 2, 1 }, { 'SS6', 'c', 2, 1 }, { 'SS7', 'd', 1, 2 }, { 'SS8', 'e', 1, 2 }, { 'SS9', 'd', 2, 2 },
+    { 'SS10', 'e', 2, 2 } }
+  for i, x in ipairs(spec) do
+    it[i] = { ss = x[1], stage = x[2], run = x[3], day = x[4], km = 10 + i, cancelled = x[1] == 'SS7' }
+  end
+  return { id = 'made-up', name = 'Made-up Rally', itinerary = it,
+    rallyStops = { { after = 3, kind = 'service', name = 'The Park', label = 'Service A' },
+      { after = 6, kind = 'overnight', label = 'Overnight' },
+      { after = 8, kind = 'service', name = 'The Park', label = 'Service B' } } }
+end
+
+-- the field: four National crews and one regional, on SS1-SS3 and SS4
+local function row(t, name, class, champ, notional) return { t, name, 'Car', class, champ or 'national', notional == true } end
+local board = { passes = {
+  { ss = 'SS1', field = { row(700, 'Ann Able', 'RC2'), row(720, 'Ben Bold', 'L4WD'), row(760, 'Cal Calm', 'L4WD'),
+    row(800, 'Dee Dune', 'L2WD'), row(650, 'Reg Ional', 'RC2', 'regional') } },
+  { ss = 'SS2', field = { row(300.0, 'Ann Able', 'RC2'), row(303.7, 'Ben Bold', 'L4WD'), row(310, 'Cal Calm', 'L4WD'),
+    row(330, 'Dee Dune', 'L2WD'), row(200, 'Zed Notional', 'L4WD', 'national', true) } },
+  { ss = 'SS3', field = { row(860, 'Ann Able', 'RC2'), row(851.2, 'Cal Calm', 'L4WD'), row(870, 'Ben Bold', 'L4WD'),
+    row(900, 'Dee Dune', 'L2WD') } },
+  { ss = 'SS4', field = { row(690, 'Ann Able', 'RC2'), row(800, 'Dee Dune', 'L2WD') } },
+} }
+
+------------------------------------------------------------------------------------------ the running order
+
+do
+  local r = rally.new(event(), { mode = 'realistic', class = 'L4WD' })
+  local labels = {}
+  for _, it in ipairs(r.order) do labels[#labels + 1] = it.kind == 'stage' and it.ss or it.label end
+  T.check(table.concat(labels, ' ') == 'SS1 SS2 SS3 Service A SS4 SS5 SS6 Overnight SS8 Service B SS9 SS10',
+    'as it really ran: ' .. table.concat(labels, ' '))
+  local all = rally.new(event(), { cancelled = 'all' })
+  labels = {}
+  for _, it in ipairs(all.order) do labels[#labels + 1] = it.kind == 'stage' and it.ss or it.label end
+  T.check(table.concat(labels, ' ') == 'SS1 SS2 SS3 Service A SS4 SS5 SS6 Overnight SS7 SS8 Service B SS9 SS10',
+    'run them all: ' .. table.concat(labels, ' '))
+  T.check(rally.cancelledPasses(event())[1] == 'SS7', 'the cancelled pass is named for the start screen')
+  T.check(all.mode == 'realistic', 'Realistic unless Casual is asked for')
+end
+
+do
+  -- a stop with nothing after it is the finish; two stops with only a cancelled pass between them are one
+  local e = event()
+  e.rallyStops[#e.rallyStops + 1] = { after = 10, kind = 'service', label = 'Service C' }
+  e.rallyStops[#e.rallyStops + 1] = { after = 7, kind = 'service', label = 'Service X' }
+  local r = rally.new(e, {})
+  local labels = {}
+  for _, it in ipairs(r.order) do labels[#labels + 1] = it.kind == 'stage' and it.ss or it.label end
+  T.check(table.concat(labels, ' ') == 'SS1 SS2 SS3 Service A SS4 SS5 SS6 Overnight SS8 Service B SS9 SS10',
+    'a trailing stop dropped, two stops merged into the overnight: ' .. table.concat(labels, ' '))
+  T.check(rally.new({ id = 'x', itinerary = e.itinerary }) == nil, 'no event file (no stops read): no full rally')
+end
+
+------------------------------------------------------------------------------------------ Realistic and Super Rally
+
+do
+  local r = rally.new(event(), { mode = 'realistic', class = 'L4WD' })
+  T.check(rally.current(r).ss == 'SS1', 'the rally starts at SS1')
+  rally.stageDone(r, { timeS = 898.0, stageS = 898.0, penaltyS = 0 })
+  T.check(rally.current(r).ss == 'SS2', 'on to SS2')
+  T.check(rally.restart(r) == nil, 'no restarts in Realistic')
+  local out = rally.recover(r, board)
+  T.check(out and #out.missed == 2, 'SS2 given up: it and SS3 are missed')
+  T.near(r.results.SS2.timeS, 903.7, 1e-6, 'SS2: the L4WD fastest + 10 min')
+  T.near(r.results.SS3.timeS, 1271.2, 1e-6, 'SS3: the L4WD fastest + 7 min')
+  T.check(r.results.SS2.from == 'class', 'from the class')
+  T.check(out.stop and out.stop.label == 'Service A' and rally.current(r).label == 'Service A',
+    'back in at Service A')
+  T.check(not rally.isServiced(r), 'the service is still to be done')
+  T.check(rally.serviced(r) and rally.isServiced(r), 'the service done')
+  rally.serviceOut(r)
+  T.check(rally.current(r).ss == 'SS4', 'and on from SS4')
+  -- a later stage given up: + 7 min, the class missing on that pass -> the fastest National time
+  rally.stageDone(r, { timeS = 700 })
+  rally.stageDone(r, { timeS = 330 })
+  rally.recover(r, board)        -- SS6: no field at all -> nominal
+  T.check(r.results.SS6.from == 'nominal', 'no field on the pass: a nominal time')
+  T.near(r.results.SS6.addS, 420, 1e-6, 'a third stage missed: + 7 min')
+  T.check(rally.current(r).label == 'Overnight', 'back in at the overnight')
+  local sr = rally.superRallyTime(board, { ss = 'SS4' }, 'L4WD', 4)
+  T.check(sr.from == 'field' and math.abs(sr.timeS - (690 + 420)) < 1e-6, 'no L4WD on SS4: the fastest National')
+  -- the last stage given up: nothing to rejoin at
+  rally.serviceOut(r)
+  rally.stageDone(r, { timeS = 600 })      -- SS8
+  rally.serviceOut(r)                       -- Service B
+  rally.stageDone(r, { timeS = 600 })      -- SS9
+  local last = rally.recover(r, board)     -- SS10
+  T.check(last and last.stop == nil and r.done and r.unclassified, 'given up after the last service: unclassified')
+  T.check(rally.over(r), 'and the rally is over')
+  local f = rally.finished(r, '2026-11-15T00:00:00Z')
+  T.check(f.unclassified and f.mode == 'realistic' and #f.passes == 9, 'kept as finished, unclassified, 9 passes')
+end
+
+------------------------------------------------------------------------------------------ Casual
+
+do
+  local r = rally.new(event(), { mode = 'casual', class = 'L4WD' })
+  T.check(rally.recover(r, board) == nil, 'no Super Rally in Casual')
+  rally.stageDone(r, { timeS = 900 })
+  local it = rally.restart(r)
+  T.check(it and it.ss == 'SS1' and r.results.SS1 == nil and rally.current(r).ss == 'SS1', 'Casual: SS1 again')
+  rally.stageDone(r, { timeS = 880 })
+  rally.stageDone(r, { timeS = 320 })
+  rally.stageDone(r, { timeS = 870 })      -- SS3, now at Service A
+  T.check(rally.current(r).label == 'Service A', 'at Service A')
+  T.check(rally.restart(r) ~= nil, 'SS3 can be restarted before its service is done')
+  rally.stageDone(r, { timeS = 865 })
+  rally.serviced(r)
+  T.check(rally.restart(r) == nil, '... but not once the service is done')
+  T.near(rally.totalS(r), 880 + 320 + 865, 1e-6, 'the total')
+end
+
+------------------------------------------------------------------------------------------ places
+
+do
+  local r = rally.new(event(), { class = 'L4WD' })
+  rally.stageDone(r, { timeS = 740 })
+  local st = rally.stageStanding(board, r.order[1], 740, 'L4WD')
+  T.check(st.pos == 3 and st.of == 5, 'SS1: 3rd of 5 (the regional crew left out): ' .. st.pos .. '/' .. st.of)
+  T.check(st.classPos == 2 and st.classOf == 3, 'SS1: 2nd of 3 in L4WD')
+  local you = nil
+  for _, x in ipairs(st.rows) do if x.you then you = x end end
+  T.check(you and you.pos == 3 and math.abs(you.gapS - 40) < 1e-6, 'you in the list, 40 s off the lead')
+  local ov = rally.standing(r, board)
+  T.check(ov and ov.pos == 3 and ov.of == 5 and ov.classPos == 2, 'overall after SS1: P3, L4WD 2nd')
+  rally.stageDone(r, { timeS = 299 })      -- (the notional 200 is not a crew)
+  ov = rally.standing(r, board)
+  T.check(ov.pos == 3 and math.abs(ov.gapS - 39) < 1e-6, 'overall after SS2: 1039 is 3rd (1023.7 2nd), 39 s off: '
+    .. ov.pos .. ' ' .. ov.gapS)
+end
+
+------------------------------------------------------------------------------------------ the save
+
+do
+  local r = rally.new(event(), { mode = 'realistic', class = 'O4WD', car = { name = 'A Car' } })
+  rally.stageDone(r, { timeS = 800 })
+  rally.recover(r, board)
+  rally.serviced(r)
+  local back = T.jsonDecode(T.jsonEncode(r))
+  T.check(rally.valid(back), 'the save reads back as a rally')
+  T.check(rally.isServiced(back), 'the service done is still done after JSON (string keys)')
+  T.check(rally.current(back).label == 'Service A' and back.results.SS3.superRally == true, 'at Service A, SS3 scored')
+  rally.serviceOut(back)
+  T.check(rally.current(back).ss == 'SS4', 'and goes on from SS4')
+  T.check(not rally.valid({ format = 1 }), 'not a rally')
+end
+
+do
+  local best = rally.bestFinished({ { totalS = 5000, unclassified = true }, { totalS = 6000, mode = 'casual' },
+    { totalS = 5500, mode = 'realistic' }, { totalS = 5500, mode = 'casual' } })
+  T.check(best.totalS == 5500 and best.mode == 'realistic', 'the best classified run; Realistic on a tie')
+  T.check(rally.guessClass('AWD') == 'L4WD' and rally.guessClass('RWD') == 'L2WD' and rally.guessClass(nil) == nil,
+    'the class guessed from the drivetrain')
+end
+
+------------------------------------------------------------------------------------------ pack: the stops
+
+do
+  -- SVC rows; a service on a refuel-zone control ("RZ1"); a change of day; a class's own copy of the running order
+  local function ss(c, st, day) return { type = 'SS', control = c, stage = st, day = day, run = 1 } end
+  local ev = {
+    service = { { type = 'service', control = 'RZ1', location = 'park' }, { type = 'regroup', control = 'TC9A' } },
+    locations = { { id = 'park', name = 'Big Park, Somewhere' } },
+    itinerary = {
+      { type = 'MTC_OUT', control = 'TC0', day = 1 }, ss('SS1', 'A', 1), ss('SS2', 'B', 1),
+      { type = 'SVC_IN', control = 'TC2B', day = 1 }, { type = 'SVC_OUT', control = 'TC2C', day = 1 },
+      ss('SS3', 'A', 1), { type = 'MTC_IN', control = 'TC3A', day = 1 },
+      ss('SS4', 'B', 2), { type = 'other', control = 'RZ1', day = 2 }, ss('SS5', 'A', 2),
+      { type = 'SVC_OUT', control = 'TC5C', day = 2 },
+      -- a class's copy: SS4 again with a service after it, then nothing new
+      ss('SS4', 'B', 2), { type = 'SVC_OUT', control = 'TC4C', day = 2 },
+    },
+  }
+  local lineId = { A = 'a', B = 'b' }
+  local it, stops = pack._itineraryOf(ev, {}, lineId, function() end)
+  T.check(#it == 5, 'five passes, the copy left out')
+  local got = {}
+  for _, s in ipairs(stops) do got[#got + 1] = s.after .. ':' .. s.label .. (s.name and (':' .. s.name) or '') end
+  T.check(table.concat(got, ' ') == '2:Service A 3:Overnight 4:Service B:Big Park', 'the stops: ' .. table.concat(got, ' '))
+  local _, none = pack._itineraryOf(nil, { { id = 'a', lengthM = 1000 } }, lineId, function() end)
+  T.check(none == nil, 'no event file: no stops')
+end
+
+T.done('test_rally')

@@ -58,6 +58,32 @@ export function action(what, eventId, stageId, cb) {
   })
 }
 
+// ---- the full rally (1.7.0): its start screen, its time card, its buttons (main.lua uiRallyStart / uiRallyCard /
+// uiRallyAction)
+export const rallyStart = ref(null)
+export const rallyCard = ref(null)
+// (a flat table of strings, numbers and booleans as a Lua table literal)
+const luaObj = o => "{" + Object.entries(o || {}).filter(([, v]) => v !== null && v !== undefined)
+  .map(([k, v]) => `${k}=${luaValue(v)}`).join(",") + "}"
+export function loadRallyStart(id) {
+  engineLua(`earthRally_main and earthRally_main.uiRallyStart(${q(id)}) or nil`, r => { if (r) rallyStart.value = r })
+}
+export function loadRallyCard(cb) {
+  engineLua("earthRally_main and earthRally_main.uiRallyCard() or nil", r => {
+    if (r) rallyCard.value = r
+    if (cb) cb(r)
+  })
+}
+// what: start (opts: mode, class, cancelled) / resume / go / quit / abandon. cb(r): r.view is the page to show next.
+export function rallyAction(what, id, opts, cb) {
+  busyMsg.value = ""
+  engineLua(`earthRally_main and earthRally_main.uiRallyAction(${q(what)}, ${q(id)}, ${luaObj(opts)}) or nil`, r => {
+    busyMsg.value = (r && !r.ok && r.message) || ""
+    refreshState()
+    if (cb) cb(r || {})
+  })
+}
+
 export function setSetting(key, value) {
   engineLua(`earthRally_main and earthRally_main.uiSet(${q(key)}, ${luaValue(value)}) or nil`, r => {
     if (r && r.settings && state.value.settings) state.value.settings.settings = r.settings

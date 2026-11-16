@@ -49,3 +49,10 @@ export function ss(s) {
 }
 // "SS3 Kuhnle", or "Kuhnle"
 export function ssName(s) { return [ss(s), s && s.name].filter(Boolean).join(" ") }
+// 1st, 2nd, 3rd, 11th (the full rally's class place)
+export function ord(n) {
+  if (n === null || n === undefined) return ""
+  const t = n % 100
+  if (t >= 11 && t <= 13) return `${n}th`
+  return n + ({ 1: "st", 2: "nd", 3: "rd" }[n % 10] || "th")
+}

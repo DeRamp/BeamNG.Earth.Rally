@@ -1,0 +1,387 @@
+-- earthRally/rally: the full rally (1.7.0 MVP, docs/plan-1.7.0.md): one rally driven start to finish, stage after
+-- stage, with services and overnights between them, in Realistic or Casual mode. Pure: no game calls and no files
+-- (rallyRun.lua does those), so all of it tests offline (tests/test_rally.lua).
+--
+-- What is read:
+--   event   earthRally/events/<rallyId>.json: id, name, itinerary [{ ss, stage, run, km, day, cancelled }],
+--           rallyStops [{ after, kind = 'service' | 'overnight', name, label }] (pack.lua; nil: no event file, so no
+--           full rally)
+--   board   earthRally/boards/<rallyId>.json: passes [{ ss, field = [[seconds, driver, car, class, championship,
+--           notional]...] }] (may be nil: no real results, so no Super Rally times from the field and no places)
+--
+-- A rally in progress (`r`, saved as it is at each service by rallyRun.lua):
+--   { format, eventId, name, mode = 'realistic' | 'casual', class, cancelled = 'real' | 'all', car = { name },
+--     order = [{ kind = 'stage', ss, stageId, run, km, day } | { kind = 'service' | 'overnight', label, name }],
+--     pos (the item to do next; #order + 1 when the rally is over), results = { [ss] = { timeS, stageS, penaltyS,
+--     superRally, classBestS, addS } }, missed (stages missed so far: Super Rally), serviced = { ['<pos>'] = true }
+--     (string keys: the save is JSON),
+--     done, unclassified }
+--
+-- Super Rally (ARA RCR 6.3.1, the user's choice): a stage missed scores the fastest real National time in your class
+-- on that pass, + 10 min for the first stage missed in the rally and + 7 min for each one after. With no National
+-- crew of your class on that pass, the fastest National time of all; with no field at all, NOMINAL_KMH over its km.
+local M = {}
+
+M.FORMAT = 1
+M.CHAMPIONSHIP = 'national'
+M.SUPER_FIRST_S = 600
+M.SUPER_NEXT_S = 420
+M.NOMINAL_KMH = 60
+M.CLASSES = { 'RC2', 'O4WD', 'L4WD', 'NA4WD', 'O2WD', 'L2WD' }
+M.MODES = { realistic = true, casual = true }
+
+local function lower(s) return type(s) == 'string' and s:lower():gsub('^%s+', ''):gsub('%s+$', '') or '' end
+
+-- The class a car is put in when the player picks none: the drivetrain alone (there are no ARA class rules in the
+-- data to go further on). 'AWD' / '4WD' -> L4WD, anything else known -> L2WD, nil when it cannot say.
+function M.guessClass(drivetrain)
+  local d = lower(drivetrain)
+  if d == '' then return nil end
+  if d:find('awd') or d:find('4wd') or d:find('all') or d:find('4x4') then return 'L4WD' end
+  return 'L2WD'
+end
+
+-- The running order: the itinerary's passes (its cancelled ones left out with cancelled = 'real'), each stop after
+-- the pass it follows. A stop with no pass after it is the finish, not a stop; two stops with nothing between them
+-- (a cancelled pass taken out) are one, an overnight if either was.
+local function orderOf(event, cancelled)
+  local stopsAfter = {}
+  for _, s in ipairs(event.rallyStops or {}) do
+    if type(s) == 'table' and tonumber(s.after) then
+      stopsAfter[tonumber(s.after)] = stopsAfter[tonumber(s.after)] or {}
+      table.insert(stopsAfter[tonumber(s.after)], s)
+    end
+  end
+  local out = {}
+  local function lastIsStop() return out[#out] and out[#out].kind ~= 'stage' end
+  for i, p in ipairs(event.itinerary or {}) do
+    if not (p.cancelled == true and cancelled ~= 'all') then
+      out[#out + 1] = { kind = 'stage', ss = tostring(p.ss), stageId = p.stage, run = p.run, km = p.km, day = p.day,
+        cancelledReal = p.cancelled == true or nil }
+    end
+    for _, s in ipairs(stopsAfter[i] or {}) do
+      local kind = s.kind == 'overnight' and 'overnight' or 'service'
+      if #out == 0 then
+        -- (nothing driven yet: no stop)
+      elseif lastIsStop() then
+        local l = out[#out]
+        if kind == 'overnight' then l.kind, l.label = 'overnight', 'Overnight' end
+      else
+        out[#out + 1] = { kind = kind, label = s.label or (kind == 'overnight' and 'Overnight' or 'Service'),
+          name = s.name }
+      end
+    end
+  end
+  while lastIsStop() do out[#out] = nil end
+  -- (the services lettered again in this order: one merged away, or the first after a cancelled day, keeps A, B...)
+  local n = 0
+  for _, it in ipairs(out) do
+    if it.kind == 'service' then
+      n = n + 1
+      it.label = 'Service ' .. string.char(64 + math.min(n, 26))
+    end
+  end
+  return out
+end
+M._orderOf = orderOf
+
+-- Whether a rally can be run as a full rally: an event file (its stops read) and at least one pass.
+function M.canRun(event)
+  return type(event) == 'table' and type(event.rallyStops) == 'table' and type(event.itinerary) == 'table'
+    and #event.itinerary > 0
+end
+
+-- Whether any of its passes was cancelled on the day (the start screen offers the choice only then).
+function M.cancelledPasses(event)
+  local out = {}
+  for _, p in ipairs((event and event.itinerary) or {}) do
+    if p.cancelled == true then out[#out + 1] = tostring(p.ss) end
+  end
+  return out
+end
+
+-- A new rally. opts: { mode, class, cancelled, car = { name } }. Returns r, or nil and why.
+function M.new(event, opts)
+  if not M.canRun(event) then return nil, 'this rally has no event file, so it cannot be run as a full rally' end
+  opts = opts or {}
+  local mode = M.MODES[opts.mode] and opts.mode or 'realistic'
+  local cancelled = opts.cancelled == 'all' and 'all' or 'real'
+  local order = orderOf(event, cancelled)
+  local nStages = 0
+  for _, it in ipairs(order) do if it.kind == 'stage' then nStages = nStages + 1 end end
+  if nStages == 0 then return nil, 'no stage of this rally is left to drive' end
+  return { format = M.FORMAT, eventId = event.id, name = event.name, mode = mode,
+    class = type(opts.class) == 'string' and opts.class ~= '' and opts.class or 'L4WD', cancelled = cancelled,
+    car = type(opts.car) == 'table' and { name = opts.car.name } or nil,
+    order = order, pos = 1, results = {}, missed = 0, serviced = {}, done = false }
+end
+
+-- A rally read back from its save: r, or nil when it is not one this reader knows.
+function M.valid(r)
+  return type(r) == 'table' and r.format == M.FORMAT and type(r.order) == 'table' and #r.order > 0
+    and type(r.pos) == 'number' and type(r.results) == 'table' and M.MODES[r.mode] ~= nil
+end
+
+function M.current(r) return r and r.order[r.pos] or nil end
+function M.over(r) return r == nil or r.done == true or r.pos > #r.order end
+
+-- The next stage from where the rally is (the current item, or the first stage after it), and its index.
+function M.nextStage(r)
+  for i = r.pos, #r.order do
+    if r.order[i].kind == 'stage' then return r.order[i], i end
+  end
+  return nil
+end
+
+-- The stages driven or scored so far, in running order (each { item, result }).
+function M.doneStages(r)
+  local out = {}
+  for _, it in ipairs(r.order) do
+    if it.kind == 'stage' and r.results[it.ss] then out[#out + 1] = { item = it, result = r.results[it.ss] } end
+  end
+  return out
+end
+
+function M.totalS(r)
+  local t = 0
+  for _, d in ipairs(M.doneStages(r)) do t = t + (d.result.timeS or 0) end
+  return t
+end
+
+local function finishIfOver(r)
+  if r.pos > #r.order then r.done = true end
+end
+
+-- The stage driven to its finish: its time kept, the rally on to the next item. res: { timeS, stageS, penaltyS }.
+-- Returns the item driven, or nil and why.
+function M.stageDone(r, res)
+  local it = M.current(r)
+  if not (it and it.kind == 'stage') then return nil, 'the rally is not on a stage' end
+  r.results[it.ss] = { timeS = res.timeS, stageS = res.stageS, penaltyS = res.penaltyS or 0 }
+  r.lastPos = r.pos
+  r.pos = r.pos + 1
+  finishIfOver(r)
+  return it
+end
+
+-- Casual only: the stage just driven again (its time taken back). Returns the stage item, or nil and why.
+function M.restart(r)
+  if r.mode ~= 'casual' then return nil, 'no restarts in Realistic mode' end
+  local i = r.lastPos
+  local it = i and r.order[i]
+  if not (it and it.kind == 'stage') then return nil, 'no stage to restart' end
+  -- (only while nothing has been done since: a service out of the way, the next stage started, it is gone)
+  for j = i + 1, math.min(r.pos, #r.order) do
+    if M.isServiced(r, j) then return nil, 'the service after it is done' end
+  end
+  r.results[it.ss] = nil
+  r.pos, r.lastPos, r.done = i, nil, false
+  return it
+end
+
+-- The National field on a pass: rows { timeS, name, class, car }, fastest first, notional times left out (they are
+-- assigned, not driven). nil when the board has no such pass.
+function M.field(board, ss)
+  if type(board) ~= 'table' then return nil end
+  for _, p in ipairs(board.passes or {}) do
+    if tostring(p.ss) == tostring(ss) then
+      local rows, seen = {}, {}
+      for _, f in ipairs(p.field or {}) do
+        if type(f) == 'table' and type(f[1]) == 'number' and f[6] ~= true and lower(f[5]) == M.CHAMPIONSHIP then
+          local key = lower(f[2])
+          if key ~= '' and not seen[key] then
+            seen[key] = true
+            rows[#rows + 1] = { timeS = f[1], name = f[2], car = f[3], class = f[4], key = key }
+          end
+        end
+      end
+      table.sort(rows, function(a, b) return a.timeS < b.timeS end)
+      return rows
+    end
+  end
+  return nil
+end
+
+-- The time a missed stage scores: { timeS, classBestS, addS, from = 'class' | 'field' | 'nominal' }.
+-- nth: how many stages have been missed in the rally, this one included.
+function M.superRallyTime(board, item, class, nth)
+  local add = nth <= 1 and M.SUPER_FIRST_S or M.SUPER_NEXT_S
+  local rows = M.field(board, item.ss) or {}
+  local best, from = nil, nil
+  for _, row in ipairs(rows) do
+    if lower(row.class) == lower(class) then best, from = row.timeS, 'class' break end
+  end
+  if not best and rows[1] then best, from = rows[1].timeS, 'field' end
+  if not best then
+    best, from = (tonumber(item.km) or 10) / M.NOMINAL_KMH * 3600, 'nominal'
+    best = math.floor(best * 10 + 0.5) / 10
+  end
+  return { timeS = best + add, classBestS = best, addS = add, from = from }
+end
+
+-- Realistic: the stage given up. It and every stage before the next service or overnight score Super Rally times,
+-- and the rally goes on from that stop. With none left, the rally ends unclassified.
+-- Returns { missed = [{ item, result }], stop = the stop rejoined at or nil }, or nil and why.
+function M.recover(r, board)
+  if r.mode ~= 'realistic' then return nil, 'recovering ends a stage in Realistic mode only' end
+  local it = M.current(r)
+  if not (it and it.kind == 'stage') then return nil, 'the rally is not on a stage' end
+  local out = { missed = {} }
+  local i = r.pos
+  while i <= #r.order and r.order[i].kind == 'stage' do
+    local st = r.order[i]
+    r.missed = (r.missed or 0) + 1
+    local sr = M.superRallyTime(board, st, r.class, r.missed)
+    local res = { timeS = sr.timeS, superRally = true, classBestS = sr.classBestS, addS = sr.addS, from = sr.from }
+    r.results[st.ss] = res
+    out.missed[#out.missed + 1] = { item = st, result = res }
+    i = i + 1
+  end
+  r.lastPos = nil
+  if i > #r.order then
+    r.pos, r.done, r.unclassified = #r.order + 1, true, true
+  else
+    r.pos = i
+    out.stop = r.order[i]
+  end
+  r.superRally = out.missed
+  return out
+end
+
+-- The stop the rally is at done: the car repaired (the caller), the rally saved (the caller), and now out of it.
+function M.isServiced(r, pos) return type(r.serviced) == 'table' and r.serviced[tostring(pos or r.pos)] == true end
+function M.serviced(r)
+  local it = M.current(r)
+  if not (it and it.kind ~= 'stage') then return false end
+  r.serviced = type(r.serviced) == 'table' and r.serviced or {}
+  r.serviced[tostring(r.pos)] = true
+  return true
+end
+function M.serviceOut(r)
+  local it = M.current(r)
+  if not (it and it.kind ~= 'stage') then return nil end
+  r.superRally = nil
+  r.pos = r.pos + 1
+  finishIfOver(r)
+  return M.current(r)
+end
+
+-- Ranked: rows sorted by timeS, with you (yourS) placed after the crews you tie with. { pos, of }.
+local function placeIn(times, yourS)
+  local pos = 1
+  for _, t in ipairs(times) do if t <= yourS + 1e-6 then pos = pos + 1 end end
+  return pos, #times + 1
+end
+
+-- Your place on one pass: { pos, of, classPos, classOf, rows = the crews round you (and the top three) } or nil
+-- with no field.
+M.ROWS_TOP, M.ROWS_NEAR = 3, 1
+function M.stageStanding(board, item, timeS, class)
+  local rows = M.field(board, item.ss)
+  if not rows or #rows == 0 or type(timeS) ~= 'number' then return nil end
+  local all, cls = {}, {}
+  for _, row in ipairs(rows) do
+    all[#all + 1] = row.timeS
+    if lower(row.class) == lower(class) then cls[#cls + 1] = row.timeS end
+  end
+  local pos, of = placeIn(all, timeS)
+  local cpos, cof = placeIn(cls, timeS)
+  -- the list: the top ROWS_TOP, then you with ROWS_NEAR either side
+  local list = {}
+  for i, row in ipairs(rows) do
+    local p = i < pos and i or i + 1
+    list[#list + 1] = { pos = p, name = row.name, class = row.class, timeS = row.timeS }
+  end
+  table.insert(list, pos, { pos = pos, you = true, name = 'You', class = class, timeS = timeS })
+  local lead = list[1].timeS
+  local shown, gap = {}, false
+  for i, row in ipairs(list) do
+    row.gapS = row.timeS - lead
+    if i <= M.ROWS_TOP or math.abs(i - pos) <= M.ROWS_NEAR then
+      if gap then shown[#shown + 1] = { gap = true } gap = false end
+      shown[#shown + 1] = row
+    else
+      gap = true
+    end
+  end
+  if gap then shown[#shown + 1] = { gap = true } end
+  return { pos = pos, of = of, classPos = cpos, classOf = cof, rows = shown }
+end
+
+-- Your place overall after the stages done so far, against the National crews with a time on every one of them:
+-- { pos, of, classPos, classOf, gapS (to the leader) } or nil with no field.
+function M.standing(r, board)
+  local done = M.doneStages(r)
+  if #done == 0 or type(board) ~= 'table' then return nil end
+  local acc, n = {}, 0
+  for _, d in ipairs(done) do
+    local rows = M.field(board, d.item.ss)
+    if rows and #rows > 0 then
+      n = n + 1
+      for _, row in ipairs(rows) do
+        local a = acc[row.key] or { n = 0, t = 0, class = row.class }
+        if a.n == n - 1 then a.n, a.t = n, a.t + row.timeS end
+        acc[row.key] = a
+      end
+    end
+  end
+  if n == 0 then return nil end
+  -- (your total over the same passes: the ones with a field)
+  local mine = 0
+  for _, d in ipairs(done) do
+    local rows = M.field(board, d.item.ss)
+    if rows and #rows > 0 then mine = mine + (d.result.timeS or 0) end
+  end
+  local all, cls = {}, {}
+  for _, a in pairs(acc) do
+    if a.n == n then
+      all[#all + 1] = a.t
+      if lower(a.class) == lower(r.class) then cls[#cls + 1] = a.t end
+    end
+  end
+  if #all == 0 then return nil end
+  table.sort(all)
+  local pos, of = placeIn(all, mine)
+  local cpos, cof = placeIn(cls, mine)
+  return { pos = pos, of = of, classPos = cpos, classOf = cof, gapS = mine - math.min(all[1], mine), totalS = mine }
+end
+
+-- A finished rally as it is kept for the Results tab: { totalS, mode, class, car, unclassified, date, passes }.
+function M.finished(r, date)
+  local passes = {}
+  for _, d in ipairs(M.doneStages(r)) do
+    passes[#passes + 1] = { ss = d.item.ss, timeS = d.result.timeS, superRally = d.result.superRally or nil }
+  end
+  return { totalS = math.floor(M.totalS(r) * 10 + 0.5) / 10, mode = r.mode, class = r.class,
+    car = r.car and r.car.name or nil, unclassified = r.unclassified or nil, date = date, passes = passes }
+end
+
+-- Your finished rallies' best, for the Results tab: the classified one with the lowest total (Realistic before
+-- Casual when equal), else the latest unclassified one. nil with none.
+function M.bestFinished(list)
+  local best = nil
+  for _, f in ipairs(list or {}) do
+    if type(f) == 'table' and type(f.totalS) == 'number' then
+      if not best then best = f
+      elseif best.unclassified and not f.unclassified then best = f
+      elseif not f.unclassified and f.totalS < best.totalS - 1e-6 then best = f
+      elseif not f.unclassified and math.abs(f.totalS - best.totalS) <= 1e-6 and f.mode == 'realistic' then best = f
+      end
+    end
+  end
+  return best
+end
+
+-- Where a finished rally places against the real National totals (the crews with a time on every pass it scored):
+-- { pos, of, classPos, classOf } or nil.
+function M.finishedStanding(f, board)
+  if type(f) ~= 'table' or f.unclassified then return nil end
+  local r = { class = f.class, order = {}, results = {} }
+  for _, p in ipairs(f.passes or {}) do
+    r.order[#r.order + 1] = { kind = 'stage', ss = p.ss }
+    r.results[p.ss] = { timeS = p.timeS }
+  end
+  return M.standing(r, board)
+end
+
+return M

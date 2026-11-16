@@ -13,7 +13,7 @@
 "ctx": "tlua",
 "onDown": "if earthRally_main then earthRally_main.backOnRoad() end",
 "title": "Earth Rally: back on the road",
-"desc": "Puts the car back on the stage's road where it got to, facing on along the stage (+10 s on a timed stage with the reset penalty on)."
+"desc": "Puts the car back on the stage's road where it got to, facing on along the stage (+10 s on a timed stage with the reset penalty on). In a full rally it is the rally's recovery: free in Casual; in Realistic it asks, then ends the stage under Super Rally."
 },
 "earthRally_flipUpright": {
 "cat": "gameplay",

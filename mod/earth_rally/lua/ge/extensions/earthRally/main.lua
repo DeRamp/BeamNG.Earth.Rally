@@ -21,6 +21,8 @@ local hudFrame = require('earthRally/hudFrame')
 local versions = require('earthRally/versions')
 local earthMenuFix = require('earthRally/earthMenuFix') -- STOPGAP: remove with BeamNG.Earth's fix (the file says)
 local menuPause = require('earthRally/menuPause')     -- the game paused while the menu page is up (1.6.2, #13)
+local rally = require('earthRally/rally')             -- the full rally (1.7.0): its rules and numbers
+local rallyRun = require('earthRally/rallyRun')       -- ... and driving it in the game
 menuPause.holding = earth.holding                    -- (BeamNG.Earth's own holds: our request waits for them)
 
 local M = {}
@@ -78,6 +80,7 @@ M.navigate = navigate
 
 -- The menu page: opened at view ('rallies', 'rally', 'stage', 'settings'), closed back to driving.
 function M.openMenu(view, eventId, stageId)
+  if not view and rallyRun.active() then view = 'timecard' end   -- (a full rally under way: its time card)
   if view then openAt = { view = view, eventId = eventId, stageId = stageId } end
   menuOpen = navigate(M.ROUTE)
   return menuOpen
@@ -86,9 +89,12 @@ function M.closeMenu()
   menuOpen = false
   return navigate('play')
 end
+-- (the full rally's time card is a view of the menu page: rallyRun opens it after a recovery and from Continue)
+rallyRun.ui.openCard = function() return M.openMenu('timecard') end
 -- Ctrl+Alt+K
 function M.toggleMenu()
   if menuOpen then return M.closeMenu() end
+  if rallyRun.active() then return M.openMenu('timecard') end   -- (a full rally: its time card)
   local r = runner.current()
   if r and r.resultsOpen and r.state == 'finished' then
     return M.openMenu('rally', r.event.id)
@@ -669,6 +675,12 @@ doAction = function(what, eventId, stageId, fromPanel)
     M.scanImports(true)
     return res(true, message)
   elseif what == 'abort' then
+    -- (a Realistic rally's stage is given up with the recovery key, under Super Rally: stopping it here would be a
+    --  free restart)
+    local cur, rr = runner.current(), rallyRun.active()
+    if cur and cur.inRally and rr and rr.mode == 'realistic' and cur.state == 'running' then
+      return res(false, 'In a Realistic rally, give the stage up with the recovery key (Backspace): Super Rally applies.')
+    end
     runner.abort()
     return res(true, 'Run stopped.')
   elseif what == 'recceSave' or what == 'recceSaveAnyway' then
@@ -697,6 +709,11 @@ doAction = function(what, eventId, stageId, fromPanel)
       was and was.stageName or 'the stage') or 'No auto recce is running.')
   end
   if not stage then return res(false, 'That stage is not on this computer any more.') end
+  -- (1.7.0) a full rally under way holds the car: no other stage, recce or teleport until it is quit (its time card)
+  local rr = rallyRun.active()
+  if rr and not rr.done and what ~= 'reset' then
+    return res(false, 'A full rally is under way: quit it from its time card first.')
+  end
   local busy = recce.active() or (runner.current() and runner.state() ~= 'finished' and runner.state() ~= 'failed')
   if busy then return res(false, recce.active() and 'A recce is under way: save or cancel it first.' or
     'A run is under way: stop it first.') end
@@ -814,6 +831,14 @@ end
 -- The results card's buttons: 'next', 'retry', 'menu' (the rally's page), 'close'.
 function M.uiResults(what)
   local r = runner.current()
+  if r and r.inRally then
+    -- (a full rally's card: Continue to the time card, Restart in Casual, Close; the Recover? question's answers)
+    local ok, why
+    if what == 'recover' or what == 'keep' then ok, why = rallyRun.answer(what)
+    else ok, why = rallyRun.resultsAction(what) end
+    if not ok and why then runner.say(tostring(why), 4, 'warning') end
+    return { ok = ok == true, message = why }
+  end
   local eventId = r and r.event and r.event.id
   local ok, why = runner.resultsAction(what)
   if what == 'menu' then M.openMenu('rally', eventId) end
@@ -895,6 +920,8 @@ function M.uiState()
   s.importFolder = importer.folderPath()
   s.lastImport = lastImport
   s.message = message
+  local a = rallyRun.active()
+  s.rallyActive = a and { id = a.eventId, name = a.name, done = a.done or nil } or nil
   return s
 end
 
@@ -910,6 +937,15 @@ function M.uiRally(eventId)
   if not out then return { missing = true, id = eventId } end
   for k, v in pairs(runSummary()) do out[k] = v end
   out.autoLines = autoLinesFor(eventId)
+  -- (1.7.0) the full rally: whether it can be run (an event file), the one saved, your best finished one
+  local e = menu.findEvent(eventId)
+  out.fullRally = rally.canRun(e) or nil
+  local okS, saved = pcall(rallyRun.saved, eventId)
+  out.rallySaved = okS and saved or nil
+  local okF, fin = pcall(rallyRun.resultsFor, eventId)
+  out.rallyFinished = okF and fin or nil
+  local a = rallyRun.active()
+  out.rallyActive = a and { id = a.eventId, name = a.name, done = a.done or nil } or nil
   return out
 end
 
@@ -933,6 +969,58 @@ function M.uiStage(eventId, stageId, pass)
 end
 
 function M.uiSet(key, value) return settings.set(key, value) end
+
+------------------------------------------------------------------------------------------ the full rally (1.7.0)
+
+-- The start screen's data (rallyRun.startInfo).
+function M.uiRallyStart(eventId)
+  local ok, r = pcall(rallyRun.startInfo, eventId)
+  if not ok then log('E', logTag, 'rally start: ' .. tostring(r)) return { missing = true, id = eventId } end
+  return r
+end
+
+-- The time card's data (rallyRun.uiCard), or { none = true } with no rally.
+function M.uiRallyCard()
+  local ok, r = pcall(rallyRun.uiCard)
+  if not ok then log('E', logTag, 'time card: ' .. tostring(r)) return { none = true, error = tostring(r) } end
+  return r or { none = true }
+end
+
+-- The full rally's buttons: start (opts: mode, class, cancelled), resume, go (out of service / to the next start),
+-- quit, abandon. Returns { ok, message, view }.
+function M.uiRallyAction(what, eventId, opts)
+  local function go(ok, why, view)
+    if not ok and why then message = why end
+    return { ok = ok == true, message = why, view = view }
+  end
+  local ok, r = pcall(function()
+    if what == 'start' then
+      if runner.current() and runner.state() ~= 'finished' and runner.state() ~= 'failed' then
+        return go(false, 'A run is under way: stop it first.')
+      end
+      if recce.active() or autoRecce.active() or autoSeq then return go(false, 'A recce is under way: finish it first.') end
+      local okS, why = rallyRun.start(eventId, type(opts) == 'table' and opts or {})
+      return go(okS, why, okS and 'timecard' or nil)
+    elseif what == 'resume' then
+      local okS, why = rallyRun.resume(eventId)
+      return go(okS, why, okS and 'timecard' or nil)
+    elseif what == 'go' then
+      pcall(menuPause.suspend)
+      local okS, why = rallyRun.goNext()
+      if okS then M.closeMenu() end
+      return go(okS, why)
+    elseif what == 'quit' then
+      rallyRun.quit()
+      return go(true, nil, 'rally')
+    elseif what == 'abandon' then
+      rallyRun.abandon(eventId)
+      return go(true, nil)
+    end
+    return go(false, 'unknown rally action ' .. tostring(what))
+  end)
+  if not ok then log('E', logTag, 'rally action ' .. tostring(what) .. ': ' .. tostring(r)) return { ok = false, message = tostring(r) } end
+  return r
+end
 
 ------------------------------------------------------------------------------------------ the HUD's streams
 
@@ -1098,6 +1186,7 @@ M._sendStreams = sendStreams
 ------------------------------------------------------------------------------------------ hooks
 
 function M.onUpdate(dtReal, dtSim)
+  pcall(rallyRun.update, dtReal)
   -- switched off a frame ago: stop running (see onModDeactivated)
   if unloadNext then
     unloadNext = false
@@ -1166,7 +1255,12 @@ function M.onGameplayInteract()
 end
 
 -- Recovery keys (Backspace: back on the road, +10 s on the stage; Shift+Backspace: flip upright).
-function M.backOnRoad() local ok, r = pcall(runner.backOnRoad) return ok and r end
+-- (1.7.0) In a full rally's stage the key is the rally's recovery (rallyRun.recoverKey: free in Casual, the Recover?
+-- question in Realistic).
+function M.backOnRoad()
+  local okR, mine = pcall(rallyRun.recoverKey)
+  if okR and mine then return true end
+  local ok, r = pcall(runner.backOnRoad) return ok and r end
 function M.flipUpright() local ok, r = pcall(runner.flipUpright) return ok and r end
 
 -- A reset by the player (the game's trackVehReset hook: once a press, a held rewind included): +10 s during the timed
@@ -1215,6 +1309,8 @@ function M.onClientEndMission()
   autoSeq = nil
   if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
+  pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
+  pcall(rallyRun.release)
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)
   pcall(earth.reset)
@@ -1245,6 +1341,8 @@ function M.onModDeactivated()
   autoSeq = nil
   if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
+  pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
+  pcall(rallyRun.release)
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)
   pcall(earth.reset)
@@ -1268,6 +1366,8 @@ function M.onExtensionUnloaded()
   autoSeq = nil
   if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
+  pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
+  pcall(rallyRun.release)
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)
   pcall(earth.reset)
@@ -1278,6 +1378,7 @@ function M.onExtensionLoaded()
   --  and BeamNG.Earth's strips given back in case a run was cut short holding them)
   pcall(require('earthRally/props').sweep)
   pcall(earth.holdStrips, false)
+  pcall(rallyRun.release)      -- (a full rally's block on the game's recovery, if a reload cut it short)
   local veh = getPlayerVehicle and getPlayerVehicle(0)
   if veh then pcall(runner._vehCtl, veh, 'off') end
   settings.load()

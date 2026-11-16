@@ -375,6 +375,38 @@ function M.holdOver(name, oldLayout)
   return M.HOLD_OVER[name] == true or name == oldLayout
 end
 
+-- The car keeps its damage across BeamNG.Earth's teleport (1.7.0, the full rally: damage stays with you until
+-- service). Earth sets the car down on the new ground with spawn.safeTeleport(..., resetVehicle = true)
+-- (beamngEarth/core.lua placePlayer, fallGuard), which puts every node back where the car was built: a repair. While
+-- this is on, a safeTeleport of the player's car is made with resetVehicle = false -- the way our own recovery and
+-- the game's flip upright move a car, damage kept. On from the teleport until the stage is placed (stepPlace) or
+-- KEEP_DAMAGE_S at most (a slow world load can hold the set-down for minutes); the game's own function put back after.
+M.KEEP_DAMAGE_S = 300
+local keepWrap = nil      -- { orig, untilT }
+local wallClock = rawget(os, 'clockhp') or os.clock
+function M.keepDamage(on)
+  local sp = rawget(_G, 'spawn')
+  if not on then
+    if keepWrap and sp and sp.safeTeleport == keepWrap.fn then sp.safeTeleport = keepWrap.orig end
+    keepWrap = nil
+    return
+  end
+  if keepWrap or not (sp and type(sp.safeTeleport) == 'function') then
+    if keepWrap then keepWrap.untilT = wallClock() + M.KEEP_DAMAGE_S end
+    return
+  end
+  local orig = sp.safeTeleport
+  local w = { orig = orig, untilT = wallClock() + M.KEEP_DAMAGE_S }
+  w.fn = function(veh, pos, rot, a, b, c, d, resetVehicle, ...)
+    local pv = getPlayerVehicle and getPlayerVehicle(0)
+    if pv and veh and pv == veh and wallClock() < w.untilT then resetVehicle = false end
+    return orig(veh, pos, rot, a, b, c, d, resetVehicle, ...)
+  end
+  sp.safeTeleport = w.fn
+  keepWrap = w
+end
+function M.keepingDamage() return keepWrap ~= nil end
+
 local function carPos()
   local veh = getPlayerVehicle and getPlayerVehicle(0)
   if not veh then return nil end
@@ -384,6 +416,11 @@ end
 
 -- opts.drivenIn: { lat, lon } of the ATC / start the car is being driven up to (the approach below): never a
 -- teleport, and the car is not set down where it arrives (stepPlace).
+-- opts.rally (1.7.0, the full rally: rallyRun.lua): the stage is a pass of a rally in progress. Its time goes to
+-- M.onFinished, not to the stage's own results and boards; recovery is the rally's (no reset penalty); the results
+-- card is the rally's (run.rally, set by rallyRun). opts.ssLabel: the pass's SS label ('SS4').
+-- opts.keepDamage: BeamNG.Earth's teleport sets the car down repaired (its placePlayer resets the vehicle); for a
+-- rally the car keeps its damage across it (M.keepDamage).
 function M.start(event, stage, opts)
   local drivenIn = opts and opts.drivenIn
   -- (Run stage pressed: a Route to start armed for any stage is done with, whether this start goes ahead or not --
@@ -409,6 +446,7 @@ function M.start(event, stage, opts)
   local flatLen = 0
   for i = 2, #latlon do flatLen = flatLen + geo.metres(latlon[i - 1][1], latlon[i - 1][2], latlon[i][1], latlon[i][2]) end
   run = {
+    inRally = (opts and opts.rally) and true or nil,
     event = event, stage = stage, state = 'travel', t = 0, latlon = latlon, latlonLength = flatLen,
     startFlat = startFlat, finishFlat = finishFlat,
     dir = M.RUNTIME_DIR .. event.id .. '__' .. stage.id, id = 'beamng_earth/earthRally/' .. event.id .. '/' .. stage.id,
@@ -427,11 +465,12 @@ function M.start(event, stage, opts)
   -- says its name alone, never a made-up SS number), how many SS the rally has (the itinerary's counted passes, the
   -- map's stages with none) and the next stage (menu.nextStage: the itinerary's running order, else the map's)
   run.ssCount = menu.passCount(event) or #(event.stages or {})
-  run.ssLabel = menu.ssLabel(event, stage.id) or false
+  run.ssLabel = (opts and opts.ssLabel) or menu.ssLabel(event, stage.id) or false
   for i, st in ipairs(event.stages or {}) do
     if st == stage or st.id == stage.id then run.ss = i break end
   end
   local nx, ni = menu.nextStage(event, stage.id)
+  if run.inRally then nx = nil end      -- (the rally's time card says what is next)
   if nx then
     run.nextStage = { id = nx.id, ss = ni, ssLabel = menu.ssLabel(event, nx.id) or false, name = nx.name,
       lengthM = nx.lengthM }
@@ -455,8 +494,9 @@ function M.start(event, stage, opts)
   if drivenIn then
     run.drivenIn, run.droveIn, run.gpsUntilM = drivenIn, drivenIn, M.GPS_HANDOVER_M
   elseif p and geo.metres(p.lat, p.lon, s[1], s[2]) > M.TRAVEL_IF_FARTHER_M then
+    if opts and opts.keepDamage then M.keepDamage(true) end
     local tok, twhy = earth.teleport(s[1], s[2], stage.name .. (run.atc and ' ATC' or ' start'))
-    if not tok then fail('could not go to the start: ' .. tostring(twhy)) return false, twhy end
+    if not tok then M.keepDamage(false) fail('could not go to the start: ' .. tostring(twhy)) return false, twhy end
     run.teleported = true
   end
   say(stage.name .. ': getting ready', 4, 'info', 'Earth Rally')
@@ -1024,6 +1064,7 @@ local function stillAt()
 end
 
 local function stepPlace()
+  M.keepDamage(false)       -- (BeamNG.Earth has set the car down by now: its own resets are its own again)
   local p, veh = carPos()
   if not veh then fail('no car') return end
   setupProps()
@@ -1551,7 +1592,7 @@ local function stepRunning(dtSim)
     local time = run.clock + run.penalty
     local checks = run.checks
     run.bestBefore = events.best(run.event.id, run.stage.id)      -- (the best before this run: the HUD's difference)
-    local best = events.addResult(run.event.id, run.stage.id, { finished = true, timeS = time, stageS = run.clock,
+    local best = run.inRally and run.bestBefore or events.addResult(run.event.id, run.stage.id, { finished = true, timeS = time, stageS = run.clock,
       penaltyS = run.penalty, jumpStart = run.jumpStart == true, lateMinutes = checks.lateMinutes,
       missedAtc = run.missedAtc == true, resets = run.resets or 0, resetPenaltyS = resetPen, line = checks.line,
       lineKey = run.lineKey, lineM = math.floor(run.finishM - run.startM + 0.5), lineStart = run.lineStart,
@@ -1559,6 +1600,10 @@ local function stepRunning(dtSim)
       startAt = M.formatClock(run.startAt), date = os.date('!%Y-%m-%dT%H:%M:%SZ'), checks = checks })
     run.finalTime, run.best = time, best
     run.sinceFinish = 0
+    if run.inRally and M.onFinished then
+      local okF, errF = pcall(M.onFinished, { timeS = time, stageS = run.clock, penaltyS = run.penalty })
+      if not okF then log('E', logTag, 'rally: the finish was not taken: ' .. tostring(errF)) end
+    end
     log('I', logTag, 'run checks: ' .. dumps(checks))
     local title = string.format('%s: %s', run.stage.name, M.formatTime(time))
     local text = (run.bestBefore == nil and 'Your first time on this stage.') or
@@ -1613,6 +1658,7 @@ function M.closeResults()
   if run.state == 'finished' and not run.tidyIn then layoutOff() end
 end
 resultsUpdate = function(dt)
+  if run.inRally then return end    -- (a full rally's card waits for Continue or Close: it is the way on)
   run.resultsT = (run.resultsT or 0) + dt
   if run.resultsT > M.RESULTS_TIMEOUT_S then M.closeResults() return end
   local p = carPos()
@@ -1783,6 +1829,7 @@ end
 -- Everything the run put in the game taken away (the result stays in `run` for the window until it is closed).
 -- (keepLayout: the stage layout left on, for the results card)
 tidy = function(keepLayout)
+  M.keepDamage(false)
   trafficOn()
   earth.originMoved()
   zoneRelease()
@@ -1914,6 +1961,11 @@ end
 -- RESET_DEBOUNCE_S, nor one just after the world's origin moved (BeamNG.Earth moving the car is not the player's).
 function M.onReset(vid)
   if not (run and run.state == 'running') then return false end
+  if run.inRally then
+    -- (the game's own recovery is blocked during a rally, rallyRun.lua; one that still got through is the rally's)
+    if vid ~= nil and M.onRallyReset then pcall(M.onRallyReset) end
+    return false
+  end
   if settings.get('resetPenalty') == false then return false end
   local _, veh = carPos()
   if not veh then return false end
@@ -1958,7 +2010,7 @@ function M.backOnRoad()
   local pos = { x = at.x, y = at.y }
   pos.z = groundNear(pos.x, pos.y, at.z or p.z) + M.RECOVER_UP_M
   if not recoverTo(veh, pos, dir) then return false end
-  if run.state == 'running' then M.onReset(nil) end
+  if run.state == 'running' and not run.inRally then M.onReset(nil) end
   run.offRoute, run.backBearing = false, nil
   return true
 end

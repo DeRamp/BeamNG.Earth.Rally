@@ -34,6 +34,11 @@
           <BngButton :accent="ACCENTS.outlined" @click="action('recceCancel')">Cancel recce</BngButton>
         </template>
       </div>
+      <!-- a full rally under way (1.7.0): the way back to its time card from anywhere in the menu -->
+      <div v-if="st.rallyActive && view !== 'timecard'" class="er-banner">
+        <span>{{ st.rallyActive.name }}: {{ st.rallyActive.done ? "finished" : "rally under way" }}</span>
+        <BngButton :accent="ACCENTS.main" @click="openCard">Time card</BngButton>
+      </div>
       <div v-if="st.earthWhy" class="er-warnline">{{ st.earthWhy }}</div>
       <!-- Something changed under the mod since it was built (versions.lua): the game's version, BeamNG.Earth's
            modding API, or one of the internals it has no API for. Empty in the normal case, so nothing shows. -->
@@ -44,6 +49,10 @@
 
       <!-- ===== a season ===== -->
       <EarthRallySeason v-else-if="view === 'season' && ssn" ref="seasonView" :key="ssn.id" :s="ssn" @rally="openRally" />
+
+      <!-- ===== the full rally (1.7.0): its start screen and its time card ===== -->
+      <EarthRallyFull v-else-if="view === 'rallyStart'" kind="start" :id="sel.eventId" @view="fullView" />
+      <EarthRallyFull v-else-if="view === 'timecard'" kind="card" @view="fullView" />
 
       <!-- ===== a rally ===== -->
       <section v-else-if="view === 'rally' && rly">
@@ -61,6 +70,21 @@
             <div class="er-stat"><div class="er-v">{{ rly.driven }} / {{ rly.stages }}</div><div class="er-l">driven</div></div>
           </div>
         </div>
+        <!-- the full rally (1.7.0): Start, the one saved (Continue), your best finished one; only with an event file -->
+        <div v-if="rly.fullRally" class="er-card er-fullbar">
+          <div class="er-fb-text">
+            <b>Full rally</b>
+            <span v-if="rly.rallyActive && rly.rallyActive.id === rly.id">Under way.</span>
+            <span v-else-if="rly.rallySaved">Saved at {{ rly.rallySaved.at }} · {{ rly.rallySaved.mode === "realistic" ? "Realistic" : "Casual" }} · {{ rly.rallySaved.class }} · {{ rly.rallySaved.done }} {{ rly.rallySaved.done === 1 ? "stage" : "stages" }} done</span>
+            <span v-else>Every stage in order, with service between them.</span>
+            <span v-if="rly.rallyFinished" class="er-muted">Best: {{ longTime(rly.rallyFinished.totalS) }}<template v-if="rly.rallyFinished.pos"> · P{{ rly.rallyFinished.pos }} of {{ rly.rallyFinished.of }} · {{ rly.rallyFinished.class }} {{ ord(rly.rallyFinished.classPos) }}</template><template v-if="rly.rallyFinished.unclassified"> · not classified</template> · {{ rly.rallyFinished.mode === "realistic" ? "Realistic" : "Casual" }}</span>
+          </div>
+          <BngButton v-if="rly.rallyActive && rly.rallyActive.id === rly.id" :accent="ACCENTS.main" @click="openCard">Time card</BngButton>
+          <template v-else>
+            <BngButton v-if="rly.rallySaved" :accent="ACCENTS.main" :disabled="busy" @click="resumeRally(rly.id)">Continue</BngButton>
+            <BngButton :accent="rly.rallySaved ? ACCENTS.outlined : ACCENTS.main" :disabled="busy" @click="openStart(rly.id)">{{ rly.rallySaved ? "Start again" : "Start the rally" }}</BngButton>
+          </template>
+        </div>
         <!-- Results (with real results) and Rules (when the file has any): no tabs at all on a rally with neither -->
         <div v-if="rallyTabs.length > 1 || legend" class="er-under-banner">
           <div v-if="rallyTabs.length > 1" class="er-tabs">
@@ -69,6 +93,9 @@
           <div v-if="legend && curTab === 'stages'" class="er-legend">
             <template v-if="rly.anyCancelled"><s>{{ cancelledSs }}</s> pass cancelled on the day</template><template v-if="rly.anyCancelled && rly.hasBoard"> · </template><template v-if="rly.hasBoard"><b>Place</b>: your best against the real field</template>
           </div>
+        </div>
+        <div v-if="curTab === 'results' && rly.rallyFinished" class="er-card er-yourfull">
+          <b>Your full rally</b> · {{ longTime(rly.rallyFinished.totalS) }}<template v-if="rly.rallyFinished.pos"> · P{{ rly.rallyFinished.pos }} of {{ rly.rallyFinished.of }} National · {{ rly.rallyFinished.class }} {{ ord(rly.rallyFinished.classPos) }} of {{ rly.rallyFinished.classOf }}</template><template v-if="rly.rallyFinished.unclassified"> · not classified</template> · {{ rly.rallyFinished.mode === "realistic" ? "Realistic" : "Casual" }}<template v-if="rly.rallyFinished.car"> · {{ rly.rallyFinished.car }}</template>
         </div>
         <EarthRallyResults v-if="curTab === 'results'" :r="rly.results" />
         <div v-else-if="curTab === 'rules'" class="er-card er-rules">
@@ -301,10 +328,11 @@ import EarthRallySeason from "./EarthRallySeason.vue"
 import EarthRallyPic from "./EarthRallyPic.vue"
 import EarthRallyBoard from "./EarthRallyBoard.vue"
 import EarthRallyResults from "./EarthRallyResults.vue"
+import EarthRallyFull from "./EarthRallyFull.vue"
 import {
   state, season, rally, stage, busyMsg, action as luaAction, refreshState, takeOpenAt, loadSeason, loadRally, loadStage,
-  closeMenu, lastPlace,
-  arr, units, len, lenNum, riseNum, riseUnit, time, when, ord, days, ssName, STATUS, AUTO_OUTCOME, RUN_WORDS,
+  closeMenu, lastPlace, loadRallyStart, loadRallyCard, rallyAction,
+  arr, units, len, lenNum, riseNum, riseUnit, time, longTime, when, ord, days, ssName, STATUS, AUTO_OUTCOME, RUN_WORDS,
 } from "./store.js"
 
 useUINavScope("earthRally")   // (the controller's events fire from inside bng-ui-scope="earthRally": the page)
@@ -368,6 +396,12 @@ function rowEnter(e, s) { if (e.target === e.currentTarget) openStage(rly.value.
 // Rallies > Season > Rally > Stage: { label, go } each, go (a way back) on all but the last
 const crumbs = computed(() => {
   if (view.value === "settings") return [{ label: "Settings" }]
+  if (view.value === "timecard") return [{ label: "Rallies", go: () => go("rallies") }, { label: "Time card" }]
+  if (view.value === "rallyStart") {
+    return [{ label: "Rallies", go: () => go("rallies") },
+      { label: (rly.value && rly.value.name) || "Rally", go: () => openRally(sel.value.eventId, false) },
+      { label: "Start the rally" }]
+  }
   const c = [{ label: "Rallies", go: () => go("rallies") }]
   const seasonCrumb = s => ({ label: s.name, go: () => openSeason(s.id) })
   if (view.value === "season") c.push({ label: (ssn.value && ssn.value.name) || "" })
@@ -534,6 +568,7 @@ function resume(at) {
     if (at.rallyTab) rallyTab.value = at.rallyTab
   } else if (at.view === "season" && s.seasonId) openSeason(s.seasonId)
   else if (at.view === "settings") go("settings")
+  else if (at.view === "timecard") openCard()
   else return
   // the season the rally or stage was reached through, for Back and the crumbs
   if (s.seasonId) sel.value = { ...sel.value, seasonId: s.seasonId }
@@ -604,7 +639,33 @@ function askReset(eventId, stageId) {
   openStage(eventId, stageId)
   confirmReset.value = true
 }
+// ---- the full rally (1.7.0)
+function openStart(id) {
+  sel.value = { ...sel.value, eventId: id }
+  loadRallyStart(id)
+  go("rallyStart")
+}
+function openCard() {
+  loadRallyCard()
+  go("timecard")
+}
+function resumeRally(id) {
+  rallyAction("resume", id, null, r => { if (r.ok) openCard() })
+}
+// (the full rally's pages asking for another: the time card after Start, the rally's page after Quit)
+function fullView(v, id) {
+  if (v === "timecard") openCard()
+  else if (v === "rally") openRally(id || sel.value.eventId, false)
+  else go(v)
+}
 function back() {
+  if (view.value === "rallyStart") { openRally(sel.value.eventId, false); return }
+  if (view.value === "timecard") {
+    const id = rallyCardId()
+    if (id) openRally(id, false)
+    else go("rallies")
+    return
+  }
   if (view.value === "stage") {
     const single = stg.value ? stg.value.single : (rly.value && rly.value.single)
     if (single) go("rallies")
@@ -626,8 +687,13 @@ function action(what, eventId, stageId) {
 // the poll: the state every second, the page's own data every two
 let timer = null
 let tick = 0
+function rallyCardId() {
+  const a = st.value.rallyActive
+  return a ? a.id : null
+}
 function poll() {
   refreshState()
+  if (view.value === "timecard") loadRallyCard()
   if (++tick % 2) return
   if (view.value === "season" && sel.value.seasonId) loadSeason(sel.value.seasonId)
   if (view.value === "rally" && sel.value.eventId) loadRally(sel.value.eventId)
@@ -638,7 +704,8 @@ onMounted(() => {
   // (opened at a page: the results card's Rally menu, a pause-menu rally)
   refreshState()
   takeOpenAt(at => {
-    if (at && at.view === "stage" && at.eventId && at.stageId) openStage(at.eventId, at.stageId)
+    if (at && at.view === "timecard") openCard()
+    else if (at && at.view === "stage" && at.eventId && at.stageId) openStage(at.eventId, at.stageId)
     else if (at && at.view === "rally" && at.eventId) openRally(at.eventId)
     else if (at && at.view === "season" && at.eventId) openSeason(at.eventId)
     else if (at && at.view === "settings") go("settings")
@@ -826,5 +893,8 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .er-run { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; padding: 9px 0; border-top: 1px solid rgba(255, 255, 255, 0.07); font-size: 17px;
   .er-pen { color: #ffd36b; text-align: right; } .er-clean { color: #6fd39a; text-align: right; } }
 
+.er-fullbar { display: flex; align-items: center; gap: 16px; padding: 14px 20px; margin-bottom: 14px; border-left: 4px solid var(--er-orange);
+  .er-fb-text { display: flex; flex-direction: column; gap: 2px; margin-right: auto; font-size: 17px; b { font-size: 19px; } } }
+.er-yourfull { padding: 14px 20px; margin-bottom: 14px; font-size: 18px; border-left: 4px solid var(--er-orange); }
 .er-settings-page { display: grid; grid-template-columns: 1.6fr 1fr; gap: 28px; align-items: start; }
 </style>
