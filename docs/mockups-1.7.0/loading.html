@@ -97,6 +97,7 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
 .world .wbar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 7px; background: var(--blue); }
 .world .wbar i.full { background: var(--green); }
 .world .wbar em { position: absolute; left: 60%; top: -6px; bottom: -6px; width: 3px; background: #fff; border-radius: 2px; }
+.world { padding-bottom: 30px; }
 .world .wbar u { position: absolute; left: 60%; top: 20px; transform: translateX(-50%); text-decoration: none; font-size: 14px; color: #fff; white-space: nowrap; }
 .world .ws { margin-top: 26px; color: var(--muted); font-size: 15px; }
 .sett { width: 1240px; padding: 34px 44px; }
@@ -154,7 +155,7 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
           <li><span class="dot"></span>The world around you: at least 60%</li>
           <li><span class="dot"></span>The time card</li>
         </ul>
-        <div class="world"><div class="wt"><b>The world around you</b><span>0% loaded · needs at least 60%</span></div><div class="wbar"><i class="" style="width:0%"></i><em></em><u>60%</u></div><div class="ws">The last step. The menu stays up until BeamNG.Earth has loaded at least 60% of the world around the car (set in Settings).</div></div>
+        <div class="world"><div class="wt"><b>World</b><span>0%</span></div><div class="wbar"><i class="" style="width:0%"></i><em></em><u>60%</u></div></div>
         <div class="tip">Damage is repaired at service. The game saves here.</div>
       </div>
 
@@ -170,7 +171,7 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
           <li><span class="dot"></span>Your car at the ATC</li>
           <li><span class="dot"></span>The world around you: at least 60%</li>
         </ul>
-        <div class="world"><div class="wt"><b>The world around you</b><span>0% loaded · needs at least 60%</span></div><div class="wbar"><i class="" style="width:0%"></i><em></em><u>60%</u></div><div class="ws">The last step. The menu stays up until BeamNG.Earth has loaded at least 60% of the world around the car (set in Settings).</div></div>
+        <div class="world"><div class="wt"><b>World</b><span>0%</span></div><div class="wbar"><i class="" style="width:0%"></i><em></em><u>60%</u></div></div>
         <div class="tip">The same panel for Drive, Go to start, Recce, Retry, Next stage and a Casual restart.</div>
       </div>
 
@@ -207,7 +208,7 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
             <li><span class="dot"></span>Start control ready</li>
             <li class="now"><span class="dot"></span>The world around you: at least 60%</li>
           </ul>
-          <div data-m="atcLoad"><div class="world"><div class="wt"><b>The world around you</b><span>41% loaded · needs at least 60%</span></div><div class="wbar"><i class="" style="width:41%"></i><em></em><u>60%</u></div><div class="ws">The last step. The menu stays up until BeamNG.Earth has loaded at least 60% of the world around the car (set in Settings).</div></div></div>
+          <div data-m="atcLoad"><div class="world"><div class="wt"><b>World</b><span>41%</span></div><div class="wbar"><i class="" style="width:41%"></i><em></em><u>60%</u></div></div></div>
           <ul class="steps" data-m="atcReady">
             <li class="done"><span class="dot">✓</span>Map at the start</li>
             <li class="done"><span class="dot">✓</span>Line, pacenotes, controls</li>
@@ -215,7 +216,7 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
             <li class="done"><span class="dot">✓</span>Start control ready</li>
             <li class="done"><span class="dot">✓</span>The world around you: at least 60%</li>
           </ul>
-          <div data-m="atcReady"><div class="world"><div class="wt"><b>The world around you</b><span>73% loaded · ready</span></div><div class="wbar"><i class="full" style="width:73%"></i><em></em><u>60%</u></div><div class="ws">Ready to drive.</div></div></div>
+          <div data-m="atcReady"><div class="world"><div class="wt"><b>World</b><span style="color:var(--green)">Ready to drive</span></div><div class="wbar"><i class="full" style="width:73%"></i><em></em><u>60%</u></div></div></div>
           <div class="btn big off" data-m="atcLoad">Loading the stage...</div>
           <div class="btn big" data-m="atcReady">Continue</div>
           <div class="hint">Time card: <span style="color:#fff">X</span> · leave the rally from there</div>
