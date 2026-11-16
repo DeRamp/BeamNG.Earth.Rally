@@ -26,8 +26,9 @@ BeamNG.drive 0.40.5 mod (Lua, `mod/earth_rally/`) that runs real rally stages on
   README, wiki and posts carry no version number: they say alpha.
 - Work on a branch or worktree branched from `main`. `v1.2.0`, `v1.1.0`, `auto-test` are history only.
 - **Only the `maintainer` session changes `main`.** It reviews, tests and merges pull requests. To land work, run
-  `/merge-request`: it opens a PR and messages the maintainer. The owner starts the maintainer with
-  `powershell -ExecutionPolicy Bypass -File tools\maintainer.ps1`. A hook (`.claude/hooks/guard_main.py`) blocks
+  `/merge-request`: it opens a PR and messages the maintainer, starting it first if it is not running
+  (`powershell -ExecutionPolicy Bypass -File tools/maintainer.ps1`, a background session; `claude agents` lists it,
+  `claude attach <id>` talks to it). A hook (`.claude/hooks/guard_main.py`) blocks
   merges, commits and pushes to `main` from every other session. The owner can still merge by hand on GitHub.
 - Release = tag `vX.Y.Z-alpha` on `main` + GitHub pre-release with `dist/earth_rally-X.Y.Z-alpha.zip`. The owner runs
   `/release` in the maintainer session.
