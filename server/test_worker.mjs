@@ -1,30 +1,11 @@
 // Offline test of the stats Worker: D1 stood in by Node's built-in SQLite (Node 22.5+), no install needed.
 //   node server/test_worker.mjs
-import { DatabaseSync } from "node:sqlite"
-import { readFileSync } from "node:fs"
 import assert from "node:assert/strict"
+import { makeDb } from "./d1shim.mjs"
 
 const here = new URL(".", import.meta.url)
-const db = new DatabaseSync(":memory:")
-db.exec(readFileSync(new URL("schema.sql", here), "utf8"))
-
-// D1's surface as worker.js uses it: prepare().bind().first()/all()/run(), batch()
-class Stmt {
-  constructor(sql, args = []) { this.sql = sql; this.args = args }
-  bind(...a) { return new Stmt(this.sql, a) }
-  exec() {
-    const s = db.prepare(this.sql)
-    const named = this.sql.includes("?1")
-    const args = named ? Object.fromEntries(this.args.map((v, i) => [String(i + 1), v])) : this.args
-    if (/^\s*(SELECT|WITH)/i.test(this.sql)) return { results: named ? s.all(args) : s.all(...args) }
-    named ? s.run(args) : s.run(...args)
-    return { results: [] }
-  }
-  async first() { return this.exec().results[0] }
-  async all() { return this.exec() }
-  async run() { return this.exec() }
-}
-const env = { DB: { prepare: sql => new Stmt(sql), batch: async list => list.map(s => s.exec()) }, DASHBOARD_KEY: "k".repeat(32) }
+const { db, D1 } = makeDb()
+const env = { DB: D1, DASHBOARD_KEY: "k".repeat(32) }
 globalThis.caches = { default: { match: async () => null, put: async () => {} } }
 globalThis.fetch = async () => new Response(JSON.stringify([{ tag_name: "v1.6.2-alpha", assets: [{ download_count: 12 }] }]))
 const ctx = { waitUntil() {} }
@@ -70,6 +51,23 @@ assert.equal(s.stages[0].runs, 2)
 assert.equal(s.stages[0].median_s, 410)
 assert.equal(s.errors[0].code, "menu_action_drive")
 assert.equal(s.downloads[0].downloads, 12)
+
+assert.equal(s.errors[0].first_ever, day)
+assert.equal(s.errors[0].first_code, day)
+
+// the dashboard page: served without the key (it asks for it), carries no data, https only off localhost
+r = await worker.fetch(new Request("http://localhost/dashboard"), env, ctx)
+assert.equal(r.status, 200)
+assert.match(r.headers.get("content-type"), /text\/html/)
+assert.match(r.headers.get("content-security-policy"), /frame-ancestors 'none'/)
+const page = await r.text()
+assert.ok(page.includes("/api/summary") && page.includes("function esc("))
+assert.ok(!page.includes(env.DASHBOARD_KEY) && !page.includes("ARA 2026"), "no key, no data in the page")
+r = await worker.fetch(new Request("http://stats.example.workers.dev/dashboard"), env, ctx)
+assert.equal(r.status, 301)
+assert.equal(r.headers.get("location"), "https://stats.example.workers.dev/dashboard")
+// the page's own script parses (a stray backtick or dollar-brace in String.raw would break it)
+new Function(page.slice(page.indexOf("<script>") + 8, page.lastIndexOf("</script>")))
 
 // no delete route any more (no install number to delete by)
 assert.equal((await post("/v1/delete", { session: id })).status, 404)

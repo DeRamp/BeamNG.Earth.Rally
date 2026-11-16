@@ -1,7 +1,7 @@
 # Earth Rally stats server
 
 A Cloudflare Worker with a D1 database, on the free plan. It takes the mod's anonymous stats and answers the
-dashboard. Code: `src/worker.js`. Tables: `schema.sql`. Privacy: `../PRIVACY.md`.
+dashboard. Code: `src/worker.js`, the dashboard page `src/dashboard.js`. Tables: `schema.sql`. Privacy: `../PRIVACY.md`.
 
 ## Set it up (owner, once, about 15 minutes)
 
@@ -23,6 +23,15 @@ Run these from this `server` folder. Node is already installed on the desktop.
    the build is made again.
 
 Until step 8, the mod still asks the question and keeps stats on the player's PC, but sends nothing.
+
+## Your dashboard
+
+Open `https://earth-rally-stats.<your-subdomain>.workers.dev/dashboard` and type the DASHBOARD_KEY from step 5. The
+browser remembers it; **forget key** at the top right clears it. Bookmark the page. It is empty until players send
+stats.
+
+**See it before setting anything up:** `node preview.mjs`, then open http://localhost:8787/dashboard. It runs the
+same page on made-up data, nothing deployed. Ctrl+C stops it.
 
 ## Optional: a rate limit
 

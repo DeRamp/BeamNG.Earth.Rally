@@ -3,11 +3,14 @@
 //
 //   POST /v1/events   { events: [...] }   from the mod (stats.lua), at most MAX_EVENTS a message
 //   GET  /api/summary?days=30             the dashboard's numbers; needs  Authorization: Bearer <DASHBOARD_KEY>
+//   GET  /dashboard                       the owner's page (src/dashboard.js); asks for the key, https only
 //   GET  /                                one line saying what this is
 //
 // Each event carries a session number: random, made new each time the game starts, never reused, so there
 // is no install to link sessions by, and nothing to delete by. Never stored: the IP address (never read here),
 // headers, anything not in EVENTS.
+
+import { DASHBOARD_HTML } from "./dashboard.js"
 
 const MAX_BODY = 32 * 1024
 const MAX_EVENTS = 50
@@ -15,6 +18,7 @@ const MAX_PER_SESSION = 1000
 const KEEP_DAYS = 365
 const REPO = "DeRamp/BeamNG.Earth.Rally"
 const PRIVACY = `https://github.com/${REPO}/blob/main/PRIVACY.md`
+const LOCAL = new Set(["localhost", "127.0.0.1"])
 
 // event -> its own fields (the common ones: session, mod, game, earth, day)
 const EVENTS = {
@@ -136,7 +140,10 @@ async function summary(url, env, ctx) {
     q(`SELECT mod AS v, COUNT(DISTINCT session) AS n FROM events WHERE day >= ? GROUP BY mod ORDER BY n DESC`, since),
     q(`SELECT game AS v, COUNT(DISTINCT session) AS n FROM events WHERE day >= ? GROUP BY game ORDER BY n DESC`, since),
     q(`SELECT earth AS v, COUNT(DISTINCT session) AS n FROM events WHERE day >= ? GROUP BY earth ORDER BY n DESC`, since),
-    q(`SELECT code, module, mod, COUNT(*) AS times, COUNT(DISTINCT session) AS sessions, MIN(day) AS first, MAX(day) AS last
+    q(`SELECT code, module, mod, COUNT(*) AS times, COUNT(DISTINCT session) AS sessions, MIN(day) AS first, MAX(day) AS last,
+         (SELECT MIN(day) FROM events e2 WHERE e2.event = 'error' AND e2.code IS events.code) AS first_code,
+         (SELECT MIN(day) FROM events e2 WHERE e2.event = 'error' AND e2.code IS events.code
+            AND e2.module IS events.module AND e2.mod IS events.mod) AS first_ever
          FROM events WHERE event = 'error' AND day >= ? GROUP BY code, module, mod ORDER BY sessions DESC LIMIT 100`, since),
   ])
   const byStage = {}
@@ -177,6 +184,19 @@ export default {
       if (req.method === "GET" && url.pathname === "/api/summary") {
         if (!authorised(req, env)) return empty(401)
         return await summary(url, env, ctx)
+      }
+      if (req.method === "GET" && url.pathname === "/dashboard") {
+        // (the key is typed here: never over plain HTTP, which only the mod's own posts need)
+        if (url.protocol === "http:" && !LOCAL.has(url.hostname)) {
+          url.protocol = "https:"
+          return Response.redirect(url.toString(), 301)
+        }
+        return new Response(DASHBOARD_HTML, { headers: {
+          "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex",
+          "referrer-policy": "no-referrer", "x-frame-options": "DENY",
+          "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; " +
+            "connect-src 'self'; img-src 'self' data:; form-action 'none'; frame-ancestors 'none'; base-uri 'none'",
+        } })
       }
       if (req.method === "GET" && url.pathname === "/") {
         return new Response(`Earth Rally anonymous stats. What is kept and why: ${PRIVACY}\n`, { headers: { "content-type": "text/plain" } })
