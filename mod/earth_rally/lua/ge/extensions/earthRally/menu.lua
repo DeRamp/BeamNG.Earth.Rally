@@ -3,6 +3,7 @@
 -- seconds, dates as written; units and wording are the page's). No game calls.
 local events = require('earthRally/events')
 local boards = require('earthRally/boards')
+local rally = require('earthRally/rally')    -- (rally.canRun: an event file, so a full rally; rally.lua requires nothing)
 
 local M = {}
 
@@ -645,6 +646,40 @@ function M.home(reports)
       out.rallies[#out.rallies + 1] = c
     end
   end
+  return out
+end
+
+-- Drive rally (1.7.0, #39): every rally that can run as a full rally (an event file: rally.canRun), a season's
+-- rounds too, oldest first by date, as M.rallyCard plus media, dates, place, season = { id, name, round } | nil,
+-- board = true | nil (real results), saved = rallyRun.saved | nil, finished = rallyRun.resultsFor | nil; and
+-- active = the rally under way { id, name, done } | nil. The page asks for it as it opens Home or Drive rally, not
+-- every second: it reads each rally's save file. rallyRun is not required here (it requires this file): it is taken
+-- from package.loaded, so with no rallyRun loaded (the tests) there is just no saved / finished / active.
+function M.drive()
+  local rr = package.loaded['earthRally/rallyRun']
+  local out = { rallies = {} }
+  for _, e in ipairs(events.list()) do
+    if type(e.retired) ~= 'table' and rally.canRun(e) then
+      local c = M.rallyCard(e)
+      c.media, c.dates, c.place = mediaOf(e), datesOf(e.dates), e.place
+      c.season = seasonRef(seasonOfEvent(e), e)
+      c.board = e.boards ~= nil or nil
+      if type(rr) == 'table' then
+        local okS, saved = pcall(rr.saved, e.id)
+        c.saved = okS and saved or nil
+        local okF, fin = pcall(rr.resultsFor, e.id)
+        c.finished = okF and fin or nil
+      end
+      out.rallies[#out.rallies + 1] = c
+    end
+  end
+  local key = function(c) return (c.dates and c.dates.from) or '~' end   -- (no dates: after the dated ones)
+  table.sort(out.rallies, function(a, b)
+    if key(a) ~= key(b) then return key(a) < key(b) end
+    return tostring(a.name) < tostring(b.name)
+  end)
+  local a = type(rr) == 'table' and rr.active and rr.active() or nil
+  out.active = a and { id = a.eventId, name = a.name, done = a.done or nil } or nil
   return out
 end
 

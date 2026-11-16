@@ -84,6 +84,16 @@ export function rallyAction(what, id, opts, cb) {
   })
 }
 
+// Home and Drive rally (1.7.0, #39): the rallies that can run as a full rally, each with its saved and finished full
+// rally, and the one under way (menu.lua, M.drive). Asked for as those pages open, not polled: it reads save files.
+export const drive = ref(null)
+export function loadDrive(cb) {
+  engineLua("earthRally_main and require('earthRally/menu').drive() or nil", r => {
+    if (r) drive.value = r
+    if (cb) cb(r)
+  })
+}
+
 export function setSetting(key, value) {
   engineLua(`earthRally_main and earthRally_main.uiSet(${q(key)}, ${luaValue(value)}) or nil`, r => {
     if (r && r.settings && state.value.settings) state.value.settings.settings = r.settings

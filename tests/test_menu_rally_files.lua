@@ -317,6 +317,20 @@ do
   local seen = false
   for _, c in ipairs(menu.home().rallies) do if c.id == 'retired' then seen = true end end
   T.check(not seen and menu.rally('retired') ~= nil, 'a retired round: off Home, its page and times still there')
+  -- Drive rally (#39): only the rallies with an event file (rallyStops and an itinerary), dated ones first; no rallyRun loaded here, so nothing saved
+  files['/earthRally/events/fr.json'] = { format = 1, id = 'fr', name = 'Full Rally', stages = { stage('f1', 'Fig', 4) },
+    dates = { from = '2030-05-01', to = '2030-05-02' },
+    itinerary = { { ss = 'SS1', stage = 'f1', run = 1, km = 4, cancelled = false } }, rallyStops = {} }
+  files['/earthRally/events/fr0.json'] = { format = 1, id = 'fr0', name = 'Undated Rally', stages = { stage('g1', 'Gum', 2) },
+    itinerary = { { ss = 'SS1', stage = 'g1', run = 1, km = 2, cancelled = false } }, rallyStops = {} }
+  events.forget()
+  events.list(true)
+  local dv = menu.drive()
+  local ids = {}
+  for _, c in ipairs(dv.rallies) do ids[#ids + 1] = c.id end
+  T.check(table.concat(ids, ',') == 'fr,fr0' and dv.rallies[1].stages == 1 and dv.rallies[1].dates
+    and dv.rallies[1].saved == nil and dv.active == nil,
+    'drive: only rallies with an event file, dated first (' .. table.concat(ids, ',') .. ')')
   T.check(r.media.cover == '/earthRally/media/mm/cover.png?v=ab12cd34'
     and menu.mediaUrl('/x.png', 'abc') == '/x.png?v=abc', 'media: cache-busted with the pack\'s fingerprint')
 end

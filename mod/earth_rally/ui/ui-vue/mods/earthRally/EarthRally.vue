@@ -1,22 +1,23 @@
 <template>
   <!-- Earth Rally's menu page (docs/mockups-1.2.0/menu.html, redrawn for rally files in
        docs/mockups-rally-files/menu.html): a route of its own ("earthRally", index.js), opened by Ctrl+Alt+K, the
-       pause menu's Earth Rally tab, or the results card. Five views: Rallies (EarthRallyHome.vue), a season
-       (EarthRallySeason.vue), a rally's stages, a stage, Settings. Rallies > Season > Rally > Stage in the crumbs,
+       pause menu's Earth Rally tab, or the results card. It opens on Home (EarthRallyHomeMenu.vue, 1.7.0 #39: Drive
+       rally, EarthRallyPick.vue; Drive stage, the Rallies list; Settings). Views: Rallies (EarthRallyHome.vue), a season
+       (EarthRallySeason.vue), a rally's stages, a stage, Settings. Home > Drive stage > Season > Rally > Stage in the crumbs,
        each one a way back. Data and buttons: earthRally_main (store.js). -->
   <!-- a controller (1.6.2, #14), as the game's own screens take one (its Logbook, OthersView): the d-pad / stick moves
        between everything marked bng-nav-item and the buttons, A presses, B goes back a page (and closes the menu from
-       Rallies, as the Back / Close at the top does), Start closes the menu, the bumpers switch a rally's or a season's tabs, the
+       Home, as the Back / Close at the top does), Start closes the menu, the bumpers switch a rally's or a season's tabs, the
        right stick scrolls. The first row or card of a page takes the focus when it comes up with a controller in use
        (v-bng-ui-nav-focus; never for a mouse). -->
   <div class="er-page" bng-ui-scope="earthRally" v-bng-on-ui-nav:back="back" v-bng-on-ui-nav:menu="closeMenu"
-    v-bng-on-ui-nav:tab_l="tabPrev" v-bng-on-ui-nav:tab_r="tabNext">
+    v-bng-on-ui-nav:tab_l="tabPrev" v-bng-on-ui-nav:tab_r="tabNext" v-bng-on-ui-nav:context="contextPress">
     <div class="er-topbar">
-      <div class="er-back" tabindex="0" bng-nav-item @click="back" @keydown.enter="back"><span>‹</span> {{ view === "rallies" ? "Close" : "Back" }}</div>
+      <div class="er-back" tabindex="0" bng-nav-item @click="back" @keydown.enter="back"><span>‹</span> {{ view === "home" ? "Close" : "Back" }}</div>
       <div class="er-title"><span class="er-accent">Earth</span> Rally</div>
       <div class="er-crumbs"><span v-for="(c, i) in crumbs" :key="i" :class="{ 'er-cgo': c.go }" @click="c.go && c.go()">{{ c.label }}</span></div>
       <div class="er-right">
-        <BngButton v-if="view !== 'settings'" :accent="ACCENTS.outlined" @click="go('settings')">Settings</BngButton>
+        <BngButton v-if="view !== 'settings' && view !== 'home'" :accent="ACCENTS.outlined" @click="go('settings')">Settings</BngButton>
       </div>
     </div>
 
@@ -35,7 +36,8 @@
         </template>
       </div>
       <!-- a full rally under way (1.7.0): the way back to its time card from anywhere in the menu -->
-      <div v-if="st.rallyActive && view !== 'timecard'" class="er-banner">
+      <!-- (not on Home, Drive rally or Drive stage: Home's Continue strip says it, #39) -->
+      <div v-if="st.rallyActive && !['timecard', 'home', 'pick', 'rallies'].includes(view)" class="er-banner">
         <span>{{ st.rallyActive.name }}: {{ st.rallyActive.done ? "finished" : "rally under way" }}</span>
         <BngButton :accent="ACCENTS.main" @click="openCard">Time card</BngButton>
       </div>
@@ -43,9 +45,17 @@
       <!-- Something changed under the mod since it was built (versions.lua): the game's version, BeamNG.Earth's
            modding API, or one of the internals it has no API for. Empty in the normal case, so nothing shows. -->
       <div v-for="(n, i) in arr(st.versionNotes)" :key="'vn' + i" class="er-warnline">{{ n }}</div>
+      <!-- (Home and Drive rally: why Continue did not go, e.g. a recce under way) -->
+      <div v-if="busyMsg && (view === 'home' || view === 'pick')" class="er-warnline">{{ busyMsg }}</div>
 
-      <!-- ===== Rallies ===== -->
-      <EarthRallyHome v-if="view === 'rallies'" @season="openSeason" @rally="openRally" @stage="openStage" @action="action" />
+      <!-- ===== Home and Drive rally (1.7.0, #39): where the menu opens, and the full rallies to pick from ===== -->
+      <EarthRallyHomeMenu v-if="view === 'home'" :busy="busy" @pick="openPick" @stages="go('rallies')" @settings="go('settings')"
+        @continue="resumeRally" @card="openCard" />
+      <EarthRallyPick v-else-if="view === 'pick'" ref="pickView" :busy="busy" @start="id => openStart(id, 'pick')"
+        @continue="resumeRally" @card="openCard" @results="openResults" />
+
+      <!-- ===== Rallies (Drive stage) ===== -->
+      <EarthRallyHome v-else-if="view === 'rallies'" @season="openSeason" @rally="openRally" @stage="openStage" @action="action" />
 
       <!-- ===== a season ===== -->
       <EarthRallySeason v-else-if="view === 'season' && ssn" ref="seasonView" :key="ssn.id" :s="ssn" @rally="openRally" />
@@ -317,10 +327,7 @@
       <div v-else class="er-muted">Loading...</div>
     </div>
 
-    <div class="er-infobar">
-      <span><span class="er-k">Esc</span>Back to the game</span>
-      <span><span class="er-k">Ctrl+Alt+K</span>Open / close Earth Rally</span>
-    </div>
+    <EarthRallyPrompts :top="view === 'home'" :results="view === 'pick' && !!(pickView && pickView.hasResults)" />
   </div>
 </template>
 
@@ -331,6 +338,9 @@ import { vBngOnUiNav, vBngUiNavScroll, vBngUiNavFocus } from "@/common/directive
 import { useUINavScope } from "@/services/uiNav"
 import EarthRallySettings from "./EarthRallySettings.vue"
 import EarthRallyHome from "./EarthRallyHome.vue"
+import EarthRallyHomeMenu from "./EarthRallyHomeMenu.vue"
+import EarthRallyPick from "./EarthRallyPick.vue"
+import EarthRallyPrompts from "./EarthRallyPrompts.vue"
 import EarthRallySeason from "./EarthRallySeason.vue"
 import EarthRallyPic from "./EarthRallyPic.vue"
 import EarthRallyBoard from "./EarthRallyBoard.vue"
@@ -338,13 +348,13 @@ import EarthRallyResults from "./EarthRallyResults.vue"
 import EarthRallyFull from "./EarthRallyFull.vue"
 import {
   state, season, rally, stage, busyMsg, action as luaAction, refreshState, takeOpenAt, loadSeason, loadRally, loadStage,
-  closeMenu, lastPlace, loadRallyStart, loadRallyCard, rallyAction,
+  closeMenu, lastPlace, loadRallyStart, loadRallyCard, rallyAction, loadDrive,
   arr, units, len, lenNum, riseNum, riseUnit, time, longTime, when, ord, days, ssName, STATUS, AUTO_OUTCOME, RUN_WORDS,
 } from "./store.js"
 
 useUINavScope("earthRally")   // (the controller's events fire from inside bng-ui-scope="earthRally": the page)
 
-const view = ref("rallies")
+const view = ref("home")
 // pass: the stage leaderboard's pass the player picked (null: the one they place best on, chosen in Lua)
 const sel = ref({ seasonId: null, eventId: null, stageId: null, pass: null })
 const st = computed(() => state.value || {})
@@ -400,16 +410,21 @@ const outcomeCls = kind => AUTO_OUTCOME[kind] || "flat"
 // would stop the auto recce and open the stage in the one keypress (the keyboard twin of needing @click.stop).
 function rowEnter(e, s) { if (e.target === e.currentTarget) openStage(rly.value.id, s.id) }
 
-// Rallies > Season > Rally > Stage: { label, go } each, go (a way back) on all but the last
+// Home > Drive stage > Season > Rally > Stage, Home > Drive rally > Start the rally: { label, go } each, go (a way
+// back) on all but the last (#39)
 const crumbs = computed(() => {
-  if (view.value === "settings") return [{ label: "Settings" }]
-  if (view.value === "timecard") return [{ label: "Rallies", go: () => go("rallies") }, { label: "Time card" }]
+  const home = { label: "Home", go: () => openHome() }
+  if (view.value === "home") return [{ label: "Home" }]
+  if (view.value === "pick") return [home, { label: "Drive rally" }]
+  if (view.value === "settings") return [home, { label: "Settings" }]
+  if (view.value === "timecard") return [home, { label: "Time card" }]
   if (view.value === "rallyStart") {
-    return [{ label: "Rallies", go: () => go("rallies") },
+    if (startFrom.value === "pick") return [home, { label: "Drive rally", go: () => openPick() }, { label: "Start the rally" }]
+    return [home, { label: "Drive stage", go: () => go("rallies") },
       { label: (rly.value && rly.value.name) || "Rally", go: () => openRally(sel.value.eventId, false) },
       { label: "Start the rally" }]
   }
-  const c = [{ label: "Rallies", go: () => go("rallies") }]
+  const c = [home, { label: "Drive stage", go: () => go("rallies") }]
   const seasonCrumb = s => ({ label: s.name, go: () => openSeason(s.id) })
   if (view.value === "season") c.push({ label: (ssn.value && ssn.value.name) || "" })
   if (view.value === "rally" && rly.value) {
@@ -576,6 +591,8 @@ function resume(at) {
   } else if (at.view === "season" && s.seasonId) openSeason(s.seasonId)
   else if (at.view === "settings") go("settings")
   else if (at.view === "timecard") openCard()
+  else if (at.view === "rallies") go("rallies")
+  else if (at.view === "pick") openPick()
   else return
   // the season the rally or stage was reached through, for Back and the crumbs
   if (s.seasonId) sel.value = { ...sel.value, seasonId: s.seasonId }
@@ -647,7 +664,27 @@ function askReset(eventId, stageId) {
   confirmReset.value = true
 }
 // ---- the full rally (1.7.0)
-function openStart(id) {
+// Home and Drive rally (#39): each asks for the full rallies as it opens (menu.lua M.drive: it reads save files, so
+// it is not polled)
+function openHome() {
+  loadDrive()
+  go("home")
+}
+function openPick() {
+  loadDrive()
+  go("pick")
+}
+// Y on Drive rally: the picked rally's Results, its page on the Results tab
+const pickView = ref(null)
+function contextPress() { if (view.value === "pick" && pickView.value) pickView.value.results() }
+function openResults(id) {
+  openRally(id, false)
+  rallyTab.value = "results"
+}
+// where the start screen was opened from ('pick': Drive rally, else a rally's page), for Back and the crumbs
+const startFrom = ref(null)
+function openStart(id, from) {
+  startFrom.value = from || null
   sel.value = { ...sel.value, eventId: id }
   loadRallyStart(id)
   go("rallyStart")
@@ -672,11 +709,15 @@ function fullView(v, id) {
   else go(v)
 }
 function back() {
-  if (view.value === "rallyStart") { openRally(sel.value.eventId, false); return }
-  if (view.value === "timecard") {
-    const id = rallyCardId()
-    if (id) openRally(id, false)
-    else go("rallies")
+  if (view.value === "rallyStart") {
+    if (startFrom.value === "pick") openPick()
+    else openRally(sel.value.eventId, false)
+    return
+  }
+  // (#39: Drive rally, Drive stage and Settings go back to Home; so does the time card, where Home's Continue strip
+  // is: the mock-up's homeSaved)
+  if (["timecard", "pick", "rallies", "settings"].includes(view.value)) {
+    openHome()
     return
   }
   if (view.value === "stage") {
@@ -687,7 +728,7 @@ function back() {
     const s = rly.value && rly.value.season
     if (s) openSeason(s.id)
     else go("rallies")
-  } else if (view.value === "season" || view.value === "settings") go("rallies")
+  } else if (view.value === "season") go("rallies")
   else closeMenu()
 }
 function action(what, eventId, stageId) {
@@ -700,10 +741,6 @@ function action(what, eventId, stageId) {
 // the poll: the state every second, the page's own data every two
 let timer = null
 let tick = 0
-function rallyCardId() {
-  const a = st.value.rallyActive
-  return a ? a.id : null
-}
 function poll() {
   refreshState()
   if (view.value === "timecard") loadRallyCard()
@@ -716,13 +753,15 @@ function poll() {
 onMounted(() => {
   // (opened at a page: the results card's Rally menu, a pause-menu rally)
   refreshState()
+  loadDrive()   // (Home's Continue strip; Drive rally asks again as it opens)
   takeOpenAt(at => {
     if (at && at.view === "timecard") openCard()
     else if (at && at.view === "stage" && at.eventId && at.stageId) openStage(at.eventId, at.stageId)
     else if (at && at.view === "rally" && at.eventId) openRally(at.eventId)
     else if (at && at.view === "season" && at.eventId) openSeason(at.eventId)
     else if (at && at.view === "settings") go("settings")
-    else if (at && at.view === "rallies") { /* asked for (main.openMenu('rallies')): Rallies */ }
+    else if (at && at.view === "rallies") go("rallies")
+    else if (at && at.view === "home") { /* asked for: Home */ }
     else if (lastPlace.at) resume(lastPlace.at)
   })
   timer = setInterval(poll, 1000)
@@ -758,8 +797,6 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 /* (a controller's focus on the small things -- tabs, Back, a setting's choice, a leaderboard pass -- that have no
    :focus look of their own; the cards and rows keep theirs) */
 .er-page :deep(span[bng-nav-item]:focus), .er-back:focus { outline: 2px solid var(--er-orange); outline-offset: 2px; }
-.er-infobar { height: 48px; flex-shrink: 0; display: flex; align-items: center; gap: 28px; padding: 0 64px; background: rgba(0, 0, 0, 0.6); color: var(--er-muted); }
-.er-k { font-family: "Overpass Mono", monospace; font-size: 13px; padding: 1px 7px; margin-right: 6px; border: 1px solid #6f7480; border-radius: 3px; color: #fff; }
 
 .er-card { background: rgba(0, 0, 0, 0.6); border-radius: 0.5rem; }
 .er-muted { color: var(--er-muted); }
