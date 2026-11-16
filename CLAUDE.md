@@ -6,9 +6,7 @@ BeamNG.drive 0.40.5 mod (Lua, `mod/earth_rally/`) that runs real rally stages on
 ## How the owner works
 
 - **An issue means a plan, not a change.** When the owner reports a problem or idea, give the diagnosis, the fix and
-  the files it touches, then stop. Build only when told. Exception (the owner, 2026-11-15): findings the maintainer
-  sends back on your own merge request are fixed without asking (`/merge-request` step 8), unless one needs a
-  design decision. Small fixes go in the next patch, new systems in a later minor.
+  the files it touches, then stop. Build only when told. Small fixes go in the next patch, new systems in a later minor.
 - **UI: mock-up first** (`docs/mockups-<version>/*.html`, 1920x1080, now/proposed toggle; `docs/mockups-1.2.0/hud.html`
   is the pattern) and wait for OK. Skip the mock-up when the owner has already specified the design.
 - **While the owner is testing, log, don't fix:** findings go in `docs/notes-<next version>.md` with the diagnosis.
@@ -17,9 +15,8 @@ BeamNG.drive 0.40.5 mod (Lua, `mod/earth_rally/`) that runs real rally stages on
   `..\beamng.earth\.venv\Scripts\python.exe launcher.py --no-beammp --no-update-check` from the `beamng.earth` folder,
   in a new console. On a restart, wait until no BeamNG.Earth Python process is left, plus a few seconds, then
   confirm the launcher, its server and `BeamNG.drive.exe` are all running.
-- **Never install, push, tag or release without being told.** Once the owner says to land work, `/merge-request`
-  pushes your own branch and opens its PR, and back-merges `origin/main` into it when needed; those are the only
-  pushes it covers (never a force push).
+- **Never install, tag or release without being told.** Pushing your own branch and merging finished work into
+  `main` (below) needs no extra ask. Never force-push.
 - Never move windows on the owner's desktop.
 - The owner dictates by speech-to-text; stray pacenote words ("left 4", "over crest") in a message are game audio.
 
@@ -27,15 +24,12 @@ BeamNG.drive 0.40.5 mod (Lua, `mod/earth_rally/`) that runs real rally stages on
 
 - **Bug fixes only until the alpha MVP is out** (the owner, 2026-11-15); features stay planned in the roadmap.
   README, wiki and posts carry no version number: they say alpha.
-- Work on a branch or worktree branched from `main`. `v1.2.0`, `v1.1.0`, `auto-test` are history only.
-- **Only the `maintainer` session changes `main`.** It reviews, tests and merges pull requests. To land work, run
-  `/merge-request`: it opens a PR and messages the maintainer, starting it first if it is not running
-  (`powershell -ExecutionPolicy Bypass -File tools/maintainer.ps1` from the main checkout, a background session; `claude agents` lists it,
-  `claude attach <id>` talks to it). A hook (`.claude/hooks/guard_main.py`) blocks
-  merges, commits and pushes to `main` from every other session. The owner can still merge by hand on GitHub.
-- Release = tag `vX.Y.Z-alpha` on `main` + GitHub pre-release with `dist/earth_rally-X.Y.Z-alpha.zip`. When the owner
-  asks for a release, the PR carries the CHANGELOG entry and `M.VERSION` bump and a `Release: X.Y.Z-alpha` line: the
-  maintainer publishes it right after merging (`tools/release.py`). No other session tags or releases.
+- Each feature or fix gets its own branch or worktree from `main`. `v1.2.0`, `v1.1.0`, `auto-test` are history only.
+- **Landing work on `main`**, once it is done and `/handoff` is clean: `git fetch`, merge `origin/main` into your
+  branch, fix any conflicts, rerun the touched tests, then merge your branch into `main` and push `main`. No PR
+  needed. Merge, never rebase shared history. If the push is rejected, fetch and repeat.
+- Release = tag `vX.Y.Z-alpha` on `main` + GitHub pre-release with `dist/earth_rally-X.Y.Z-alpha.zip`, only when
+  the owner asks: `/release` (`tools/release.py`).
 - Rally data (events, recces, matched lines, times, `Rally Docs/`, KML) is organisers' material: never in git.
 
 ## Checking work

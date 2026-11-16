@@ -125,8 +125,8 @@ old `docs/release-*.md` files stay as history.
    The fork's latest release has an installer and the API this release needs (see above).
 3. Grep for the old version number (`M.VERSION` in `mod/`, versioned doc names like `pacenotes-X.Y.Z.md`) and
    update what should move.
-4. These go in the release PR, with `Release: X.Y.Z-alpha` in its body (`/merge-request`).
-5. After the merge the maintainer runs `python tools/release.py X.Y.Z-alpha <merge commit>`: it tags the commit,
+4. Land these on `main` (see `CLAUDE.md`).
+5. `/release X.Y.Z-alpha` runs `python tools/release.py X.Y.Z-alpha <commit>`: it tags the commit,
    builds the zip from the tag and makes the GitHub pre-release with the title, body and asset above.
 
 ## Other docs

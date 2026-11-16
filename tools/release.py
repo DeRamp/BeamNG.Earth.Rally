@@ -4,10 +4,10 @@
     python tools/release.py 1.6.1-alpha <commit> --check     checks only, prints the release body, changes nothing
     python tools/release.py 1.6.1-alpha <commit>             checks, then tag, zip, push the tag, GitHub pre-release
 
-<commit> is the merge commit of the release PR (default: origin/main). The release text and version bump are part of
-that PR, so the maintainer's review saw them; this script commits nothing and never pushes `main`. It reads every
+<commit> is the commit on main that carries the release text and version bump (default: origin/main). This script
+commits nothing and never pushes `main`. It reads every
 file from the commit, not the working tree, so it runs from any checkout and a dirty checkout cannot leak into it.
-Run by the maintainer session only (the guard hook blocks it elsewhere). It refuses, changing nothing, unless:
+It refuses, changing nothing, unless:
 
 - the version is X.Y.Z-alpha and the next patch, minor or major after origin's latest v* tag;
 - the commit is on origin/main (after a fetch), and the tag is on neither origin nor here, or on that commit;
