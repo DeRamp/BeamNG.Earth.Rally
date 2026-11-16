@@ -153,7 +153,10 @@ end
 
 do
   local S = bend()
-  local sites = D.plan({ line = S, marks = { { kind = 'radio', along = 128, name = 'Radio 1' } } })
+  -- (the scene is a piece from the middle of a stage: its start and finish well away, issue #37)
+  local MID = { startM = -1000, finishM = 2000 }
+  local sites = D.plan({ line = S, startM = MID.startM, finishM = MID.finishM,
+    marks = { { kind = 'radio', along = 128, name = 'Radio 1' } } })
   local r = ofKind(sites, 'radio')
   T.check(#r == 1 and r[1].source == 'map' and #r[1].objects == 7, 'radio: one point from the map, 7 objects')
   local o = r[1] and r[1].objects or {}
@@ -170,7 +173,8 @@ do
   T.check(#find(o, 'table') == 1 and #find(o, 'chair') == 1 and #find(o, 'flag') == 1, 'radio: table, chair, flag')
   T.check(#ofKind(sites, 'medical') == 0, 'radio: no medical point made up')
 
-  local shared = D.plan({ line = S, marks = { { kind = 'radio', along = 128 }, { kind = 'medical', along = 140 } } })
+  local shared = D.plan({ line = S, startM = MID.startM, finishM = MID.finishM,
+    marks = { { kind = 'radio', along = 128 }, { kind = 'medical', along = 140 } } })
   local rs = ofKind(shared, 'radio')
   T.check(#rs == 1 and rs[1].shared and #ofKind(shared, 'medical') == 0, 'radio + medical within 50 m: one shared post')
   local so = rs[1] and rs[1].objects or {}
@@ -1096,5 +1100,67 @@ do
     local c = math.abs((ax + bx) / 2 * sx + (ay + by) / 2 * sy)
     T.check(c <= D.TAPE_IN_MAX / math.cos(math.rad(16)) + 1e-6, string.format('and within TAPE_IN_MAX (%.1f m)', c))
   end
+end
+------------------------------------------------------------------------------------------ issue #37: none by a control
+
+do
+  local S = straightStage(10)
+  local function alongs(sites, kind)
+    local out = {}
+    for _, x in ipairs(ofKind(sites, kind)) do out[#out + 1] = x.along end
+    table.sort(out)
+    return table.concat(out, ',')
+  end
+  local sites = D.plan({ line = S, startM = 1000, finishM = 8000, marks = {
+    { kind = 'radio', along = 920 }, { kind = 'medical', along = 1100 },      -- by the start, either side
+    { kind = 'radio', along = 1160 },                                         -- past POST_NEAR_CONTROL_M: placed
+    { kind = 'medical', along = 3000 }, { kind = 'radio', along = 5000 },
+    { kind = 'radio', along = 7900 }, { kind = 'medical', along = 8080 },     -- by the flying finish, either side
+  } })
+  T.check(D.POST_NEAR_CONTROL_M == 150, 'posts by a control: 150 m either side of the start and the finish')
+  T.check(alongs(sites, 'radio') == '1160,5000', 'radio points by the start or the finish left out (' ..
+    alongs(sites, 'radio') .. ')')
+  T.check(alongs(sites, 'medical') == '3000', 'medical points by the start or the finish left out (' ..
+    alongs(sites, 'medical') .. ')')
+  -- (a medical point sharing a radio point's post by the start goes with it; the rule fills nothing in for the
+  -- radio points left out: the map marks radio points)
+  local sh = D.plan({ line = S, startM = 1000, finishM = 8000, marks = {
+    { kind = 'radio', along = 1050 }, { kind = 'medical', along = 1090 } } })
+  T.check(#ofKind(sh, 'radio') == 0 and #ofKind(sh, 'medical') == 0,
+    'a shared post by the start: neither radio nor medical, and no radio by rule instead')
+end
+
+------------------------------------------------------------------------------------------ issue #46: the TC zones
+
+do
+  local S = straightStage(10)
+  local function turn(s)
+    return { along = s, x = 0, y = s, kind = 'turn', inDeg = 0, outDeg = 90,
+             sides = { { deg = 0, halfW = 3 }, { deg = 270, halfW = 3 } } }
+  end
+  local js = { turn(300), turn(500), turn(2000), turn(8300), turn(8700) }
+  local function taped(sites)
+    local out = {}
+    for _, x in ipairs(ofKind(sites, 'tape')) do out[#out + 1] = x.along end
+    table.sort(out)
+    return table.concat(out, ',')
+  end
+  local base = { line = S, startM = 1000, finishM = 8000, junctions = js }
+  T.check(taped(D.plan(base)) == '2000', 'no ATC or stop: tape from the start to the finish only')
+  local zoned = { line = S, startM = 1000, finishM = 8000, junctions = js, atc = { x = 4, y = 400 },
+                  stop = { x = -6, y = 8600 } }
+  local sites = D.plan(zoned)
+  T.check(taped(sites) == '500,2000,8300', 'tape from the ATC to the start and the finish to the stop (' ..
+    taped(sites) .. ')')
+  local okB = true
+  for _, b in ipairs(ofKind(sites, 'board')) do if b.along < 1000 or b.along > 8000 then okB = false end end
+  T.check(okB and #ofKind(sites, 'board') == 1, 'no direction boards in the time control zones')
+  local okM = true
+  for _, m in ipairs(ofKind(sites, 'marshal')) do if m.along < 1000 or m.along > 8000 then okM = false end end
+  T.check(okM and #ofKind(sites, 'marshal') >= 1, 'no marshal by rule in the time control zones (one at the stage turn)')
+  -- an ATC before the line's first point and a stop past its end: clamped to what the line covers
+  zoned.atc, zoned.stop = { x = 0, y = -500 }, { x = 0, y = 20000 }
+  T.check(taped(D.plan(zoned)) == '300,500,2000,8300,8700', 'controls past the line ends: to its ends (' ..
+    taped(D.plan(zoned)) .. ')')
 end
 T.done('test_dressing')

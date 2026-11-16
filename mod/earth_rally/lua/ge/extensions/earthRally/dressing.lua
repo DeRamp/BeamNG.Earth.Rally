@@ -105,6 +105,10 @@ M.SPEC_SPAN_MAX_M = 120   -- ... along at most this much road in all
 M.SPEC_POINT_M = 20       -- a spectator point from the map: tape this far either side of it
 M.MARSHAL_EVERY_M = 1000  -- junction marshals at every turn that can have one, but at most one per ~1 km
 M.MARKS_SPAN_PAD_M = 100  -- the map's points kept from this far before the start to this far past the finish
+-- A radio or medical point this close to the start line or the flying finish (either side of it) is not placed at all:
+-- the start and finish tents stand in for it, as at a real rally (the owner, issue #37: one before the start put its
+-- boards and tent before the line)
+M.POST_NEAR_CONTROL_M = 150
 M.MARSHAL_AT_JUNCTION_M = 40  -- a marshal from the map this near a taped junction (turn, straight or fork) on the
                               -- ground (its point to the junction's) stands behind its tape (1.6.0's note 11)
 -- Points right by each other merged before anything is placed (the user, 2026-11-15: "if two points are right by each
@@ -747,7 +751,11 @@ local function sideOfMark(m) return (m.offLineM or 0) < 0 and -1 or 1 end
 --   seed (the automatic fill's chance: the same seed, the same dressing; default ''),
 --   mapKinds = { radio = true, spectator = true, ... } (the kinds the rally's map marks on ANY of its stages:
 --     events.markedKinds, counting only the marks some stage would use; a kind marked there, or in `marks` within this
---     stage's span, is never filled in by chance on this stage) }
+--     stage's span, is never filled in by chance on this stage),
+--   atc, stop = { x, y } (the stage's ATC and stop control, in the line's coordinates, or nil: the road is closed
+--     through the time control zones, so the junctions from the ATC to the start and from the flying finish to the
+--     stop get their tape too -- not their direction boards nor a marshal by rule: nobody races there. Issue #46. Each
+--     is placed on the line's own stretch before the start / past the finish, clamped to what the line covers) }
 function M.plan(input)
   local line = input.line
   if not line or #line < 2 then return {} end
@@ -784,11 +792,15 @@ function M.plan(input)
   end
   for _, list in pairs(marks) do table.sort(list, function(a, b) return a.along < b.along end) end
 
-  -- junctions: tape and boards at every one, from either source
+  -- junctions: tape and boards at every one, from either source; tape only in the time control zones (ATC to start,
+  -- flying finish to stop), where the road is closed but nobody races
+  local closeFrom, closeTo = startM, finishM
+  if input.atc then closeFrom = min(startM, (geo.alongBetween(line, cum, input.atc, 0, startM))) end
+  if input.stop then closeTo = max(finishM, (geo.alongBetween(line, cum, input.stop, finishM, cum[#cum]))) end
   local solved = {}
   local js = {}
   for _, j in ipairs(input.junctions or {}) do
-    if j.along and j.along >= startM and j.along <= finishM then js[#js + 1] = j end
+    if j.along and j.along >= closeFrom and j.along <= closeTo then js[#js + 1] = j end
   end
   table.sort(js, function(a, b) return a.along < b.along end)
   for _, j in ipairs(js) do
@@ -815,8 +827,8 @@ function M.plan(input)
     end
     add('tape', 'rule', j.along, j.along, j.along, objs, j.kind)
     local key, side = M.dirBoard(r.turnDeg, j.kind, j.side)
-    -- (none before the start line: a junction just after it is not called from the start area)
-    if key and j.along - M.BOARD_BEFORE >= startM then
+    -- (none before the start line: a junction just after it is not called from the start area; none past the finish)
+    if key and j.along - M.BOARD_BEFORE >= startM and j.along <= finishM then
       local s = j.along - M.BOARD_BEFORE
       local sg = side == 'right' and 1 or -1
       local x, y, z, tx, ty = L.off(s, r.half + M.DIR_BOARD_OUT, sg)
@@ -960,6 +972,17 @@ function M.plan(input)
     if best then best.medical = m
     else medicals[#medicals + 1] = m end
   end
+  -- (none by the start line or the flying finish, a shared medical point with its radio point: issue #37)
+  local function awayFromControls(list)
+    local out = {}
+    for _, p in ipairs(list) do
+      if abs(p.along - startM) > M.POST_NEAR_CONTROL_M and abs(p.along - finishM) > M.POST_NEAR_CONTROL_M then
+        out[#out + 1] = p
+      end
+    end
+    return out
+  end
+  radios, medicals = awayFromControls(radios), awayFromControls(medicals)
   for _, m in ipairs(medicals) do
     local objs, from, to = post(L, m.along, false, true, nearSpec)
     add('medical', 'map', m.along, from, to, objs, m.name)
@@ -1021,7 +1044,7 @@ function M.plan(input)
     local rnd = M.rng(input.seed, 'marshal')
     local eligible = {}
     for _, r in ipairs(solved) do
-      if r.kind == 'turn' and #r.tapes > 0 then
+      if r.kind == 'turn' and #r.tapes > 0 and r.along >= startM and r.along <= finishM then
         local jm = junctionMarshal(r)
         if jm then eligible[#eligible + 1] = { r = r, jm = jm } end
       end

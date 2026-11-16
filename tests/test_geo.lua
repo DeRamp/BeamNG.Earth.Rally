@@ -114,4 +114,18 @@ T.check(geo.rise({ { x = 0, y = 0 }, { x = 0, y = 10 } }) == nil, 'rise: no heig
 T.check(geo.rise(zline({ 50, 50, 50, 50, 50 })) == nil, 'rise: one height at every point is no height data')
 T.check((geo.rise(zline({ 50, 50.02, 49.99, 50.01 }))) == 0, 'rise: ... while ground that really is flat reads 0')
 
+-- alongBetween: a control looked for on one stretch of the line only, clamped to it (issues #46, #47)
+do
+  local U = {}
+  for k = 0, 20 do U[#U + 1] = { x = 0, y = k * 10 } end                 -- up 200 m ...
+  for k = 1, 20 do U[#U + 1] = { x = 20 + 0 * k, y = 200 - k * 10 } end  -- ... and back down 20 m to the east
+  local uc = geo.cumulative(U)
+  -- a stop beside the first leg at y = 50, looked for past 250 m: the second leg's, not the first's
+  local s1 = geo.alongBetween(U, uc, { x = 12, y = 50 }, 250, uc[#uc])
+  T.check(s1 > 250, 'alongBetween: on the stretch asked for, not another pass (' .. s1 .. ')')
+  -- a point before the line's start reads as the start of the stretch; one past its end as its end
+  T.near((geo.alongBetween(U, uc, { x = 0, y = -500 }, 0, 100)), 0, 1e-6, 'alongBetween: before the line: its start')
+  T.near((geo.alongBetween(U, uc, { x = 0, y = 150 }, 0, 100)), 100, 1e-6, 'alongBetween: clamped to toM')
+end
+
 T.done('test_geo')
