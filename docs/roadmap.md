@@ -110,6 +110,19 @@ docs/plan-1.6.0-stage-dressing.md.
 | ✔ | Atmosphere: spectators, marshals, radio points (29), from the organisers' map first, placed by rule otherwise | built |
 | → | Not reached, for the user to place: ghost car and replays (27), stage sketches and height profiles (15), stages wider than ~26 km (8), stage pre-loading before the start (21), no penalty for a late start | |
 
+## 1.6.2: the loop holds (building, branch release-1.6.2)
+
+Every open issue (#5-#19) fixed. The owner called the enhancements among them gameplay-loop bugs to fix before the
+alpha MVP (2026-11-15), and moved the Recce notes update milestone into it as fixes to 1.5.0. Notes, test plan and
+the owner's findings in docs/notes-1.6.2.md.
+
+| | Item | Size |
+|---|---|---|
+| ✔ | Pacenotes: open sixes and long bends called (#6, #7), obvious junctions only (#10), caution after long straights (#11), short kinks a grade more open (#12) | built |
+| ✔ | Dressing: ATC and stop on the road (#5), tape parallel at acute junctions (#9) | built |
+| ✔ | Menus: rally menu pauses (#13), controller (#14), finish time in the top bar (#17), Close on the results card (#18) | built |
+| ✔ | Route to stage gets the stage ready as you arrive (#19) | built |
+
 ## 1.7.0: make and share stages
 
 Players build their own stages and pass them around.
