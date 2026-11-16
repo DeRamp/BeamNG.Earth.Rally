@@ -1031,7 +1031,9 @@ function M.uiRallyAction(what, eventId, opts)
     elseif what == 'go' then
       pcall(menuPause.suspend)
       local okS, why = rallyRun.goNext()
-      if okS and menuOpen then M.closeMenu() end
+      -- (not when Go arrived at a stop at once -- one with no place on the map: its card is the next step)
+      local card = okS and rallyRun.uiCard()
+      if okS and menuOpen and not (card and card.phase == 'stop') then M.closeMenu() end
       return go(okS, why)
     elseif what == 'quit' then          -- Leave rally: continue later from the last service
       rallyRun.quit()
@@ -1311,7 +1313,8 @@ function M.flipUpright() local ok, r = pcall(runner.flipUpright) return ok and r
 -- (1.7.0, #25) The pad's rally recovery (D-pad right): the rally's recovery key, and nothing outside a full rally --
 -- there the same button is the game's own reset, which a stage counts already.
 function M.rallyRecover()
-  if not rallyRun.active() then return false end
+  local r = rallyRun.active()
+  if not r or r.done then return false end
   local ok, r = pcall(rallyRun.recoverKey)
   return ok and r
 end

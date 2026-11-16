@@ -1735,8 +1735,8 @@ local function stepApproach(dt)
     if run.stage.id == a.stage.id and run.event.id == a.event.id then M.disarmApproach('the stage is already loaded') end
     return
   end
-  -- (a rally's results card waits for its answer: the next stage is not loaded over it)
-  if run and run.inRally and run.resultsOpen then return end
+  -- (a rally's results card, still up at the next stage's time control: put away, the next stage is the way on)
+  if run and run.inRally and run.resultsOpen then M.closeResults() end
   approach = nil
   log('I', logTag, 'route to ' .. a.stage.name .. ': near its ' .. a.kind .. ', the stage loads')
   local opts = {}
@@ -1744,8 +1744,14 @@ local function stepApproach(dt)
   opts.drivenIn = { lat = a.lat, lon = a.lon }
   local ok, why = M.start(a.event, a.stage, opts)
   if not ok then
-    say('Could not get ' .. a.stage.name .. ' ready: ' .. tostring(why), 6, 'warning', 'Earth Rally')
-    if a.sticky then a.t = 5 approach = a end     -- (a rally's transit: tried again shortly)
+    -- (a rally's transit: tried again shortly, said once a minute, not on every try)
+    a.fails = (a.fails or 0) + 1
+    if not a.sticky or a.fails % 12 == 1 then
+      say('Could not get ' .. a.stage.name .. ' ready: ' .. tostring(why) ..
+        (a.sticky and '. Trying again; Leave rally on the time card (Ctrl+Alt+K) if it keeps failing.' or ''),
+        8, 'warning', 'Earth Rally')
+    end
+    if a.sticky then a.t = 5 approach = a end
     return
   end
   if a.sticky and run then run.rearm = a end

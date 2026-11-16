@@ -138,6 +138,7 @@ function M.holdOut(r, stageId, why)
     end
   end
   if n == 0 then return 0 end
+  -- (from after pos: a stop already passed stays as it was; one the rally now stands at is its next stop)
   local i = math.max(2, r.pos + 1)
   while i <= #r.order do
     local a, b = r.order[i - 1], r.order[i]

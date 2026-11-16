@@ -6,11 +6,15 @@ made. Test plan and findings: [`notes-1.7.0.md`](notes-1.7.0.md).
 
 ## What the MVP is
 
-- **One rally, start to finish.** The stages run in the event file's order. Road sections are skipped.
-- **Services and overnights** come from the event file. Each one fully repairs the car and saves the game. Damage
+- **One rally, start to finish.** The stages run in the event file's order. It starts at the event file's start
+  place. Road sections are driven with the GPS: the stage loads as you reach its time control. No targets or
+  lateness yet. Skipping a transit is a dev-panel tool only.
+- **Services and overnights** come from the event file, as places on the map. Each one fully repairs the car and
+  saves the game. Damage
   carries from stage to stage in between.
 - **Two modes**, chosen at the start:
-  - **Realistic:** no restarts. Recovering ends the stage under Super Rally, and you rejoin at the next service.
+  - **Realistic:** no restarts. Recovering ends the stage under Super Rally. You are taken to the next service
+    and drive on from there.
   - **Casual:** recover onto the stage line as often as you like, and restart a stage from its result card.
 - **BeamNG's own recovery is off** for the whole rally: resets, recover, reload, teleports and the vehicle menus.
   Backspace is the rally's recovery.
@@ -69,9 +73,13 @@ missed.
 - **Resume needs the same car** the rally was started in.
 - **The Results tab's best full rally** is the best Realistic one; a Casual one shows only when there is none.
 - **Overall places count the notional times**, as the real classification does. Stage places leave them out.
-- **No pad default** for the recovery yet. Bind `Earth Rally: back on the road` in Controls.
+- **Pad:** D-pad right is the rally's recovery on an Xbox pad. Other pads: bind `Earth Rally: full rally recovery`.
+- **Before the start,** stages with no line get the auto recce, and a stage with more than 250 m of road missing
+  from the map is held out.
+- **Leave rally** keeps the save. **Retire** deletes it. Both confirm first.
+- **Recovery on a transit** puts the car on the nearest road, free.
 
 ## Left for after the MVP
 
-Road sections with target times and lateness, shakedown and recce in the loop, a "damage carried" readout, a restart
+Target times and lateness on road sections, shakedown and recce in the loop, a "damage carried" readout, a restart
 from the pause menu, weather per stage, split times, ghost cars.

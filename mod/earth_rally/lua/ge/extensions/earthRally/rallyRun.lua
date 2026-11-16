@@ -45,10 +45,11 @@ M.BLOCKED = {
 M.ARRIVE_M = 150          -- a service driven to: done this close to its place
 M.ARRIVE_POLL_S = 0.5     -- ... looked at this often
 M.MOVE_WAIT_S = 120       -- a move to a stop: the world given this long to load there, then the stop done anyway
-M.GAP_HOLD_M = 1          -- a stage whose line has more than this of road missing on the map is held out (#30)
+M.GAP_HOLD_M = 250        -- a stage whose line has more than this of road missing on the map is held out (#30)
 
 M.ui = {}
 local R = nil          -- the rally in progress (rally.lua's r), or nil
+local savedResults     -- the results in its save (leaveInfo: what leaving now loses)
 local ev, board = nil, nil
 local blocked = false
 local card = nil       -- the last stage's card for the results card: { ss, name, timeS, stage = standing, overall }
@@ -106,6 +107,7 @@ local function save()
   local t = M.readFile(R.eventId)
   R.savedLabel = itemLabel(rally.current(R)) or R.savedLabel
   t.current = copy(R)
+  savedResults = t.current.results
   t.current.savedAt = os.date('!%Y-%m-%dT%H:%M:%SZ')
   t.loop = nil
   loop = { results = {} }
@@ -312,6 +314,8 @@ local function holdOutBad()
   return names
 end
 
+local finish     -- (below)
+
 -- The prep as main.lua sees it: the next stage to run the auto recce on, or nil when the list is done.
 function M.prepNext()
   if not (R and prep) then return nil end
@@ -330,8 +334,9 @@ function M.prepDone()
     say(table.concat(held, '; '), 10, 'warning', #held == 1 and 'Held out of the rally' or (#held .. ' stages held out'))
   end
   if rally.over(R) then
-    say('No stage of this rally can be driven on this computer.', 8, 'warning', R.name)
-    M.quit()
+    say('No stage left in this rally can be driven on this computer.', 8, 'warning', R.name)
+    -- (stages already driven: the rally finished with them, scored; none: nothing to keep)
+    if next(R.results or {}) then finish() else M.quit() end
     return
   end
   if thenDo then thenDo() end
@@ -445,7 +450,7 @@ end
 
 ------------------------------------------------------------------------------------------ start, continue, leave
 
-local function finish()
+finish = function()
   local t = M.readFile(R.eventId)
   t.current, t.loop, loop = nil, nil, nil
   t.finished[#t.finished + 1] = rally.finished(R, os.date('!%Y-%m-%dT%H:%M:%SZ'))
@@ -469,6 +474,7 @@ function M.start(id, opts)
     cancelled = opts and opts.cancelled, car = car })
   if not r then return false, why end
   R, card, recoveredAt, askT, move, toStop = r, nil, nil, nil, nil, nil
+  savedResults = nil
   loop = { results = {} }
   M.block(true)
   log('I', logTag, string.format('rally: %s started (%s, %s, cancelled stages %s)', R.name, R.mode, R.class,
@@ -493,6 +499,7 @@ function M.resume(id)
   pcall(runner.abort, true)
   runner.disarmApproach('a rally continued')
   R, card, recoveredAt, askT, move, toStop = t.current, nil, nil, nil, nil, nil
+  savedResults = t.current.results
   M.block(true)
   loop = { results = {} }
   if R.mode == 'realistic' and type(t.loop) == 'table' then
@@ -554,11 +561,9 @@ function M.leaveInfo()
     local r = runner.current()
     if runLive() and r.state == 'running' then out.superRally = r.ssLabel end
   else
-    local t = M.readFile(R.eventId)
-    local saved = t.current
     local redo = {}
     for _, d in ipairs(rally.doneStages(R)) do
-      if not (saved and saved.results and saved.results[d.item.ss]) then redo[#redo + 1] = d.item.ss end
+      if not (savedResults and savedResults[d.item.ss]) then redo[#redo + 1] = d.item.ss end
     end
     out.redo = redo
   end
@@ -627,10 +632,15 @@ runner.onFinished = function(res) M.onFinished(res) end
 -- car put back on the nearest road, free -- road sections are not timed. During a stage of the rally: below.
 -- Returns true when it was the rally's.
 function M.recoverKey()
-  if not R then return false end
+  if not R or R.done then return false end
   if not M.inRun() or not runLive() then
-    if M.inRun() and runner.current().state ~= 'finished' then return false end
     if move or prep then return true end
+    -- (a stage that failed to start: put away, its transit armed again, the car put back on the road)
+    if M.inRun() and runner.current().state == 'failed' then
+      pcall(runner.abort, true)
+      local it = rally.current(R)
+      if it and it.kind == 'stage' then armTransit() end
+    end
     local ok = runner.recoverToRoad()
     if not ok then say('No road found near the car.', 3, 'warning', 'Recovery') end
     return true
@@ -702,10 +712,15 @@ function M.update(dt)
 end
 
 -- The service being driven to, for the HUD's line and the game's Messages app: { name, distM, rally } or nil.
+local tInfo
 function M.transitInfo()
-  if not (R and toStop) then return nil end
-  return { name = toStop.item.label .. (toStop.item.name and (' · ' .. toStop.item.name) or ''), distM = toStop.distM,
-    rally = true }
+  if not (R and toStop) then tInfo = nil return nil end
+  local d = math.floor((toStop.distM or 0) / 10 + 0.5) * 10
+  if not (tInfo and tInfo.item == toStop.item and tInfo.distM == d) then
+    tInfo = { item = toStop.item, name = toStop.item.label .. (toStop.item.name and (' · ' .. toStop.item.name) or ''),
+      distM = d, rally = true }
+  end
+  return tInfo
 end
 
 -- The Recover? question answered: 'recover' (the stage ends, Super Rally, the car to the next stop) or 'keep'.
