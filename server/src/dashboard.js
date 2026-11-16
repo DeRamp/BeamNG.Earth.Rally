@@ -3,7 +3,8 @@
 // browser's localStorage), then reads /api/summary with it. Every value from the database is escaped before it is
 // shown (stage and rally names come from players' games).
 //
-// (Written without backticks or dollar-braces in the page's own script, so it can sit in String.raw here as is.)
+// The page and its script are two responses (/dashboard, /dashboard.js) so the CSP can refuse every inline script.
+// (Written without backticks or dollar-braces, so both can sit in String.raw here as is.)
 export const DASHBOARD_HTML = String.raw`<!doctype html>
 <html lang="en">
 <head>
@@ -80,13 +81,14 @@ a.lnk { color: #86b6ef; }
 </div>
 
 <main id="main" style="display:none">
+<div id="banner" style="display:none; margin-bottom:14px; padding:10px 14px; border:1px solid #8a6a1a; border-radius:6px; color:var(--warn)"></div>
 <section class="view" id="v-overview">
   <div class="tiles" id="tiles"></div>
   <div class="grid2">
     <div class="card"><h2>Stages per day</h2><div class="sub" id="dailySub"></div>
       <div class="legend"><span><i style="background:var(--s1)"></i>Started</span><span><i style="background:var(--s2)"></i>Finished</span></div>
       <svg id="daily" width="100%" height="230"></svg></div>
-    <div class="card"><h2>Downloads per release</h2><div class="sub">GitHub release zips, all time (clicks, not people)</div>
+    <div class="card"><h2>Downloads per release</h2><div class="sub">The mod's zips on GitHub, all time (clicks, not people)</div>
       <div id="dl"></div></div>
   </div>
   <div class="grid2">
@@ -115,12 +117,17 @@ a.lnk { color: #86b6ef; }
 </main>
 <div class="tip" id="tip"></div>
 
-<script>
-"use strict";
+<script src="/dashboard.js"></script>
+</body>
+</html>
+`
+
+export const DASHBOARD_JS = String.raw`"use strict";
 var REPO = "DeRamp/BeamNG.Earth.Rally";
 var KEY_NAME = "earthRallyDashboardKey";
 var days = Number(localStorage.getItem("earthRallyDashboardDays")) || 30;
 var data = null;
+var downloads;           // undefined: loading; null: GitHub could not be reached
 var view = "overview";
 
 function $(id) { return document.getElementById(id); }
@@ -161,28 +168,51 @@ $("lockForm").onsubmit = function (e) {
   load();
 };
 
+// GitHub's download counts for the mod's own zips (earth_rally-*.zip), per release, all time
+function loadDownloads() {
+  fetch("https://api.github.com/repos/" + REPO + "/releases?per_page=100", { headers: { accept: "application/vnd.github+json" } })
+    .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+    .then(function (rel) {
+      downloads = rel.map(function (r) {
+        var n = (r.assets || []).filter(function (x) { return /^earth_rally-.*\.zip$/.test(x.name || ""); })
+          .reduce(function (a, x) { return a + (x.download_count || 0); }, 0);
+        return { release: r.tag_name || r.name, downloads: n };
+      }).filter(function (r) { return r.downloads > 0; });
+    })
+    .catch(function () { downloads = null; })
+    .then(function () { if (data) draw(); });
+}
+
+var asked = 0;
 function load() {
   if (!key()) { lock(); return; }
+  var mine = ++asked;
   fetch("/api/summary?days=" + days, { headers: { authorization: "Bearer " + key() }, cache: "no-store" })
     .then(function (r) {
       if (r.status === 401) { localStorage.removeItem(KEY_NAME); lock("That key did not work."); return null; }
       if (!r.ok) throw new Error("the server answered " + r.status);
       return r.json();
     })
-    .then(function (d) { if (d) { data = d; draw(); } })
-    .catch(function (err) { lock("Could not load the stats: " + err.message); });
+    .then(function (d) { if (d && mine === asked) { data = d; days = d.days; banner(""); draw(); } })
+    .catch(function (err) {
+      if (mine !== asked) return;
+      // (the key is fine: say so over the page, keep what is shown)
+      if (data) banner("Could not load the stats: " + err.message + ". Showing the last ones loaded."); else lock("Could not load the stats: " + err.message);
+    });
 }
+
+function banner(msg) { $("banner").textContent = msg; $("banner").style.display = msg ? "block" : "none"; }
 
 // ---- drawing
 function draw() {
   $("lock").style.display = "none"; $("main").style.display = "block";
-  $("who").innerHTML = "Unlocked with your dashboard key · <a id='forget'>forget key</a>";
-  $("forget").onclick = function () { localStorage.removeItem(KEY_NAME); lock(); };
   document.querySelectorAll("#range span").forEach(function (s) { s.classList.toggle("on", Number(s.dataset.d) === days); });
   var t = data.totals || {}, rw = rangeWords();
-  var dlTotal = (data.downloads || []).reduce(function (a, r) { return a + (r.downloads || 0); }, 0);
+  $("who").innerHTML = (t.last_day ? "Last event " + esc(t.last_day) + " · " : "No events yet · ") + "<a id='forget'>forget key</a>";
+  $("forget").onclick = function () { localStorage.removeItem(KEY_NAME); lock(); };
+  var dlTotal = (downloads || []).reduce(function (a, r) { return a + (r.downloads || 0); }, 0);
   var tiles = [
-    ["Downloads", data.downloads ? num(dlTotal) : "–", "All releases, from GitHub"],
+    ["Downloads", downloads ? num(dlTotal) : "–", "Mod zips, all time (clicks, not people)"],
     ["Sessions", num(t.sessions), "Games started with stats on, " + rw],
     ["Stages per session", t.sessions ? (t.started / t.sessions).toFixed(1) : "–", "Average, " + rw],
     ["Stages run", num(t.started), "Started in " + rw],
@@ -196,12 +226,15 @@ function draw() {
   $("topSub").textContent = rw + ". Full list under Stages & rallies.";
   $("allSub").innerHTML = esc(rw) + ". Stages from packs; players' own imported maps count together as <b>Own stages</b> (their names are never sent).";
   ["vSub1", "vSub2", "vSub3"].forEach(function (id) { $(id).textContent = "Share of sessions, " + rw; });
-  $("newErrSub").textContent = "Error codes first seen in the last " + rw;
+  $("newErrSub").textContent = days >= 365 ? "Not shown for 12 months: choose a shorter range." :
+    (t.since && t.since > data.since ? "First seen in the last " + rw + ". Stats began on " + t.since + ", so every error is new for now." :
+      "Error codes first seen in the last " + rw);
   $("foot").textContent = "Sessions and runs count only players who said yes to stats, so they are a sample, not everyone. " +
-    "Raw events are kept 12 months, then only monthly totals. " + (t.since ? "Data since " + t.since + "." : "No data yet.");
+    "Raw events are kept 12 months, then only monthly totals. " +
+    (t.since ? "Data since " + t.since + ", last event received " + t.last_day + "." : "No data yet: nothing has been received.");
 
-  hbars("dl", (data.downloads || []).slice(0, 8).map(function (r) { return [r.release, r.downloads]; }), null,
-    data.downloads ? "No releases yet." : "GitHub could not be reached.");
+  hbars("dl", (downloads || []).slice(0, 8).map(function (r) { return [r.release, r.downloads]; }), null,
+    downloads === undefined ? "Loading from GitHub…" : downloads ? "No releases yet." : "GitHub could not be reached.");
   stageTable("topStages", 5, false);
   stageTable("allStages", 200, true);
   rallies();
@@ -231,14 +264,15 @@ function stageTable(id, n, full) {
   if (!rows.length) { $(id).innerHTML = "<tr><td class='empty'>No stages run yet.</td></tr>"; return; }
   var max = Math.max.apply(null, rows.map(function (s) { return s.runs; })) || 1;
   var h = "<tr><th>Stage</th>" + (full ? "<th>Rally</th>" : "") + "<th>Runs</th><th class='n'>Sessions</th><th class='n'>Finished</th>" +
-    (full ? "<th class='n'>Median time</th><th class='n'>Resets / run</th><th class='n'>Retired</th><th class='n'>Quit</th>" : "") + "</tr>";
+    (full ? "<th class='n'>Median time</th><th class='n'>Resets / run</th><th class='n'>Retired</th><th class='n'>Quit</th><th class='n' title='Started, never ended: the game closed or crashed'>No ending</th>" : "") + "</tr>";
   rows.forEach(function (s) {
     var own = s.rally === "custom";
     h += "<tr><td>" + esc(own ? "Own stages" : s.stage) + "</td>" + (full ? "<td>" + esc(own ? "–" : s.rally) + "</td>" : "") +
       "<td><span class='bar' style='width:" + (s.runs / max * 120) + "px'></span>" + num(s.runs) + "</td><td class='n'>" + num(s.sessions) +
       "</td><td class='n'>" + pct(s.finished, s.runs) + "</td>" +
       (full ? "<td class='n'>" + (own ? "–" : mmss(s.median_s)) + "</td><td class='n'>" + (s.resets == null ? "–" : Number(s.resets).toFixed(1)) +
-        "</td><td class='n'>" + num(s.failed) + "</td><td class='n'>" + num(s.quit) + "</td>" : "") + "</tr>";
+        "</td><td class='n'>" + num(s.failed) + "</td><td class='n'>" + num(s.quit) +
+        "</td><td class='n'>" + num(Math.max(0, s.runs - s.finished - s.failed - s.quit)) + "</td>" : "") + "</tr>";
   });
   $(id).innerHTML = h;
 }
@@ -267,7 +301,7 @@ function errors() {
   // (new: the code was first seen, in any version, inside the range; one row per code and module, versions added up)
   var byCode = {}, fresh = [];
   rows.forEach(function (e) {
-    if (!(e.first_code >= data.since)) return;
+    if (days >= 365 || !(e.first_code >= data.since)) return;
     var k = e.code + "|" + e.module, f = byCode[k];
     if (!f) { f = byCode[k] = { code: e.code, module: e.module, mod: e.mod, times: 0, sessions: 0, first_ever: e.first_code, last: e.last }; fresh.push(f); }
     f.times += e.times; f.sessions += e.sessions; if (e.last > f.last) { f.last = e.last; f.mod = e.mod; }
@@ -358,7 +392,5 @@ document.querySelectorAll("#range span").forEach(function (s) {
 });
 view = location.hash.slice(1) || "overview";
 load();
-</script>
-</body>
-</html>
+loadDownloads();
 `

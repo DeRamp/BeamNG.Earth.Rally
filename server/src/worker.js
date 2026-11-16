@@ -3,14 +3,14 @@
 //
 //   POST /v1/events   { events: [...] }   from the mod (stats.lua), at most MAX_EVENTS a message
 //   GET  /api/summary?days=30             the dashboard's numbers; needs  Authorization: Bearer <DASHBOARD_KEY>
-//   GET  /dashboard                       the owner's page (src/dashboard.js); asks for the key, https only
+//   GET  /dashboard, /dashboard.js        the owner's page and its script (src/dashboard.js); https only
 //   GET  /                                one line saying what this is
 //
 // Each event carries a session number: random, made new each time the game starts, never reused, so there
 // is no install to link sessions by, and nothing to delete by. Never stored: the IP address (never read here),
 // headers, anything not in EVENTS.
 
-import { DASHBOARD_HTML } from "./dashboard.js"
+import { DASHBOARD_HTML, DASHBOARD_JS } from "./dashboard.js"
 
 const MAX_BODY = 32 * 1024
 const MAX_EVENTS = 50
@@ -18,7 +18,7 @@ const MAX_PER_SESSION = 1000
 const KEEP_DAYS = 365
 const REPO = "DeRamp/BeamNG.Earth.Rally"
 const PRIVACY = `https://github.com/${REPO}/blob/main/PRIVACY.md`
-const LOCAL = new Set(["localhost", "127.0.0.1"])
+const LOCAL = new Set(["localhost", "127.0.0.1", "[::1]"])
 
 // event -> its own fields (the common ones: session, mod, game, earth, day)
 const EVENTS = {
@@ -87,41 +87,26 @@ async function postEvents(req, env) {
   return empty(204)
 }
 
-// GitHub's download counts, cached an hour (the API allows 60 unauthenticated calls an hour)
-async function downloads(ctx) {
-  const url = `https://api.github.com/repos/${REPO}/releases?per_page=100`
-  const cache = caches.default
-  let res = await cache.match(url)
-  if (!res) {
-    res = await fetch(url, { headers: { "user-agent": "earth-rally-stats", accept: "application/vnd.github+json" } })
-    if (!res.ok) return null
-    res = new Response(res.body, res)
-    res.headers.set("cache-control", "max-age=3600")
-    ctx.waitUntil(cache.put(url, res.clone()))
-  }
-  const releases = await res.json()
-  return releases.map(r => ({ release: r.tag_name || r.name,
-    downloads: (r.assets || []).reduce((a, x) => a + (x.download_count || 0), 0) }))
-}
-
 function median(a) {
   if (!a.length) return null
   const s = [...a].sort((x, y) => x - y), m = s.length >> 1
   return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2)
 }
 
-async function summary(url, env, ctx) {
+async function summary(url, env) {
   const days = Math.min(Math.max(Number(url.searchParams.get("days")) || 30, 1), KEEP_DAYS)
   const since = daysAgo(days - 1)
   const q = (sql, ...b) => env.DB.prepare(sql).bind(...b)
-  const [tot, daily, stages, times, rallies, mods, games, earths, errors] = await env.DB.batch([
+  // (every query reads by the day index or events_err: D1's free plan counts rows read, and the mod's own posts
+  // stop when they run out)
+  const [tot, daily, stages, times, rallies, mods, games, earths, errors, firsts] = await env.DB.batch([
     q(`SELECT
-         (SELECT COUNT(DISTINCT session) FROM events) AS sessions_ever,
          (SELECT COUNT(DISTINCT session) FROM events WHERE day >= ?1) AS sessions,
          (SELECT COUNT(*) FROM events WHERE day >= ?1 AND event = 'stage_started') AS started,
          (SELECT COUNT(*) FROM events WHERE day >= ?1 AND event = 'stage_finished' AND result = 'finished') AS finished,
          (SELECT COUNT(*) FROM events WHERE day >= ?1 AND event = 'rally_finished') AS rallies_finished,
-         (SELECT MIN(day) FROM events) AS since`, since),
+         (SELECT MIN(day) FROM events) AS since,
+         (SELECT MAX(day) FROM events) AS last_day`, since),
     q(`SELECT day, SUM(event = 'stage_started') AS started, SUM(event = 'stage_finished' AND result = 'finished') AS finished
          FROM events WHERE day >= ? GROUP BY day ORDER BY day`, since),
     q(`SELECT rally, stage,
@@ -140,19 +125,25 @@ async function summary(url, env, ctx) {
     q(`SELECT mod AS v, COUNT(DISTINCT session) AS n FROM events WHERE day >= ? GROUP BY mod ORDER BY n DESC`, since),
     q(`SELECT game AS v, COUNT(DISTINCT session) AS n FROM events WHERE day >= ? GROUP BY game ORDER BY n DESC`, since),
     q(`SELECT earth AS v, COUNT(DISTINCT session) AS n FROM events WHERE day >= ? GROUP BY earth ORDER BY n DESC`, since),
-    q(`SELECT code, module, mod, COUNT(*) AS times, COUNT(DISTINCT session) AS sessions, MIN(day) AS first, MAX(day) AS last,
-         (SELECT MIN(day) FROM events e2 WHERE e2.event = 'error' AND e2.code IS events.code) AS first_code,
-         (SELECT MIN(day) FROM events e2 WHERE e2.event = 'error' AND e2.code IS events.code
-            AND e2.module IS events.module AND e2.mod IS events.mod) AS first_ever
+    q(`SELECT code, module, mod, COUNT(*) AS times, COUNT(DISTINCT session) AS sessions, MAX(day) AS last
          FROM events WHERE event = 'error' AND day >= ? GROUP BY code, module, mod ORDER BY sessions DESC LIMIT 100`, since),
+    q(`SELECT code, module, mod, MIN(day) AS first FROM events WHERE event = 'error' GROUP BY code, module, mod`),
   ])
   const byStage = {}
   for (const t of times.results) (byStage[t.rally + "\u0000" + t.stage] ||= []).push(t.time_s)
   const stageRows = stages.results.map(s => ({ ...s, median_s: median(byStage[s.rally + "\u0000" + s.stage] || []) }))
+  // first seen, ever: per code (any version) and per code, module and version
+  const firstCode = {}, firstRow = {}
+  for (const f of firsts.results) {
+    if (!firstCode[f.code] || f.first < firstCode[f.code]) firstCode[f.code] = f.first
+    firstRow[[f.code, f.module, f.mod].join("\u0000")] = f.first
+  }
+  const errorRows = errors.results.map(e => ({ ...e, first_code: firstCode[e.code],
+    first_ever: firstRow[[e.code, e.module, e.mod].join("\u0000")] }))
   return json({
     days, since, totals: tot.results[0], daily: daily.results,
     stages: stageRows, rallies: rallies.results, versions: { mod: mods.results, game: games.results, earth: earths.results },
-    errors: errors.results, downloads: await downloads(ctx).catch(() => null),
+    errors: errorRows,
   })
 }
 
@@ -179,23 +170,30 @@ function authorised(req, env) {
 export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url)
+    if (req.method === "HEAD") {
+      const r = await this.fetch(new Request(req.url, { method: "GET", headers: req.headers }), env, ctx)
+      return new Response(null, { status: r.status, headers: r.headers })
+    }
     try {
       if (req.method === "POST" && url.pathname === "/v1/events") return await postEvents(req, env)
       if (req.method === "GET" && url.pathname === "/api/summary") {
         if (!authorised(req, env)) return empty(401)
-        return await summary(url, env, ctx)
+        return await summary(url, env)
       }
-      if (req.method === "GET" && url.pathname === "/dashboard") {
+      if (req.method === "GET" && (url.pathname === "/dashboard" || url.pathname === "/dashboard.js")) {
         // (the key is typed here: never over plain HTTP, which only the mod's own posts need)
         if (url.protocol === "http:" && !LOCAL.has(url.hostname)) {
           url.protocol = "https:"
           return Response.redirect(url.toString(), 301)
         }
-        return new Response(DASHBOARD_HTML, { headers: {
-          "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex",
-          "referrer-policy": "no-referrer", "x-frame-options": "DENY",
-          "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; " +
-            "connect-src 'self'; img-src 'self' data:; form-action 'none'; frame-ancestors 'none'; base-uri 'none'",
+        const js = url.pathname === "/dashboard.js"
+        return new Response(js ? DASHBOARD_JS : DASHBOARD_HTML, { headers: {
+          "content-type": js ? "text/javascript; charset=utf-8" : "text/html; charset=utf-8",
+          "cache-control": "no-store", "x-robots-tag": "noindex", "referrer-policy": "no-referrer",
+          "x-frame-options": "DENY", "x-content-type-options": "nosniff",
+          // (script from this Worker only, never inline: a player-made name that slipped past esc() still could not run)
+          "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; " +
+            "connect-src 'self' https://api.github.com; img-src 'self' data:; form-action 'none'; frame-ancestors 'none'; base-uri 'none'",
         } })
       }
       if (req.method === "GET" && url.pathname === "/") {

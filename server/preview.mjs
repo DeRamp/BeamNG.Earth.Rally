@@ -1,6 +1,6 @@
 // See the real dashboard on made-up data, with nothing deployed:  node server/preview.mjs  then open
 // http://localhost:8787/dashboard  (key: preview). The Worker runs as is; D1 is Node's SQLite (d1shim.mjs) filled
-// with 90 days of fake sessions; GitHub's download counts are made up too.
+// with 90 days of fake sessions. Downloads are the real ones: the page reads them from GitHub itself.
 import { createServer } from "node:http"
 import { makeDb } from "./d1shim.mjs"
 
@@ -64,8 +64,8 @@ createServer(async (req, res) => {
   const body = chunks.length ? Buffer.concat(chunks) : undefined
   const r = await worker.fetch(new Request("http://localhost:" + PORT + req.url, { method: req.method, headers: req.headers, body }), env, { waitUntil() {} })
   let out = Buffer.from(await r.arrayBuffer())
-  if (req.url.startsWith("/dashboard")) {
-    out = Buffer.from(out.toString().replace("<script>", "<script>localStorage.setItem('earthRallyDashboardKey', 'preview');</script><script>"))
+  if (req.url.startsWith("/dashboard.js")) {
+    out = Buffer.from("localStorage.setItem('earthRallyDashboardKey', 'preview');\n" + out.toString())
   }
   res.writeHead(r.status, Object.fromEntries(r.headers))
   res.end(out)

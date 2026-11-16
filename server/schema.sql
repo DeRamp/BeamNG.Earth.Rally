@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS events_day ON events (day, event);
 CREATE INDEX IF NOT EXISTS events_session ON events (session);
+CREATE INDEX IF NOT EXISTS events_err ON events (event, code, module, mod, day);   -- errors: first seen, cheaply
 
 -- rows older than a year, as monthly counts (worker.js prune)
 CREATE TABLE IF NOT EXISTS archive (month TEXT, event TEXT, rally TEXT, stage TEXT, result TEXT, n INTEGER);
