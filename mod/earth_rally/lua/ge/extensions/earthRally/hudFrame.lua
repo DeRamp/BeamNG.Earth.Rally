@@ -147,6 +147,9 @@ local INACTIVE = { activeState = 'inactive', showStageApps = false }
 --   uiHidden      a menu is up: the HUD draws nothing (it is over the pause menu otherwise)
 --   preview       true in the HUD preview (said in our stream)
 -- Returns rallyLoop, earthRally.
+--
+-- (M.streamKeys, below, must change whenever what build gives the screen changes: a value added to build that the
+-- screen draws needs its place in the keys too, at the precision it is drawn at)
 function M.build(run, ctx)
   ctx = ctx or {}
   local c = ctx.c or {}
@@ -287,6 +290,57 @@ function M.build(run, ctx)
     return { activeState = 'inactive', showStageApps = false }, ours
   end
   return rl, ours
+end
+
+-- What each stream shows now, as two short strings (rallyLoop, earthRally): main.lua sends a stream again only when
+-- its string changes (1.6.1: each message re-draws the apps, and almost nothing on them changes 30 times a second).
+-- Every value build gives the screen, at the precision it is drawn at: the stock stage time in tenths (rounded as
+-- the stock app rounds), counts and clocks in whole seconds, km done to 0.1, distances to the metre, the way-back
+-- arrow to 2 degrees, and every card's on or off. Built from the run's own numbers: no tables. BeamNG.Earth's
+-- place, banner and loading are left to main.lua's once-a-second floor.
+-- k: now (the rally clock, s), uiHidden, units, stopped (the car stopped, sampled), canSkip (sampled).
+local function b(v) return v and '1' or '0' end
+local function i(v) return tostring(math.floor((tonumber(v) or 0) + 0.5)) end
+function M.streamKeys(run, k)
+  if not run then return 'none', 'none' end
+  local s = run.state
+  local now = k.now or 0
+  local sec = math.floor(now)
+  local common = s .. '|' .. b(k.uiHidden) .. '|' .. tostring(k.units) .. '|' .. b(run.jumpStart and run.jumpStartAt
+    and now - run.jumpStartAt < M.JUMP_CARD_S) .. '|' .. b(run.atcTime) .. b(run.startAt) .. b(run.missedAtc) .. '|'
+  if s == 'waitStart' then
+    local left = (run.startAt or now) - now
+    local n = math.max(0, math.ceil(left - 1e-6))
+    local tail = n .. '|' .. b(left > M.TIMECARD_UNTIL_S) .. '|' .. b(k.canSkip) .. '|' .. sec
+    return common .. tail, common .. tail
+  elseif s == 'running' then
+    local tenth = math.floor((run.clock or 0) * 10 + 0.5)
+    local rl = common .. tenth
+    local ours = common .. b(run.offRoute) .. '|' .. b((run.clock or 0) < M.GO_SHOW_S) .. '|'
+    if run.offRoute then
+      ours = ours .. i(run.off) .. '|' .. tostring(math.floor((tonumber(run.backBearing) or 0) / 2 + 0.5))
+    else
+      local step = k.units == 'mi' and M.MILE_M / 10 or 100
+      ours = ours .. tostring(math.floor(math.max(0, (run.along or 0) - (run.startM or 0)) / step))
+    end
+    return rl, ours
+  elseif s == 'toStop' then
+    local tail = i(run.toControlM) .. '|' .. b(k.stopped) .. '|' .. b((run.sinceFinish or 0) < M.FINISH_CARD_S)
+      .. '|' .. tostring(run.stageTime) .. '|' .. sec
+    return common .. tail, common .. tail
+  elseif s == 'toStart' then
+    local diff = run.startAt and math.max(0, math.ceil(run.startAt - now - 1e-6)) or -1
+    local tail = i(run.toControlM) .. '|' .. b(k.stopped) .. '|' .. b(run.zone) .. b(run.zone and run.zone.held)
+      .. '|' .. diff .. '|' .. sec
+    return common .. tail, common .. tail
+  elseif s == 'finished' or s == 'failed' then
+    local tail = b((run.sinceFinish or 0) < M.FINISH_CARD_S) .. '|' .. b(run.finalTime) .. '|' .. b(run.resultsOpen)
+      .. '|' .. b(run.nextStage) .. '|' .. tostring(run.error)
+    return common .. tail, common .. tail
+  end
+  -- (travel, anchor, build, place, toAtc: the next control's panel, the distance to it and the rally clock)
+  local tail = i(run.toControlM) .. '|' .. sec
+  return common .. tail, common .. tail
 end
 
 return M

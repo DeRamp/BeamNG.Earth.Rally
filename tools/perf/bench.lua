@@ -141,8 +141,7 @@ local function counts()
   local r = runner.current()
   return { statics = staticCount(), nodes = nodeCount(), props = propCount(),
     startClock = rawget(_G, runner.CLOCK_EXT) ~= nil, layout = layoutNow(),
-    notesOn = r and r.state == 'running' or nil, streamHz = earthRally_main.STREAM_HZ,
-    hudHz = earthRally_main.HUD_STREAM_HZ }
+    notesOn = r and r.state == 'running' or nil, streamHz = earthRally_main.STREAM_FIXED_HZ or 'on change' }
 end
 -- (what the frames were drawn at: the game's settings that move frame time, whatever this build calls them; a name
 -- the game has not is left out)
@@ -208,8 +207,8 @@ end
 
 local function setSwitch(name, value)
   if name == 'streams' then
-    if swOrig.streams == nil then swOrig.streams = earthRally_main.STREAM_HZ end
-    earthRally_main.STREAM_HZ = value
+    if swOrig.streams == nil then swOrig.streams = earthRally_main.STREAM_FIXED_HZ or false end
+    earthRally_main.STREAM_FIXED_HZ = value
   elseif name == 'layout' then
     local gs = rawget(_G, 'core_gamestate')
     if not (gs and gs.setGameState) then return false, 'no core_gamestate' end
@@ -249,7 +248,7 @@ local function setSwitch(name, value)
 end
 
 local function restoreSwitches()
-  if swOrig.streams ~= nil then earthRally_main.STREAM_HZ = swOrig.streams end
+  if swOrig.streams ~= nil then earthRally_main.STREAM_FIXED_HZ = swOrig.streams or nil end
   if swOrig.resultsTimeout ~= nil then runner.RESULTS_TIMEOUT_S = swOrig.resultsTimeout end
   if swOrig.layoutHold ~= nil then runner.LAYOUT_HOLD_S = swOrig.layoutHold end
   if swOrig.dress ~= nil then props.DRESS_OBJS_PER_UPDATE = swOrig.dress end

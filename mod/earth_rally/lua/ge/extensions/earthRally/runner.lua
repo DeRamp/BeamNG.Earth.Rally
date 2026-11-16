@@ -1848,6 +1848,20 @@ function M.uiFrame()
   })
 end
 
+-- (main.lua's sendStreams, 1.6.1: what the streams show now, as hudFrame.streamKeys's two strings; `slow` is
+-- M.uiSlow's sample, taken a few times a second because it asks BeamNG.Earth for the car's pose)
+local keyCtx = {}
+function M.uiSlow()
+  local s = run and run.state
+  return { stopped = (s == 'toStart' or s == 'toStop') and speed() < M.STOPPED_MS or nil,
+           canSkip = s == 'waitStart' and M.canSkip() or nil }
+end
+function M.uiKeys(slow)
+  keyCtx.now, keyCtx.uiHidden, keyCtx.units = M.clock() or 0, M.uiHidden, settings.get('units')
+  keyCtx.stopped, keyCtx.canSkip = slow and slow.stopped, slow and slow.canSkip
+  return hudFrame.streamKeys(run, keyCtx)
+end
+
 -- The results card's buttons: 'next' (the rally's next stage), 'retry' (this one again), 'menu' / 'close' (the card
 -- closed; main.lua opens the menu). Returns ok, why.
 function M.resultsAction(what)
