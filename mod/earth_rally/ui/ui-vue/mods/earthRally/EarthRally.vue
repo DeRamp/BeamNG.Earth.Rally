@@ -4,9 +4,15 @@
        pause menu's Earth Rally tab, or the results card. Five views: Rallies (EarthRallyHome.vue), a season
        (EarthRallySeason.vue), a rally's stages, a stage, Settings. Rallies > Season > Rally > Stage in the crumbs,
        each one a way back. Data and buttons: earthRally_main (store.js). -->
-  <div class="er-page">
+  <!-- a controller (1.6.2, #14), as the game's own screens take one (its Logbook, OthersView): the d-pad / stick moves
+       between everything marked bng-nav-item and the buttons, A presses, B goes back a page (and closes the menu from
+       Rallies, as the Back / Close at the top does), Start closes the menu, the bumpers switch a rally's tabs, the
+       right stick scrolls. The first row or card of a page takes the focus when it comes up with a controller in use
+       (v-bng-ui-nav-focus; never for a mouse). -->
+  <div class="er-page" bng-ui-scope="earthRally" v-bng-on-ui-nav:back="back" v-bng-on-ui-nav:menu="closeMenu"
+    v-bng-on-ui-nav:tab_l="tabPrev" v-bng-on-ui-nav:tab_r="tabNext">
     <div class="er-topbar">
-      <div class="er-back" tabindex="0" @click="back" @keydown.enter="back"><span>‹</span> {{ view === "rallies" ? "Close" : "Back" }}</div>
+      <div class="er-back" tabindex="0" bng-nav-item @click="back" @keydown.enter="back"><span>‹</span> {{ view === "rallies" ? "Close" : "Back" }}</div>
       <div class="er-title"><span class="er-accent">Earth</span> Rally</div>
       <div class="er-crumbs"><span v-for="(c, i) in crumbs" :key="i" :class="{ 'er-cgo': c.go }" @click="c.go && c.go()">{{ c.label }}</span></div>
       <div class="er-right">
@@ -14,7 +20,7 @@
       </div>
     </div>
 
-    <div class="er-content">
+    <div class="er-content" v-bng-ui-nav-scroll>
       <!-- the run or the recce under way -->
       <div v-if="banner" class="er-banner">
         <span>{{ banner }}</span>
@@ -58,7 +64,7 @@
         <!-- Results (with real results) and Rules (when the file has any): no tabs at all on a rally with neither -->
         <div v-if="rallyTabs.length > 1 || legend" class="er-under-banner">
           <div v-if="rallyTabs.length > 1" class="er-tabs">
-            <span v-for="t in rallyTabs" :key="t.id" tabindex="0" :class="{ on: curTab === t.id }" @click="rallyTab = t.id" @keydown.enter="rallyTab = t.id">{{ t.label }}</span>
+            <span v-for="t in rallyTabs" :key="t.id" tabindex="0" bng-nav-item :class="{ on: curTab === t.id }" @click="rallyTab = t.id" @keydown.enter="rallyTab = t.id">{{ t.label }}</span>
           </div>
           <div v-if="legend && curTab === 'stages'" class="er-legend">
             <template v-if="rly.anyCancelled"><s>{{ cancelledSs }}</s> pass cancelled on the day</template><template v-if="rly.anyCancelled && rly.hasBoard"> · </template><template v-if="rly.hasBoard"><b>Place</b>: your best against the real field</template>
@@ -76,7 +82,7 @@
              rows reads as data, and advertises on every row something half of them cannot do. -->
         <div class="er-card er-stages">
           <div class="er-srow er-hdr" :style="srowCols"><span>Stage</span><span>Name</span><span class="er-r">Length</span><span class="er-st">Status</span><span></span><span class="er-r">Best</span><span v-if="rly.hasBoard" class="er-r">Place</span><span></span></div>
-          <div v-for="s in arr(rly.list)" :key="s.id" class="er-srow er-click" :class="{ 'er-running': autoRow(s) }" :style="srowCols" tabindex="0" @click="openStage(rly.id, s.id)" @keydown.enter="rowEnter($event, s)">
+          <div v-for="(s, i) in arr(rly.list)" :key="s.id" v-bng-ui-nav-focus="i === 0 ? 1 : undefined" class="er-srow er-click" :class="{ 'er-running': autoRow(s) }" :style="srowCols" tabindex="0" bng-nav-item @click="openStage(rly.id, s.id)" @keydown.enter="rowEnter($event, s)">
             <!-- a stage run twice is one row: SS2 · SS4, a pass cancelled on the day struck out -->
             <span v-if="s.notRun" class="er-ss er-notrun">Not run</span>
             <span v-else class="er-ss"><span v-for="(p, k) in passList(s)" :key="k"><s v-if="p.cancelled">{{ p.ss }}</s><template v-else>{{ p.ss }}</template><template v-if="k < passList(s).length - 1"> · </template></span></span>
@@ -193,7 +199,7 @@
           <!-- Auto recce is the fourth button, before Recce, so the two recce buttons sit together and the cheap
                one comes first. While one runs it is replaced in place by its Stop, not joined by a fifth button. -->
           <div class="er-actions">
-            <BngButton :accent="ACCENTS.main" :disabled="!stg.canDrive || busy" @click="action('drive', stg.eventId, stg.id)">Drive stage</BngButton>
+            <BngButton v-bng-ui-nav-focus="1" :accent="ACCENTS.main" :disabled="!stg.canDrive || busy" @click="action('drive', stg.eventId, stg.id)">Drive stage</BngButton>
             <BngButton :accent="ACCENTS.secondary" :disabled="busy" @click="action('route', stg.eventId, stg.id)">Route to start</BngButton>
             <template v-if="autoHere && autoAsk">
               <BngButton :accent="ACCENTS.main" @click="action('autoRecceDownload')">Download {{ MB(autoAsk.bytes) }}</BngButton>
@@ -287,6 +293,8 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from "vue"
 import { BngButton, ACCENTS } from "@/common/components/base"
+import { vBngOnUiNav, vBngUiNavScroll, vBngUiNavFocus } from "@/common/directives"
+import { useUINavScope } from "@/services/uiNav"
 import EarthRallySettings from "./EarthRallySettings.vue"
 import EarthRallyHome from "./EarthRallyHome.vue"
 import EarthRallySeason from "./EarthRallySeason.vue"
@@ -298,6 +306,8 @@ import {
   closeMenu, lastPlace,
   arr, units, len, lenNum, riseNum, riseUnit, time, when, ord, days, ssName, STATUS, AUTO_OUTCOME, RUN_WORDS,
 } from "./store.js"
+
+useUINavScope("earthRally")   // (the controller's events fire from inside bng-ui-scope="earthRally": the page)
 
 const view = ref("rallies")
 // pass: the stage leaderboard's pass the player picked (null: the one they place best on, chosen in Lua)
@@ -387,6 +397,15 @@ const rallyTabs = computed(() => {
   return t
 })
 const curTab = computed(() => (rallyTabs.value.some(t => t.id === rallyTab.value) ? rallyTab.value : "stages"))
+// the bumpers (a controller's tab_l / tab_r): a rally's tabs, round the ends
+function stepTab(d) {
+  const t = rallyTabs.value
+  if (view.value !== "rally" || t.length < 2) return
+  const i = t.findIndex(x => x.id === curTab.value)
+  rallyTab.value = t[(i + d + t.length) % t.length].id
+}
+const tabPrev = () => stepTab(-1)
+const tabNext = () => stepTab(1)
 const legend = computed(() => !!(rly.value && (rly.value.anyCancelled || rly.value.hasBoard)))
 const cancelledSs = computed(() => {
   for (const s of arr(rly.value && rly.value.list)) {
@@ -651,6 +670,9 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
   .er-cgo:hover { color: #fff; text-decoration: underline; } }
 .er-right { margin-left: auto; display: flex; gap: 12px; }
 .er-content { flex: 1; padding: 28px 64px 24px; overflow-y: auto; }
+/* (a controller's focus on the small things -- tabs, Back, a setting's choice, a leaderboard pass -- that have no
+   :focus look of their own; the cards and rows keep theirs) */
+.er-page :deep(span[bng-nav-item]:focus), .er-back:focus { outline: 2px solid var(--er-orange); outline-offset: 2px; }
 .er-infobar { height: 48px; flex-shrink: 0; display: flex; align-items: center; gap: 28px; padding: 0 64px; background: rgba(0, 0, 0, 0.6); color: var(--er-muted); }
 .er-k { font-family: "Overpass Mono", monospace; font-size: 13px; padding: 1px 7px; margin-right: 6px; border: 1px solid #6f7480; border-radius: 3px; color: #fff; }
 

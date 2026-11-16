@@ -10,13 +10,13 @@
       <div class="er-stat" style="margin-left: 40px"><div class="er-v">{{ s.finished }} / {{ s.rallies }}</div><div class="er-l">rallies finished</div></div>
       <div v-if="you" class="er-stat"><div class="er-v">{{ ord(you.pos) }}</div><div class="er-l">standings</div></div>
       <div class="er-tabs">
-        <span v-for="t in TABS" :key="t.id" tabindex="0" :class="{ on: tab === t.id }" @click="tab = t.id" @keydown.enter="tab = t.id">{{ t.label }}</span>
+        <span v-for="t in TABS" :key="t.id" tabindex="0" bng-nav-item :class="{ on: tab === t.id }" @click="tab = t.id" @keydown.enter="tab = t.id">{{ t.label }}</span>
       </div>
     </div>
 
     <div v-if="tab === 'rounds'" class="er-rounds">
-      <div v-for="r in arr(s.rounds)" :key="r.id" class="er-card er-rcard" :class="{ done: r.stages && r.driven === r.stages }"
-        tabindex="0" @click="emit('rally', r.id)" @keydown.enter="emit('rally', r.id)">
+      <div v-for="(r, i) in arr(s.rounds)" :key="r.id" v-bng-ui-nav-focus="i === 0 ? 1 : undefined" class="er-card er-rcard" :class="{ done: r.stages && r.driven === r.stages }"
+        tabindex="0" bng-nav-item @click="emit('rally', r.id)" @keydown.enter="emit('rally', r.id)">
         <div class="er-rpic">
           <EarthRallyPic class="er-rpic-in" :url="(r.media && r.media.cover) || ''" :kind="`ROUND ${r.round}`" :name="shortName(r.name)" />
           <span class="er-rn">R{{ r.round }}</span>
@@ -72,6 +72,7 @@
 <script setup>
 import { ref, computed, watch } from "vue"
 import EarthRallyPic from "./EarthRallyPic.vue"
+import { vBngUiNavFocus } from "@/common/directives"   // (the first round takes a controller's focus: EarthRally.vue)
 import { arr, ord, days, months, shortName, lastPlace } from "./store.js"
 
 const props = defineProps({ s: { type: Object, required: true } })   // menu.season

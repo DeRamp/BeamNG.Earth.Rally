@@ -4,7 +4,7 @@
        their cover, or a drawn plate. "Add" is one strip at the bottom. Data: menu.lua, M.home (uiState.home). -->
   <section>
     <div class="er-home">
-      <div v-for="s in seasons" :key="'s:' + s.id" class="er-card er-hcard er-wide" tabindex="0"
+      <div v-for="(s, i) in seasons" :key="'s:' + s.id" v-bng-ui-nav-focus="i === 0 ? 1 : undefined" class="er-card er-hcard er-wide" tabindex="0" bng-nav-item
         @click="emit('season', s.id)" @keydown.enter="emit('season', s.id)">
         <div class="er-mosaic" :style="{ gridTemplateColumns: `repeat(${Math.min(4, arr(s.covers).length) || 1}, 1fr)` }">
           <EarthRallyPic v-for="c in arr(s.covers)" :key="c.round" small :url="c.url || ''" :kind="`ROUND ${c.round}`" :name="shortName(c.name)" />
@@ -21,7 +21,7 @@
         </div>
       </div>
 
-      <div v-for="r in rallies" :key="'r:' + r.id" class="er-card er-hcard" tabindex="0" @click="open(r)" @keydown.enter="open(r)">
+      <div v-for="(r, i) in rallies" :key="'r:' + r.id" v-bng-ui-nav-focus="(i === 0 && !seasons.length) ? 1 : undefined" class="er-card er-hcard" tabindex="0" bng-nav-item @click="open(r)" @keydown.enter="open(r)">
         <EarthRallyPic class="er-hpic" :url="(r.media && r.media.cover) || ''" :kind="r.kind === 'stage' ? 'STAGE' : 'RALLY'" :name="r.name" :blue="r.kind === 'stage'" />
         <div class="er-body">
           <div class="er-kind" :class="{ blue: r.kind === 'stage' }">{{ r.kind === "stage" ? "Stage" : `Rally · ${r.stages} ${r.stages === 1 ? "stage" : "stages"}` }}</div>
@@ -56,6 +56,7 @@
 <script setup>
 import { computed } from "vue"
 import { BngButton, ACCENTS } from "@/common/components/base"
+import { vBngUiNavFocus } from "@/common/directives"   // (the first card takes a controller's focus: EarthRally.vue)
 import EarthRallyPic from "./EarthRallyPic.vue"
 import { state, arr, len, time, ord, months, days, shortName } from "./store.js"
 

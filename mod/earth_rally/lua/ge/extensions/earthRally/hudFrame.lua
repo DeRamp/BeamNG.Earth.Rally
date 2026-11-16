@@ -21,7 +21,8 @@
 local M = {}
 
 M.THEME = '#1f8fff'           -- the game's stage colour (gameplay/rally/loop/uiColors.lua: stage)
-M.FINISH_CARD_S = 4           -- the flying-finish time shown big this long
+M.FINISH_CARD_S = 4           -- the flying-finish time up this long before the results card (no stop control)
+M.FINISH_BIG_S = 3            -- ... and at its larger size this long, then tucked into the top bar (#17, 1.6.2)
 M.JUMP_CARD_S = 3             -- the jump-start card
 M.GO_SHOW_S = 1.5             -- "GO" after the start
 M.BIG_COUNT_FROM = 5          -- our big numeral for the last seconds of the countdown (the stock squares light from 5)
@@ -83,6 +84,15 @@ local function penalties(run, c)
     resets = resets * c.resetS, resetCount = resets,
     missedAtc = run.missedAtc and c.missedAtcS or 0,
   }
+end
+
+-- The flying-finish time's size now (1.6.2, #17: the 1.2.0 card was 800 px wide in the middle of the screen, over
+-- the road just as the car crosses the line): 'big' for FINISH_BIG_S, the card beside the stage clock in the top bar
+-- (where the km readout was), then 'tucked', the same place at the bar's own height, until the stop control (toStop)
+-- or the results card (finished). nil before the finish.
+function M.finishPhase(run)
+  if not (run and run.finalTime) then return nil end
+  return (run.sinceFinish or 0) < M.FINISH_BIG_S and 'big' or 'tucked'
 end
 
 -- The stage time at the flying finish, against the best before this run.
@@ -257,11 +267,11 @@ function M.build(run, ctx)
       rl.vehicleProximity = { distance = d, distanceToPlane = d, isNear = d <= c.stopRadiusM,
         isStopped = speed < c.stoppedMs, isFrozen = false, isStartLine = false, isOverLineAllowed = false,
         usingGroundMarkerDistance = false }
-      show.finish = (run.sinceFinish or 0) < M.FINISH_CARD_S or nil
+      show.finish = M.finishPhase(run)    -- (kept, tucked, all the way to the stop)
     end
   elseif s == 'finished' then
     local early = (run.sinceFinish or 0) < M.FINISH_CARD_S
-    show.finish = (early and run.finalTime) and true or nil
+    show.finish = early and M.finishPhase(run) or nil
     if run.resultsOpen and not early then
       show.results = true
       local nx = run.nextStage
@@ -335,16 +345,17 @@ function M.streamKeys(run, k)
     return rl, ours
   elseif s == 'toStop' then
     local tail = near(run.toControlM, 0.1) .. '|' .. b((run.toControlM or 0) <= (k.stopRadiusM or 25)) .. '|' .. b(k.stopped)
-      .. '|' .. b((run.sinceFinish or 0) < M.FINISH_CARD_S)
+      .. '|' .. tostring(M.finishPhase(run))
       .. '|' .. tostring(run.stageTime) .. '|' .. sec
-    return common .. tail, common .. b((run.sinceFinish or 0) < M.FINISH_CARD_S) .. '|' .. sec
+    return common .. tail, common .. tostring(M.finishPhase(run)) .. '|' .. sec
   elseif s == 'toStart' then
     local diff = run.startAt and math.max(0, math.ceil(run.startAt - now - 1e-6)) or -1
     local tail = near(run.toControlM, 0.01) .. '|' .. b(k.stopped) .. '|' .. b(run.zone) .. b(run.zone and run.zone.held)
       .. '|' .. diff .. '|' .. sec
     return common .. tail, common .. sec
   elseif s == 'finished' or s == 'failed' then
-    local tail = b((run.sinceFinish or 0) < M.FINISH_CARD_S) .. '|' .. b(run.finalTime) .. '|' .. b(run.resultsOpen)
+    local tail = b((run.sinceFinish or 0) < M.FINISH_CARD_S) .. '|' .. tostring(M.finishPhase(run)) .. '|'
+      .. b(run.finalTime) .. '|' .. b(run.resultsOpen)
       .. '|' .. b(run.nextStage) .. '|' .. tostring(run.error)
     return common .. tail, common .. tail
   end

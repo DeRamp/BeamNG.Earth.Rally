@@ -1659,6 +1659,11 @@ do
   T.check(ours.show.results and ours.results.finish.time == r5.finalTime and ours.results.next == nil,
     'the results card after the big time (the last stage: no Next stage)')
   T.check(runner.resultsAction('next') == false, 'no next stage on a one-stage rally')
+  -- the card's Close (1.6.2, #18): the card gone, the run still there for Retry
+  T.check(runner.resultsAction('close') == true and not r5.resultsOpen and runner.current() == r5,
+    'Close: the results card shut, nothing else')
+  rl, ours = runner.uiFrame()
+  T.check(not ours.show.results, '... and the HUD stops drawing it')
   local okR = runner.resultsAction('retry')
   T.check(okR and runner.current() ~= r5 and runner.state() == 'travel', 'Retry: the stage again from the start')
   runner.abort(true)
@@ -1911,6 +1916,22 @@ do
     package.loaded['beamngEarth/credits'] = nil
   end
   main.onUiChangedState('play')
+  -- the menu page pauses the game (1.6.2, #13: menuPause, tested on its own in test_menu_pause), and the level going
+  -- with the page up takes the request back
+  do
+    local reqs = {}
+    simTimeAuthority = { pushPauseRequest = function(id) reqs[id] = true end,
+      popPauseRequest = function(id) reqs[id] = nil end }
+    main.onUiChangedState('earthRally')
+    T.check(reqs.earthRally_menu, 'the menu page: a pause request in')
+    main.onUiChangedState('play')
+    T.check(not reqs.earthRally_menu, 'closed: taken back')
+    main.onUiChangedState('earthRally')
+    main.onClientEndMission()
+    T.check(not reqs.earthRally_menu, 'the level gone with the page up: taken back')
+    main.onUiChangedState('play')
+    simTimeAuthority = nil
+  end
   -- Drive stage from the page: the run starts, the page closes
   anchor = { lat = 47.0, lon = -123.0 }
   car.lat, car.lon, car.speed = full[1][1] - 0.02, full[1][2], 0

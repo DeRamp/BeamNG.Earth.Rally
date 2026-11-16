@@ -199,9 +199,17 @@ do
     'to the stop control: the stock SLOW and distance, the stage time kept top-left')
   T.check(ours.show.finish and ours.finish.time == 378.9 and math.abs(ours.finish.delta - 6.5) < 1e-9 and not ours.finish.newBest
     and ours.finish.penalties.jumpStart == 10 and ours.finish.penalty == 10, 'the flying-finish card: slower than the best, the jump start in it')
-  fin.sinceFinish = 5
+  T.check(ours.show.finish == 'big', 'at the line: the time at its larger size (beside the stage clock, not mid-screen: #17)')
+  local kBig = select(2, hud.streamKeys(run('toStop', fin), { now = 38980 }))
+  fin.sinceFinish = hud.FINISH_BIG_S + 0.1
+  rl, ours = hud.build(run('toStop', fin), { now = 38980 })
+  local kTucked = select(2, hud.streamKeys(run('toStop', fin), { now = 38980 }))
+  T.check(ours.show.finish == 'tucked' and kBig ~= kTucked,
+    '... a few seconds, then tucked into the top bar, and the stream says so (keys ' .. kBig .. ' / ' .. kTucked .. ')')
+  fin.sinceFinish = 60
   rl, ours = hud.build(run('toStop', fin), { now = 38984 })
-  T.check(not ours.show.finish, '... for a few seconds')
+  T.check(ours.show.finish == 'tucked', '... and kept, tucked, all the way to the stop control')
+  T.check(hud.finishPhase(run('running', {})) == nil and hud.finishPhase(nil) == nil, 'finishPhase: nothing before the finish')
   rl, ours = hud.build(run('toStop', { stageTime = 360, finalTime = 360, penalty = 0, sinceFinish = 0, toControlM = 20 }), ctx)
   T.check(ours.finish.newBest and ours.finish.first and rl.vehicleProximity.isNear, 'a first time is a best; near the stop: STOP')
 
@@ -246,7 +254,10 @@ do
   T.check(not ours.show.results, 'the card closed')
   done.sinceFinish, done.resultsOpen = 1, true
   rl, ours = hud.build(run('finished', done), { now = 39000 })
-  T.check(ours.show.finish and not ours.show.results, 'finished at the flying finish (no stop control): the big time first')
+  T.check(ours.show.finish == 'big' and not ours.show.results, 'finished at the flying finish (no stop control): the big time first')
+  done.sinceFinish = (hud.FINISH_BIG_S + hud.FINISH_CARD_S) / 2
+  rl, ours = hud.build(run('finished', done), { now = 39000 })
+  T.check(ours.show.finish == 'tucked' and not ours.show.results, '... tucked away until the results card')
   rl, ours = hud.build(run('failed', { error = 'no world' }), ctx)
   T.check(rl.activeState == 'inactive' and ours.error == 'no world' and next(ours.show) == nil, 'failed: nothing shown, the error said')
 end
