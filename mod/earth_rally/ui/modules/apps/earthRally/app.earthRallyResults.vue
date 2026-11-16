@@ -2,7 +2,17 @@
   <!-- Earth Rally's stage-done card (docs/mockups-1.2.0/results.html), an interactive app in the stage layout, shown
        while the stream 'earthRally' says show.results (Lua: hudFrame.lua; open from the stop control until a button,
        driving off, or a timeout: runner.lua). The buttons go to earthRally_main.uiResults; Close shuts the card. -->
-  <div v-if="res" class="er-results">
+  <!-- a controller (1.6.2), as the game's own prompts over driving take one (its mission/activity prompt,
+       ActivityStart.vue; the drag-race dial, dragDialControl): the card says the game an activity popup is up while
+       it shows, which is what lets a controller's menu buttons through on the driving screen at all, and a
+       no-nav scope of its own takes them -- the first button picked as it opens, the d-pad moves along them, A presses
+       the picked one, B closes. The sticks and triggers stay the car's: drive off and the card closes as before. -->
+  <div v-if="res" class="er-results" tabindex="0"
+    v-bng-scoped-nav="{ scopeId: 'earthRallyResults', type: 'nonav', activateOnMount: true, trapPolicy: 'always',
+      bubbleWhitelistEvents: ['menu'] }"
+    v-bng-on-ui-nav:ok="pressPicked" v-bng-on-ui-nav:back="() => act('close')"
+    v-bng-on-ui-nav:focus_l="() => pick(-1)" v-bng-on-ui-nav:focus_u="() => pick(-1)"
+    v-bng-on-ui-nav:focus_r="() => pick(1)" v-bng-on-ui-nav:focus_d="() => pick(1)">
     <div class="er-top">
       <span v-if="fmt.ss(stage)" class="er-ss">{{ fmt.ss(stage) }}</span><span class="er-name">{{ stage.name }}</span><span class="er-done">Stage complete</span>
     </div>
@@ -23,22 +33,25 @@
       </div>
     </div>
     <div class="er-buttons">
-      <BngButton v-if="next" class="er-main" :accent="ACCENTS.main" @click="act('next')">
+      <BngButton v-if="next" class="er-main" :class="{ 'er-picked': ring('next') }" :accent="ACCENTS.main" @click="act('next')">
         Next stage <small>{{ fmt.ss(next) ? fmt.ss(next) + " " : "" }}{{ next.name }} · {{ fmt.len(next.lengthM, units) }}</small>
       </BngButton>
-      <BngButton :accent="ACCENTS.secondary" @click="act('retry')">Retry</BngButton>
-      <BngButton :accent="ACCENTS.secondary" @click="act('menu')">Rally menu</BngButton>
+      <BngButton :class="{ 'er-picked': ring('retry') }" :accent="ACCENTS.secondary" @click="act('retry')">Retry</BngButton>
+      <BngButton :class="{ 'er-picked': ring('menu') }" :accent="ACCENTS.secondary" @click="act('menu')">Rally menu</BngButton>
       <!-- (1.6.2, #18) just the card gone, back to driving: runner.resultsAction's last case -->
-      <BngButton class="er-close" :accent="ACCENTS.outlined" @click="act('close')">Close</BngButton>
+      <BngButton class="er-close" :class="{ 'er-picked': ring('close') }" :accent="ACCENTS.outlined" @click="act('close')">Close</BngButton>
     </div>
     <div class="er-foot">Or just drive off: the card closes.</div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from "vue"
+import { ref, computed, watch, onUnmounted } from "vue"
 import { useStreams } from "@/services/events"
 import { BngButton, ACCENTS } from "@/common/components/base"
+import { vBngScopedNav, vBngOnUiNav } from "@/common/directives"
+import { reportState } from "@/services/stateReporter"
+import useControls from "@/services/controls"
 import * as fmt from "./format.js"
 
 const f = ref(null)
@@ -62,6 +75,37 @@ const penLines = computed(() => {
     { label: "Missed time control", s: p.missedAtc || 0 },
   ]
 })
+
+// The controller's pick among the buttons, in their order on the card (Next stage only when there is one).
+const order = computed(() => (next.value ? ["next", "retry", "menu", "close"] : ["retry", "menu", "close"]))
+const picked = ref(null)
+// (the pick drawn only with a controller in use, as the game's own focus ring is: a mouse player sees no ring)
+const controls = useControls()
+const padOn = computed(() => !!(controls && controls.focusIfController))
+const ring = what => padOn.value && picked.value === what
+function pick(d) {
+  const o = order.value
+  const i = o.indexOf(picked.value)
+  picked.value = o[Math.max(0, Math.min(o.length - 1, (i < 0 ? 0 : i + d)))]
+}
+function pressPicked() { if (picked.value) act(picked.value) }
+
+// While the card is up the game is told an activity popup is open (the name has the shape its popup service
+// reports, /popup/<type>/<component>/aside): its input bindings turn its menu buttons on for the driving screen then,
+// and a non-modal ("activity") one leaves the car's own controls alone (core/input/bindings.lua, onUIStateTriggered).
+const POPUP_STATE = "/popup/activity/EarthRallyResults/aside"
+let reported = false
+function setReported(on) {
+  if (on === reported) return
+  reported = on
+  try { reportState(POPUP_STATE, on) } catch (e) { /* (an older game: mouse only, as before) */ }
+}
+watch(res, (r, was) => {
+  if (r && !was) picked.value = order.value[0]
+  if (!r) picked.value = null
+  setReported(!!r && !(f.value && f.value.preview))
+}, { immediate: true })
+onUnmounted(() => setReported(false))
 
 function act(what) {
   if (f.value && f.value.preview) return
@@ -104,6 +148,9 @@ function act(what) {
 .er-bestline .er-v { color: var(--er-muted); }
 .er-buttons { display: flex; gap: 16px; padding: 24px 40px 12px; }
 .er-close { margin-left: auto; }
+/* the controller's pick (A presses it) */
+.er-picked { outline: 3px solid #fff; outline-offset: 3px; }
+.er-results:focus { outline: none; }
 .er-main { flex: 1; small { font-weight: 500; opacity: 0.85; margin-left: 8px; } }
 .er-foot { padding: 0 40px 22px; font-size: 16px; color: var(--er-muted); }
 </style>

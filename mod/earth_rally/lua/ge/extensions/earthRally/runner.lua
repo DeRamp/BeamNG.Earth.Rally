@@ -1972,6 +1972,7 @@ function M.uiFrame()
   return hudFrame.build(run, {
     now = M.clock() or 0, speed = run and speed() or 0, canSkip = M.canSkip(), units = settings.get('units'),
     uiHidden = M.uiHidden, place = earthAsked.place, earthBanner = earthAsked.banner, loading = earthAsked.loading,
+    approach = M.approachInfo(),
     noRallyLoop = extensions and extensions.isExtensionLoaded and extensions.isExtensionLoaded('gameplay_rallyLoop')
       or false,
     c = uiConsts,
@@ -1990,6 +1991,7 @@ function M.uiKeys(slow)
   keyCtx.now, keyCtx.uiHidden, keyCtx.units = M.clock() or 0, M.uiHidden, settings.get('units')
   keyCtx.stopped, keyCtx.canSkip = slow and slow.stopped, slow and slow.canSkip
   keyCtx.stopRadiusM = M.STOP_CONTROL_RADIUS_M
+  keyCtx.approach = M.approachInfo()
   return hudFrame.streamKeys(run, keyCtx)
 end
 
@@ -2016,6 +2018,23 @@ function M.formatTime(s)
   if not s then return '--:--.-' end
   local m = math.floor(s / 60)
   return string.format('%d:%04.1f', m, s - m * 60)
+end
+
+-- The HUD's line while a Route to start is armed (1.6.2): nil, or { name, distM } -- the armed stage's name and the
+-- car's straight-line distance to where it gets ready (its ATC, its start with none). Read-only; the distance is
+-- asked of BeamNG.Earth at most APPROACH_POLL_S apart (the HUD reads this every frame), and is nil until it says.
+local apInfo, apFor, apAt = nil, nil, -math.huge
+function M.approachInfo()
+  local a = approach
+  if not a then apInfo, apFor = nil, nil return nil end
+  local t = uiClock()
+  if apFor ~= a or t - apAt >= M.APPROACH_POLL_S or t < apAt then
+    apFor, apAt = a, t
+    local p = earth.pose()
+    apInfo = { name = a.stage and a.stage.name or '',
+      distM = (p and p.lat) and geo.metres(p.lat, p.lon, a.lat, a.lon) or nil }
+  end
+  return apInfo
 end
 
 return M

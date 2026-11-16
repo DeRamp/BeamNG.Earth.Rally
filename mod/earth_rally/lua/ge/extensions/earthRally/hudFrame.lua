@@ -141,6 +141,31 @@ end
 
 local INACTIVE = { activeState = 'inactive', showStageApps = false }
 
+-- A Route to start armed (1.6.2): the stage and how far off it is, one line in the rally block's corner. Ours is on
+-- screen only in the stage layout, so this is for a run that is over with its layout still up (the results card);
+-- with none, the player's own layout is up and main.lua says the same line through the game's Messages app
+-- (M.approachText). An armed route waits while a run is under way (runner.stepApproach): nothing then.
+function M.approachLine(ours, ctx)
+  local a = ctx.approach
+  if type(a) ~= 'table' or ctx.uiHidden then return end
+  ours.approach = { name = a.name, distM = a.distM }
+  ours.show.approach = true
+end
+
+-- The same line as words, for the game's Messages app: 'Route to Kuhnle · 4.2 km · gets ready as you arrive'.
+function M.approachText(a, units)
+  if type(a) ~= 'table' then return nil end
+  local d = a.distM and (' · ' .. M.lengthText(a.distM, units) .. (units == 'mi' and ' mi' or ' km')) or ''
+  return 'Route to ' .. tostring(a.name or 'the stage') .. d .. ' · gets ready as you arrive'
+end
+
+-- The approach line's part of our stream key: the stage, and the distance as drawn (0.1 km / 0.1 mi).
+function M.approachKey(a, units)
+  if type(a) ~= 'table' then return 'ap-' end
+  local step = units == 'mi' and M.MILE_M / 10 or 100
+  return 'ap' .. tostring(a.name) .. '|' .. (a.distM and tostring(math.floor(a.distM / step + 0.5)) or '-')
+end
+
 -- The two streams for `run` (nil: no run). ctx:
 --   now           the rally clock (s of the day)
 --   speed         the car's speed (m/s)
@@ -156,6 +181,7 @@ local INACTIVE = { activeState = 'inactive', showStageApps = false }
 --   loading       the world still arriving: { done, total }, or nil
 --   uiHidden      a menu is up: the HUD draws nothing (it is over the pause menu otherwise)
 --   preview       true in the HUD preview (said in our stream)
+--   approach      a Route to start armed (runner.approachInfo): { name, distM }, or nil
 -- Returns rallyLoop, earthRally.
 --
 -- (M.streamKeys, below, must change whenever what build gives the screen changes: a value added to build that the
@@ -246,11 +272,14 @@ function M.build(run, ctx)
     rl.uiColors = { theme = M.THEME }
     rl.stageData = {
       stageHeader = header,
-      label = ssLabel, currentSSTime = s == 'running' and (run.clock or 0) or (run.stageTime or run.clock or 0),
+      label = ssLabel,
+      -- (past the finish the stage clock stops at the time that counts, penalties in: the finish strip beside it
+      --  showed 6:14.5 against its 6:04.5 (1.6.2))
+      currentSSTime = s == 'running' and (run.clock or 0) or (run.finalTime or run.stageTime or run.clock or 0),
       isActive = s == 'running', isComplete = s == 'toStop', unit = units,
       completion = { distM = done, distPct = totalM > 0 and done / totalM or 0, totalDistM = totalM },
       splits = { { pathnodeId = 1, pathnodeType = 'finish', splitLabel = M.lengthText(totalM, units), distPct = 1,
-                   time = s == 'toStop' and run.stageTime or nil } },
+                   time = s == 'toStop' and (run.finalTime or run.stageTime) or nil } },
     }
     rl.scheduleData = { label = stock, ssLabel = ssLabel, totalSSCount = run.ssCount }
     if s == 'running' then
@@ -293,6 +322,8 @@ function M.build(run, ctx)
       or ((s == 'running' or s == 'toStop' or s == 'waitStart') and 'sliver') or nil
   end
 
+  if s == 'finished' or s == 'failed' then M.approachLine(ours, ctx) end
+
   -- a menu is up: ours draws nothing (the stock apps are the game's own business)
   if ctx.uiHidden then ours.show = {} end
   if ctx.noRallyLoop then return nil, ours end
@@ -319,7 +350,15 @@ local function near(v, fine)
   if math.abs(v) >= M.NEAR_M then return i(v) end
   return tostring(math.floor(v / fine + 0.5)) .. 'f'
 end
+local streamKeys
 function M.streamKeys(run, k)
+  local kr, ko = streamKeys(run, k)
+  if run and (run.state == 'finished' or run.state == 'failed') then
+    ko = ko .. '|' .. M.approachKey(not k.uiHidden and k.approach or nil, k.units)
+  end
+  return kr, ko
+end
+streamKeys = function(run, k)
   if not run then return 'none', 'none' end
   local s = run.state
   local now = k.now or 0
@@ -346,7 +385,7 @@ function M.streamKeys(run, k)
   elseif s == 'toStop' then
     local tail = near(run.toControlM, 0.1) .. '|' .. b((run.toControlM or 0) <= (k.stopRadiusM or 25)) .. '|' .. b(k.stopped)
       .. '|' .. tostring(M.finishPhase(run))
-      .. '|' .. tostring(run.stageTime) .. '|' .. sec
+      .. '|' .. tostring(run.finalTime or run.stageTime) .. '|' .. sec
     return common .. tail, common .. tostring(M.finishPhase(run)) .. '|' .. sec
   elseif s == 'toStart' then
     local diff = run.startAt and math.max(0, math.ceil(run.startAt - now - 1e-6)) or -1

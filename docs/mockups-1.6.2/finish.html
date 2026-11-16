@@ -3,12 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Earth Rally 1.6.2 · the finish time and the results card's Close</title>
+<title>Earth Rally 1.6.2 · the finish time, the results card, Route to stage</title>
 <!-- Preview for 1.6.2 (#17 the finish time over the road, #18 a Close on the results card), 1920x1080 at the game's
      own places (settings/ui_apps/.../earthRallyStage.uilayout.json). The two apps' CSS below is their real <style>
      blocks, inlined as they are (app.earthRallyHud.vue, app.earthRallyResults.vue; the browser's CSS nesting reads
      their SCSS nesting); "Now" is the 1.6.1 rule from git. Only the stock apps, the road and BngButton are stand-ins.
-     Open with #now, #big, #tucked or #results; add ?shot for a bare 1920x1080 screen. -->
+     Open with #now, #big, #tucked, #results, #route or #routecard; add ?shot for a bare 1920x1080 screen.
+     The stage clock stopped at the finish time, the gap labelled "vs best", the results card's controller pick and
+     the Route to stage line came after the owner's "I just want to see what you come up with" (no mock-up first). -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700;800&family=Overpass+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
@@ -50,6 +52,9 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
 .prox .dist { font: 400 48px "Noto Sans", sans-serif; }
 .prox .ins { text-align: center; font-size: 19px; padding-top: 6px; }
 .toprapps { left: 1467px; top: 42px; width: 380px; height: 120px; }
+/* the stock Messages app in the player's own layout (topLeftApps: right 10, top 100, 370 wide), roughly */
+.stockmsg { right: 10px; top: 100px; width: 370px; display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; background: rgba(0,0,0,.6); border-radius: 4px; font: 500 16px/1.35 "Noto Sans", sans-serif; color: #fff; }
+.stockmsg .ic { flex: none; width: 22px; height: 22px; border-radius: 50%; background: oklch(61.95% 0.1801 43.40); margin-top: 1px; }
 /* BngButton (@/common/components/base), roughly: main / secondary / outlined */
 .bng-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font: 600 20px "Noto Sans", sans-serif; color: #fff; border-radius: .25rem; padding: 14px 24px; border: 0; white-space: nowrap; }
 .bng-btn.main { background: oklch(61.95% 0.1801 43.40); }
@@ -227,6 +232,16 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
   .er-delta { font-size: 16px; padding: 2px 8px; border-radius: 5px; }
   .er-finish-row { gap: 10px; }
 }
+.er-slower small { font-size: 0.7em; font-weight: 700; margin-left: 0.4em; opacity: 0.8; text-transform: uppercase;
+  letter-spacing: 0.04em; }
+.er-approach {
+  left: 0; top: 0; max-width: 750px; padding: 10px 20px; display: flex; align-items: baseline; gap: 12px;
+  white-space: nowrap; overflow: hidden;
+  .er-approach-l { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--er-muted); }
+  .er-approach-n { font-size: 20px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .er-approach-d { font: 700 20px "Overpass Mono", monospace; color: var(--er-pink); flex: none; }
+  .er-approach-s { font-size: 15px; color: #e8e8e8; flex: none; }
+}
 .er-delta { display: inline-block; margin-top: 8px; font-size: 34px; font-weight: 800; padding: 4px 18px; border-radius: 8px; }
 .er-best { background: var(--er-go); color: #002a00; }
 .er-slower { background: rgba(255, 176, 0, 0.95); color: #1a1000; }
@@ -269,6 +284,7 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
 .er-bestline .er-v { color: var(--er-muted); }
 .er-buttons { display: flex; gap: 16px; padding: 24px 40px 12px; }
 .er-close { margin-left: auto; }
+.er-picked { outline: 3px solid #fff; outline-offset: 3px; }
 .er-main { flex: 1; small { font-weight: 500; opacity: 0.85; margin-left: 8px; } }
 .er-foot { padding: 0 40px 22px; font-size: 16px; color: var(--er-muted); }
 </style>
@@ -281,6 +297,9 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
   <button data-go="big">1.6.2: at the line (3 s)</button>
   <button data-go="tucked">1.6.2: on to the stop</button>
   <button data-go="results">1.6.2: at the stop control</button>
+  <span class="sep"></span>
+  <button data-go="route">Route to stage: driving there</button>
+  <button data-go="routecard">Route to stage: from the results card</button>
 </div>
 
 <div class="stage-wrap">
@@ -312,12 +331,19 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
   <!-- the rest of the stage layout -->
   <div class="abs existing tacho" style="left:1615px; top:775px; width:300px; height:300px"><div class="spd" id="spd">112</div><div class="u">km/h</div></div>
   <div class="abs existing" style="left:5px; top:640px; width:300px; height:350px">navigation (minimap)</div>
-  <div class="abs existing toprapps">topLeftApps (stock)</div>
+  <div class="abs existing toprapps" data-m="now big tucked results routecard">topLeftApps (stock)</div>
+  <!-- no run: our HUD is not on screen (it lives in the stage layout), so the line is the game's Messages app's -->
+  <div class="abs stockmsg" data-m="route"><span class="ic"></span><span>Route to Deckerville · 4.2 km · gets ready as you arrive</span></div>
 
   <!-- the stock stage apps: the stage time kept top-left, the bar full, the SLOW to the stop control -->
-  <div class="abs timing" data-m="now big tucked">
+  <div class="abs timing" data-m="now">
     <div class="h">SS2 · KUHNLE</div>
     <div class="t">6:04.5</div>
+  </div>
+  <!-- 1.6.2: stopped at the time that counts (penalties in), so it agrees with the finish beside it -->
+  <div class="abs timing" data-m="big tucked">
+    <div class="h">SS2 · KUHNLE</div>
+    <div class="t">6:14.5</div>
   </div>
   <div class="abs progress" data-m="now big tucked">
     <div class="track"><div class="fill" style="width:100%"></div><span class="sq" style="left:0"></span><span class="sq" style="left:100%"></span><span class="lab" style="left:100%">8.4 km</span></div>
@@ -342,7 +368,7 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
       <div class="er-finish-head"><span class="er-finish-l">SS2 Kuhnle · finish</span><span class="er-finish-pen">incl. +10 s jump start</span></div>
       <div class="er-finish-row">
         <span class="er-finish-t">6:14.5</span>
-        <span class="er-delta er-slower">+2.1 s</span>
+        <span class="er-delta er-slower">+2.1 s<small>vs best</small></span>
       </div>
     </div>
     <!-- 1.6.2: show.finish 'tucked' -->
@@ -350,13 +376,20 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
       <div class="er-finish-head"><span class="er-finish-l">Finish</span></div>
       <div class="er-finish-row">
         <span class="er-finish-t">6:14.5</span>
-        <span class="er-delta er-slower">+2.1 s</span>
+        <span class="er-delta er-slower">+2.1 s<small>vs best</small></span>
       </div>
+    </div>
+    <!-- 1.6.2: a Route to stage armed while the results card is up (show.approach) -->
+    <div class="er-panel er-approach" data-m="routecard">
+      <span class="er-approach-l">Route</span>
+      <span class="er-approach-n">Deckerville</span>
+      <span class="er-approach-d">4.2 km</span>
+      <span class="er-approach-s">gets ready as you arrive</span>
     </div>
   </div>
 
   <!-- ===== ours: app.earthRallyResults.vue, in its slot ===== -->
-  <div class="abs results-slot" data-m="results">
+  <div class="abs results-slot" data-m="results routecard">
     <div class="er-results">
       <div class="er-top"><span class="er-ss">SS2</span><span class="er-name">Kuhnle</span><span class="er-done">Stage complete</span></div>
       <div class="er-total"><span class="er-t">6:14.5</span><span class="er-delta er-slower">+2.1 s</span></div>
@@ -371,7 +404,7 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
         <div class="er-line er-bestline"><span>Best</span><span class="er-v">6:12.4</span></div>
       </div>
       <div class="er-buttons">
-        <span class="bng-btn main er-main">Next stage <small>SS3 Deckerville · 11.8 km</small></span>
+        <span class="bng-btn main er-main er-picked">Next stage <small>SS3 Deckerville · 11.8 km</small></span>
         <span class="bng-btn secondary">Retry</span>
         <span class="bng-btn secondary">Rally menu</span>
         <span class="bng-btn outlined er-close">Close</span>
@@ -388,11 +421,13 @@ html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto 
 <script>
 const NOTES = {
   now: "<b>Now (1.6.1).</b> Crossing the flying finish: an 800 px card mid-screen for 4 s, over the road and under the stock SLOW / distance to the stop control.",
-  big: "<b>1.6.2, at the line.</b> The time comes up in the top bar, beside the stage clock where the km readout was (it has nothing left to count): clear of the road and of the stock SLOW. Larger for 3 s, with the penalties, and never lower than the bar's 90 px so it stays off the SLOW panel (hudFrame.FINISH_BIG_S).",
+  big: "<b>1.6.2, at the line.</b> The time comes up in the top bar, beside the stage clock where the km readout was (it has nothing left to count): clear of the road and of the stock SLOW. Larger for 3 s, with the penalties, and never lower than the bar's 90 px so it stays off the SLOW panel (hudFrame.FINISH_BIG_S). The stage clock stops at the same time, penalties in, and the gap says <b>vs best</b>.",
   tucked: "<b>1.6.2, on to the stop control.</b> After 3 s it shrinks to the bar's own height and stays there until the stop control, so the time and the gap to your best are still a glance away.",
-  results: "<b>1.6.2, at the stop control.</b> The results card gets a <b>Close</b> button (#18): the card goes, nothing else happens. Driving off still closes it too.",
+  results: "<b>1.6.2, at the stop control.</b> The results card gets a <b>Close</b> button (#18): the card goes, nothing else happens. Driving off still closes it too. With a controller the first button is picked as it opens (white ring): the d-pad moves along the buttons, A presses, B closes.",
+  route: "<b>Route to stage armed, driving there.</b> No run is on, so our HUD is off screen (it lives in the stage layout): the line goes through the game's own Messages app in the player's layout, the distance to 0.1 km. It goes when the stage loads, the route is cleared, or a menu is up.",
+  routecard: "<b>Route to stage armed from the results card.</b> The stage layout is still up, so the line sits in the rally block's corner (the stock stage clock is gone by now).",
 };
-const SPEED = { now: 112, big: 108, tucked: 64, results: 0 };
+const SPEED = { now: 112, big: 108, tucked: 64, results: 0, route: 86, routecard: 12 };
 function go(m) {
   document.querySelectorAll("[data-m]").forEach(e => { e.style.display = e.dataset.m.split(" ").includes(m) ? "" : "none" });
   document.querySelectorAll(".mock-bar button[data-go]").forEach(b => b.classList.toggle("on", b.dataset.go === m));
