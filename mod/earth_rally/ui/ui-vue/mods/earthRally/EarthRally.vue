@@ -277,11 +277,17 @@
       <!-- ===== Settings ===== -->
       <section v-else-if="view === 'settings'" class="er-settings-page">
         <div class="er-card"><EarthRallySettings /></div>
-        <p class="er-dim er-small">Earth Rally {{ st.version }}</p>
+        <div>
+          <div class="er-card"><EarthRallyPrivacy /></div>
+          <p class="er-dim er-small">Earth Rally {{ st.version }}</p>
+        </div>
       </section>
 
       <div v-else class="er-muted">Loading...</div>
     </div>
+
+    <!-- the stats question, the first time the menu opens (+stats) -->
+    <EarthRallyConsent v-if="st.stats && st.stats.consent === 'ask'" />
 
     <div class="er-infobar">
       <span><span class="er-k">Esc</span>Back to the game</span>
@@ -296,6 +302,8 @@ import { BngButton, ACCENTS } from "@/common/components/base"
 import { vBngOnUiNav, vBngUiNavScroll, vBngUiNavFocus } from "@/common/directives"
 import { useUINavScope } from "@/services/uiNav"
 import EarthRallySettings from "./EarthRallySettings.vue"
+import EarthRallyPrivacy from "./EarthRallyPrivacy.vue"
+import EarthRallyConsent from "./EarthRallyConsent.vue"
 import EarthRallyHome from "./EarthRallyHome.vue"
 import EarthRallySeason from "./EarthRallySeason.vue"
 import EarthRallyPic from "./EarthRallyPic.vue"

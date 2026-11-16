@@ -33,6 +33,7 @@ local events = require('earthRally/events')
 local menu = require('earthRally/menu')
 local settings = require('earthRally/settings')
 local hudFrame = require('earthRally/hudFrame')
+local stats = require('earthRally/stats')   -- anonymous stats, only with the player's yes (+stats)
 local dressing = require('earthRally/dressing')
 local junctions = require('earthRally/junctions')
 
@@ -183,6 +184,7 @@ function M.current() return run end
 local function fail(why)
   if not run then return end
   run.state, run.error = 'failed', why
+  pcall(stats.stageEnded, run, 'failed')
   say(why, 8, 'error', 'Earth Rally: run stopped')
 end
 
@@ -437,6 +439,7 @@ function M.start(event, stage, opts)
       lengthM = nx.lengthM }
   end
   run.moveHandle = earth.onMoved(function(info) M._moved(info) end)
+  pcall(stats.stageStarted, run)
 
   -- the time controls round the stage (from the event's map), when they are near enough to be its own
   local ctl = stage.controls or {}
@@ -1558,6 +1561,7 @@ local function stepRunning(dtSim)
       lineFinish = run.lineFinish,
       startAt = M.formatClock(run.startAt), date = os.date('!%Y-%m-%dT%H:%M:%SZ'), checks = checks })
     run.finalTime, run.best = time, best
+    pcall(stats.stageEnded, run, 'finished', events.best)
     run.sinceFinish = 0
     log('I', logTag, 'run checks: ' .. dumps(checks))
     local title = string.format('%s: %s', run.stage.name, M.formatTime(time))
@@ -1814,6 +1818,7 @@ function M.abort(quiet)
   if not run then return end
   tidy()
   if not quiet and run.state ~= 'finished' then say('Run stopped.', 4, 'info') end
+  pcall(stats.stageEnded, run, 'quit')
   run = nil
 end
 

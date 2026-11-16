@@ -64,6 +64,16 @@ export function setSetting(key, value) {
   })
 }
 
+// Stats and Report a problem (+stats; main.lua uiStats): what = yes / no / shown / delete / openFolder / report.
+// a, b: for report, what the player wrote and whether to save the log.
+const luaText = v => JSON.stringify(String(v || "").replace(/[\u0000-\u0009\u000b-\u001f]/g, " ").slice(0, 4000))
+export function statsAction(what, a, b, cb) {
+  engineLua(`earthRally_main and earthRally_main.uiStats(${q(what)}, ${luaText(a)}, ${b ? "true" : "false"}) or nil`, r => {
+    if (r && r.stats) state.value = Object.assign({}, state.value, { stats: r.stats })
+    if (cb) cb(r)
+  })
+}
+
 // view: the page to open at; none opens where the menu was left (EarthRally.vue's lastPlace)
 export function openMenu(view, eventId) {
   engineLua(`if earthRally_main then earthRally_main.openMenu(${q(view)}, ${q(eventId)}) end`)

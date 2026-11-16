@@ -20,12 +20,14 @@ local preview = require('earthRally/preview')
 local hudFrame = require('earthRally/hudFrame')
 local versions = require('earthRally/versions')
 local earthMenuFix = require('earthRally/earthMenuFix') -- STOPGAP: remove with BeamNG.Earth's fix (the file says)
+local stats = require('earthRally/stats')             -- anonymous stats, opt-in (+stats)
+local report = require('earthRally/report')           -- Report a problem: a GitHub issue in the browser (+stats)
 local menuPause = require('earthRally/menuPause')     -- the game paused while the menu page is up (1.6.2, #13)
 menuPause.holding = earth.holding                    -- (BeamNG.Earth's own holds: our request waits for them)
 
 local M = {}
 local logTag = 'earthRally'
-M.VERSION = '1.6.2-alpha'
+M.VERSION = '1.6.2-alpha+stats'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_FLOOR_S = 1             -- the HUD's streams sent when what they show changes, and at least this often
 M.STREAM_GAP_S = 0.1              -- ... the stock stream at most this often outside waitStart / running
@@ -100,7 +102,11 @@ end
 -- BeamNG.Earth's own apps do the same (its credits.lua: `toState:sub(1, 4) == 'menu' or toState == 'loading'`).
 function M.onUiChangedState(toState)
   if type(toState) ~= 'string' then return end
+  local was = menuOpen
   menuOpen = toState == M.ROUTE
+  -- stats: sent while the menu is up (the game is paused there); the menu left with the question still up is a No
+  if menuOpen and not was then pcall(stats.sessionStart) pcall(stats.flushSoon) end
+  if was and not menuOpen then pcall(stats.menuClosed) end
   -- Our own full-screen page counts too: it is not called 'menu...' but it is just as much in the way. So does
   -- BeamNG.Earth's world map, a route of its own ('beamngEarthMap', its credits.lua MAP_ROUTE).
   -- 'pause' is the in-game Escape menu in 0.40 ('menu' is the main menu); this check missed it, as BeamNG.Earth's does.
@@ -425,6 +431,7 @@ local function autoDone(ok, matched, why, how)
   local a = autoRun
   autoRun = nil
   if not a then return end
+  pcall(stats.record, 'recce_done', { result = ok and 'ok' or 'failed' })
   local kind = (how and how.kind) or (ok and autoRecce.DONE or autoRecce.FAILED)
   -- A sequence still running is told how its match went, so it can add anything the download could not do -- the
   -- app refusing the area, or items nothing could fetch -- beside the stage's own reason. There is one match a
@@ -806,7 +813,11 @@ M._action = doAction
 
 function M.uiAction(what, eventId, stageId)
   local ok, r = pcall(doAction, what, eventId, stageId)
-  if not ok then log('E', logTag, 'menu action ' .. tostring(what) .. ': ' .. tostring(r)) return { ok = false, message = tostring(r) } end
+  if not ok then
+    log('E', logTag, 'menu action ' .. tostring(what) .. ': ' .. tostring(r))
+    pcall(stats.error, 'menu_action_' .. tostring(what):gsub('[^%w]', ''):sub(1, 30), 'main')
+    return { ok = false, message = tostring(r) }
+  end
   if r.message then message = r.message end
   return r
 end
@@ -888,6 +899,7 @@ function M.uiState()
   -- what changed under the mod since it was built (versions.lua): nothing to show in the normal case
   s.versionNotes = versions.notes()
   s.settings = settings.uiState()
+  s.stats = stats.uiState()
   s.rallies = menu.rallies(importer.lastReports)
   -- the Rallies page: seasons, loose rallies and single stages (menu.home); `rallies` above stays for the pause
   -- menu's tab, which lists every rally flat
@@ -933,6 +945,28 @@ function M.uiStage(eventId, stageId, pass)
 end
 
 function M.uiSet(key, value) return settings.set(key, value) end
+
+-- Settings > Privacy and the first-open question (EarthRallyPrivacy.vue, EarthRally.vue): 'yes' / 'no' (the
+-- answer, or the switch), 'shown' (the question came up), 'delete', 'openFolder', 'report' (a = what the player wrote, b = save the log).
+function M.uiStats(what, a, b)
+  local ok, r = pcall(function()
+    if what == 'yes' or what == 'no' then stats.answer(what == 'yes') if what == 'yes' then stats.flushSoon() end
+    elseif what == 'shown' then stats.prompting()     -- (the question is on screen: leaving now is a No)
+    elseif what == 'delete' then stats.deleteMine()
+    elseif what == 'openFolder' then stats.openFolder()
+    elseif what == 'report' then
+      local cur = runner.current()
+      local env = versions.env and versions.env(M.VERSION) or {}
+      return report.open(a, b == true, { mod = M.VERSION, game = rawget(_G, 'beamng_version'),
+        earth = env.earth and (tostring(env.earth.major) .. '.' .. tostring(env.earth.minor)) or nil,
+        stage = cur and cur.stage and ((cur.event and cur.event.name or '?') .. ' / ' .. tostring(cur.stage.name)) or nil })
+    end
+    return { ok = true }
+  end)
+  if not ok then log('E', logTag, 'stats ' .. tostring(what) .. ': ' .. tostring(r)) return { ok = false, message = tostring(r) } end
+  r.stats = stats.uiState()
+  return r
+end
 
 ------------------------------------------------------------------------------------------ the HUD's streams
 
@@ -1098,6 +1132,7 @@ M._sendStreams = sendStreams
 ------------------------------------------------------------------------------------------ hooks
 
 function M.onUpdate(dtReal, dtSim)
+  stats.update(dtReal, menuOpen)
   -- switched off a frame ago: stop running (see onModDeactivated)
   if unloadNext then
     unloadNext = false
@@ -1282,6 +1317,7 @@ function M.onExtensionLoaded()
   if veh then pcall(runner._vehCtl, veh, 'off') end
   settings.load()
   show[0] = settings.get('devPanel') == true
+  pcall(stats.init, M.VERSION)
   -- (new maps in the import folder)
   scanIn = 0.5
   log('I', logTag, 'Earth Rally ' .. M.VERSION .. ' loaded (Ctrl+Alt+K opens its menu)')

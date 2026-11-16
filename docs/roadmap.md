@@ -149,7 +149,7 @@ From a single stage to a whole event.
 | Weather and time of day per stage (25) | M |
 | Split times (15) | S |
 
-## Feature `+stats`: player stats and bug reports (built on 1.6.2, lands as the next minor)
+## Feature `+stats`: player stats and bug reports (building on branch `feature/stats`, on 1.6.2: `1.6.2-alpha+stats`)
 
 No number until it merges: see "Feature builds" in CLAUDE.md. Builds are called `1.6.2-alpha+stats`.
 

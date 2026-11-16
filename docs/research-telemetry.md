@@ -1,6 +1,6 @@
 # Research: player stats, bug reports, log upload
 
-Research 2026-11-16; decisions taken the same day (end of page). Planned as the feature build **`1.6.2-alpha+stats`** (lands as the next minor). Nothing is built. Mock-up: [`mockups-telemetry/telemetry.html`](mockups-telemetry/telemetry.html).
+Research 2026-11-16; decisions taken the same day (end of page). Built as the feature build **`1.6.2-alpha+stats`** on branch `feature/stats` (lands as the next minor). Server: [`../server/README.md`](../server/README.md). Mock-up: [`mockups-telemetry/telemetry.html`](mockups-telemetry/telemetry.html).
 A new system, so it goes in a minor after the alpha MVP (bug fixes only until then).
 
 ## What the owner asked for

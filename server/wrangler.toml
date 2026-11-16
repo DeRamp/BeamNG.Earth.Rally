@@ -1,0 +1,20 @@
+name = "earth-rally-stats"
+main = "src/worker.js"
+compatibility_date = "2026-11-01"
+
+# The mod sends plain HTTP (the game's Lua has no TLS). workers.dev answers it; a custom domain must NOT have
+# "Always Use HTTPS" on, or the game's requests are redirected and fail.
+workers_dev = true
+
+# No request logs kept (they would hold IP addresses)
+[observability]
+enabled = false
+
+# Once a day: rows older than a year folded into monthly totals and deleted
+[triggers]
+crons = ["17 3 * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "earth-rally-stats"
+database_id = "PASTE-THE-ID-FROM-wrangler-d1-create-HERE"
