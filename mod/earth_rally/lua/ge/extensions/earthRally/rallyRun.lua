@@ -337,7 +337,10 @@ function M.prepDone()
   if rally.over(R) then
     say('No stage left in this rally can be driven on this computer.', 8, 'warning', R.name)
     -- (stages already driven: the rally finished with them, scored; none: nothing to keep)
-    if next(R.results or {}) then finish() else M.quit() end
+    if next(R.results or {}) then
+      finish()
+      if M.ui.openCard then M.ui.openCard() end
+    else M.quit() end
     return
   end
   if thenDo then thenDo() end
@@ -745,7 +748,7 @@ end
 local tInfo
 function M.transitInfo()
   if not (R and toStop) then tInfo = nil return nil end
-  local d = math.floor((toStop.distM or 0) / 10 + 0.5) * 10
+  local d = toStop.distM and math.floor(toStop.distM / 10 + 0.5) * 10 or nil
   if not (tInfo and tInfo.item == toStop.item and tInfo.distM == d) then
     tInfo = { item = toStop.item, name = toStop.item.label .. (toStop.item.name and (' · ' .. toStop.item.name) or ''),
       distM = d, rally = true }

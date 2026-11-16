@@ -27,6 +27,15 @@ The first drive's findings are now issues #23-#33. This revision answers all of 
 - **The dev panel** (Settings → Developer panel) has the new rally tools under the run tools.
 - The mock-ups were skipped for this revision: you asked for it built.
 
+## Open questions for the owner
+
+- **Transit lengths** are not measured. Some ARA transits are 30-50 km. Is a player skip out of service wanted
+  after all? (#33 says dev panel only, as built.)
+- **No pad button for the time card.** Service out, Leave and Retire need Ctrl+Alt+K.
+- **A broken car on a transit in Realistic** can only Leave. Casual's transit recovery repairs it.
+- **#32:** where on screen did "SS6" show? The logs say SS4's stage loaded.
+- **Saves from the first MVP build** are not continued (the save format changed). Start the rally again.
+
 ## Test plan (one rally with an event file, day 1)
 
 1. **Start (Casual):** the start screen lists stages to recce and stages held out. Start: any recces run first,

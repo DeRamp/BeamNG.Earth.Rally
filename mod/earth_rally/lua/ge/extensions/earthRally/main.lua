@@ -1037,7 +1037,8 @@ function M.uiRallyAction(what, eventId, opts)
       return go(okS, why)
     elseif what == 'quit' or what == 'abandon' then
       -- (left while the stages are being got ready: the auto recce under way stops with it)
-      if rallyRun.preparing() then
+      local act = rallyRun.active()
+      if rallyRun.preparing() and act and act.eventId == eventId then
         autoSeq = nil
         if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
       end
