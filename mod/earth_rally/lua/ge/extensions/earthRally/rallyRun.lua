@@ -59,6 +59,7 @@ local askT = nil       -- how long the Recover? question has been up
 local loop = nil       -- Realistic: the times since the last save ({ results, started }), kept in the save file
 local move = nil       -- the car on its way to a stop by teleport: { item, t, ready }
 local toStop = nil     -- a service being driven to: { item, lat, lon, t, distM }
+local transitGps = nil -- the next stage's GPS, to set again once the stage before has let the arrows go (#42)
 local prep = nil       -- the stages being got ready: { list = [stage], i, then = fn, done = {}, current }
 
 local function say(text, s, kind, title) pcall(runner.say, text, s or 4, kind or 'info', title) end
@@ -442,9 +443,15 @@ local function armTransit()
   -- (#45) Into the ATC the right way: the GPS through a point APPROACH_VIA_M before it, on the far side from the
   -- start (the way the stage runs, carried back), then to the ATC. BeamNG.Earth's planner snaps it to the road there.
   local via = M.approachVia(stage, lat, lon, kind)
-  local okR = via and select(2, pcall(earth.gpsRoute, { { lat = via.lat, lon = via.lon, name = title .. ' approach' },
-    { lat = lat, lon = lon, name = title .. ' ' .. kind } }))
-  if okR ~= true then pcall(earth.gpsSet, lat, lon, title .. ' ' .. kind) end
+  local function setGps()
+    local okR = via and select(2, pcall(earth.gpsRoute, { { lat = via.lat, lon = via.lon, name = title .. ' approach' },
+      { lat = lat, lon = lon, name = title .. ' ' .. kind } }))
+    if okR ~= true then pcall(earth.gpsSet, lat, lon, title .. ' ' .. kind) end
+  end
+  setGps()
+  -- (#42: armed at the flying finish, the stage's own arrows to its stop control clear the GPS: set again once that
+  -- run has let them go, M.update)
+  transitGps = { set = setGps, again = not runLive() }
   local ok = runner.armApproach(ev, stage, { sticky = true, title = title, rally = true,
     startOpts = { rally = true, ssLabel = it.ss, keepDamage = true },
     onStart = function() M.onStageLoaded() end,
@@ -506,6 +513,7 @@ end
 
 -- (runner: the rally's stage loaded, by the transit's arrival or startHere)
 function M.onStageLoaded()
+  transitGps = nil
   local r = runner.current()
   if not (R and r) then return end
   card = nil
@@ -778,6 +786,26 @@ function M.update(dt)
   if loop and not loop.started and R.mode == 'realistic' then
     local r = runner.current()
     if r and r.inRally and r.state == 'running' then loop.started = true saveLoop() end
+  end
+  -- (#42) the transit's GPS set again once the finished stage's run let its arrows go, and whenever it has none
+  if transitGps and not move and not toStop then
+    local rr = runner.current()
+    local cur = rally.current(R)
+    if not (cur and cur.kind == 'stage') or not runner.approaching() then transitGps = nil
+    elseif not runLive() and not (rr and rr.routeTarget) then
+      transitGps.t = (transitGps.t or 0) - dt
+      if transitGps.t <= 0 then
+        transitGps.t = M.ARRIVE_POLL_S
+        -- (not near the ATC: arrived there, BeamNG.Earth's GPS clears itself, and must not be sent round again)
+        local ap = runner.approachInfo()
+        local far = not (ap and ap.distM) or ap.distM > 300
+        if far and (not transitGps.again or earth.gps() == nil) then
+          transitGps.again = true
+          transitGps.set()
+          log('I', logTag, 'rally: the GPS set to ' .. tostring(cur.ss) .. ' again')
+        end
+      end
+    end
   end
   if move then
     move.t = move.t + dt

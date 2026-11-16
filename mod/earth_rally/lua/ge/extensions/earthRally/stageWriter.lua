@@ -193,7 +193,10 @@ function M.build(line, opts)
     stopM = stopM, lead = lead, mute = opts.mute, corners = opts.corners })
   local np = #stagePts
   local clear = math.ceil(M.NOTE_CLEAR_M / step)
-  local function callable(i) return i > clear and i < np and not muted(i) end
+  -- (#47: notes go on past the finish to the stop control, but nothing is called on the finish itself or just
+  -- past it, as corners there are not)
+  local function callable(i) return i > clear and i < np and not (np > iF and i >= iF and i <= iF + clear)
+    and not muted(i) end
   local _, k = geo.curvature(stagePts, step, opts.corners and opts.corners.smoothM)
   local v = pacenotes.speeds(k, step)
   local events, hills, grade = pacenotes.heights(stagePts, step, v)

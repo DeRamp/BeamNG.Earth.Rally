@@ -62,11 +62,11 @@ function M.update(dt)
   if not c then return end
   dt = dt or 0
   c.t = c.t + dt
-  if c.ready then return end
   local n = #(c.spec.steps or {})
   local okP, step, bar, barText, failed = pcall(c.spec.probe or function() return n + 1 end)
   if not okP then finish(false, tostring(step)) return end
   if failed then finish(false, failed) return end
+  if c.ready then return end
   c.step, c.bar, c.barText = tonumber(step) or 1, bar, barText
   c.world = M.world()
   if c.step <= n then
@@ -79,6 +79,10 @@ function M.update(dt)
   c.worldT = c.worldT + dt
   local enough = c.world >= M.need()
   if not enough and c.worldT <= M.WORLD_WAIT_S then return end
+  -- (BeamNG.Earth still holding the car -- its drop hold after a teleport: the page's pause comes off only after it,
+  -- or the physics would run in the middle of its hold; menuPause.lua)
+  local okH, held = pcall(earth.holding)
+  if okH and held and c.worldT <= 2 * M.WORLD_WAIT_S then return end
   if not enough then log('W', logTag, string.format('loading screen: the world at %d%% after %d s, let go', c.world,
     M.WORLD_WAIT_S)) end
   if c.spec.button then

@@ -447,7 +447,7 @@ function M.worldLoaded()
       d, n = d + math.max(0, math.min(p[1], p[2])), n + p[2]
     end
   end
-  if n <= 0 then return 100 end
+  if n <= 0 then return 0 end            -- (nothing counted yet: just after a teleport)
   return math.floor(100 * d / n + 0.5)
 end
 

@@ -209,6 +209,11 @@ end
 function M.onUiChangedState(toState)
   if type(toState) ~= 'string' then return end
   menuOpen = toState == M.ROUTE
+  -- (the page closed under a time control card that is ready: taken as its Continue, #40)
+  if not menuOpen then
+    local lsu = loadScreen.ui()
+    if lsu and lsu.ready then pcall(loadScreen.continue) end
+  end
   -- Our own full-screen page counts too: it is not called 'menu...' but it is just as much in the way. So does
   -- BeamNG.Earth's world map, a route of its own ('beamngEarthMap', its credits.lua MAP_ROUTE).
   -- 'pause' is the in-game Escape menu in 0.40 ('menu' is the main menu); this check missed it, as BeamNG.Earth's does.
@@ -1389,7 +1394,8 @@ function M.onUpdate(dtReal, dtSim)
   -- which has its own request)
   do
     local r = runner.current()
-    local want = r ~= nil and r.resultsOpen == true and r.state == 'finished' and not menuOpen and not runner.uiHidden
+    local want = r ~= nil and r.resultsOpen == true and r.state == 'finished' and r.stopCtl ~= nil and not menuOpen
+      and not runner.uiHidden
     pcall(menuPause.card, 'earthRally_results', want)
   end
   local okL, errL = pcall(loadScreen.update, dtReal or 0)

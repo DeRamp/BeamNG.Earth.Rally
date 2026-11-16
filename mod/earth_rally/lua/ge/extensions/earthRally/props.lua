@@ -582,9 +582,17 @@ function M.sitePoint(kind)
   end
 end
 
--- A site is set for this kind (its props down or not yet).
-function M.hasSite(kind)
-  for _, s in ipairs(sites) do if s.kind == kind then return true end end
+-- The site set for this kind (its props down or not yet), or nil.
+function M.site(kind)
+  for _, s in ipairs(sites) do if s.kind == kind then return s end end
+  return nil
+end
+function M.hasSite(kind) return M.site(kind) ~= nil end
+-- One site taken away, its props with it.
+function M.dropSite(kind)
+  for i, s in ipairs(sites) do
+    if s.kind == kind then M.removeSite(s) table.remove(sites, i) return true end
+  end
   return false
 end
 

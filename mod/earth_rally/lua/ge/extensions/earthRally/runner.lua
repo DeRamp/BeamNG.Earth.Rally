@@ -1728,6 +1728,9 @@ function M.armApproach(event, stage, opts)
 end
 function M.disarmApproach(why)
   if approach and why then log('I', logTag, 'route to ' .. approach.stage.name .. ': disarmed (' .. why .. ')') end
+  -- (#40: the time control put out ahead of a stage that is not loaded: taken away with the approach)
+  local s = props.site('atc')
+  if s and s.forStage and not (run and run.state ~= 'finished' and run.state ~= 'failed') then props.dropSite('atc') end
   approach = nil
 end
 function M.approaching() return approach end
@@ -1740,7 +1743,8 @@ M.AT_BOARD_PASS_M = 10         -- ... or this close at any speed
 M.AT_BOARD_START_M = 60        -- ... or this close to the start line (the ATC driven past)
 M.AT_BOARD_NEAR_M = 400        -- looked at every frame from this close
 function M.controlProps(event, stage)
-  if props.hasSite('atc') then return true end
+  local had = props.site('atc')
+  if had and had.forStage == stage.id then return true end
   local ctl = stage.controls or {}
   local st0 = ctl.start or (stage.line and stage.line[1] and { lat = stage.line[1][1], lon = stage.line[1][2] })
   if not (ctl.atc and st0) then return false end
@@ -1750,6 +1754,7 @@ function M.controlProps(event, stage)
   local site = props.setSite('atc', ctl.atc.lat, ctl.atc.lon, { x = sx - a.x, y = sy - a.y })
   site.toward, site.away = { lat = st0.lat, lon = st0.lon }, nil
   site.road = events.controlOnRoad(event.id, stage.id, 'atc', ctl.atc)
+  site.forStage = stage.id
   log('I', logTag, 'route to ' .. stage.name .. ': its time control put out ahead of the stage')
   return true
 end
@@ -1768,11 +1773,13 @@ local function atBoard(a, p)
   if not b then return false end
   local d = math.sqrt((gp.x - b.x) ^ 2 + (gp.y - b.y) ^ 2)
   a.boardM = d
+  -- stopped at the board: there, whichever way the car came
+  if d <= M.AT_BOARD_M and (p.speed or 0) < M.STOPPED_MS then return true end
   -- (#45: the GPS still has its approach point ahead -- the car came from the start's side and is on its way round
-  -- to come in the right way: not at the board yet)
+  -- to come in the right way: rolling past the board or the start is not arriving yet)
   local g = earth.gps()
   if type(g) == 'table' and type(g.waypoints) == 'table' and #g.waypoints > 0 then return false end
-  if d <= M.AT_BOARD_PASS_M or (d <= M.AT_BOARD_M and (p.speed or 0) < M.STOPPED_MS) then return true end
+  if d <= M.AT_BOARD_PASS_M then return true end
   local st0 = a.stage.controls.start
   if st0 and geo.metres(p.lat, p.lon, st0.lat, st0.lon) <= M.AT_BOARD_START_M then return true end
   if not a.toldStop and d < 300 then
