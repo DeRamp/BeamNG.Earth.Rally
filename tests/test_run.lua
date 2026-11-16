@@ -697,7 +697,8 @@ do
     if runner.state() ~= 'running' then break end
   end
   T.check(runner.state() == 'toStop' and r2.finalTime, 'the clock stopped at the flying finish, on to the stop control')
-  T.check(manager.notesOn == false, 'the stage notes off at the flying finish')
+  T.check(manager.notesOn == true and r2.built and r2.built.stopM ~= nil,
+    'the notes stay on past the flying finish, on to the stop control (#47)')
   T.check(has(sounds, 'event:UI_CountdownGo'), 'a sound at the flying finish')
   local ffx2, ffy2 = toGame(full[2900][1], full[2900][2])
   local tentAtFinish, tents = false, 0

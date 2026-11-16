@@ -79,6 +79,16 @@ local function segAt(cum, s)
 end
 M.segAt = segAt
 
+-- A point's distance along the line looked for only between fromM and toM (a stop control after the flying finish, an
+-- ATC before the start: never on another pass of the line), and its distance off the line. A point beyond either end
+-- of that stretch reads as that end: so a control the line does not reach is clamped to what it covers.
+function M.alongBetween(pts, cum, p, fromM, toM)
+  local lo = segAt(cum, math.max(0, fromM or 0))
+  local hi = segAt(cum, math.min(cum[#cum], toM or cum[#cum]))
+  local _, _, s, off = M.locate(pts, cum, p, lo, hi)
+  return math.max(fromM or 0, math.min(toM or cum[#cum], s)), off
+end
+
 -- Progress along a line, followed from where it was (prevAlong, m along the line; nil: not known yet), so it does not
 -- jump to another part of the line where the line passes close to itself (a super special crossing itself, a road
 -- back down a valley). The stretch from backM behind to aheadM ahead of prevAlong first; when the point is more than

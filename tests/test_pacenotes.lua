@@ -574,4 +574,45 @@ do
     tostring(rc and pn.measuredGrade(rc, ring)) .. ')')
 end
 
+------------------------------------------------------------------------------------------ issue #47: on to the stop
+do
+  -- a stage: a corner, the finish at 600 m; then on past it a corner and the stop control at the line's end
+  local line = road({ { 'straight', 300 }, { 'arc', 60, 90 }, { 'straight', 306 }, { 'arc', 40, -90 },
+                      { 'straight', 300 } })
+  local cum = geo.cumulative(line)
+  local finishM = 600
+  local plain = writer.build(line, { startM = 0, finishM = finishM, quatFn = qf })
+  local pn0 = notes(plain)
+  T.check(pn0[#pn0]:find('finish') and plain.corners == 1, 'no stop control: notes end at the finish (' ..
+    show(pn0) .. ')')
+  local stop = line[#line]
+  local b = writer.build(line, { startM = 0, finishM = finishM, quatFn = qf, stop = { x = stop.x, y = stop.y } })
+  local ns = notes(b)
+  local fi
+  for k, s in ipairs(ns) do if s:find('finish') then fi = k end end
+  T.check(fi and fi < #ns and ns[#ns]:find('4:corner'), 'a stop control: the corner past the finish called after ' ..
+    '"finish" (' .. show(ns) .. ')')
+  T.check(b.corners == 1 and b.cornersAfterFinish == 1, 'the stage counts its own corner; the one past it apart')
+  T.near(b.lengthM, plain.lengthM, 1e-6, 'the stage length stays start to finish')
+  T.near(b.driveline.stats.raceDistanceKms, plain.driveline.stats.raceDistanceKms, 1e-9,
+    'the race distance stays start to finish')
+  local pns = b.race.pathnodes
+  local fp = geo.pointAt(line, cum, finishM)
+  T.check(#pns == #plain.race.pathnodes and math.abs(pns[#pns].pos[1] - fp.x) < 1e-6 and
+    math.abs(pns[#pns].pos[2] - fp.y) < 1e-6, 'the last pathnode stays on the finish')
+  -- (each note's corner waypoints in order: the game plays them along the route in the notebook's order)
+  local okO, prev = true, -1
+  for _, p in ipairs(b.notebook.pacenotes) do
+    local w = p.pacenoteWaypoints[1].pos
+    local _, _, s = geo.locate(line, cum, { x = w[1], y = w[2] })
+    if s < prev - 1e-6 then okO = false end
+    prev = s
+  end
+  T.check(okO, 'the notes in order along the line, the finish among them')
+  -- a stop right by the finish: nothing past it
+  local fp2 = geo.pointAt(line, cum, finishM + 10)
+  local near = notes(writer.build(line, { startM = 0, finishM = finishM, quatFn = qf, stop = { x = fp2.x, y = fp2.y } }))
+  T.check(show(near) == show(pn0), 'a stop just past the finish: the notes as without one')
+end
+
 T.done('test_pacenotes')
