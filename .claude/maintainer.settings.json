@@ -9,12 +9,11 @@
       "Bash(gh pr comment *)",
       "Bash(gh pr merge *)",
       "Bash(gh auth status*)",
-      "Bash(git worktree add *)",
-      "Bash(git checkout --detach *)",
+      "Bash(git worktree add --detach .claude/worktrees/maintainer-review *)",
       "Bash(git -C .claude/worktrees/maintainer-review *)",
-      "Bash(git merge *)",
+      "Bash(git push origin --delete *)",
       "Bash(git pull --ff-only*)",
-      "Bash(git update-ref -d refs/maintainer/*)",
+      "Bash(git symbolic-ref *)",
       "Bash(python tests/run_tests.py *)"
     ]
   }
