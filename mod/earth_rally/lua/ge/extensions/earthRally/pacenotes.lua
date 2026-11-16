@@ -106,6 +106,60 @@ function M.shape(c, k, step)
   return nil
 end
 
+------------------------------------------------------------------------------------------ short corners on the line
+
+-- (1.6.2, issue #12: "really short corners are often called tighter than they drive. A very short kink that's called
+-- a 4 now drives more like a 5 or a 6") The game grades a corner by the circle through its note's two waypoints and
+-- the route half way between (geoPacenotes buildSingleFit), off our driveline: the road's middle. Its own stages'
+-- drivelines are driven ones. On a short corner the line a driver takes is far straighter than the road: across the
+-- road's width from the outside, to the inside at the apex, and out again -- for a corner of angle a, a radius of
+-- RACING_SWING_M / (1 - cos(a / 2)) more than the road's (the textbook line), as far as the straight either side
+-- leaves room for it (its tangent points (R - r) tan(a / 2) further out, RACING_ROOM_M at most). Where that line is a
+-- grade more open on the game's ladder (GRADE_DIAMETERS), the corner is called one grade more open: the note's
+-- corner `riskIntensity = -1`, the one step the game's notes allow (compositorUtil lookupRiskAdjustedIntensityEntry).
+-- Only a corner RACING_ARC_M long or shorter, start to end, and RACING_MAX_DEG or less: a kink. On a longer or sharper
+-- one the line gains less, and the game's number is what it measured (a tight corner called too open is the worse
+-- mistake).
+M.RACING_ARC_M = 30
+M.RACING_MAX_DEG = 45
+M.RACING_SWING_M = 3.0     -- of the road's width the line uses (a car on a narrow gravel road)
+M.RACING_ROOM_M = 60
+M.GRADE_DIAMETERS = { 35, 65, 116, 190, 260 }   -- the game's one to six (english/numbering/one_to_six.lua)
+
+local function gradeOf(d)
+  for g, lim in ipairs(M.GRADE_DIAMETERS) do if d < lim then return g end end
+  return #M.GRADE_DIAMETERS + 1
+end
+M.gradeOf = gradeOf
+
+-- the radius of the circle through three points (huge for three in a line)
+local function circleRadius(a, b, c)
+  local d = 2 * (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y))
+  if abs(d) < 1e-9 then return huge end
+  local a2, b2, c2 = a.x * a.x + a.y * a.y, b.x * b.x + b.y * b.y, c.x * c.x + c.y * c.y
+  local ux = (a2 * (b.y - c.y) + b2 * (c.y - a.y) + c2 * (a.y - b.y)) / d
+  local uy = (a2 * (c.x - b.x) + b2 * (a.x - c.x) + c2 * (b.x - a.x)) / d
+  return sqrt((a.x - ux) ^ 2 + (a.y - uy) ^ 2)
+end
+
+-- c: a corner over pts (every `step` m); before, after: m of road with no corner either side of it. Returns true when
+-- the line through it is a grade more open than the game will measure it, and the two grades.
+function M.racingOpen(c, pts, step, before, after)
+  if (c.i1 - c.i0) * step > M.RACING_ARC_M or (c.angleDeg or 0) > M.RACING_MAX_DEG then return false end
+  local a = math.rad(c.angleDeg or 0)
+  if a <= 0 or a >= math.pi then return false end
+  local mid = floor((c.i0 + c.i1) / 2 + 0.5)
+  local r = circleRadius(pts[c.i0], pts[mid], pts[c.i1])
+  if r == huge then return false end
+  local g = gradeOf(2 * r)
+  if g > #M.GRADE_DIAMETERS then return false end
+  local line = r + M.RACING_SWING_M / (1 - math.cos(a / 2)) - M.RACING_SWING_M / 2
+  local room = max(0, min(before or 0, after or 0, M.RACING_ROOM_M))
+  line = max(r, min(line, r + room / math.tan(a / 2)))
+  local gl = gradeOf(2 * line)
+  return gl > g, g, gl
+end
+
 ------------------------------------------------------------------------------------------ chicanes and twisty bits
 
 -- Two tight corners either way, close together and on their own: one note, "chicane left entry" (the game's own
@@ -135,6 +189,18 @@ M.SWEEP_DEG = 30
 M.SWEEP_MIN_M = 100
 M.SWEEP_GAP_M = 30
 M.SWEEP_SMOOTH_M = 40
+-- (1.6.2, issue #6: "very open lefts and rights (right 6, left 6) don't come up in the notes. Some pretty obvious but
+--  long corners aren't called at all") Two gaps closed:
+--  - an open six: a bend of SWEEP_OPEN_DEG or more over SWEEP_OPEN_MIN_M, its tightest SWEEP_OPEN_R or less (the
+--    game's six is a diameter of 260 m or more), fell between geo.corners (the part of it tighter than 200 m turns
+--    under 12 degrees) and the 30 degrees a sweeper needed;
+--  - a long bend with a tighter corner inside it was left to that corner alone, so the note (and the game's
+--    measurement) covered only its tight part, a third of the bend or less: now the rest of the bend either side of
+--    the corner is a sweeper of its own when it qualifies by itself ("six long into four"). Its end next to the
+--    corner is cut back by half the smoothing, where the corner's own curvature is smeared into it.
+M.SWEEP_OPEN_DEG = 20
+M.SWEEP_OPEN_MIN_M = 60
+M.SWEEP_OPEN_R = 250
 
 -- turn, k: geo.curvature at SWEEP_SMOOTH_M; corners: geo.corners' list. Returns the corners and the sweepers in one
 -- list in order (a sweeper: { i0, i1, dir, angleDeg, minRadius, sweeper = true }).
@@ -142,6 +208,12 @@ function M.sweepers(turn, k, step, corners)
   local n = #k
   local covered = {}
   for _, c in ipairs(corners) do for i = c.i0, c.i1 do covered[i] = true end end
+  local trimN = max(1, floor(M.SWEEP_SMOOTH_M / 2 / step + 0.5))
+  -- (a corner within trimN of i, on the side given: its curvature is smeared over i)
+  local function nearCorner(i, dirn)
+    for d = 1, trimN do if covered[i + d * dirn] then return true end end
+    return false
+  end
   local kMin, gapN = 1 / M.SWEEP_R, max(1, floor(M.SWEEP_GAP_M / step + 0.5))
   local runs, i = {}, 1
   while i <= n do
@@ -159,17 +231,38 @@ function M.sweepers(turn, k, step, corners)
   end
   local out = {}
   for _, c in ipairs(corners) do out[#out + 1] = c end
+  -- (a piece of a bend: a sweeper when it is long and turns enough, or is an open six)
+  local function piece(a, b, sign)
+    if b <= a then return end
+    local len = (b - a) * step
+    if len < min(M.SWEEP_MIN_M, M.SWEEP_OPEN_MIN_M) then return end
+    local angle, kMax = 0, 0
+    for j = a, b do
+      angle = angle + turn[j]
+      if abs(k[j]) > kMax then kMax = abs(k[j]) end
+    end
+    local deg = abs(math.deg(angle))
+    local r = kMax > 0 and 1 / kMax or huge
+    if (len >= M.SWEEP_MIN_M and deg >= M.SWEEP_DEG) or
+       (len >= M.SWEEP_OPEN_MIN_M and deg >= M.SWEEP_OPEN_DEG and r <= M.SWEEP_OPEN_R) then
+      out[#out + 1] = { i0 = a, i1 = b, dir = sign > 0 and 'left' or 'right', angleDeg = deg, minRadius = r,
+                        sweeper = true }
+    end
+  end
   for _, r in ipairs(runs) do
-    if (r.i1 - r.i0) * step >= M.SWEEP_MIN_M then
-      local angle, kMax, hit = 0, 0, false
-      for j = r.i0, r.i1 do
-        angle = angle + turn[j]
-        if abs(k[j]) > kMax then kMax = abs(k[j]) end
-        if covered[j] then hit = true end
-      end
-      if not hit and abs(math.deg(angle)) >= M.SWEEP_DEG then
-        out[#out + 1] = { i0 = r.i0, i1 = r.i1, dir = r.sign > 0 and 'left' or 'right', angleDeg = abs(math.deg(angle)),
-                          minRadius = kMax > 0 and 1 / kMax or huge, sweeper = true }
+    -- each stretch of the bend no corner covers, cut back where a corner's curvature is smeared into it
+    local j = r.i0
+    while j <= r.i1 do
+      if covered[j] then
+        j = j + 1
+      else
+        local a = j
+        while j + 1 <= r.i1 and not covered[j + 1] do j = j + 1 end
+        local b = j
+        if nearCorner(a, -1) then a = a + trimN end
+        if nearCorner(b, 1) then b = b - trimN end
+        piece(a, b, r.sign)
+        j = j + 1
       end
     end
   end
@@ -243,6 +336,14 @@ M.CAUTION_TIGHTENS_V_MS = 20       -- 72 km/h: a corner tightening over a crest 
 
 M.CARE_DEG = 60                    -- a corner this sharp ...
 M.CARE_STRAIGHT_M = 120            -- ... after this far with no corner: a care
+-- (1.6.2, issue #11: "on long straights you build up a lot of speed, and often there isn't enough warning or a
+--  caution coming into a tight set of corners") After LONG_STRAIGHT_M or more with no corner, at LONG_V_MS or more,
+--  the levels are read off CAUTION_LONG: a corner the car has to lose half its speed for is a care (at the top speed,
+--  a tightest radius of 60 m or less, about a four), a caution at 40 % (32 m), a double caution at 28 % (16 m). On a short
+--  approach CAUTION's levels stand: there 40 % of the speed is a care.
+M.LONG_STRAIGHT_M = 300
+M.LONG_V_MS = 30                   -- 108 km/h
+M.CAUTION_LONG = { 0.55, 0.40, 0.28 }
 function M.caution(c, v, step, prevI1, shape, unsaidTightens)
   local vc = huge
   for i = c.i0, c.i1 do if v[i] and v[i] < vc then vc = v[i] end end
@@ -250,9 +351,10 @@ function M.caution(c, v, step, prevI1, shape, unsaidTightens)
   for i = max(1, prevI1 or 1, c.i0 - floor(M.CAUTION_LOOK_M / step)), c.i0 do if v[i] > va then va = v[i] end end
   if vc == huge then return nil end
   local level = nil
+  local long = (c.i0 - (prevI1 or 1)) * step >= M.LONG_STRAIGHT_M and va >= M.LONG_V_MS
   if va >= M.CAUTION_V_MS then
     local r = vc / va
-    for l, t in ipairs(M.CAUTION) do if r <= t then level = l end end
+    for l, t in ipairs(long and M.CAUTION_LONG or M.CAUTION) do if r <= t then level = l end end
   end
   if shape == 'tightensOverCrest' and va >= M.CAUTION_TIGHTENS_V_MS then level = max(level or 0, 2) end
   -- (a corner of CARE_DEG or more after CARE_STRAIGHT_M with no corner: a care -- where the game's own stages put

@@ -143,6 +143,26 @@ game matched.
 9. **Narrows**: no matched line in the backup has the `narrows` key yet (it is new), so it has been tried on drawn
    roads only.
 
+## 1.6.2: the owner's drive (issues #6, #7, #10, #11, #12)
+
+Tuning constants, all to be set after the owner drives them:
+
+- **Open sixes and long bends (#6, #7)** (`pacenotes.sweepers`). A bend of `SWEEP_OPEN_DEG` 20 degrees or more over
+  `SWEEP_OPEN_MIN_M` 60 m, tightest `SWEEP_OPEN_R` 250 m or less, is a sweeper. So is the rest of a long bend either
+  side of a tighter corner inside it, when that part qualifies on its own. Its end next to the corner is cut back by
+  half the smoothing. #7 is the same gap: a crest goes on the note of any corner near it, so it is alone only where
+  no corner was found. The game never drops a corner it measures: its six has no upper limit.
+- **Junctions (#10)** (`junctions.obvious`, read by `events.landmarks`). A fork is always called. Any other junction
+  is called only for a side road within `OBVIOUS_DEG` 60 degrees of the way in, or one as wide as the stage road
+  (`OBVIOUS_WIDE` 0.9 of its half width) within `OBVIOUS_WIDE_DEG` 100 degrees.
+- **Cautions after a long straight (#11)** (`pacenotes.caution`). After `LONG_STRAIGHT_M` 300 m with no corner, at
+  `LONG_V_MS` 30 m/s or more, the levels are `CAUTION_LONG` 55 / 40 / 28 % of the approach speed, not 40 / 30 / 22 %.
+- **Short kinks (#12)** (`pacenotes.racingOpen`). A corner `RACING_ARC_M` 30 m or shorter and `RACING_MAX_DEG` 45
+  degrees or less, whose racing line (`RACING_SWING_M` 3 m of the road used, `RACING_ROOM_M` 60 m of straight at
+  most) is a grade more open on the game's ladder, gets `riskIntensity = -1`. That is one grade more open, the most
+  the game's notes allow. The swing barely matters (1.5 m flags the same corners), so the knobs that count are
+  the length and the angle.
+
 ## Not done, for the user to decide
 
 - A co-driver **detail setting** (the roadmap's "Co-driver settings: call timing, detail, voice"): the contrarian

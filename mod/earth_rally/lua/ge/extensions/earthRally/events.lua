@@ -251,10 +251,12 @@ function M.landmarks(eventId, stageId, stage)
   local m = M.matched(eventId, stageId)
   if not m or (stage and m.mapKey and m.mapKey ~= M.mapKey(stage.line)) then return {} end
   local out = {}
+  local J = require('earthRally/junctions')
   for _, j in ipairs(m.junctions or {}) do
     local t = j[3] == 'turn' and 'atJunction' or j[3] == 'straight' and 'pastJunction' or
       (j[3] == 'fork' and (j[4] == 'left' and 'keepLeft' or 'keepRight')) or nil
-    if t then out[#out + 1] = { lat = j[1], lon = j[2], type = t } end
+    -- (only a side road a driver could take by mistake: junctions.obvious)
+    if t and J.obvious(J.decode(j)) then out[#out + 1] = { lat = j[1], lon = j[2], type = t } end
   end
   for _, b in ipairs(m.bridges or {}) do
     out[#out + 1] = { lat = b[1], lon = b[2], type = 'overBridge',
