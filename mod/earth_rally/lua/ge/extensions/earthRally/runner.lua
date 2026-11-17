@@ -2317,6 +2317,54 @@ function M.faceAtc(stage)
   return true, 'on the road map'
 end
 
+-- (1.7.2, item 4) After an auto recce whose landing found no road (faceAtc above: the road map round the car had not
+-- come in yet), the car set down from the matched file's ATC instead: `atc` is its controls.atc (autoRecce
+-- controlOnRoad: roadLat, roadLon, the road's bearing deg either way). CAR_BEFORE_ATC_M before the board on the road,
+-- facing it, as faceAtc means to: along the road map's road from there when it has come in by now, else straight
+-- back along the matched road's bearing, turned the way that leads on to the start. Only when the car is still
+-- where the landing left it (within ATC_LEFT_NEAR_M of the ATC): a car the player has driven off is not moved.
+-- Returns true and how, or false and why.
+M.ATC_LEFT_NEAR_M = 200
+function M.faceAtcFrom(stage, atc)
+  local p, veh = carPos()
+  if not (p and veh) then return false, 'no car' end
+  if type(atc) ~= 'table' or type(atc.roadLat) ~= 'number' or type(atc.roadLon) ~= 'number'
+     or type(atc.deg) ~= 'number' then
+    return false, 'the matched file has no ATC on a road'
+  end
+  local ps = earth.pose()
+  if not (ps and ps.lat) or geo.metres(ps.lat, ps.lon, atc.roadLat, atc.roadLon) > M.ATC_LEFT_NEAR_M then
+    return false, 'the car is not at the ATC any more'
+  end
+  local s = stage.controls and stage.controls.start
+    or (stage.line and stage.line[1] and { lat = stage.line[1][1], lon = stage.line[1][2] })
+  if not s then return false, 'the stage has no start' end
+  local a, sp = ctlGame({ lat = atc.roadLat, lon = atc.roadLon }), ctlGame(s)
+  if not (a and sp) then return false, 'no world to place it in' end
+  -- 1. the road map's road at the matched point, if it is there by now (the same spot faceAtc would have found)
+  local spot = spotBeforeAtc(a, sp, p.z)
+  if spot.road then
+    M.placeCar(veh, spot, { x = spot.dx, y = spot.dy, z = 0 })
+    return true, 'on the road map, at the matched ATC'
+  end
+  -- 2. the matched road's own bearing: a step along it in lat / lon, turned into game coordinates (the frame's north
+  -- is not true north away from the origin), the way on to the start chosen of its two ways
+  local r = math.rad(atc.deg)
+  local mLat = math.rad(1) * 6371008.8
+  local b = ctlGame({ lat = atc.roadLat + math.cos(r) * 10 / mLat,
+                      lon = atc.roadLon + math.sin(r) * 10 / (mLat * math.cos(math.rad(atc.roadLat))) })
+  if not b then return false, 'no world to place it in' end
+  local dx, dy = b.x - a.x, b.y - a.y
+  local l = math.sqrt(dx * dx + dy * dy)
+  if l < 1e-6 then return false, 'no bearing' end
+  dx, dy = dx / l, dy / l
+  if dx * (sp.x - a.x) + dy * (sp.y - a.y) < 0 then dx, dy = -dx, -dy end
+  local x, y = a.x - dx * M.CAR_BEFORE_ATC_M, a.y - dy * M.CAR_BEFORE_ATC_M
+  local z = groundNear(x, y, p.z)
+  M.placeCar(veh, { x = x, y = y, z = z + 1.0 }, { x = dx, y = dy, z = 0 })
+  return true, 'on the matched ATC road point'
+end
+
 -- A reset by the player (the game's trackVehReset hook, from main.lua: once a press of reset, recover or the radial
 -- menu's reset, as the game's own modes count them; not onVehicleResetted, which a held recover (the rewind) fires
 -- when pressed and again when let go: two resets for one, in game 2026-11-13): the player's car reset during the
