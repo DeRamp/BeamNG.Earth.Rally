@@ -623,6 +623,22 @@ function M.dropFar(carPos, toGame, m)
   end
 end
 function M.siteCount() return #sites end
+-- (#66) Every site left behind taken away (a world shift: a finished stage's finish is placed from that run's line,
+-- which stopped following the world when the run let go of it, so put down again it would land where the old frame
+-- had it). Returns how many went.
+function M.dropLeft()
+  local n = 0
+  for i = #sites, 1, -1 do
+    local s = sites[i]
+    if s.left then
+      M.removeSite(s)
+      table.remove(sites, i)
+      n = n + 1
+    end
+  end
+  if n > 0 then log('I', 'earthRally', 'props: ' .. n .. ' site(s) left behind taken away: the world shifted') end
+  return n
+end
 
 -- One site taken away, its props with it.
 function M.dropSite(kind)

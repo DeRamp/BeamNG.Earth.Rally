@@ -534,6 +534,23 @@ function M.start(event, stage, opts)
   return true
 end
 
+-- (#66) One look at the world's origin for everything that puts props down outside a run (atBoard's ATC boards,
+-- sitesTick's sites left standing): one props.reset per shift, however many of them look in the same frame. The
+-- sites left behind by a finished stage are dropped rather than put down again: the finish's places come from that
+-- run's line, which no longer follows the world once the run has let go of it, so they would come back where the
+-- old frame had them. True when the origin moved since the last look.
+local seenAnchor = nil
+local function worldShifted()
+  local la, lo = earth.anchor()
+  if not la then return false end
+  local was = seenAnchor
+  seenAnchor = { la, lo }
+  if not was or (was[1] == la and was[2] == lo) then return false end
+  props.dropLeft()
+  props.reset()
+  return true
+end
+
 -- The world's origin moved (earthAdapter): our line follows; the co-driver's does not (yet).
 function M._moved(info)
   if not run then return end
@@ -544,7 +561,11 @@ function M._moved(info)
       tostring(info.purpose), tostring(info.source)))
   end
   if run.line then project() end
-  props.reset()            -- (put down again where they belong, in the new frame)
+  -- (put down again where they belong, in the new frame; seen here, so the trackers between runs do not do it again)
+  props.dropLeft()
+  props.reset()
+  seenAnchor = nil
+  worldShifted()
   run.lastMove = info
   run.movedAt = run.realT
 end
@@ -558,10 +579,14 @@ end
 -- a new anchor only with them on (its core.lua turns a commit or resync away while the game is paused: vehicles move
 -- only with physics running) and counts a rebase's second phase down on them. Under the loading screen's pause the
 -- move sat until ANCHOR_WAIT_S gave up (the third drive, #58 / #63), so the screen's pause now waits for it
--- (M.originMoving, menuPause.waitFor) and the car is frozen instead, so it cannot roll meanwhile. Not a car still
--- moving (Route to start loads as the car drives up, the menu not up): that one is the player's to drive.
+-- (M.originMoving, menuPause.waitFor) and the car is frozen instead, so it cannot roll meanwhile. Only where that
+-- pause is taken off: a stage loaded at the ATC's board behind the time control card (run.checkInNow, held from the
+-- start of its travel), or any other load under a loading screen (M.loadingUp, set by main.lua). Never on Route to
+-- start or a stage loaded as the car drives up: that car is the player's to drive.
+M.loadingUp = function() return false end
 local function holdForMove(on)
   if on then
+    if run.moveHeld then return end
     local _, veh = carPos()
     if veh and speed() < M.STOPPED_MS then
       freeze(veh, true)
@@ -572,6 +597,11 @@ local function holdForMove(on)
     run.moveHeld = nil
   end
 end
+local function holdsForMove()
+  if run.checkInNow then return true end
+  local ok, up = pcall(M.loadingUp)
+  return ok and up == true
+end
 
 -- The world's origin on its way to the stage: the run in its anchor step (or just before it, a car not teleported:
 -- travel lasts a frame there). main.lua keeps the loading screen's pause off until it is over, and the screen shows it.
@@ -580,7 +610,20 @@ function M.originMoving()
   return run.state == 'anchor' or (run.state == 'travel' and not run.teleported)
 end
 
+-- (#63) BeamNG.Earth's anchor request, for the log: 'purpose at lat, lon', or 'none'.
+local function pendingText(es)
+  local p = es and es.pending
+  if not p then return 'none' end
+  return string.format('%s at %s, %s', tostring(p.purpose), p.lat and string.format('%.5f', p.lat) or '?',
+    p.lon and string.format('%.5f', p.lon) or '?')
+end
+
 local function stepTravel(dt)
+  -- (checked in at the board: held from here, the car stopped there, until the origin move is over)
+  if run.checkInNow and not run.moveHeldFrom then
+    run.moveHeldFrom = true
+    holdForMove(true)
+  end
   run.t = run.t + dt
   if run.teleported and run.t < 2 then return end
   if not earth.ready() then
@@ -595,37 +638,72 @@ local function stepTravel(dt)
   local la, lo = earth.anchor()
   if not c or (la and geo.metres(la, lo, c.lat, c.lon) <= M.ANCHOR_CLOSE_M) then
     run.checks.originMoved = 'not needed'
+    holdForMove(false)
     setState('build')
     return
   end
+  local es = earth.anchorState()
   local ok, why = earth.moveOriginTo(c.lat, c.lon)
   run.anchorAsked = ok
   if not ok then
     run.checks.originMoved = 'refused: ' .. tostring(why)
     log('W', logTag, 'origin not moved to the stage centre: ' .. tostring(why))
+    holdForMove(false)
     setState('build')
   else
-    holdForMove(true)
+    -- (the anchor it had when asked: any commit after it ends the wait, wherever it landed -- stepAnchor)
+    run.anchorFrom = es and { id = es.id } or nil
+    run.anchorPending = nil
+    log('I', logTag, string.format('origin move: asked for %.5f, %.5f (the anchor now %s, #%s; %s pending before)',
+      c.lat, c.lon, la and string.format('%.5f, %.5f', la, lo) or '?', tostring(es and es.id), pendingText(es)))
+    if holdsForMove() then holdForMove(true) end
   end
 end
 
+-- (#63) Done once BeamNG.Earth has nothing pending and is not rebasing, and either its anchor is at the stage (the
+-- old test) or it has committed any anchor since we asked. The third drive showed why the second: our request is a
+-- 'resync', and BeamNG.Earth re-asks a stale resync at its OLD anchor (core.lua, "the player may have driven off the
+-- terrain the server prepared"), so the commit can land at the old place and the 500 m test never passed; the 25 s
+-- give-up then came first and that pending request committed later, mid-stage, shifting the world under the notes.
+-- So while a request of its own is still pending the wait goes on (ANCHOR_PENDING_MAX_S), and only with nothing
+-- pending does ANCHOR_WAIT_S give up.
+M.ANCHOR_PENDING_MAX_S = 90
 local function stepAnchor(dt)
   run.t = run.t + dt
   local c = run.stage.centre
   local la, lo = earth.anchor()
-  if la and geo.metres(la, lo, c.lat, c.lon) <= M.ANCHOR_CLOSE_M and not earth.rebasing() and earth.ready() then
-    run.checks.originMoved = 'yes'
+  local es = earth.anchorState()
+  if es then
+    local pk = pendingText(es)
+    if pk ~= run.anchorPending then
+      run.anchorPending = pk
+      log('I', logTag, string.format('origin move: BeamNG.Earth\'s anchor request now %s (%.1f s)', pk, run.t))
+    end
+  end
+  local busy = es ~= nil and (es.pending ~= nil or es.rebasing)
+  local close = la and geo.metres(la, lo, c.lat, c.lon) <= M.ANCHOR_CLOSE_M
+  local committed = es ~= nil and run.anchorFrom ~= nil and es.id ~= nil and es.id ~= run.anchorFrom.id
+  if not busy and (close or committed) and not earth.rebasing() and earth.ready() then
+    local off = la and geo.metres(la, lo, c.lat, c.lon) or nil
+    run.checks.originMoved = close and 'yes' or string.format('landed %.0f m from the stage centre', off or -1)
+    log('I', logTag, string.format('origin move: committed, anchor #%s at %s after %.1f s (%s m from the stage centre)',
+      tostring(es and es.id), la and string.format('%.5f, %.5f', la, lo) or '?', run.t,
+      off and string.format('%.0f', off) or '?'))
     earth.originMoved()
     -- (not on a car loaded round as it drove up, Route to start: the reset snaps the camera twice at speed, and
     --  BeamNG.Earth's camshift carries the camera across the move)
     if not run.droveIn then M.resetCameraSoon() end
     holdForMove(false)
     setState('build')
-  elseif run.t > M.ANCHOR_WAIT_S then
+  elseif (run.t > M.ANCHOR_WAIT_S and not busy) or run.t > M.ANCHOR_PENDING_MAX_S then
     holdForMove(false)
     earth.originMoved()
     run.checks.originMoved = 'timed out'
-    log('W', logTag, 'origin never moved to the stage centre: the world may shift during the run')
+    local why = busy and 'BeamNG.Earth still busy' or (committed and 'committed, the world not ready')
+      or 'nothing pending, no commit seen'
+    log('W', logTag, string.format('origin move: stopped waiting after %.1f s (%s; request %s, anchor #%s): the world '
+      .. 'may shift during the run', run.t, why,
+      pendingText(es), tostring(es and es.id)))
     setState('build')
   end
 end
@@ -1468,7 +1546,9 @@ local function stepToAtc(dt)
     run.checks.atc = 'checked in ' .. M.formatClock(now)
     trafficOff()
     -- (#64: checked in behind the time control card: the start time is given again when Continue is pressed
-    -- (M.continueAtc), so it cannot run out while the card is up, and nothing is said behind the card)
+    -- (M.continueAtc). The rally clock runs on under the card -- the origin move takes the pause off, and the third
+    -- drive's log shows game time passing under it -- so a start time given now could run out before Continue;
+    -- given at Continue, it cannot. Nothing is said behind the card)
     if run.checkInNow then run.startHeld = true else announceStart() end
   elseif zs == 'done' then
     setState('toStart')
@@ -1828,6 +1908,8 @@ function M.approaching() return approach end
 -- control is there to stop at. Its site as the run's own setupProps sets it (facing the way on to the start, on its
 -- road). True once set.
 M.AT_BOARD_M = 25              -- stopped this close to the ATC's board: asked to load the stage (#58), behind the card
+M.AT_BOARD_RAW_M = 60          -- ... this close to the map's ATC point when the boards have no road point
+M.AT_BOARD_START_M = 60        -- ... or stopped this close to the start line (the ATC driven past)
 M.AT_BOARD_NEAR_M = 400        -- looked at every frame from this close
 M.STOP_HINT_M = 300            -- the HUD's "Stop at the ... board" line from this close (#67)
 function M.controlProps(event, stage)
@@ -1854,18 +1936,23 @@ local function atBoard(a, p)
   local gp = carPos()
   if not gp then return false end
   -- (the world's origin moved since the boards went down: put down again in the new frame)
-  local la, lo = earth.anchor()
-  if a.anchorLat and la and (la ~= a.anchorLat or lo ~= a.anchorLon) then props.reset() end
-  a.anchorLat, a.anchorLon = la, lo
+  worldShifted()
   pcall(M.controlProps, a.event, a.stage)
   props.update(gp, earth.toGame)
-  local b = props.sitePoint('atc') or ctlGame(a.stage.controls.atc)
+  local b = props.sitePoint('atc')
+  -- (no road point for the boards: the map's own ATC point, which can lie off the road where the car cannot get
+  -- within AT_BOARD_M of it: a wider ring round it then)
+  local raw = b == nil
+  b = b or ctlGame(a.stage.controls.atc)
   if not b then return false end
   local d = math.sqrt((gp.x - b.x) ^ 2 + (gp.y - b.y) ^ 2)
   a.boardM = d
-  if d > M.AT_BOARD_M then a.declined = nil end
-  -- stopped at the board: there, whichever way the car came
-  if d <= M.AT_BOARD_M and (p.speed or 0) < M.STOPPED_MS then return not a.declined end
+  local st0 = a.stage.controls.start
+  local there = d <= M.AT_BOARD_M or (raw and d <= M.AT_BOARD_RAW_M)
+    or (st0 and p.lat and geo.metres(p.lat, p.lon, st0.lat, st0.lon) <= M.AT_BOARD_START_M) or false
+  if not there then a.declined = nil end
+  -- stopped at the board (or on at the start line, the ATC missed): there, whichever way the car came
+  if there and (p.speed or 0) < M.STOPPED_MS then return not a.declined end
   if not a.toldStop and d < 300 then
     a.toldStop = true
     say("Stop at the time control's red board.", 6, 'info', a.title or a.stage.name)
@@ -1916,8 +2003,9 @@ local function stepApproach(dt)
   loadApproach(a)
 end
 
--- The armed stage loaded (stepApproach, or the answer to "Load the stage?"). Returns whether it started.
-loadApproach = function(a)
+-- The armed stage loaded (stepApproach, or the answer to "Load the stage?"). Returns whether it started, and why not.
+-- (quiet: the caller says the failure itself)
+loadApproach = function(a, quiet)
   approach = nil
   log('I', logTag, 'route to ' .. a.stage.name .. ': near its ' .. a.kind .. ', the stage loads')
   local opts = {}
@@ -1928,13 +2016,13 @@ loadApproach = function(a)
   if not ok then
     -- (a rally's transit: tried again shortly, said once a minute, not on every try)
     a.fails = (a.fails or 0) + 1
-    if not a.sticky or a.fails % 12 == 1 then
+    if not quiet and (not a.sticky or a.fails % 12 == 1) then
       say('Could not get ' .. a.stage.name .. ' ready: ' .. tostring(why) ..
         (a.sticky and '. Trying again; Save and quit on the time card (Ctrl+Alt+K) if it keeps failing.' or ''),
         8, 'warning', 'Earth Rally')
     end
     if a.sticky then a.t = 5 approach = a end
-    return false
+    return false, why
   end
   if a.sticky and run then run.rearm = a end
   if a.onStart then pcall(a.onStart) end
@@ -1954,7 +2042,15 @@ function M.answerLoad(yes)
     return true
   end
   if run and run.state ~= 'finished' and run.state ~= 'failed' then return false, 'a run is under way' end
-  if not loadApproach(a) then return false, 'the stage could not be got ready' end
+  local ok, why = loadApproach(a, true)
+  if not ok then
+    -- (not asked again at once, the car still stopped there: as Not yet, once it has left the board and stopped
+    -- again -- the failure said, not a fresh "Load the stage?" over it every few seconds)
+    a.declined = true
+    log('W', logTag, 'route to ' .. a.stage.name .. ': the stage could not be got ready: ' .. tostring(why))
+    return false, 'Could not get ' .. a.stage.name .. ' ready: ' .. tostring(why) ..
+      '. Drive off the board and stop at it again to try again.'
+  end
   return true
 end
 
@@ -1992,11 +2088,11 @@ local function leftBehind(dt)
 end
 
 -- (#66, #68) Between runs: the sites still standing -- a stage's finish and stop left behind, a rally's service board
--- and tent -- put down as the car comes near and taken away once it is LEFT_DROP_M away (props.dropFar). Put down
--- again after a world shift, as atBoard does for the ATC.
+-- and tent -- put down as the car comes near and taken away once it is LEFT_DROP_M away (props.dropFar). After a
+-- world shift the rally's own are put down again and a stage's left behind dropped (worldShifted).
 M.SITES_POLL_S = 0.5
 M.LEFT_DROP_M = props.SPAWN_M + 50
-local sitesT, sitesAnchor = 0, nil
+local sitesT = 0
 sitesTick = function(dt)
   sitesT = sitesT - (dt or 0)
   if sitesT > 0 then return end
@@ -2004,9 +2100,7 @@ sitesTick = function(dt)
   if props.siteCount() == 0 then return end
   local p = carPos()
   if not p then return end
-  local la, lo = earth.anchor()
-  if sitesAnchor and la and (la ~= sitesAnchor[1] or lo ~= sitesAnchor[2]) then props.reset() end
-  sitesAnchor = la and { la, lo } or nil
+  worldShifted()
   props.update(p, earth.toGame)
   props.dropFar(p, earth.toGame, M.LEFT_DROP_M)
 end
@@ -2025,6 +2119,8 @@ function M.update(dtReal, dtSim)
   if not run.noStartLine then drawStartLine() end
   if run.clockBase then run.clockRun = run.clockRun + (dtSim or 0) end
   local s = run.state
+  -- (#63: the car held for the origin move let go whatever ended it -- a failure too)
+  if run.moveHeld and s ~= 'travel' and s ~= 'anchor' then holdForMove(false) end
   -- the game's start clock: the LED board on the start tree (props.lua), and its picture-in-picture during the
   -- countdown (gameplay_rallyStartClock, fed here). Loaded once the tree is down, for the run only: until it has a
   -- tree it looks through every static object in the scene once a second, and BeamNG.Earth's scene is large.
@@ -2343,6 +2439,12 @@ M.EARTH_ASK_S = 0.5
 local uiClock = rawget(os, 'clockhp') or os.clock
 local earthAsked, earthAt, earthRun = nil, -math.huge, nil
 local uiConsts = {}
+-- (main.lua: our finish card's pause request in, menuPause.cardHeld)
+M.cardPaused = function() return false end
+local function cardPaused()
+  local ok, on = pcall(M.cardPaused)
+  return ok and on == true
+end
 function M.uiFrame()
   local t = uiClock()
   -- (asked afresh for a new run, so a new run never opens on the last one's place or banner)
@@ -2354,7 +2456,7 @@ function M.uiFrame()
   local c = uiConsts
   c.stoppedMs, c.startZoneBeforeM, c.stopRadiusM = M.STOPPED_MS, M.START_ZONE_BEFORE_M, M.STOP_CONTROL_RADIUS_M
   c.jumpStartS, c.resetS, c.missedAtcS = M.JUMP_START_PENALTY_S, M.RESET_PENALTY_S, M.MISSED_TC_PENALTY_S
-  return hudFrame.build(run, {
+  local rl, ours = hudFrame.build(run, {
     now = M.clock() or 0, speed = run and speed() or 0, canSkip = M.canSkip(), units = settings.get('units'),
     uiHidden = M.uiHidden, place = earthAsked.place, earthBanner = earthAsked.banner, loading = earthAsked.loading,
     approach = M.approachInfo() or (M.transitSource and M.transitSource()) or nil,
@@ -2365,6 +2467,10 @@ function M.uiFrame()
       or false,
     c = uiConsts,
   })
+  -- (#62: the results card is modal only while the game is paused under it -- the finish card's own pause, held only
+  -- with a stop control; a question's card always has one)
+  if ours and ours.show and cardPaused() then ours.show.cardPaused = true end
+  return rl, ours
 end
 
 -- (main.lua's sendStreams, 1.6.1: what the streams show now, as hudFrame.streamKeys's two strings; `slow` is
@@ -2381,7 +2487,7 @@ function M.uiKeys(slow)
   keyCtx.stopRadiusM = M.STOP_CONTROL_RADIUS_M
   keyCtx.approach = M.approachInfo()
   local kr, kh = hudFrame.streamKeys(run, keyCtx)
-  return kr, kh .. '|' .. tostring(M.askKey and M.askKey() or '')
+  return kr, kh .. '|' .. tostring(M.askKey and M.askKey() or '') .. '|' .. tostring(cardPaused())
 end
 
 -- The results card's buttons: 'next' (the rally's next stage), 'retry' (this one again), 'menu' / 'close' (the card

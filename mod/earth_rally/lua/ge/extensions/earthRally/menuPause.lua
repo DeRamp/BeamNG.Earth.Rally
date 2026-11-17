@@ -29,9 +29,9 @@ local M = {}
 
 M.REQUEST_ID = 'earthRally_menu'
 M.holding = function() return false end
--- (1.7.0 rev 4, #63) M.waitFor: the physics must run now -- the run moving the world's origin to the stage, which
--- BeamNG.Earth does only with them on (runner.originMoving, set by main.lua). Our page's request is taken back while
--- it says so, and put in again once it is over; the car is held still by the run meanwhile.
+-- (1.7.0 rev 4, #63) M.waitFor: the physics must run now -- a loading screen up while the run moves the world's
+-- origin to the stage, which BeamNG.Earth does only with them on (set by main.lua). Our page's request is taken back
+-- while it says so, and put in again once it is over; the car is held still by the run meanwhile.
 M.waitFor = function() return false end
 
 local held, pageUp, suspended = false, false, false
@@ -118,6 +118,16 @@ function M.card(id, on)
   end
 end
 function M.cardHeld(id) return cards[id] == true end
+-- Every pause request of ours in now (the page's and the cards'), by id; nil with none (#63: logged with the sim time
+-- that passes under them).
+function M.heldIds()
+  local out = {}
+  if held then out[#out + 1] = M.REQUEST_ID end
+  for id in pairs(cards) do out[#out + 1] = id end
+  if #out == 0 then return nil end
+  table.sort(out)
+  return out
+end
 
 -- Our request taken back, if there is one, and the page taken for closed: on leaving the page, and when the level
 -- goes, the mod is switched off or reloaded with the page up (a request left behind would hold the next level paused,

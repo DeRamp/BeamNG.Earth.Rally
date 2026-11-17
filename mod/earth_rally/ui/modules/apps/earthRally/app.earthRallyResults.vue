@@ -22,7 +22,7 @@
     <!-- (#59) a question over a paused game: A / D-pad / stick work its two buttons, B is the second one -->
     <template v-if="ask">
       <div class="er-qtop er-ask-top"><div class="er-kick">{{ askKick }}</div><div class="er-name">Recover?</div></div>
-      <div class="er-ask"><template v-if="ask.transit">Recovering ends your transit.<template v-if="ask.stop"> You rejoin at <b>{{ ask.stop }}</b> under Super Rally.</template></template><template v-else>Recovering ends this stage.<template v-if="ask.stop"> You go to <b>{{ ask.stop }}</b> under Super Rally and carry on from there.</template></template><template v-if="!ask.stop"> There is no service left to rejoin at: the rally ends unclassified.</template></div>
+      <div class="er-ask"><template v-if="ask.transit && ask.toStop">Recovering takes you to <b>{{ ask.stop }}</b>. No stage is missed.</template><template v-else-if="ask.transit">Recovering ends your transit.<template v-if="ask.stop"> You rejoin at <b>{{ ask.stop }}</b> under Super Rally.</template></template><template v-else>Recovering ends this stage.<template v-if="ask.stop"> You go to <b>{{ ask.stop }}</b> under Super Rally and carry on from there.</template></template><template v-if="!ask.stop && !ask.toStop && ask.last"> This is the last stage: the rally ends unclassified.</template><template v-else-if="!ask.stop && !ask.toStop"> There is no service left to rejoin at: the rally ends unclassified.</template></div>
       <div class="er-buttons">
         <BngButton class="er-main" :class="{ 'er-picked': ring('recover') }" :accent="ACCENTS.main" @click="act('recover')">Recover · Super Rally</BngButton>
         <BngButton :class="{ 'er-picked': ring('keep') }" :accent="ACCENTS.secondary" @click="act('keep')">Keep going</BngButton>
@@ -221,17 +221,26 @@ function stick(axis, e) {
 
 // While the card is up the game is told a popup is open (the name has the shape its popup service reports,
 // /popup/<type>/<component>/aside): its input bindings turn its menu buttons on for the driving screen then
-// (core/input/bindings.lua, onUIStateTriggered). (#62) A modal one, not an "activity" one: the game is paused under
-// every card now, and a non-modal popup leaves A to the car's interaction triggers too (btn_a is also
-// triggerAction0; core/vehicleTriggers.lua: "modal popups own the controller confirm button").
-const POPUP_STATE = "/popup/normal/EarthRallyResults/aside"
-let reported = false
+// (core/input/bindings.lua, onUIStateTriggered). (#62) A modal one while the game is paused under the card -- a
+// question's card always, the finish card only while its pause is held (show.cardPaused: with a stop control) --
+// since a non-modal popup leaves A to the car's interaction triggers too (btn_a is also triggerAction0;
+// core/vehicleTriggers.lua: "modal popups own the controller confirm button"). An "activity" one otherwise: a
+// flying-finish card can be up with the car still rolling, and a modal popup there would take the car's buttons.
+const popupState = computed(() =>
+  `/popup/${(ask.value || load.value || show.value.cardPaused) ? "normal" : "activity"}/EarthRallyResults/aside`)
+let reported = false    // (the state reported now, or false)
 let listening = false   // (the nav log's window listener, #62: listenNav below)
 function setReported(on) {
-  if (on === reported) return
-  reported = on
-  try { reportState(POPUP_STATE, on) } catch (e) { /* (an older game: mouse only, as before) */ }
+  const want = on ? popupState.value : false
+  if (want === reported) return
+  try {
+    if (reported) reportState(reported, false)
+    if (want) reportState(want, true)
+  } catch (e) { /* (an older game: mouse only, as before) */ }
+  reported = want
 }
+// (the finish card's pause comes on a frame after the card, and a question can come up over it: the kind follows)
+watch(popupState, () => { if (reported) setReported(true) })
 const up = computed(() => (ask.value ? "ask" : load.value ? "load" : res.value ? "res" : null))
 watch(up, (r, was) => {
   if (r && r !== was) picked.value = order.value[0]

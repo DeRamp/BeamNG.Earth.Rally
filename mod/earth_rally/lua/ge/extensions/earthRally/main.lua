@@ -25,12 +25,16 @@ local rally = require('earthRally/rally')             -- the full rally (1.7.0):
 local rallyRun = require('earthRally/rallyRun')       -- ... and driving it in the game
 local loadScreen = require('earthRally/loadScreen')   -- the page's loading screen (1.7.0, #49)
 menuPause.holding = earth.holding                    -- (BeamNG.Earth's own holds: our request waits for them)
--- (#63: the run moving the world's origin needs the physics on: the page's pause waits for it, the screen shows it)
-menuPause.waitFor = function() return runner.originMoving() end
+-- (#63: the run moving the world's origin needs the physics on: the page's pause waits for it, the screen shows it.
+-- Only under a loading screen -- the page's pause otherwise stays as it was -- and the run holds the car still then)
+menuPause.waitFor = function() return loadScreen.active() ~= nil and runner.originMoving() end
+runner.loadingUp = function() return loadScreen.active() ~= nil end
+runner.cardPaused = function() return menuPause.cardHeld('earthRally_results') end
 loadScreen.moving = function() return runner.originMoving() or earth.rebasing() == true end
 
 local M = {}
 local logTag = 'earthRally'
+local logPausedSim         -- (below, by onUpdate)
 M.VERSION = '1.6.2-alpha'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_FLOOR_S = 1             -- the HUD's streams sent when what they show changes, and at least this often
@@ -1432,6 +1436,21 @@ local function stepRallyPrep()
   end
 end
 
+-- (#63) The game time that passes while a pause request of ours is in, once a second: the third drive's log had the
+-- rally clock and BeamNG.Earth's anchor commits going on under the page's request, so the next drive shows whether
+-- it stops the physics at all.
+local pausedLog = nil
+logPausedSim = function(dtReal, dtSim)
+  local ids = menuPause.heldIds()
+  if not ids then pausedLog = nil return end
+  pausedLog = pausedLog or { real = 0, sim = 0 }
+  pausedLog.real, pausedLog.sim = pausedLog.real + dtReal, pausedLog.sim + dtSim
+  if pausedLog.real < 1 then return end
+  log('I', logTag, string.format('pause held (%s): %.2f s of game time in %.2f s', table.concat(ids, ', '),
+    pausedLog.sim, pausedLog.real))
+  pausedLog.real, pausedLog.sim = 0, 0
+end
+
 function M.onUpdate(dtReal, dtSim)
   pcall(rallyRun.update, dtReal)
   local okP, errP = pcall(stepRallyPrep)
@@ -1449,6 +1468,7 @@ function M.onUpdate(dtReal, dtSim)
   end
   pcall(earthMenuFix.update)   -- (ahead of earth.update, which is not pcall'd)
   pcall(menuPause.update)      -- (a pause request held back while BeamNG.Earth held the game)
+  pcall(logPausedSim, dtReal or 0, dtSim or 0)
   -- (#43) the stage's finish card at the stop box: the game paused while it gives the options (not under our page,
   -- which has its own request)
   do

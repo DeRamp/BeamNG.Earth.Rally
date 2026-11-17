@@ -242,6 +242,22 @@ function M.rebasing()
   return ok and type(st) == 'table' and st.rebasing ~= nil or false
 end
 
+-- (#63) BeamNG.Earth's anchor bookkeeping, for the run's origin move: { id = its anchor id, rebasing = true/false,
+-- pending = { purpose, lat, lon } or nil (the anchor request it has out: ours, or one of its own that replaced it) }.
+-- Internals (core state `anchorId`, `pending`, `rebasing`), felt for: nil when this BeamNG.Earth does not show them.
+function M.anchorState()
+  local c = core()
+  local ok, out = pcall(function()
+    local st = c and type(c._state) == 'function' and c._state()
+    if type(st) ~= 'table' then return nil end
+    local p = type(st.pending) == 'table' and st.pending or nil
+    return { id = st.anchorId, rebasing = st.rebasing ~= nil and st.rebasing ~= false,
+      pending = p and { purpose = p.purpose, lat = tonumber(p.lat), lon = tonumber(p.lon) } or nil }
+  end)
+  if ok then return out end
+  return nil
+end
+
 ------------------------------------------------------------------------------------------
 -- origin moves: BeamNG.Earth's rebased event (API 1.7) where it has it, else noticed by watching the origin
 

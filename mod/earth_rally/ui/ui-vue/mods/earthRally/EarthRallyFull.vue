@@ -71,7 +71,7 @@
       <!-- (#71) finished: the result, Full results, and the two ways on, New rally selected -->
       <template v-else-if="c.done">
         <div class="er-card er-fin">
-          <div class="er-kick">{{ c.name }}{{ c.unclassified ? "" : " · checked in at the final service" }}</div>
+          <div class="er-kick">{{ c.name }}{{ !c.unclassified && arr(c.rows).some(r => r.final) ? " · checked in at the final service" : "" }}</div>
           <h2>{{ c.unclassified ? "Rally over · not classified" : "Rally finished" }}</h2>
           <div class="er-fin-t">{{ longTime(c.totalS) }}</div>
           <div v-if="c.overall && !c.unclassified" class="er-muted er-fin-p">P{{ c.overall.pos }} of {{ c.overall.of }} · {{ c.class }} {{ ord(c.overall.classPos) }} of {{ c.overall.classOf }}<template v-if="c.points != null"> · +{{ c.points }} points in the season</template></div>

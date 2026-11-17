@@ -236,11 +236,14 @@ car.lat, car.lon = full[1][1], full[1][2]
 ok, why = runner.start(event, event.stages[1])
 T.check(ok, 'the run starts (' .. tostring(why) .. ')')
 -- (#63) the origin moves with the physics on (the loading screen's pause waits: runner.originMoving), the car frozen
+-- -- only under a loading screen (runner.loadingUp): never on a load the player is driving through
+runner.loadingUp = function() return true end
 for _ = 1, 50 do if runner.state() == 'anchor' then break end frames(1) end
 T.check(runner.state() == 'anchor' and runner.originMoving() and frozen == true,
   'the origin move: the pause waits for it, the car held still (#63)')
 frames(5)
 T.check(not runner.originMoving() and frozen == false, 'the origin moved: the car let go, the pause may come on (#63)')
+runner.loadingUp = function() return false end
 T.check(runner.current().checks.originMoved == 'yes', 'the origin moved to the stage centre (' ..
   tostring(runner.current().checks.originMoved) .. ')')
 T.check(math.abs(anchor.lat - 47.009) < 1e-9, 'the anchor is at the centre')
@@ -767,6 +770,13 @@ do
   frames(1)
   T.check(not r2.resultsOpen and layout == 'beamngEarth', 'driven off: the results card closed, the layout back')
   T.check(countObjects() > 0, 'driven off 150 m: the finish and stop props still there (#66)')
+  -- the world shifts: the sites left behind are dropped, not put down again from the finished run's line
+  local carAt = { car.lat, car.lon }
+  moveAnchor(anchor.lat + 0.01, anchor.lon, 'rebase')
+  car.lat, car.lon = carAt[1], carAt[2]
+  frames(10)
+  T.check(countObjects() == 0, 'a world shift with the stage over: the props left behind taken away (#66)')
+  moveAnchor(anchor.lat - 0.01, anchor.lon, 'rebase')
   car.lat, car.lon = toGeo(sx2 + runner.LEFT_DROP_M + 50, sy2)
   frames(10)
   T.check(countObjects() == 0, 'out of their distance: the props left behind taken away (#66)')
@@ -2949,6 +2959,9 @@ do
     core_input_actionFilter = { setGroup = function() end, addAction = function(_, _, on) blockedOn = on end }
     local function rframes(n) for _ = 1, n do rallyRun.update(0.1) frames(1) end end
     car.lat, car.lon, car.speed = atcLat - 30000 / 111195, full[11][2], 0
+    local si = rallyRun.startInfo('test19r')
+    T.check(si and si.services == 1, 'rally: the start screen counts Service A, not the final service (' ..
+      tostring(si and si.services) .. ')')
     local okR, whyR = rallyRun.start('test19r', { mode = 'realistic', class = 'L4WD' })
     T.check(okR and blockedOn == true, 'rally: started, the game\'s own recovery blocked (' .. tostring(whyR) .. ')')
     T.check(geo_m(car.lat, car.lon, parkLat, parkLon) < 1, 'rally: the car taken to the start on the map (#26)')
@@ -2964,18 +2977,31 @@ do
     drive(30, function() return car.lat >= atcLat + 15 / 111195 end)
     rframes(3)
     T.check(runner.current() == nil and rallyRun.askInfo() == nil, 'rally: rolling past the board loads nothing (#58)')
-    car.lat, car.speed = atcLat, 0
+    -- (the boards with no road point here: the map's ATC point, a wider ring round it -- stopped 40 m short of it)
+    car.lat, car.speed = atcLat - 40 / 111195, 0
     rframes(3)
     local q = rallyRun.askInfo()
     T.check(runner.current() == nil and q and q.loadAsk and q.loadAsk.ss == 'SS1' and rallyRun.asking(),
-      'rally: stopped at the board, "Load the stage?" asked (#58)')
+      'rally: stopped near the ATC point of the map (no road point for its boards), "Load the stage?" asked (#58)')
     T.check(rallyRun.recoverKey() and rallyRun.askInfo() == q, 'rally: the recovery key does nothing while asked (#59)')
     T.check(rallyRun.answerLoad('notYet') and rallyRun.askInfo() == nil, 'rally: Not yet')
     rframes(5)
     T.check(runner.current() == nil and rallyRun.askInfo() == nil, 'rally: Not yet, still stopped there: not asked again')
-    car.lat = atcLat - 60 / 111195 rframes(3)
+    car.lat = atcLat - 90 / 111195 rframes(3)
     car.lat = atcLat rframes(3)
     T.check(rallyRun.askInfo() and rallyRun.askInfo().loadAsk, 'rally: left the board and stopped again: asked again')
+    -- Load failing: said, and not asked again until the car has left and stopped again
+    local realStart = runner.start
+    runner.start = function() return false, 'made-up trouble' end
+    local okF, whyF = rallyRun.answerLoad('load')
+    runner.start = realStart
+    T.check(not okF and tostring(whyF):find('made-up trouble', 1, true) ~= nil,
+      'rally: Load failed: the reason given (' .. tostring(whyF) .. ')')
+    rframes(60)
+    T.check(runner.current() == nil and rallyRun.askInfo() == nil, 'rally: Load failed, still stopped: not asked again at once')
+    car.lat = atcLat - 90 / 111195 rframes(3)
+    car.lat = atcLat rframes(3)
+    T.check(rallyRun.askInfo() and rallyRun.askInfo().loadAsk, 'rally: after the failure, left and stopped again: asked')
     local nToasts = #toasts
     T.check(rallyRun.answerLoad('load') and rallyRun.askInfo() == nil, 'rally: Load')
     local cur = runner.current()
@@ -2994,6 +3020,9 @@ do
     cur.clockRun = cur.clockRun + 120
     T.check(runner.continueAtc() and not cur.startHeld and cur.startAt >= runner.clock() + runner.START_GAP_S,
       'rally: Continue: the start time from then, not from the check-in (#64)')
+    -- Realistic, checked in but not started: the recovery key is free, no question
+    T.check(cur.state ~= 'running' and rallyRun.recoverKey() and cur.rally.ask == nil and rallyRun.askInfo() == nil,
+      'rally: Realistic before the start: the recovery key is free, nothing asked (' .. tostring(cur.state) .. ')')
     -- a Realistic recovery during the stage: asked first, then the stage given up, the car to Service A (#31)
     cur.state = 'running'
     T.check(rallyRun.recoverKey() and cur.rally.ask ~= nil and rallyRun.asking(), 'rally: the recovery key asks first')
@@ -3013,11 +3042,18 @@ do
     -- (#69) Realistic, on the transit: the Recover? question, not a free recovery
     T.check(rallyRun.recoverKey(), 'rally: the recovery key on the transit')
     local tq = rallyRun.askInfo()
-    T.check(tq and tq.ask and tq.ask.transit and tq.ask.ss == 'SS2' and tq.ask.stop == 'Final service',
-      'rally: Realistic transit: Recover? asked, rejoining at the final service (#69)')
+    T.check(tq and tq.ask and tq.ask.transit and tq.ask.ss == 'SS2' and tq.ask.stop == nil and not tq.ask.toStop,
+      'rally: Realistic transit to the last stage: Recover? asked, no stop to rejoin at -- the final service is none')
     T.check(rallyRun.answer('keep') and rallyRun.askInfo() == nil and runner.approaching(), 'rally: Keep going')
     local li = rallyRun.leaveInfo()
     T.check(li and li.at == 'Service A', 'rally: leaving now continues from Service A')
+    -- (the owner) on the way to a stop with no stage before it: recovering takes the car there, nothing missed
+    rallyRun.onFinished({ timeS = 200, stageS = 200, penaltyS = 0 })
+    T.check(rallyRun.recoverKey(), 'rally: the recovery key on the way to the final service')
+    local sq = rallyRun.askInfo()
+    T.check(sq and sq.ask and sq.ask.toStop and sq.ask.stop == 'Final service',
+      'rally: on the way to a stop: the card says it takes you there, no stage missed (ask.toStop)')
+    T.check(rallyRun.answer('keep') and rallyRun.askInfo() == nil, 'rally: Keep going, on to the final service')
     rallyRun.quit()
     T.check(blockedOn == false and runner.approaching() == nil and rallyRun.active() == nil,
       'rally: left, the game\'s recovery back, the transit gone')
@@ -3036,7 +3072,9 @@ do
     local props = require('earthRally/props')
     local parkLat, parkLon = atcLat - 8000 / 111195, full[11][2]
     files['/earthRally/events/test19f.json'] = { format = 1, id = 'test19f', name = 'Test Rally 19F', stages = ev.stages,
-      itinerary = { { ss = 'SS1', stage = 'hill', run = 1, day = 1, km = 3 } }, rallyStops = {},
+      itinerary = { { ss = 'SS1', stage = 'hill', run = 1, day = 1, km = 3 } },
+      rallyStops = { { after = 1, kind = 'service', label = 'Service A', name = 'Park',
+        place = { name = 'Park', lat = parkLat, lon = parkLon } } },
       rallyStart = { name = 'Park', lat = parkLat, lon = parkLon } }
     files['/earthRally/matched/test19f__hill.json'] = { format = 1, points = recFrom }
     events.list(true)
@@ -3051,7 +3089,8 @@ do
     local labels = {}
     for _, row in ipairs(c.rows) do labels[#labels + 1] = row.label end
     T.check(table.concat(labels, ' ') == 'Start SS1 Final service' and c.rows[3].final,
-      'rally end: the order ends at a final service, back at the start (#71: ' .. table.concat(labels, ' ') .. ')')
+      'rally end: the order ends at a final service, the stop the event has after its last pass (#71: ' ..
+      table.concat(labels, ' ') .. ')')
     T.check(c.rows[1].day == 1, 'rally end: the start row on day 1 (#57)')
     T.check(rallyRun.goNext() and runner.approaching(), 'rally end: on the transit to SS1')
     -- the stage driven (its finish told to the rally straight away), the final service driven to
@@ -3114,6 +3153,114 @@ do
     map = nil
     props.mapChanged()
     T.check(rallyRun.approachVia(stg, aLat, aLon, 'ATC') == nil, 'approach point: no road map yet: none, looked for later')
+  end
+
+  -- 3f. (the owner, rev 4) Realistic, a rally with no stop at all: a recovery rejoins at the next stage's start
+  do
+    local rally = require('earthRally/rally')
+    local rallyRun = require('earthRally/rallyRun')
+    local parkLat, parkLon = atcLat - 8000 / 111195, full[11][2]
+    files['/earthRally/events/test19n.json'] = { format = 1, id = 'test19n', name = 'Test Rally 19N', stages = ev.stages,
+      itinerary = { { ss = 'SS1', stage = 'hill', run = 1, day = 1, km = 3 }, { ss = 'SS2', stage = 'hill', run = 2, day = 1, km = 3 },
+        { ss = 'SS3', stage = 'hill', run = 3, day = 1, km = 3 } }, rallyStops = {},
+      rallyStart = { name = 'Square', lat = parkLat, lon = parkLon } }
+    files['/earthRally/matched/test19n__hill.json'] = { format = 1, points = recFrom }
+    events.list(true)
+    rallyRun.ui.openCard = function() end
+    core_input_actionFilter = { setGroup = function() end, addAction = function() end }
+    local function rframes(n) for _ = 1, n do rallyRun.update(0.1) frames(1) end end
+    car.lat, car.lon, car.speed = parkLat, parkLon, 0
+    T.check(rallyRun.start('test19n', { mode = 'realistic', class = 'L4WD' }), 'no stop: started')
+    rframes(60)
+    local labels = {}
+    for _, row in ipairs(rallyRun.uiCard().rows) do labels[#labels + 1] = row.label end
+    T.check(table.concat(labels, ' ') == 'Start SS1 SS2 SS3', 'no stop: no final service (#71: ' .. table.concat(labels, ' ') .. ')')
+    T.check(rallyRun.goNext() and runner.approaching(), 'no stop: on the transit to SS1')
+    -- the transit: Recover takes the car to SS1's time control, nothing missed
+    T.check(rallyRun.recoverKey(), 'no stop: the recovery key on the transit')
+    local q = rallyRun.askInfo()
+    T.check(q and q.ask and q.ask.transit and q.ask.toStop and q.ask.stop == 'the start of SS1 Hill',
+      'no stop: transit Recover? says it takes you to the start of SS1 (' .. tostring(q and q.ask and q.ask.stop) .. ')')
+    T.check(rallyRun.answer('recover') and geo_m(car.lat, car.lon, atcLat, atcLon) < 1,
+      'no stop: recovered on the transit, the car at SS1\'s time control')
+    rframes(60)
+    local R = rallyRun.active()
+    T.check(rally.current(R).ss == 'SS1' and next(R.results) == nil and runner.approaching(),
+      'no stop: nothing missed, the transit to SS1 armed again')
+    -- the car there stopped: asked to load; loaded
+    T.check(rallyRun.askInfo() and rallyRun.askInfo().loadAsk and rallyRun.answerLoad('load'), 'no stop: SS1 loaded')
+    rframes(30)
+    local cur = runner.current()
+    -- (a run that failed to start: put away and the transit armed again, free -- no Recover? question)
+    cur.state = 'failed'
+    T.check(rallyRun.recoverKey() and runner.current() == nil and rallyRun.askInfo() == nil and runner.approaching(),
+      'a failed stage: the recovery key puts it away, re-arms the transit, asks nothing')
+    car.lat, car.speed = atcLat - 90 / 111195, 0 rframes(3)
+    car.lat = atcLat rframes(3)
+    T.check(rallyRun.askInfo() and rallyRun.answerLoad('load'), 'no stop: SS1 loaded again')
+    rframes(30)
+    cur = runner.current()
+    cur.state = 'running'
+    T.check(rallyRun.recoverKey() and cur.rally.ask and cur.rally.ask.stop == 'the start of SS2 Hill',
+      'no stop: Recover? on SS1 says the start of SS2 (' .. tostring(cur.rally.ask and cur.rally.ask.stop) .. ')')
+    T.check(rallyRun.answer('recover') and runner.current() == nil, 'no stop: SS1 given up')
+    T.check(R.results.SS1 and R.results.SS1.superRally and R.results.SS2 == nil and rally.current(R).ss == 'SS2',
+      'no stop: SS1 under Super Rally only, on at SS2')
+    T.check(geo_m(car.lat, car.lon, atcLat, atcLon) < 1, 'no stop: the car taken to SS2\'s time control')
+    rframes(60)
+    T.check(runner.approaching() ~= nil, 'no stop: the transit to SS2 armed there')
+    -- SS2 done, the last stage given up: the rally ends
+    rallyRun.onFinished({ timeS = 200, stageS = 200, penaltyS = 0 })
+    car.lat, car.speed = atcLat - 90 / 111195, 0 rframes(3)
+    car.lat = atcLat rframes(3)
+    T.check(rallyRun.askInfo() and rallyRun.answerLoad('load'), 'no stop: SS3 loaded')
+    rframes(30)
+    cur = runner.current()
+    cur.state = 'running'
+    T.check(rallyRun.recoverKey() and cur.rally.ask and cur.rally.ask.stop == nil and cur.rally.ask.last,
+      'no stop: Recover? on the last stage says the rally ends (ask.last)')
+    T.check(rallyRun.answer('recover') and R.done and R.unclassified, 'no stop: the last stage given up ends the rally')
+    rallyRun.endRally()
+    rallyRun.abandon('test19n')
+    core_input_actionFilter = nil
+    teleports, moved = 0, false
+  end
+
+  -- 3g. (#63) the origin move waits on BeamNG.Earth's own request: done on any commit after ours, wherever it landed
+  -- (its stale resync re-asked at the old anchor), and not given up while a request is still pending
+  do
+    local est = { anchorId = 1 }
+    local anchorWas = anchor
+    local realRebase = beamngEarth_core.rebaseTo
+    beamngEarth_core._state = function() return est end
+    beamngEarth_core.rebaseTo = function(lat, lon) est.pending = { purpose = 'resync', lat = lat, lon = lon } return true end
+    runner.abort(true)
+    anchor = { lat = 47.0, lon = -123.0 }
+    car.lat, car.lon, car.speed = full[1][1], full[1][2], 0
+    T.check(runner.start(event, event.stages[1]), 'origin wait: started')
+    for _ = 1, 50 do if runner.state() == 'anchor' then break end frames(1) end
+    T.check(runner.state() == 'anchor' and est.pending ~= nil, 'origin wait: asked')
+    est.pending = { purpose = 'resync', lat = 47.0, lon = -123.0 }       -- (re-asked at the old anchor)
+    frames(5)
+    T.check(runner.state() == 'anchor', 'origin wait: still pending, waiting')
+    est.pending, est.anchorId = nil, 2                                   -- (committed there)
+    frames(2)
+    local r = runner.current()
+    T.check(runner.state() ~= 'anchor' and tostring(r.checks.originMoved):find('^landed') ~= nil,
+      'origin wait: committed elsewhere: done, not left to time out (' .. tostring(r.checks.originMoved) .. ')')
+    runner.abort(true)
+    -- a request that stays pending: waited for past ANCHOR_WAIT_S, given up at ANCHOR_PENDING_MAX_S
+    car.lat, car.lon = full[1][1], full[1][2]
+    T.check(runner.start(event, event.stages[1]), 'origin wait 2: started')
+    for _ = 1, 50 do if runner.state() == 'anchor' then break end frames(1) end
+    frames(runner.ANCHOR_WAIT_S + 5, 1)
+    T.check(runner.state() == 'anchor', 'origin wait 2: still pending past ANCHOR_WAIT_S: still waiting')
+    frames(runner.ANCHOR_PENDING_MAX_S, 1)
+    r = runner.current()
+    T.check(runner.state() ~= 'anchor' and r.checks.originMoved == 'timed out', 'origin wait 2: given up at last')
+    runner.abort(true)
+    beamngEarth_core._state, beamngEarth_core.rebaseTo = nil, realRebase
+    anchor = anchorWas
   end
 
   -- 4. a stage with no ATC, the car standing still on the start line when it loads: not counted down until driven

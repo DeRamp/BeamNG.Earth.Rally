@@ -142,6 +142,16 @@ T.check(paused and mp.held(), 'and paused once it is')
 mp.uiState('play', ROUTE)
 mp.waitFor = function() return false end
 
+-- (#63) every request of ours in now, by id, for the log of game time under them
+T.check(mp.heldIds() == nil, 'nothing held: no ids')
+mp.uiState(ROUTE, ROUTE)
+mp.card('earthRally_ask', true)
+local ids = mp.heldIds()
+T.check(ids and table.concat(ids, ',') == 'earthRally_ask,earthRally_menu', 'the page and a card held: both ids')
+mp.card('earthRally_ask', false)
+mp.uiState('play', ROUTE)
+T.check(mp.heldIds() == nil, 'all taken back: no ids')
+
 -- no request stack (an older game): the page opens, nothing paused, nothing thrown
 simTimeAuthority = nil
 mp.uiState(ROUTE, ROUTE)

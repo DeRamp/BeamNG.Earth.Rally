@@ -87,8 +87,8 @@ local function orderOf(event, cancelled)
     end
   end
   -- (#71, the owner: after the last stage you still drive back to service, and the rally finishes there. The stop the
-  -- event has after its last pass when it has a place, else the last day's service park (below), else the rally's
-  -- start (M.new, which knows it). A trailing stop with no place is dropped, as before)
+  -- event has after its last pass when it has a place, else the last day's service park (below). With no service
+  -- anywhere, no final service: the rally ends at its last stage, as before. A trailing stop with no place is dropped)
   local trailing = nil
   while lastIsStop() do
     if not trailing and out[#out].place then trailing = out[#out] end
@@ -162,8 +162,6 @@ function M.new(event, opts)
   local st = type(event.rallyStart) == 'table' and type(event.rallyStart.lat) == 'number' and event.rallyStart or nil
   table.insert(order, 1, { kind = 'start', label = 'Start', name = st and st.name or nil,
     place = st and { name = st.name, lat = st.lat, lon = st.lon } or nil })
-  -- (#71: no service park to finish at, the rally finishes back at its start)
-  if st and not order[#order].final then order[#order + 1] = M.finalStop(st, st.name) end
   return { format = M.FORMAT, eventId = event.id, name = event.name, mode = mode,
     class = type(opts.class) == 'string' and opts.class ~= '' and opts.class or 'L4WD', cancelled = cancelled,
     car = type(opts.car) == 'table' and { name = opts.car.name } or nil,
@@ -321,16 +319,28 @@ function M.superRallyTime(board, item, class, nth)
   return { timeS = best + add, classBestS = best, addS = add, from = from }
 end
 
+-- (the owner, rev 4) A rally with no stop at all in its running order -- no service, overnight or regroup, only its
+-- start and its stages: there a recovery rejoins at the next stage's start, not at a service.
+function M.noStops(r)
+  for _, it in ipairs(r.order or {}) do
+    if it.kind ~= 'stage' and it.kind ~= 'start' then return false end
+  end
+  return true
+end
+
 -- Realistic: the stage given up. It and every stage before the next service or overnight score Super Rally times,
--- and the rally goes on from that stop. With none left, the rally ends unclassified.
--- Returns { missed = [{ item, result }], stop = the stop rejoined at or nil }, or nil and why.
+-- and the rally goes on from that stop. With none left, the rally ends unclassified. A rally with no stops at all
+-- (M.noStops): only the stage given up scores Super Rally, and the rally goes on at the next stage (out.stage).
+-- Returns { missed = [{ item, result }], stop = the stop rejoined at or nil, stage = the stage rejoined at or nil },
+-- or nil and why.
 function M.recover(r, board)
   if r.mode ~= 'realistic' then return nil, 'recovering ends a stage in Realistic mode only' end
   local it = M.current(r)
   if not (it and it.kind == 'stage') then return nil, 'the rally is not on a stage' end
   local out = { missed = {} }
   local i = r.pos
-  while i <= #r.order and r.order[i].kind == 'stage' do
+  local one = M.noStops(r)
+  while i <= #r.order and r.order[i].kind == 'stage' and not (one and i > r.pos) do
     local st = r.order[i]
     r.missed = (r.missed or 0) + 1
     local sr = M.superRallyTime(board, st, r.class, r.missed)
@@ -347,7 +357,7 @@ function M.recover(r, board)
     r.pos, r.done, r.unclassified = #r.order + 1, true, true
   else
     r.pos = i
-    out.stop = r.order[i]
+    if r.order[i].kind == 'stage' then out.stage = r.order[i] else out.stop = r.order[i] end
   end
   r.superRally = out.missed
   return out

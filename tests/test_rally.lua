@@ -373,14 +373,15 @@ do
   local fin2 = rally.new(ev2, {}).order
   fin2 = fin2[#fin2]
   T.check(fin2.final and fin2.place.name == 'Finish Park', 'the event\'s own stop after the last pass, when it has a place')
-  -- no service park on the map: back at the rally's start
+  -- no service with a place anywhere: no final service, not one at the rally's start (the rally ends at its last
+  -- stage, as before)
   local ev3 = event()
   ev3.rallyStart = { name = 'Start Square', lat = 9, lon = 10 }
   local o3 = rally.new(ev3, {}).order
-  T.check(o3[#o3].final and o3[#o3].place.name == 'Start Square', 'no service park: the rally\'s start')
+  T.check(not o3[#o3].final and o3[#o3].kind == 'stage', 'no service park: no final service, not at the start')
   T.check(not rally.new(event(), {}).order[#rally.new(event(), {}).order].final, 'no place at all: no final service')
   -- the rally is over only once checked in there
-  local rr = newR(ev3, { mode = 'casual' })
+  local rr = newR(ev, { mode = 'casual' })
   while rally.current(rr).kind == 'stage' or not rally.current(rr).final do
     local it = rally.current(rr)
     if it.kind == 'stage' then rally.stageDone(rr, { timeS = 100 }) else rally.serviced(rr) rally.serviceOut(rr) end
@@ -390,7 +391,7 @@ do
   rally.serviceOut(rr)
   T.check(rally.over(rr) and rr.done, 'checked in at the final service: the rally is over')
   -- the last stage given up in Realistic: the final service is no stop to rejoin at, unclassified
-  local rl = newR(ev3, { mode = 'realistic', class = 'L4WD' })
+  local rl = newR(ev, { mode = 'realistic', class = 'L4WD' })
   while rally.current(rl).ss ~= 'SS10' do
     local it = rally.current(rl)
     if it.kind == 'stage' then rally.stageDone(rl, { timeS = 100 }) else rally.serviced(rl) rally.serviceOut(rl) end
@@ -398,10 +399,31 @@ do
   local out = rally.recover(rl, board)
   T.check(out and out.stop == nil and rl.done and rl.unclassified, 'SS10 given up: unclassified, not at the final service')
   -- held out: the stops before the final service merged as before, the final service kept
-  local rh = newR(ev3, {})
+  local rh = newR(ev, {})
   rally.holdOut(rh, 'e', 'missing')
   T.check(labelsOf(rh.order) == 'Start SS1 SS2 SS3 Service A SS4 SS5 SS6 Overnight SS9 Final service',
     'a stage held out: the final service kept last (' .. labelsOf(rh.order) .. ')')
+end
+
+------------------------------------------------------------------------------------------ no stop at all (the owner, rev 4)
+do
+  -- a rally with no service, overnight or regroup: a recovery rejoins at the next stage's start, only the stage given
+  -- up scored under Super Rally; on the last stage it ends the rally
+  local e = event()
+  e.rallyStops = {}
+  e.rallyStart = { name = 'Start Square', lat = 9, lon = 10 }
+  local r = newR(e, { mode = 'realistic', class = 'L4WD' })
+  T.check(rally.noStops(r) and not rally.noStops(newR(event(), {})), 'no stop at all: told from a rally with services')
+  rally.serviceOut(r)
+  local out = rally.recover(r, board)
+  T.check(out and #out.missed == 1 and out.missed[1].item.ss == 'SS1' and out.stage and out.stage.ss == 'SS2'
+    and out.stop == nil and rally.current(r).ss == 'SS2' and not r.done,
+    'no stop: SS1 given up, only it under Super Rally, on at the start of SS2')
+  T.check(r.results.SS1.superRally and r.results.SS2 == nil, 'no stop: SS2 not missed')
+  while rally.current(r).ss ~= 'SS10' do rally.stageDone(r, { timeS = 100 }) end
+  out = rally.recover(r, board)
+  T.check(out and out.stage == nil and out.stop == nil and r.done and r.unclassified,
+    'no stop: the last stage given up ends the rally, unclassified')
 end
 
 T.done('test_rally')

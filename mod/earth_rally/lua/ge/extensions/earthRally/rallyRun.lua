@@ -268,7 +268,7 @@ function M.startInfo(id)
           elseif why then held[#held + 1] = { name = st.name, why = why } end
         end
       end
-    elseif it.kind == 'service' then svc = svc + 1 end
+    elseif it.kind == 'service' and not it.final then svc = svc + 1 end   -- (the final service is the finish)
   end
   local nd = 0
   for _ in pairs(days) do nd = nd + 1 end
@@ -484,7 +484,8 @@ local function armTransit()
   local title = it.ss .. ' ' .. stage.name
   -- (#45, #70) Into the ATC the right way: the GPS through a point a little before it on its own road, then to the
   -- ATC. The road map round the ATC is there only once the car is near: looked for again on the way (M.update).
-  local tg = { via = M.approachVia(stage, lat, lon, kind) }
+  local okV, via0 = pcall(M.approachVia, stage, lat, lon, kind)
+  local tg = { via = okV and via0 or nil }
   local function setGps()
     local via = tg.via
     local okR = via and select(2, pcall(earth.gpsRoute, { { lat = via.lat, lon = via.lon, name = title .. ' approach' },
@@ -495,7 +496,7 @@ local function armTransit()
   -- (#42: armed at the flying finish, the stage's own arrows to its stop control clear the GPS: set again once that
   -- run has let them go, M.update)
   tg.set, tg.again = setGps, not runLive()
-  if not tg.via and kind == 'ATC' then tg.lookVia = { stage = stage, lat = lat, lon = lon, kind = kind } end
+  if not tg.via and kind == 'ATC' then tg.lookVia = { stage = stage, lat = lat, lon = lon, kind = kind, tries = 0 } end
   transitGps = tg
   local ok = runner.armApproach(ev, stage, { sticky = true, title = title, rally = true,
     startOpts = { rally = true, ssLabel = it.ss, keepDamage = true },
@@ -509,6 +510,45 @@ local function armTransit()
   return true
 end
 
+-- (the owner, rev 4: a rally with no stop at all, rally.noStops) A recovery rejoins at the next stage's start: the
+-- car taken to its ATC (its start control with none), and its transit armed there once the world is in.
+local function startLabel(it)
+  local st = stageOf(it)
+  return 'the start of ' .. tostring(it.ss) .. (st and (' ' .. st.name) or '')
+end
+local function goToStageStart(it)
+  toStop = nil
+  runner.disarmApproach('the rally moved on')
+  if runner.current() then pcall(runner.abort, true) end
+  if not ev then load(R.eventId) end
+  local stage = stageOf(it)
+  local lat, lon = nil, nil
+  if stage then lat, lon = runner.arrivalPoint(stage) end
+  local function arm()
+    local okT, whyT = armTransit()
+    if not okT then say(tostring(whyT), 6, 'warning', R.name) end
+    if M.ui.openCard then M.ui.openCard() end
+  end
+  local at = { kind = 'stageStart', label = startLabel(it), name = stage and stage.name or nil }
+  -- (no service to mend it: BeamNG.Earth's set-down after a teleport is a repair, and a recovery must not be one)
+  if R.mode == 'realistic' then pcall(runner.keepDamage, true) end
+  if not (lat and earth.teleport(lat, lon, at.label)) then
+    log('W', logTag, 'rally: could not go to ' .. at.label .. ': its transit armed from here')
+    arm()
+    return
+  end
+  move = { item = at, t = 0, ready = 0, thenDo = arm }
+  if M.ui.loading then M.ui.loading('move', at) elseif M.ui.closeMenu then M.ui.closeMenu() end
+end
+
+-- (the end of the rally by a recovery: what is said)
+local function endedByRecovery()
+  finish()
+  say(rally.noStops(R) and 'That was the last stage: the rally ends unclassified.'
+    or 'No service is left to rejoin at: the rally ends unclassified.', 6, 'warning', 'Rally over')
+  if M.ui.openCard then M.ui.openCard() end
+end
+
 -- (#45, #70) A point before the stage's ATC (its start with none) on the road into it, so the GPS brings the car in
 -- the way the stage runs: walked back APPROACH_VIA_BACK_M along the road map (props.walkRoad) from the road at the ATC,
 -- turned to lead on to the start. Until 1.7.0 rev 4 it was a straight line 150 m back from the start through the ATC,
@@ -520,6 +560,7 @@ end
 M.APPROACH_VIA_BACK_M = { 60, 45, 30 }
 M.APPROACH_VIA_LOOK_M = 1500      -- (the road map round the ATC looked at from this close)
 M.APPROACH_VIA_ON_ROAD_M = 4      -- (the walked point still this close to a road running the same way)
+M.APPROACH_VIA_TRIES = 5          -- (looked for at most this many times on the way in: M.update)
 function M.approachVia(stage, lat, lon, kind)
   local ctl = stage.controls or {}
   local line = stage.line
@@ -633,6 +674,7 @@ function M.start(id, opts)
   local r, why = rally.new(ev, { mode = opts and opts.mode, class = opts and opts.class,
     cancelled = opts and opts.cancelled, car = car })
   if not r then return false, why end
+  if question then pcall(runner.askLayout, false) end
   R, card, recoveredAt, question, move, toStop = r, nil, nil, nil, nil, nil
   savedResults = nil
   -- (the rally saved before is replaced now, as the start screen says, not only once the car is at the start)
@@ -661,6 +703,7 @@ function M.resume(id)
   end
   pcall(runner.abort, true)
   runner.disarmApproach('a rally continued')
+  if question then pcall(runner.askLayout, false) end
   R, card, recoveredAt, question, move, toStop = t.current, nil, nil, nil, nil, nil
   savedResults = t.current.results
   M.block(true)
@@ -831,13 +874,19 @@ function M.stoppedNow()
   return p ~= nil and (p.speed or 0) < runner.STOPPED_MS
 end
 
--- The stop the rally rejoins at after a recovery from item i on: the next stop's label (nil: none).
+-- The stop the rally rejoins at after a recovery from item i on: the next stop's label (nil: none). The final service
+-- is no stop to rejoin at (rally.recover ends the rally unclassified there), so reaching it is nil too.
 local function nextStopLabel(from)
   for i = from, #R.order do
-    if R.order[i].kind ~= 'stage' then return R.order[i].label end
+    local it = R.order[i]
+    if it.kind ~= 'stage' then
+      if it.final then return nil end
+      return it.label
+    end
   end
   return nil
 end
+M._nextStopLabel = function(from) return R and nextStopLabel(from) or nil end
 
 -- A question up (#59: the recovery key does nothing then; A on its card answers it).
 function M.asking()
@@ -855,11 +904,15 @@ function M.recoverKey()
   if M.asking() then return true end
   if not M.inRun() or not runLive() then
     if move or prep then return true end
-    -- (a stage that failed to start: put away, its transit armed again, the car put back on the road)
+    -- (a stage that failed to start: put away, its transit armed again, the car put back on the road -- free: the
+    -- failure was ours, not the driver's, so no Recover? question for it)
     if M.inRun() and runner.current().state == 'failed' then
       pcall(runner.abort, true)
       local it = rally.current(R)
       if it and it.kind == 'stage' then armTransit() end
+      if not runner.recoverToRoad() then say('No road found near the car.', 3, 'warning', 'Recovery')
+      elseif R.mode == 'casual' then M.repair() end
+      return true
     end
     -- (#69) Realistic: no free recovery on a transit. Recover = back in at the next service under Super Rally, the
     -- stages before it missed (on the way to a stop, taken to it). Waiting at a stop is no transit: free there.
@@ -867,8 +920,13 @@ function M.recoverKey()
     local onTransit = cur and (cur.kind == 'stage' or (toStop ~= nil and not rally.isServiced(R)))
     if R.mode == 'realistic' and onTransit then
       local nx = cur.kind == 'stage' and stageOf(cur)
+      -- (toStop: on the way to a stop with no stage before it, recovering is a teleport to that stop and no stage is
+      -- missed -- the card says so plainly; whether it should cost anything is the owner's call, not made here)
+      -- (no stop in the rally: to the start of the stage it is on its way to, nothing missed either)
+      local free = cur.kind ~= 'stage' or rally.noStops(R)
+      local stop = (cur.kind ~= 'stage' and cur.label) or (free and startLabel(cur)) or nextStopLabel(R.pos)
       question = { ask = { transit = true, ss = cur.kind == 'stage' and cur.ss or nil, name = nx and nx.name or nil,
-        stop = cur.kind == 'stage' and nextStopLabel(R.pos) or cur.label },
+        stop = stop, toStop = free or nil },
         key = 'ask:transit:' .. tostring(os.clock()) }
       pcall(runner.askLayout, true)
       log('I', logTag, 'rally: Recover? asked on the transit to ' .. tostring(itemLabel(cur)))
@@ -880,6 +938,7 @@ function M.recoverKey()
     return true
   end
   local r = runner.current()
+  -- (Casual, and Realistic between the check-in and the start -- toAtc, toStart, waitStart: not timed yet, so free)
   if R.mode == 'casual' or r.state ~= 'running' then
     runner.backOnRoad()           -- (free: no reset penalty in a rally run)
     return true
@@ -887,7 +946,15 @@ function M.recoverKey()
   -- Realistic, on the stage: the question (#59: the game paused under it, answered on its card: no time-out, and the
   -- key again is no answer)
   r.rally = r.rally or { mode = R.mode }
-  r.rally.ask = { ss = r.ssLabel, name = r.stage and r.stage.name, stop = nextStopLabel(R.pos + 1) }
+  -- (no stop in the rally: the next stage's start; on the last stage, the end -- ask.last)
+  local stop, last = nil, nil
+  if rally.noStops(R) then
+    local nx = R.order[R.pos + 1]
+    if nx and nx.kind == 'stage' then stop = startLabel(nx) else last = true end
+  else
+    stop = nextStopLabel(R.pos + 1)
+  end
+  r.rally.ask = { ss = r.ssLabel, name = r.stage and r.stage.name, stop = stop, last = last }
   r.rallyKey = 'ask:' .. tostring(r.ssLabel) .. ':' .. tostring(os.clock())
   return true
 end
@@ -930,12 +997,18 @@ function M.update(dt)
         -- (#70: the road map round the ATC in now: its direction point on the road, and the GPS set through it)
         local lv = transitGps.lookVia
         if lv and far and ap and ap.distM and ap.distM <= M.APPROACH_VIA_LOOK_M then
+          -- (a few looks once inside the radius, not one every poll for the whole approach: the road map round the
+          -- ATC is in by then or is not coming, and the walk along it is not free)
+          lv.tries = (lv.tries or 0) + 1
           local okV, via = pcall(M.approachVia, lv.stage, lv.lat, lv.lon, lv.kind)
           if okV and via then
             transitGps.lookVia, transitGps.via = nil, via
             transitGps.set()
             log('I', logTag, string.format('rally: the GPS set through %s\'s approach, %d m before its time control',
               tostring(cur.ss), via.backM or 0))
+          elseif lv.tries >= M.APPROACH_VIA_TRIES then
+            transitGps.lookVia = nil
+            log('I', logTag, 'rally: no approach point found for ' .. tostring(cur.ss) .. ': the GPS goes straight in')
           end
         elseif lv and not far then
           transitGps.lookVia = nil
@@ -1035,15 +1108,20 @@ function M.answer(what)
     pcall(runner.askLayout, false)
     if what ~= 'recover' then return true end
     local cur = rally.current(R)
+    -- (no stop in the rally: taken to the start of the stage it was on its way to, nothing missed)
+    if cur and cur.kind == 'stage' and rally.noStops(R) then
+      card = nil
+      log('I', logTag, 'rally: recovered on the transit, to ' .. startLabel(cur))
+      goToStageStart(cur)
+      return true
+    end
     if cur and cur.kind == 'stage' then
       local out, why = rally.recover(R, board)
       if not out then return false, why end
       runner.disarmApproach('recovered on the transit')
       card = nil
       if rally.over(R) then
-        finish()
-        say('No service is left to rejoin at: the rally ends unclassified.', 6, 'warning', 'Rally over')
-        if M.ui.openCard then M.ui.openCard() end
+        endedByRecovery()
         return true
       end
       recoveredAt = R.pos
@@ -1067,12 +1145,10 @@ function M.answer(what)
   pcall(runner.abort, true)
   card = nil
   if rally.over(R) then
-    finish()
-    say('No service is left to rejoin at: the rally ends unclassified.', 6, 'warning', 'Rally over')
-    if M.ui.openCard then M.ui.openCard() end
+    endedByRecovery()
   else
     recoveredAt = R.pos
-    goToStop()
+    if out.stage then goToStageStart(out.stage) else goToStop() end
   end
   return true
 end
