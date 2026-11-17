@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Rally: the download moving (1.7.2)</title>
+<!-- Mock-up for 1.7.2 (not built): docs/plan-recce-speed.md item 5. The owner pressed Auto recce again at 50 s
+     because the item count sat on "2 of 59" (docs/notes-1.7.1.md). Proposed: the download's size and how long it
+     has been going, next to the count, wherever the count is shown. 1920x1080, the menu page's own look
+     (ui/ui-vue/mods/earthRally/EarthRally.vue, EarthRallyFull.vue). -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&family=Overpass+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --fnt-defs: "Noto Sans", system-ui, sans-serif;
+  --fnt-mono: "Overpass Mono", ui-monospace, monospace;
+  --er-orange: #f26b1d; --er-muted: #b8bcc6; --er-dim: #8a909a; --er-blue: #1f8fff;
+  --orange-500: oklch(61.95% 0.1801 43.40); --cg-300: oklch(75.07% 0.0256 267.86);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: var(--fnt-defs); }
+.mock-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 16px; background: #1a1d22; border-bottom: 1px solid #2a2e35; position: sticky; top: 0; z-index: 10; }
+.mock-bar b { margin-right: 8px; font-weight: 600; }
+.mock-bar button { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 4px; border: 1px solid #3a3f48; background: #23272e; color: #ddd; cursor: pointer; }
+.mock-bar button.on { background: var(--orange-500); border-color: var(--orange-500); color: #fff; }
+.mock-bar .sep { width: 1px; height: 22px; background: #3a3f48; margin: 0 6px; }
+#who { padding: 10px 16px; font-size: 14px; color: var(--cg-300); max-width: 1500px; line-height: 1.45; }
+.stage-wrap { padding: 16px; }
+.screen-box { position: relative; width: 100%; max-width: 1920px; margin: 0 auto; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 6px; box-shadow: 0 0 0 1px #2a2e35; }
+.screen { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-size: 16px; overflow: hidden;
+  background: linear-gradient(160deg, #3b4a3a 0%, #24302a 45%, #1a1f1d 100%); }
+.page { position: absolute; inset: 0; background: rgba(10, 12, 16, 0.72); padding: 40px 120px; }
+.hd { font-size: 30px; font-weight: 700; margin-bottom: 22px; }
+.hd small { display: block; font-size: 16px; font-weight: 400; color: var(--er-muted); margin-top: 4px; }
+
+/* the menu page (EarthRally.vue) */
+.er-banner { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; padding: 12px 18px; border-radius: 0.5rem; background: rgba(31, 143, 255, 0.25); border-left: 4px solid var(--er-blue); font-size: 18px; }
+.er-banner span { margin-right: auto; }
+.btn { font: 600 16px var(--fnt-defs); padding: 8px 18px; border-radius: 4px; border: 1px solid rgba(255,255,255,.4); color: #fff; background: transparent; }
+.rows { border-radius: 0.5rem; background: rgba(0,0,0,.35); padding: 6px 0; }
+.row { display: grid; grid-template-columns: 80px minmax(0, 1fr) 120px 330px; gap: 16px; align-items: center; height: 58px; padding: 0 18px; font-size: 18px; }
+.row + .row { border-top: 1px solid rgba(255,255,255,.06); }
+.row .ss { font: 700 18px var(--fnt-mono); color: var(--er-muted); }
+.row .km { color: var(--er-muted); text-align: right; }
+.er-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; padding: 3px 12px; border-radius: 999px; white-space: nowrap; }
+.er-pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.er-pill.ready { background: rgba(40, 140, 80, 0.55); color: #d9ffe6; }
+.er-pill.none { background: rgba(170, 60, 60, 0.45); color: #ffdede; }
+.er-pill.working { color: #cfe8ff; background: linear-gradient(to right, rgba(31, 143, 255, 0.62) var(--er-done, 0%), rgba(31, 143, 255, 0.22) var(--er-done, 0%)); }
+.er-pill.working::before { animation: er-pulse 1.2s ease-in-out infinite; }
+.er-wn { font-family: var(--fnt-mono); font-weight: 700; margin-left: -2px; }
+@keyframes er-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* the full rally's time card (EarthRallyFull.vue) */
+.card { width: 900px; border-radius: 0.5rem; background: rgba(0,0,0,.45); padding: 22px 26px; }
+.card h3 { margin: 0 0 8px; font-size: 20px; letter-spacing: .04em; }
+.muted { color: var(--er-dim); font-size: 15px; margin-bottom: 8px; }
+.er-pr { display: grid; grid-template-columns: 70px minmax(0, 1fr) 110px; gap: 12px; align-items: center; padding: 10px 12px; margin-top: 6px; border-radius: 4px; font-size: 18px; }
+.er-pr small { display: block; color: #8a909a; font-size: 14px; }
+.er-pr .r { text-align: right; }
+.er-pr.done { background: rgba(60, 207, 126, 0.08); } .er-pr.done .r { color: #3ccf7e; }
+.er-pr.now { background: rgba(242, 107, 29, 0.14); outline: 2px solid rgba(242, 107, 29, 0.6); }
+.er-pr.wait { color: #8a909a; }
+.er-pbar { grid-column: 1 / -1; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+.er-pbar i { display: block; height: 100%; background: #f26b1d; }
+
+/* what is new: outlined in the proposed view */
+.new { outline: 2px dashed #ffd36b; outline-offset: 3px; border-radius: 3px; }
+.screen.now-view .new { outline: none; }
+.tag { position: absolute; font: 600 13px var(--fnt-defs); color: #1a1500; background: #ffd36b; padding: 2px 8px; border-radius: 3px; }
+.screen.now-view .tag { display: none; }
+</style>
+</head>
+<body>
+<div class="mock-bar">
+  <b>1.7.2 · the download moving</b>
+  <button data-v="now">Now (1.7.1)</button>
+  <button data-v="proposed">Proposed</button>
+  <span class="sep"></span>
+  <button data-p="menu">Menu: the rally's page</button>
+  <button data-p="card">Full rally: the time card</button>
+</div>
+<div id="who"></div>
+<div class="stage-wrap"><div class="screen-box" id="box"><div class="screen" id="screen">
+
+  <!-- ===================================================== the rally's page, a stage downloading -->
+  <div class="page" data-p="menu">
+    <div class="hd">ARA Olympus Rally 2026<small>Rallies · Olympus · 9 stages</small></div>
+    <div class="er-banner">
+      <span>Auto recce of SS4 Perkins: downloading the map data, 2 of 59 items<b class="new pv">, 34 MB · 0:45</b></span>
+      <button class="btn">Stop</button>
+    </div>
+    <div class="rows">
+      <div class="row"><span class="ss">SS1</span><span>Brooklyn</span><span class="km">12.4 km</span><span><span class="er-pill ready">Ready</span></span></div>
+      <div class="row"><span class="ss">SS2</span><span>Mud Bay</span><span class="km">8.1 km</span><span><span class="er-pill ready">Ready</span></span></div>
+      <div class="row"><span class="ss">SS3</span><span>Nahwatzel</span><span class="km">15.0 km</span><span><span class="er-pill ready">Ready</span></span></div>
+      <div class="row"><span class="ss">SS4</span><span>Perkins</span><span class="km">7.0 km</span>
+        <span><span class="er-pill working" style="--er-done: 3%">Auto recce <span class="er-wn">2 / 59<span class="new pv"> · 34 MB · 0:45</span></span></span></span></div>
+      <div class="row"><span class="ss">SS5</span><span>Lake Cushman</span><span class="km">10.2 km</span><span><span class="er-pill none">Recce needed</span></span></div>
+      <div class="row"><span class="ss">SS6</span><span>Brooklyn 2</span><span class="km">12.4 km</span><span><span class="er-pill ready">Ready</span></span></div>
+    </div>
+    <div class="tag" style="left: 960px; top: 186px;">size of the download (from the estimate) · time since it started</div>
+    <div class="tag" style="left: 1310px; top: 488px;">the same, in the row's pill</div>
+  </div>
+
+  <!-- ===================================================== the full rally's time card, getting the stages ready -->
+  <div class="page" data-p="card">
+    <div class="hd">ARA Olympus Rally 2026<small>Full rally · Casual · time card</small></div>
+    <div class="card">
+      <h3>GETTING THE STAGES READY</h3>
+      <div class="muted">The auto recce matches each stage to the roads. Stage 2 of 4. Then: to the start.</div>
+      <div class="er-pr done"><span>SS1</span><span>Brooklyn<small>12.4 km</small></span><span class="r">✓ Ready</span></div>
+      <div class="er-pr now"><span>SS4</span><span>Perkins<small>Downloading the map · 2 of 59<span class="new pv"> · 34 MB · 0:45</span></small></span><span class="r">3%</span>
+        <div class="er-pbar"><i style="width: 3%"></i></div></div>
+      <div class="er-pr wait"><span>SS5</span><span>Lake Cushman<small>10.2 km</small></span><span class="r">Waiting</span></div>
+      <div class="er-pr wait"><span>SS7</span><span>Skokomish<small>9.6 km</small></span><span class="r">Waiting</span></div>
+    </div>
+    <div class="tag" style="left: 640px; top: 296px;">size · time since it started</div>
+  </div>
+
+</div></div></div>
+<script>
+const NOTES = {
+  "menu now": "<b>Now (1.7.1).</b> The banner and the row's pill count BeamNG.Earth's items: \"2 of 59\". On a cold stage the count sat on 2 for most of 106 s while 34 MB came in, and the owner pressed again at 50 s (docs/notes-1.7.1.md).",
+  "menu proposed": "<b>Proposed.</b> The download's size and how long it has been going, after the count: \", 34 MB · 0:45\" in the banner, \" · 34 MB · 0:45\" in the pill. The size is the estimate's own figure (areaPlan's downloadBytes, the one the player said yes to), not bytes received: BeamNG.Earth does not report those. The time ticks every second (the page already polls once a second), so the line visibly moves even when the count does not. Main.lua sends `auto.area.bytes` and `auto.waitedS` (already sent) while downloading; nothing else changes.",
+  "card now": "<b>Now (1.7.1).</b> The full rally's tracker: the stage in progress says \"Downloading the map · 2 of 59\" and a bar that does not move while the count does not.",
+  "card proposed": "<b>Proposed.</b> The same two figures after the count: \"Downloading the map · 2 of 59 · 34 MB · 0:45\". With 1.7.2's queue (item 1) a stage's download can have started before its turn: the time shown is since its own download started, so it can read 2:10 the moment the stage comes up. The waiting rows are unchanged (\"Waiting\" and their length)."
+};
+let view = "proposed", part = "menu";
+function show() {
+  document.querySelectorAll(".page[data-p]").forEach(e => e.style.display = e.dataset.p === part ? "" : "none");
+  document.querySelectorAll(".pv").forEach(e => e.style.display = view === "proposed" ? "" : "none");
+  document.getElementById("screen").classList.toggle("now-view", view === "now");
+  document.querySelectorAll(".mock-bar button[data-v]").forEach(b => b.classList.toggle("on", b.dataset.v === view));
+  document.querySelectorAll(".mock-bar button[data-p]").forEach(b => b.classList.toggle("on", b.dataset.p === part));
+  document.getElementById("who").innerHTML = NOTES[part + " " + view];
+  history.replaceState(null, "", "#" + part + "-" + view);
+}
+document.querySelectorAll(".mock-bar button[data-v]").forEach(b => b.onclick = () => { view = b.dataset.v; show(); });
+document.querySelectorAll(".mock-bar button[data-p]").forEach(b => b.onclick = () => { part = b.dataset.p; show(); });
+function fit() { const box = document.getElementById("box"); document.getElementById("screen").style.transform = "scale(" + (box.clientWidth / 1920) + ")"; }
+addEventListener("resize", fit); fit();
+const h = location.hash.slice(1).split("-");
+if (["menu", "card"].includes(h[0])) part = h[0];
+if (["now", "proposed"].includes(h[1])) view = h[1];
+show();
+</script>
+</body>
+</html>
