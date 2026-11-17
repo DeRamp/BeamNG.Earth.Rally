@@ -123,7 +123,7 @@ the owner's findings in docs/notes-1.6.2.md.
 | ✔ | Menus: rally menu pauses (#13), controller (#14), finish time in the top bar (#17), Close on the results card (#18) | built |
 | ✔ | Route to stage gets the stage ready as you arrive (#19) | built |
 
-## 1.7.0: the full rally (released 2026-11-16)
+## 1.7.0: full stage rally support (released 2026-11-16)
 
 From a single stage to a whole event: moved ahead of make and share stages (the owner, 2026-11-15). The design is
 the full-rally GDD (draft 2, kept with the owner's rally data: it carries real crews and times). The MVP chains the

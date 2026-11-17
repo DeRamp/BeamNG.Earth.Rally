@@ -3,12 +3,12 @@
 Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/writing-standard.md). Downloads:
 [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
 
-## 1.7.0-alpha: the full rally (2026-11-16)
+## 1.7.0-alpha: full stage rally support (2026-11-16)
 
 Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)
 (official 1.6+ works, without the auto recce).
 
-Drive a whole rally from a rally pack, start to finish: stages, transits, time controls and service.
+Full stage rally support: drive a whole rally from a rally pack, start to finish, with stages, transits, time controls and service.
 
 ### New
 * **Drive rally** on the home page: any rally whose pack has an event file, run in its own order, day by day.
