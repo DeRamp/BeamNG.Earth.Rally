@@ -371,7 +371,7 @@ import EarthRallyLoading from "./EarthRallyLoading.vue"
 import {
   state, season, rally, stage, busyMsg, action as luaAction, refreshState, takeOpenAt, loadSeason, loadRally, loadStage,
   closeMenu, lastPlace, loadRallyStart, loadRallyCard, rallyAction, loadDrive, pointTo,
-  arr, units, len, lenNum, riseNum, riseUnit, time, longTime, when, ord, days, ssName, STATUS, AUTO_OUTCOME, RUN_WORDS,
+  arr, mmss, units, len, lenNum, riseNum, riseUnit, time, longTime, when, ord, days, ssName, STATUS, AUTO_OUTCOME, RUN_WORDS,
 } from "./store.js"
 
 useUINavScope("earthRally")   // (the controller's events fire from inside bng-ui-scope="earthRally": the page)
@@ -423,7 +423,6 @@ const autoLeg = computed(() => {
 // `km2` is the corridor's geometry, far smaller than the ground actually fetched.
 const autoAsk = computed(() => (auto.value && auto.value.phase === "asking" && auto.value.ask) || null)
 // (1.7.2) the stage page's progress card and the Stop labels (docs/mockups-1.7.2/download.html)
-const mmss = v => { const t = Math.max(0, Math.floor(v || 0)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}` }
 const AUTO_STEP = { planning: 0, asking: 0, downloading: 1, going: 2, matching: 3 }
 const autoSteps = computed(() => {
   const a = auto.value
@@ -443,10 +442,13 @@ const autoCount = computed(() => {
   if (a.phase === "asking") return MB(a.ask && a.ask.bytes)
   return ""
 })
-// the card's bar fills only on a real count: the download's items, the match's windows; nothing on the other legs
+// the card's bar fills only on a real count: the items arrived, the windows finished; nothing on the other legs
+// (autoPct is the pill's, which shows a tenth on the legs with no count and the window in flight while matching)
 const autoFill = computed(() => {
   const a = auto.value
-  return a && (a.phase === "downloading" || a.phase === "matching") ? autoPct.value : "0%"
+  if (a && a.phase === "downloading" && a.area && a.area.total) return `${Math.round((100 * (a.area.done || 0)) / a.area.total)}%`
+  if (a && a.phase === "matching" && a.windows) return `${Math.round((100 * (a.done || 0)) / a.windows)}%`
+  return "0%"
 })
 // the stripes: a leg that is working with no count moving to show for it (the match's windows move on their own)
 const autoLive = computed(() => !!(auto.value && auto.value.phase !== "matching" && auto.value.phase !== "asking"))

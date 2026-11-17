@@ -333,6 +333,15 @@ function M.prepNext()
   return prep.current, prep.i, #prep.list
 end
 function M.preparing() return prep end
+-- (1.7.2) Stop pressed during the prep: no more auto recces, every stage left counted as tried. The prep then ends
+-- as it would after the last one (main.lua's stepRallyPrep finds nothing next and calls prepDone, which holds out
+-- the stages with no line), the same ending a Stop on each of them reached, in one press.
+function M.prepSkipRest()
+  if not prep then return false end
+  prep.i = #prep.list
+  prep.current = nil
+  return true
+end
 function M.moving() return move end
 
 -- The time card's tracker while the stages are got ready (#34): { i, of, name, stages = [{ ss, name, km, state =

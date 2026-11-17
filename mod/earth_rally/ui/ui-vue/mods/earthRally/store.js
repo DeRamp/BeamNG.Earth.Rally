@@ -187,6 +187,11 @@ export function longTime(s) {
   const r = t - h * 3600 - m * 60
   return `${h}:${m < 10 ? "0" : ""}${m}:${r < 10 ? "0" : ""}${r.toFixed(1)}`
 }
+// (1.7.2) A wait in minutes and whole seconds: 0:49, 12:03 (the auto recce's download clock)
+export function mmss(v) {
+  const t = Math.max(0, Math.floor(v || 0))
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`
+}
 // A gap to the fastest: "+32.1", "+1:02.3"; nothing for the leader (boards.lua's gapText)
 export function gap(s) {
   if (s === null || s === undefined || Math.abs(s) < 0.05) return ""

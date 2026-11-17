@@ -578,6 +578,18 @@ M.AREA_WAIT_S = 1800         -- waiting for a download; it is gated to 40% duty 
 
 M.GOING, M.ASKING, M.DOWNLOADING = 'going', 'asking', 'downloading'
 
+-- (1.7.2) The page's Download step: ticked only for a download BeamNG.Earth took (or one the stage already had),
+-- not one it refused. sq.downloaded is set as Download is pressed, before the answer.
+local function autoDownloaded(sq)
+  return sq ~= nil and sq.downloaded == true and sq.areaId ~= nil and not sq.addRefused
+end
+-- (1.7.2) A full rally getting its stages ready: the stages left with the one under way, or nil with no prep.
+local function prepLeft()
+  local pr = rallyRun.preparing()
+  if not (pr and type(pr.list) == 'table') then return nil end
+  return math.max(1, #pr.list - (pr.i or 0) + 1)
+end
+
 local autoSeq = nil   -- { ev, stage, ss, phase, t, ready, plan, areaId, downloaded, why, how }
 
 -- The saved area each stage's download went into: autoKey -> { id, name }, kept in the user folder so a second
@@ -829,6 +841,9 @@ autoSeqStep = function(what, arg)
 
   elseif what == 'tick' then
     sq.t = sq.t + (arg or 0)
+    -- (1.7.2) the download's own clock, for the page: sq.t starts again when BeamNG.Earth takes the area, which
+    -- would put the time shown back to 0:00 a moment into the download
+    if sq.phase == M.DOWNLOADING then sq.dlS = (sq.dlS or 0) + (arg or 0) end
     if sq.phase == M.GOING then
       sq.ready = earth.ready() and sq.t > 2 and (sq.ready + (arg or 0)) or 0
       if sq.ready >= runner.TELEPORT_SETTLE_S then
@@ -849,7 +864,7 @@ autoSeqStep = function(what, arg)
       if st then sq.seen = true end
       -- (1.7.2) when the item count last moved, for the page's "still going" line: the items differ a lot in size,
       -- so the count can sit still for most of a minute while a big one comes down (Perkins: 2 of 59 for 45 s)
-      if st and st.done ~= sq.lastDone then sq.lastDone, sq.lastDoneT = st.done, sq.t end
+      if st and st.done ~= sq.lastDone then sq.lastDone, sq.lastDoneT = st.done, sq.dlS or 0 end
       if st and sq.t - (sq.logT or 0) >= M.AREA_LOG_EVERY_S then
         sq.logT = sq.t
         log('I', logTag, string.format('auto recce: downloading %s: %s, %d of %d item(s), %d s', tostring(sq.areaId),
@@ -942,18 +957,16 @@ doAction = function(what, eventId, stageId, fromPanel)
     local stopped = autoRecce.cancel() or hadSeq
     -- (1.7.2) A full rally getting its stages ready runs one auto recce after another (stepRallyPrep), so stopping
     -- only the one under way had the next start a frame later: the player pressed Stop once a stage (the owner,
-    -- 2026-11-16: "it should stop all downloads ... otherwise you have to keep clicking it"). Stop ends the whole
-    -- prep and leaves the rally as Save and quit does. Not prepDone: that holds out every stage with no line, which
-    -- takes the stages not reached yet out of the rally for good. The stages already matched keep their lines, so
-    -- starting or continuing the rally again gets only the rest ready.
-    local pr = rallyRun.preparing()
-    if pr then
-      local left = math.max(1, #(pr.list or {}) - (pr.i or 0) + 1)
-      pcall(rallyRun.quit)
+    -- 2026-11-16: "it should stop all downloads ... otherwise you have to keep clicking it"). Stop now ends the prep
+    -- at once, with the ending those presses reached: prepDone holds out the stages with no line and the rally goes
+    -- on. Not rallyRun.quit: a rally just started is not saved until its first service, so leaving it would throw
+    -- it away, and Save and quit has its own button and confirm on the time card.
+    local left = prepLeft()
+    if left then
+      rallyRun.prepSkipRest()
       log('I', logTag, string.format('auto recce: stopped with the rally prep, %d stage(s) not got ready', left))
-      return res(true, string.format('Auto recce stopped for the %d %s left, and the rally was left. The stages '
-        .. 'already done stay ready: start or continue the rally to get the rest ready.', left,
-        left == 1 and 'stage' or 'stages'))
+      return res(true, string.format('Auto recce stopped for the %d %s left. A stage with no line is held out of '
+        .. 'the rally.', left, left == 1 and 'stage' or 'stages'))
     end
     return res(stopped, stopped and string.format('Auto recce of %s stopped.',
       was and was.stageName or 'the stage') or 'No auto recce is running.')
@@ -1155,7 +1168,7 @@ local function runSummary()
     local p = autoRecce.progress() or {}
     out.auto = { eventId = autoRun.eventId, stageId = autoRun.stageId, stageName = autoRun.stageName,
       ss = autoRun.ss, ssLabel = autoRun.ssLabel, windows = p.windows, done = p.done, phase = 'matching',
-      downloaded = autoSeq ~= nil and autoSeq.downloaded == true,
+      downloaded = autoDownloaded(autoSeq),
       -- (the step along the line, for the page's sentence: a window is only trustworthy CORRIDOR_M inside its edge)
       stepM = math.floor(autoRecce.RADIUS_M - autoRecce.CORRIDOR_M) }
   elseif autoSeq then
@@ -1164,10 +1177,13 @@ local function runSummary()
     local st = autoSeq.areaId and earth.areaStatus(autoSeq.areaId) or nil
     out.auto = { eventId = autoSeq.ev.id, stageId = autoSeq.stage.id, stageName = autoSeq.stage.name,
       ss = autoSeq.ss, ssLabel = menu.ssLabel(autoSeq.ev, autoSeq.stage.id), phase = autoSeq.phase,
-      waitedS = math.floor(autoSeq.t or 0), downloaded = autoSeq.downloaded == true,
-      -- (1.7.2, the page's bar) the size asked about, and how long the item count has sat still
+      waitedS = math.floor((autoSeq.phase == M.DOWNLOADING and autoSeq.dlS or autoSeq.t) or 0),
+      downloaded = autoDownloaded(autoSeq),
+      -- (1.7.2, the page's bar) the size asked about, and how long the item count has sat still (nil until the
+      -- area has been seen: nothing has been counted yet, so nothing has sat still)
       bytes = autoSeq.plan and autoSeq.plan.downloadBytes or nil,
-      quietS = autoSeq.phase == M.DOWNLOADING and math.floor((autoSeq.t or 0) - (autoSeq.lastDoneT or 0)) or nil }
+      quietS = autoSeq.phase == M.DOWNLOADING and autoSeq.lastDoneT
+        and math.floor((autoSeq.dlS or 0) - autoSeq.lastDoneT) or nil }
     if autoSeq.phase == M.ASKING and autoSeq.plan then
       out.auto.ask = { bytes = autoSeq.plan.downloadBytes, diskBytes = autoSeq.plan.diskBytes,
         km = autoSeq.plan.km, items = autoSeq.plan.items, missing = autoSeq.plan.missing }
@@ -1178,8 +1194,7 @@ local function runSummary()
     end
   end
   -- (1.7.2) a full rally getting its stages ready: how many are left with this one, so Stop can say it stops them all
-  local pr = out.auto and rallyRun.preparing()
-  if pr and type(pr.list) == 'table' then out.auto.prepLeft = math.max(1, #pr.list - (pr.i or 0) + 1) end
+  if out.auto then out.auto.prepLeft = prepLeft() end
   return out
 end
 

@@ -2348,25 +2348,28 @@ do
   T.check(not main.uiAction('autoRecceStop').ok, 'Stop with nothing running: refused')
 
   -- (1.7.2) Stop while a full rally gets its stages ready stops them all, not only the one under way: the next one
-  -- used to start a frame later, so the player pressed Stop once a stage. The rally is left as Save and quit does.
+  -- used to start a frame later, so the player pressed Stop once a stage. The prep skips the rest and ends as after
+  -- its last stage (prepDone holds out the ones with no line); the rally is not left.
   do
     local rallyRun = require('earthRally/rallyRun')
-    local oldPreparing, oldQuit = rallyRun.preparing, rallyRun.quit
+    local oldPreparing, oldSkip, oldQuit = rallyRun.preparing, rallyRun.prepSkipRest, rallyRun.quit
     local prep = { list = { {}, {}, {} }, i = 1 }
-    local quits = 0
+    local skips, quits = 0, 0
     rallyRun.preparing = function() return prep end
-    rallyRun.quit = function() quits = quits + 1 prep = nil return true end
+    rallyRun.prepSkipRest = function() skips = skips + 1 prep.i = #prep.list return true end
+    rallyRun.quit = function() quits = quits + 1 return true end
     resetGraph()
     T.check(main.uiAction('autoRecce', 'test8', 'two').ok, 'prep: an auto recce of the first of three starts')
     local a = main.uiState().auto
     T.check(a and a.prepLeft == 3, 'prep: the page is told three are left with this one (' ..
       tostring(a and a.prepLeft) .. ')')
     local r = main.uiAction('autoRecceStop')
-    T.check(r.ok and r.message and r.message:find('3 stages left', 1, true) and r.message:find('rally was left', 1, true),
-      'prep: Stop says it stopped all three and left the rally (' .. tostring(r.message) .. ')')
-    T.check(quits == 1 and not auto.active() and main.uiState().auto == nil,
-      'prep: the rally is left and nothing is running')
-    rallyRun.preparing, rallyRun.quit = oldPreparing, oldQuit
+    T.check(r.ok and r.message and r.message:find('3 stages left', 1, true) and r.message:find('held out', 1, true),
+      'prep: Stop says it stopped all three and that a stage with no line is held out (' .. tostring(r.message) .. ')')
+    T.check(skips == 1 and quits == 0, 'prep: the rest of the prep skipped, the rally not left (' .. skips .. ', '
+      .. quits .. ')')
+    T.check(not auto.active() and main.uiState().auto == nil, 'prep: nothing is left running')
+    rallyRun.preparing, rallyRun.prepSkipRest, rallyRun.quit = oldPreparing, oldSkip, oldQuit
   end
 
   -- ---------------------------------------------------------------- ending: no map data anywhere (grey, not red)

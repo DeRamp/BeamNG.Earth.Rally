@@ -129,8 +129,9 @@
                 <span class="er-r">{{ { done: "✓ Ready", failed: "No line", now: prepPct(p), wait: "Waiting" }[p.state] }}</span>
                 <div v-if="p.state === 'now'" class="er-pbar" :class="{ live: prepLive() }"><i :style="{ width: (prepBar() || 0) + '%' }"></i></div>
               </div>
-              <!-- (1.7.2) one Stop for all of them: the owner pressed Stop once a stage before -->
-              <div class="er-prstop"><BngButton :accent="ACCENTS.outlined" @click="stopPrep">Stop getting ready</BngButton></div>
+              <!-- (1.7.2) one Stop for all of them: the owner pressed Stop once a stage before. The stages left are held out,
+                   as a Stop on each did; Save and quit stays the way to leave the rally -->
+              <div class="er-prstop"><BngButton :accent="ACCENTS.outlined" @click="stopPrep">{{ prepStopLabel() }}</BngButton></div>
             </template>
             <template v-else-if="c.phase === 'moving'">
               <h3>ON THE WAY TO {{ (c.at && c.at.label || "").toUpperCase() }}</h3>
@@ -204,7 +205,7 @@
 import { ref, computed, watch, nextTick } from "vue"
 import { BngButton, ACCENTS } from "@/common/components/base"
 import { vBngUiNavFocus } from "@/common/directives"
-import { action, rallyStart, rallyCard, rallyAction, busyMsg, closeMenu, focusButton, arr, len, time, longTime, ord } from "./store.js"
+import { action, mmss, rallyStart, rallyCard, rallyAction, busyMsg, closeMenu, focusButton, arr, len, time, longTime, ord } from "./store.js"
 
 const props = defineProps({ kind: { type: String, default: "card" }, id: { type: String, default: null } })
 const emit = defineEmits(["view"])
@@ -294,17 +295,19 @@ function prepDetail(p) {
   // (1.7.2) the download's time, and a word when its count sits still: the items differ a lot in size
   if (a.phase === "downloading") {
     t += ` · ${mmss(a.waitedS)}`
-    if ((a.quietS || 0) >= 15) t += " · still going, a big piece"
+    if ((a.quietS || 0) >= 15 && a.area && a.area.total && (a.area.done || 0) < a.area.total) t += " · still going, a big piece"
   }
   return t
 }
-const mmss = v => { const s = Math.max(0, Math.floor(v || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` }
 // the stripes: working with no count moving to show for it
 function prepLive() { const a = prepAuto(); return !a || (a.phase !== "matching" && a.phase !== "asking") }
-// (1.7.2) Stop: every stage still to get ready, and the rally left as Save and quit does (main.lua autoRecceStop)
-function stopPrep() {
-  const id = c.value && c.value.id
-  action("autoRecceStop", null, null, r => { if (r && r.ok) emit("view", "rally", id) })
+// (1.7.2) Stop: no more auto recces. The prep ends as after the last one -- a stage with no line held out -- and the
+// rally goes on (main.lua autoRecceStop), so the card stays
+function stopPrep() { action("autoRecceStop", null, null) }
+function prepStopLabel() {
+  const p = c.value && c.value.prep
+  const left = p ? p.of - Math.max(1, p.i) + 1 : 0
+  return left > 1 ? `Stop all ${left}` : "Stop"
 }
 const rowCls = r => ({ next: r.next && r.kind === "stage", svc: r.kind !== "stage", here: r.next && r.kind !== "stage", sr: r.superRally, dim: r.done && r.kind !== "stage" })
 // A day's header over its first row of any kind that carries a day (#57: the start carries the first stage's, so

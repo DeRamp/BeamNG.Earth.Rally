@@ -24,17 +24,20 @@ Mock-up, approved by the owner 2026-11-16: [`mockups-1.7.2/download.html`](mocku
   and the fill moves only on the real count. After 15 s with no new item, a yellow line says a big piece is
   downloading.
 - **Stage row and banner:** the pill is striped while it works and shows the time (`2/59 · 0:30`).
-- **Time card, getting the stages ready:** the bar is striped too, the download's time shows, and a **Stop
-  getting ready** button stops them all.
-- **Stop during a full rally's prep** stops every stage left and leaves the rally as Save and quit does. Stages
-  already matched stay ready, so starting or continuing gets only the rest ready. The buttons say `Stop all N`.
-- Not done: holding the unfinished stages out (`prepDone`) would take them out of the rally for good.
+- **Time card, getting the stages ready:** the bar is striped too, the download's time shows, and a Stop button
+  stops them all.
+- **Stop during a full rally's prep** stops every stage left in one press, with the ending a Stop on each reached:
+  the prep ends, a stage with no line is held out, and the rally goes on. The buttons say `Stop all N`.
+- Not done: leaving the rally on Stop (the first cut). A rally just started is not saved until its first service,
+  so leaving would throw it away, and Save and quit has its own button and confirm.
 - Not possible: BeamNG.Earth's API cannot pause or remove an area, so a download already handed to it carries
   on in its Areas list.
 
 ## Files
 
 - `main.lua`: `quietS`, `bytes`, `downloaded` and `prepLeft` in the page's state; Stop ends the prep.
+- `rallyRun.lua`: `prepSkipRest`.
+- `store.js`: `mmss`, the download clock.
 - `EarthRally.vue`: the stage page's card, the striped pill, the Stop labels, the time in the banner.
 - `EarthRallyFull.vue`: the prep tracker's stripes, time and Stop.
-- `tests/test_run.lua`: Stop during a prep stops all three and leaves the rally; the new fields are there.
+- `tests/test_run.lua`: Stop during a prep skips all three without leaving the rally; the new fields are there.
