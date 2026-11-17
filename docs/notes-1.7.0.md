@@ -715,3 +715,12 @@ The mock-ups (`docs/mockups-1.7.0/rev4.html`) are OK'd, with these answers:
    as on a stage: recover = back to the next service under Super Rally. Casual unchanged.
 8. #63: do the origin move with the car held still before the pause comes on (no fork change). The owner expects
    this to also fix #65 (no pacenotes after a paused load).
+
+### Owner's recovery rules (2026-11-16, after the rev 4 review)
+
+- Realistic, recover on a transit to a service: taken to that service; nothing is missed, no penalty.
+- A rally with no service anywhere:
+  - recover on a stage: that stage under Super Rally, taken to the start of the next stage;
+  - recover on a transit: taken to the next stage's start, nothing missed;
+  - recover on the last stage: the rally ends.
+- No transit after the last stage when the rally has no service: it ends at the last stage.
