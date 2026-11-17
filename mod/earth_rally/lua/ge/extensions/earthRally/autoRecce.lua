@@ -72,6 +72,10 @@ M.RADIUS_M = 1000.0         -- each window is a square of this half size round t
 M.MAX_RADIUS_M = 2000.0     -- BeamNG.Earth's own cap on it (assumed: see the note on the API at the foot of this file)
 M.COVER_SAMPLE_M = 20.0     -- the stage corridor is checked for coverage at a point every this far along it
 M.RETRIES = 2               -- a window re-asked for this many times when the world's origin moved under it
+-- (1.7.2) a window that timed out or came back with an error asked again this many times, on a count of its own:
+-- BeamNG.Earth builds windows on one thread behind the world's own load, and in the 1.7.1 logs a cold window took
+-- up to 21 s. One that never answers is BeamNG.Earth not answering, not ground with no map data.
+M.ERROR_RETRIES = 2
 
 -- There is no bridge flag in the road graph. Nodes on a bridge carry the deck height, which is the right height,
 -- but nothing in the nodes or the edges says "this stretch is a bridge", and it cannot be recovered from the
@@ -1061,10 +1065,23 @@ local function onWindow(myGen, token, i, r)
   end
   j.tries = 0
   if type(r) ~= 'table' or r.error ~= nil or type(r.nodes) ~= 'table' then
-    -- not fatal in itself: the coverage record decides, and an incomplete window means no file
-    log('W', 'earthRally', string.format('auto recce: window %d of %d: %s', i, #j.plan,
-      type(r) == 'table' and tostring(r.error) or 'no answer'))
+    -- (1.7.2) Timed out, an error, or rows that could not be read: asked again, ERROR_RETRIES times. Then the stage
+    -- ends FAILED and says BeamNG.Earth did not answer. Before, the window was marked incomplete and the ending said
+    -- the ground had "no map data on this computer", which sent the player off to drive ground that was already
+    -- there. (A window that answers with cells missing is `complete = false` with no error: the branch below, as
+    -- before.)
+    local what = type(r) == 'table' and tostring(r.error or 'no roads in the answer') or 'no answer'
+    j.errTries = (j.errTries or 0) + 1
+    if j.errTries <= M.ERROR_RETRIES then
+      log('W', 'earthRally', string.format('auto recce: window %d of %d: %s: asking again (%d of %d)', i, #j.plan,
+        what, j.errTries, M.ERROR_RETRIES))
+      return M.ask(i)
+    end
+    log('W', 'earthRally', string.format('auto recce: window %d of %d: %s, %d time(s): giving up', i, #j.plan, what,
+      j.errTries))
     w.complete = false
+    return finish(false, nil, string.format('BeamNG.Earth did not answer for this part of the stage (%s), so try ' ..
+      'the auto recce again', what), M.FAILED, { noAnswer = what })
   else
     local added = 0
     for name, node in pairs(r.nodes) do
@@ -1098,6 +1115,7 @@ local function onWindow(myGen, token, i, r)
     log('I', 'earthRally', string.format('auto recce: window %d of %d: %d new node(s)%s', i, #j.plan, added,
       w.complete and '' or ', incomplete (map cells not on this computer)'))
   end
+  j.errTries = 0
   j.i = i + 1
   if j.i > #j.plan then return matchAndWrite(j) end
   return M.ask(j.i)

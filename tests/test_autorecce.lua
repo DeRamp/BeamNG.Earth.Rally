@@ -90,6 +90,11 @@ beamngEarth_api = {
     -- the window is built in the frame current NOW ...
     local nodes, edges = graphWindow(lat, lon, opts.radius)
     local complete = world.complete and (world.incompleteAt ~= i)
+    -- (1.7.2) BeamNG.Earth's own failures: the call timed out or the build threw, an answer with an error and no rows
+    if world.errorCalls and world.errorCalls[i] then
+      pending[#pending + 1] = function() cb({ complete = false, error = world.errorCalls[i] }) end
+      return true
+    end
     -- ... and the world's origin may move before the answer is delivered, which is what makes those x, y stale:
     -- read in the frame that replaced it they are tens of kilometres out
     if world.rebaseAt == i then
@@ -133,7 +138,7 @@ local function reset()
   pending = {}
   anchor = { lat = 47.0, lon = -123.0 }
   world.roads, world.complete, world.incompleteAt, world.arrays, world.rebaseAt, world.calls = {}, true, nil, false, nil, 0
-  world.answerTwice = nil
+  world.answerTwice, world.errorCalls = nil, nil
   events.forget()
   auto.cancel()
 end
@@ -717,6 +722,46 @@ do
   world.roads = { eastRoad('r', 1500, 20, 0) }
   run(EVENT, stageOf(lineEast(1200, 100)))
   T.check(matchedFile() and matchedFile().controls == nil, 'controls: no controls, none written')
+end
+
+------------------------------------------------------------------------------------------ a window that fails (1.7.2)
+
+-- A window that times out or errors is asked again (ERROR_RETRIES), and one that never answers ends FAILED, saying
+-- BeamNG.Earth did not answer -- never "no map data", which sent the player off to drive ground already there.
+do
+  reset()
+  world.roads = { eastRoad('r', 3200, 20, 0) }
+  world.errorCalls = { [2] = 'timed out', [3] = 'RuntimeError' }      -- the second window fails twice, then answers
+  local res = run(EVENT, stageOf(lineEast(3000, 200)))
+  T.check(res.ok == true and matchedFile() ~= nil, 'a window that failed twice and then answered: matched (' ..
+    tostring(res.why) .. ')')
+  local asked = 0
+  for _, l in ipairs(logs) do if l:find('asking again %(') then asked = asked + 1 end end
+  T.check(asked == 2, 'and it was asked again twice (' .. asked .. ')')
+
+  reset()
+  world.roads = { eastRoad('r', 3200, 20, 0) }
+  world.errorCalls = { [2] = 'timed out', [3] = 'timed out', [4] = 'timed out' }
+  local how
+  auto.start(EVENT, stageOf(lineEast(3000, 200)), function(o, m, w, h) how = { ok = o, why = w, how = h } end)
+  local guard = 0
+  while #pending > 0 and guard < 200 do table.remove(pending, 1)() guard = guard + 1 end
+  T.check(how and how.ok == false and how.how.kind == auto.FAILED,
+    'a window that never answers: FAILED (' .. tostring(how and how.how and how.how.kind) .. ')')
+  T.check(how and how.why:find('did not answer') and how.why:find('try') and not how.why:find('map data'),
+    'saying BeamNG.Earth did not answer and to try again, not "no map data" (' .. tostring(how and how.why) .. ')')
+  T.check(how and how.how.done == 1, 'at the window that failed (' .. tostring(how and how.how.done) .. ' done)')
+  T.check(world.calls == 4 and matchedFile() == nil, 'asked 1 + 2 times, then nothing written (' .. world.calls .. ')')
+
+  -- a window with cells missing is not an error: no retry, the coverage ending as before
+  reset()
+  world.roads = { eastRoad('r', 3200, 20, 0) }
+  world.incompleteAt = 2
+  local res3 = run(EVENT, stageOf(lineEast(3000, 200)))
+  local again = 0
+  for _, l in ipairs(logs) do if l:find('asking again') then again = again + 1 end end
+  T.check(res3.ok == false and again == 0 and tostring(res3.why):find('no map data'),
+    'a window with cells missing is not asked again, and still says no map data (' .. tostring(res3.why) .. ')')
 end
 
 ------------------------------------------------------------------------------------------ the grid (1.7.2, item 6)
