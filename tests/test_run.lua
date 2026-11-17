@@ -2826,6 +2826,255 @@ do
   events.resetLine('seq', 'near')
 end
 
+--------------------------------------------- A full rally's downloads queued up front; the car set down after (1.7.2)
+
+-- docs/plan-recce-speed.md Part A: item 1 (every stage priced at once, every download added up front in the rally's
+-- order, each stage matched as its own download is done), item 4 (the car set down from the matched ATC when the
+-- landing found no road), item 7 (one timing line per auto recce).
+do
+  local main = require('earthRally/main')
+  local auto = require('earthRally/autoRecce')
+  local rallyRun = require('earthRally/rallyRun')
+  local geo_m = require('earthRally/geo').metres
+  local line = event.stages[1].line
+  local far = {}
+  for i, q in ipairs(line) do far[i] = { q[1] - 6.37, q[2] + 37.81 } end
+  local atcPt = { lat = far[1][1] - 0.0009, lon = far[1][2] }
+  local evq = { format = 1, id = 'rq', name = 'Queue Rally', stages = {
+    { id = 's1', name = 'Stage One', lengthM = 3000, line = far,
+      controls = { start = { lat = far[1][1], lon = far[1][2] }, atc = atcPt } },
+    { id = 's2', name = 'Stage Two', lengthM = 3000, line = line },
+    { id = 's3', name = 'Stage Three', lengthM = 3000, line = line },
+    { id = 's4', name = 'Stage Four', lengthM = 3000, line = line },
+  } }
+  files['/earthRally/events/rq.json'] = evq
+  events.list(true)
+  local S = evq.stages
+
+  local had = { has = beamngEarth_api.has, roadGraph = beamngEarth_api.roadGraph, areaPlan = beamngEarth_api.areaPlan,
+    areaAdd = beamngEarth_api.areaAdd, areaStatus = beamngEarth_api.areaStatus, start = auto.start,
+    preparing = rallyRun.preparing, active = rallyRun.active, prepNext = rallyRun.prepNext,
+    prepDone = rallyRun.prepDone, uiCard = rallyRun.uiCard, faceAtc = runner.faceAtc,
+    faceAtcFrom = runner.faceAtcFrom, log = log }
+  local lines = {}
+  log = function(level, tag, msg) lines[#lines + 1] = tostring(msg) had.log(level, tag, msg) end
+  local function logged(pat)
+    local n = 0
+    for _, l in ipairs(lines) do if l:find(pat) then n = n + 1 end end
+    return n
+  end
+  beamngEarth_api.has = function(n)
+    return n == 'transform' or n == 'rebase' or n == 'gpsRoute' or n == 'roadGraph' or n == 'areaRoute'
+  end
+  beamngEarth_api.roadGraph = function(_, _, _, cb) cb({ nodes = {}, edges = {}, complete = false }) return true end
+  -- the area tool: estimates and adds answered when the test says, areas finished when it says
+  local plans, addQ, addNames, status, nAdds = {}, {}, {}, {}, 0
+  beamngEarth_api.areaPlan = function(_, _, cb) plans[#plans + 1] = cb return true end
+  beamngEarth_api.areaAdd = function(_, opts, cb)
+    nAdds = nAdds + 1
+    local id = 'q' .. nAdds
+    addNames[#addNames + 1] = opts.name
+    addQ[#addQ + 1] = function() status[id] = { state = 'queued', done = 0 } cb({ ok = true, id = id }) end
+    return true
+  end
+  beamngEarth_api.areaStatus = function(id)
+    local st = status[id]
+    if not st then return nil end
+    return { id = id, name = 'x', state = st.state, done = st.done or 0, total = 30, unavailable = 0 }
+  end
+  local need = { ok = true, downloadBytes = 34000000, diskBytes = 1, km = 3, items = 59, missing = 59 }
+  local none = { ok = true, downloadBytes = 0, diskBytes = 1, km = 3, items = 59, missing = 0 }
+  -- the rally's prep, as rallyRun keeps it (rallyRun.getReady / prepNext / prepDone)
+  local prep = { list = { S[1], S[2], S[3], S[4] }, i = 0 }
+  local prepDone = 0
+  rallyRun.preparing = function() return prep end
+  rallyRun.active = function() return prep and { eventId = 'rq' } or nil end
+  rallyRun.prepNext = function()
+    prep.i = prep.i + 1
+    prep.current = prep.list[prep.i]
+    return prep.current, prep.i, #prep.list
+  end
+  rallyRun.prepDone = function() prepDone = prepDone + 1 prep = nil end
+  rallyRun.uiCard = function()
+    if not prep then return nil end
+    local rows = {}
+    for k, st in ipairs(prep.list) do
+      rows[k] = { name = st.name, state = k < prep.i and 'done' or (k == prep.i and 'now' or 'wait') }
+    end
+    return { prep = { i = prep.i, of = #prep.list, stages = rows } }
+  end
+  -- the match: recorded, and over at once (its own windows are test_autorecce's)
+  local matchedIds, matchOk = {}, false
+  auto.start = function(_, stage, done)
+    matchedIds[#matchedIds + 1] = stage.id
+    if matchOk then
+      done(true, { controls = { atc = { lat = atcPt.lat, lon = atcPt.lon, roadLat = atcPt.lat, roadLon = atcPt.lon,
+        offM = 0, deg = 0 } } }, nil, { kind = auto.DONE, windows = 2, done = 2, windowsS = 1.5, matchS = 0.002 })
+    else
+      done(false, nil, 'stand-in', { kind = auto.NODATA, windows = 2, done = 2, windowsS = 1.5, matchS = 0.002 })
+    end
+    return true
+  end
+  local atced, fromCalls = 0, {}
+  runner.faceAtc = function() atced = atced + 1 return false, 'no road on the map there' end
+  runner.faceAtcFrom = function(stage, atc) fromCalls[#fromCalls + 1] = { stage = stage, atc = atc } return true, 'stub' end
+  local function tick(n) for _ = 1, (n or 1) do main.onUpdate(0.5, 0.5) end end
+  local function phase() local a = main.uiState().auto return a and a.phase end
+  main._areaBookReset()
+  files[main.AREA_BOOK_FILE] = nil
+  car.lat, car.lon = line[1][1], line[1][2]
+
+  -- ------------------------------------------------------------ every stage priced at once, nothing added yet
+  tick()
+  T.check(#plans == 4, 'rally queue: all four stages priced at once (' .. #plans .. ' estimates)')
+  T.check(nAdds == 0 and phase() == nil, 'and nothing added or started before an estimate is in')
+  T.check(prep.i == 1, 'stage 1 is the one whose turn it is (' .. prep.i .. ')')
+  local card = main.uiRallyCard()
+  T.check(card.prep.auto and card.prep.auto.phase == 'planning',
+    'the tracker: stage 1 is checking its map data, not "starting" (' ..
+    tostring(card.prep.auto and card.prep.auto.phase) .. ')')
+
+  -- the estimates come back out of order: the adds still go in the rally's order, one at a time
+  plans[4](need)
+  plans[2](need)
+  T.check(nAdds == 0, 'stage 2 and 4 priced, stage 1 not yet: nothing added out of order (' .. nAdds .. ')')
+  plans[3](none)
+  plans[1](need)
+  T.check(nAdds == 1 and addNames[1]:find('Stage One'), 'stage 1 priced: its area added first (' .. nAdds .. ')')
+  addQ[1]()
+  T.check(nAdds == 2 and addNames[2]:find('Stage Two'), 'then stage 2, once stage 1 was taken (' .. nAdds .. ')')
+  addQ[2]()
+  T.check(nAdds == 3 and addNames[3]:find('Stage Four'),
+    'then stage 4: stage 3 needs nothing (' .. tostring(addNames[3]) .. ')')
+  addQ[3]()
+  local book = files[main.AREA_BOOK_FILE]
+  T.check(book and book.areas['rq|s1'] and book.areas['rq|s2'] and book.areas['rq|s4'] and not book.areas['rq|s3'],
+    'each area is in the area book, so no press or rally adds it again')
+
+  -- ------------------------------------------------------------ stage 1: its own download, then go and match
+  tick()
+  T.check(phase() == 'downloading', 'stage 1 follows its queued download (' .. tostring(phase()) .. ')')
+  T.check(#plans == 4, 'without pricing it again, and with no question (' .. #plans .. ')')
+  status.q2 = { state = 'running', done = 7 }
+  card = main.uiRallyCard()
+  local row2 = card.prep.stages[2]
+  T.check(row2.state == 'wait' and row2.queued == true and row2.area and row2.area.done == 7,
+    'the tracker: stage 2 waits its turn and its download is already moving (' ..
+    tostring(row2.area and row2.area.done) .. ')')
+  T.check(card.prep.stages[3].area == nil and card.prep.stages[3].queued == nil,
+    'stage 3, with nothing to download, carries no download')
+  status.q1 = { state = 'done', done = 30 }
+  tick(2)
+  T.check(phase() == 'going', 'its download done, stage 1 goes there (' .. tostring(phase()) .. ')')
+  tick(runner.TELEPORT_SETTLE_S + 6)
+  T.check(matchedIds[1] == 's1' and atced == 1, 'and is matched (' .. tostring(matchedIds[1]) .. ')')
+  T.check(#fromCalls == 0, 'item 4: not set down from the matched ATC during the prep (the next stage moves it)')
+  T.check(logged('auto recce timing: s1: price ') == 1 and logged('auto recce timing: s1: .*queued with the rally') == 1,
+    'item 7: one timing line for stage 1, marked as queued (' .. logged('auto recce timing: s1') .. ')')
+
+  -- ------------------------------------------------------------ the rest, each on its own download
+  tick(2)
+  T.check(prep.i == 2 and phase() == 'downloading', 'stage 2 next, still downloading (' .. tostring(phase()) .. ')')
+  status.q2 = { state = 'done', done = 30 }
+  tick(runner.TELEPORT_SETTLE_S + 12)
+  T.check(matchedIds[2] == 's2', 'stage 2 matched once its download finished (' .. tostring(matchedIds[2]) .. ')')
+  tick(runner.TELEPORT_SETTLE_S + 12)
+  T.check(matchedIds[3] == 's3', 'stage 3, nothing to download, straight on (' .. tostring(matchedIds[3]) .. ')')
+  T.check(phase() == 'downloading' and prep.i == 4, 'stage 4 waits on its own (' .. tostring(phase()) .. ')')
+  status.q3 = { state = 'done', done = 30 }
+  tick(runner.TELEPORT_SETTLE_S + 12)
+  T.check(matchedIds[4] == 's4', 'stage 4 matched (' .. tostring(matchedIds[4]) .. ')')
+  tick(2)
+  T.check(prepDone == 1 and #plans == 4 and nAdds == 3,
+    'the prep done, with 4 estimates and 3 areas in all (' .. #plans .. ', ' .. nAdds .. ')')
+  T.check(logged('auto recce timing:') == 4, 'one timing line per stage (' .. logged('auto recce timing:') .. ')')
+
+  -- ------------------------------------------------------------ a second rally adds nothing again
+  prep, prepDone, matchedIds = { list = { S[1], S[2] }, i = 0 }, 0, {}
+  plans = {}
+  tick()
+  plans[1](need)
+  plans[2](need)
+  T.check(nAdds == 3, 'run again: the stages that have areas follow them, none added (' .. nAdds .. ')')
+  status.q1, status.q2 = { state = 'done' }, { state = 'done' }
+  tick(runner.TELEPORT_SETTLE_S + 30)
+  T.check(#matchedIds == 2 and prepDone == 1, 'and both are matched (' .. #matchedIds .. ')')
+
+  -- ------------------------------------------------------------ without the area capability: the 1.7.0 way
+  beamngEarth_api.has = function(n)
+    return n == 'transform' or n == 'rebase' or n == 'gpsRoute' or n == 'roadGraph'
+  end
+  prep, prepDone, matchedIds, plans = { list = { S[2], S[3] }, i = 0 }, 0, {}, {}
+  tick(4)
+  T.check(#plans == 0 and #matchedIds == 2 and prepDone == 1 and main._rallyQueue() == nil,
+    'no area capability: no queue, each stage matched as before (' .. #matchedIds .. ')')
+  beamngEarth_api.has = function(n)
+    return n == 'transform' or n == 'rebase' or n == 'gpsRoute' or n == 'roadGraph' or n == 'areaRoute'
+  end
+
+  -- ------------------------------------------------------------ the single stage's button: unchanged, then item 4
+  prep = nil
+  tick()
+  plans = {}
+  car.lat, car.lon = line[1][1], line[1][2]
+  local a = main.uiAction('autoRecce', 'rq', 's1')
+  T.check(a.ok and #plans == 1 and phase() == 'planning', 'the button still prices its stage (' .. #plans .. ')')
+  plans[1](need)
+  T.check(phase() == 'asking', 'and still asks (' .. tostring(phase()) .. ')')
+  main.uiAction('autoRecceDownload')
+  T.check(nAdds == 3 and phase() == 'downloading', 'and follows the area it already has (' .. nAdds .. ')')
+  status.q1 = { state = 'done' }
+  matchOk = true
+  tick(runner.TELEPORT_SETTLE_S + 10)
+  T.check(phase() == nil and atced >= 1, 'landed at the ATC with no road there, and matched')
+  T.check(#fromCalls == 1 and fromCalls[1].atc and fromCalls[1].atc.roadLat == atcPt.lat and fromCalls[1].stage.id == 's1',
+    'item 4: then set down from the matched file\'s ATC (' .. #fromCalls .. ')')
+  T.check(logged('auto recce timing: s1: price %d') >= 1 and logged('%(34%.0 MB%)') >= 1,
+    'item 7: the button\'s timing line has the price leg and the MB')
+  -- a landing that did find a road: not set down again
+  runner.faceAtc = function() atced = atced + 1 return true, 'on the road map' end
+  car.lat, car.lon = line[1][1], line[1][2]
+  plans = {}
+  main.uiAction('autoRecce', 'rq', 's1')
+  plans[1](none)
+  tick(runner.TELEPORT_SETTLE_S + 10)
+  T.check(#fromCalls == 1, 'the landing found its road: the car is not moved again (' .. #fromCalls .. ')')
+  matchOk = false
+
+  beamngEarth_api.has, beamngEarth_api.roadGraph = had.has, had.roadGraph
+  beamngEarth_api.areaPlan, beamngEarth_api.areaAdd, beamngEarth_api.areaStatus = had.areaPlan, had.areaAdd,
+    had.areaStatus
+  auto.start = had.start
+  rallyRun.preparing, rallyRun.active, rallyRun.prepNext, rallyRun.prepDone, rallyRun.uiCard =
+    had.preparing, had.active, had.prepNext, had.prepDone, had.uiCard
+  runner.faceAtc, runner.faceAtcFrom = had.faceAtc, had.faceAtcFrom
+  log = had.log
+  main.onUpdate(0.5, 0.5)
+
+  -- ------------------------------------------------------------ runner.faceAtcFrom itself
+  -- the matched ATC (on its road, bearing north-south), the start 100 m north of it: the car 40 m south of it on
+  -- that bearing, facing north, when the road map has no road there yet
+  local propsM = require('earthRally/props')
+  local hadRoad = propsM.roadAt
+  propsM.roadAt = function() return nil end
+  local mLat = math.rad(1) * R
+  local stg = { id = 'fa', line = { { 47.01, -123.0 }, { 47.02, -123.0 } },
+    controls = { start = { lat = 47.01, lon = -123.0 } } }
+  local ctl = { roadLat = 47.01 - 100 / mLat, roadLon = -123.0, deg = 180, offM = 5 }
+  car.lat, car.lon = ctl.roadLat + 0.0001, ctl.roadLon + 0.0001
+  local ok, how = runner.faceAtcFrom(stg, ctl)
+  local dS = geo_m(car.lat, car.lon, ctl.roadLat, ctl.roadLon)
+  T.check(ok and math.abs(dS - 40) < 1 and car.lat < ctl.roadLat,
+    string.format('faceAtcFrom: 40 m before the matched ATC, on the side away from the start (%s, %.1f m)',
+      tostring(how), dS))
+  car.lat = ctl.roadLat + 0.01
+  T.check(runner.faceAtcFrom(stg, ctl) == false, 'faceAtcFrom: a car driven away from the ATC is not moved')
+  car.lat = ctl.roadLat
+  T.check(runner.faceAtcFrom(stg, { roadLat = ctl.roadLat }) == false, 'faceAtcFrom: no bearing in the file: not moved')
+  propsM.roadAt = hadRoad
+  runner._camUpdate(1)          -- (the camera resets the placing asked for, done now rather than in a later test)
+end
+
 -- A bridge's far end (review round 3): looked for only just past its start, so a stage that comes back alongside
 -- (north 1 km, across 5 m, back south) does not take the far end from the return pass, and a far end more than
 -- BRIDGE_MAX_M on, or behind the start, is dropped.

@@ -102,6 +102,9 @@ M.DONE, M.PARTIAL, M.NODATA, M.FAILED = 'done', 'partial', 'nodata', 'failed'
 -- Overridable for the tests: wall seconds (`seconds` in the file is how long the whole auto recce took, most of it
 -- spent waiting on BeamNG.Earth between windows, so this is wall time and not os.clock's CPU time).
 function M.clock() return os.time() end
+-- (1.7.2, item 7) The legs' timing for main.lua's one log line: the game's high-resolution wall clock where there is
+-- one (os.clockhp, as runner.lua and props.lua use), else os.clock. Overridable for the tests.
+M.wall = rawget(os, 'clockhp') or os.clock
 
 ------------------------------------------------------------------------------------------ pure geometry
 
@@ -990,7 +993,9 @@ local function finish(ok, result, why, kind, extra)
     for _, w in ipairs(j.plan) do if w.complete then withData = withData + 1 end end
     how = { kind = kind or (ok and M.DONE or M.FAILED), windows = #j.plan,
             done = math.min((j.i or 1) - 1, #j.plan), withData = withData,
-            event = j.event and j.event.id, stage = j.stage and j.stage.id }
+            event = j.event and j.event.id, stage = j.stage and j.stage.id,
+            -- (item 7: the windows' wall seconds, from the first asked to the last answered, and the match's)
+            windowsS = j.t0 and ((j.tWin or M.wall()) - j.t0) or nil, matchS = j.matchS }
     for k, v in pairs(extra or {}) do how[k] = v end
   end
   if j and j.done then
@@ -1014,6 +1019,7 @@ local function write(j, m)
 end
 
 local function matchAndWrite(j)
+  j.tWin = M.wall()
   local covered, shortM, totalM = M.coverage(j.stage.line, j.plan, j.inner)
   if not covered then
     -- (never a partial line: BeamNG.Earth downloads nothing for a road-graph window, so the cells for this stretch
@@ -1033,7 +1039,9 @@ local function matchAndWrite(j)
   if next(j.graph.nodes) == nil then
     return finish(false, nil, 'BeamNG.Earth gave no roads for this stage: nothing written', M.NODATA)
   end
+  local tm = M.wall()
   local m, why = M.match(j.stage, j.graph)
+  j.matchS = M.wall() - tm
   if not m then return finish(false, nil, why or 'the stage could not be matched', M.FAILED) end
   -- the same thing one step later: roads arrived, but none of them near enough the organisers' line to be used
   if (m.gapM or 0) >= (m.lengthM or 0) - M.OUT_STEP_M then
@@ -1161,7 +1169,7 @@ function M.start(event, stage, done)
   if not plan then return false, why end
   gen = gen + 1
   job = { event = event, stage = stage, plan = plan, radius = radius, inner = inner,
-          graph = { nodes = {}, edges = {} }, seen = {}, i = 1, tries = 0, done = done }
+          graph = { nodes = {}, edges = {} }, seen = {}, i = 1, tries = 0, done = done, t0 = M.wall() }
   log('I', 'earthRally', string.format('auto recce: %s, %d window(s) of %.0f m', stage.id, #plan, radius))
   return M.ask(1)
 end
