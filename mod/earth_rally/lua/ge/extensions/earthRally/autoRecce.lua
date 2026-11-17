@@ -187,9 +187,13 @@ M.polyDist = polyDist
 -- A grid of a polyline's segments, so "is this node on the matched line?" is not every node against every segment
 -- (a 12 km stage: ~3,000 segments against a few thousand junction candidates, which the Python did in numpy and
 -- Lua should not do at all). cell: the bucket size in metres.
+-- (1.7.2) The key is a number, not a string: the build asks this for every node of every window, and a string
+-- made per cell looked at was the garbage the grid was meant to save. Exact for any cell index within +-2^20, which
+-- at the cell sizes used here is thousands of kilometres.
+local NO_SEGS = {}
 local function segGrid(pts, cell)
   local b = {}
-  local function key(cx, cy) return cx .. ':' .. cy end
+  local function key(cx, cy) return (cx + 1048576) * 2097152 + (cy + 1048576) end
   for i = 1, #pts - 1 do
     local a, c = pts[i], pts[i + 1]
     local x0, x1 = floor(math.min(a.x, c.x) / cell), floor(math.max(a.x, c.x) / cell)
@@ -211,7 +215,7 @@ local function segGrid(pts, cell)
     local bd, bi = huge, nil
     for ix = cx - rings, cx + rings do
       for iy = cy - rings, cy + rings do
-        for _, i in ipairs(b[key(ix, iy)] or {}) do
+        for _, i in ipairs(b[key(ix, iy)] or NO_SEGS) do
           local d = segDist(p, pts[i], pts[i + 1])
           if d < bd then
             bd = d
@@ -223,6 +227,28 @@ local function segGrid(pts, cell)
     if bd > reach then return nil end
     return bd, bi
   end
+end
+M.segGrid = segGrid
+
+-- (1.7.2, docs/plan-recce-speed.md item 6) How far from the organisers' line the build measures a node exactly.
+-- An edge is kept when the mean of its two ends' and its middle's distances is within CORRIDOR_M, so a node or a
+-- middle further than 3 x CORRIDOR_M cannot be part of a kept edge whatever the other two are (they are >= 0): it
+-- needs no exact figure, only "too far", which is math.huge here. Inside the reach the grid's answer IS polyDist's
+-- (the same segDist over every segment that can be that near), so every edge kept or dropped and every weight is
+-- the same as measuring each node against every segment. NEAR_GRID = false measures every node the old way, which
+-- tests/test_autorecce.lua uses to show the two give the same file.
+M.NEAR_REACH_M = 3 * M.CORRIDOR_M
+M.NEAR_CELL_M = 300.0
+M.NEAR_GRID = true
+
+-- The distance from p to the organisers' line, with `grid` (segGrid over the line) when there is one: exact within
+-- `reach`, math.huge beyond it (or, with `exact`, polyDist's own answer beyond it).
+local function lineDist(grid, p, kml, reach, exact)
+  if not grid then return polyDist(p, kml) end
+  local d = grid(p, reach)
+  if d then return d end
+  if exact then return polyDist(p, kml) end
+  return huge
 end
 
 ------------------------------------------------------------------------------------------ the graph
@@ -288,14 +314,19 @@ end
 -- nodes already sit every few metres along each smoothed arc, but a long straight is one edge, and its middle is
 -- what says whether it runs away from the line). Direction is ignored, as in the tool: a rally stage is a closed
 -- road, and the one-way field describes normal traffic.
+--
+-- `near` is exact up to NEAR_REACH_M and math.huge past it (see NEAR_REACH_M): only this function reads it.
 function M.build(graph, kml, fr)
   local g = { xy = {}, nbr = {}, near = {}, half = {}, ea = {}, eb = {}, edges = 0 }
+  local grid = M.NEAR_GRID and segGrid(kml, M.NEAR_CELL_M) or nil
+  g.lineGrid = grid                -- (M.match measures the matched line's offset with it too)
+  local reach = M.NEAR_REACH_M
   for name, n in pairs(graph.nodes or {}) do
     local lat, lon, alt = n.lat, n.lon, n.alt
     if lat ~= nil then
       local p = fr.xy(lat, lon)
       g.xy[name] = { x = p.x, y = p.y, z = alt, w = tonumber(n.radius) }
-      g.near[name] = polyDist(p, kml)
+      g.near[name] = lineDist(grid, p, kml, reach)
       g.half[name] = (type(n.radius) == 'number' and n.radius > 0) and n.radius or nil
       g.nbr[name] = {}
     end
@@ -312,7 +343,7 @@ function M.build(graph, kml, fr)
       if not seen[k] then
         seen[k] = true
         local mid = { x = (pa.x + pb.x) / 2, y = (pa.y + pb.y) / 2 }
-        local dm = (g.near[a] + g.near[b] + polyDist(mid, kml)) / 3
+        local dm = (g.near[a] + g.near[b] + lineDist(grid, mid, kml, reach)) / 3
         if dm <= M.CORRIDOR_M then
           local len = dist(pa, pb)
           local w = len * (1 + (dm / M.NEAR_M) ^ 2)
@@ -748,9 +779,11 @@ function M.match(stage, graph, info)
   local total, gapM = 0, 0
   for k = 1, #res - 1 do total = total + dist(res[k], res[k + 1]) end
   for _, gp in ipairs(gaps) do gapM = gapM + (gp[2] - gp[1]) end
+  -- (the grid with polyDist behind it beyond its reach: the same figure, without every point of the matched line
+  --  measured against every segment of the organisers' line)
   local maxOff = 0
   for k = 1, #res do
-    local d = polyDist(res[k], kml)
+    local d = lineDist(gr.lineGrid, res[k], kml, M.CORRIDOR_M, true)
     if d > maxOff then maxOff = d end
   end
 

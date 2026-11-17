@@ -719,4 +719,114 @@ do
   T.check(matchedFile() and matchedFile().controls == nil, 'controls: no controls, none written')
 end
 
+------------------------------------------------------------------------------------------ the grid (1.7.2, item 6)
+
+-- build's distance of each node to the organisers' line, and match's maxOff, now come off a grid of the line's
+-- segments (M.NEAR_GRID) instead of every node against every segment. The same file, figure for figure: a stage that
+-- wanders, the road on it, a parallel road 20 m off, side roads, roads either side of the corridor's edge, one far
+-- out at 2 km, and long straights whose middles are what decide them.
+do
+  local function deepEq(a, b, path)
+    if type(a) ~= type(b) then return false, path end
+    if type(a) ~= 'table' then
+      if a == b then return true end
+      return false, path .. ' (' .. tostring(a) .. ' vs ' .. tostring(b) .. ')'
+    end
+    for k, v in pairs(a) do
+      local ok, at_ = deepEq(v, b[k], path .. '.' .. tostring(k))
+      if not ok then return false, at_ end
+    end
+    for k in pairs(b) do if a[k] == nil then return false, path .. '.' .. tostring(k) .. ' (missing)' end end
+    return true
+  end
+  local graph = { nodes = {}, edges = {} }
+  local seq = 0
+  local function road(pts, link)
+    local prev = link
+    for _, q in ipairs(pts) do
+      seq = seq + 1
+      local name = 'g' .. seq
+      local ll = at(q[1], q[2], 100 + q[1] * 0.005)
+      graph.nodes[name] = { lat = ll[1], lon = ll[2], alt = ll[3], radius = q[3] or 3.5 }
+      if prev then graph.edges[#graph.edges + 1] = { prev, name } end
+      prev = name
+    end
+    return prev
+  end
+  -- the organisers' line: 6 km wandering north and south of y = 0, a point every ~25 m
+  local line, wob = {}, function(x) return 120 * math.sin(x / 700) + 15 * math.sin(x / 90) end
+  for x = 0, 6000, 25 do local p = at(x, wob(x)) line[#line + 1] = { p[1], p[2] } end
+  -- the road on it (2-6 m off it), every 10 m
+  local main = {}
+  for x = -40, 6040, 10 do main[#main + 1] = { x, wob(x) + 2 + 4 * math.sin(x / 33) } end
+  road(main)
+  -- a parallel road 20 m north, every 15 m; a narrower one (for the narrows) on part of it
+  local par = {}
+  for x = 500, 4500, 15 do par[#par + 1] = { x, wob(x) + 20, x > 2500 and 1.5 or 3.5 } end
+  road(par)
+  -- side roads off the main road's nodes, out to 250, 310, 880, 920 and 2000 m: long straights of one edge each
+  local function mainNode(x) return 'g' .. (math.floor((x + 40) / 10) + 1) end
+  for _, sd in ipairs({ { 800, 250 }, { 1600, 310 }, { 2400, 880 }, { 3200, 920 }, { 4000, 2000 } }) do
+    local x0, off = sd[1], sd[2]
+    road({ { x0 + 30, wob(x0) + off / 2 }, { x0 + 60, wob(x0) + off } }, mainNode(x0))
+    road({ { x0 - 30, wob(x0) - off / 2 }, { x0 - 60, wob(x0) - off } }, mainNode(x0))
+  end
+  -- roads lying along the corridor's edge, 290 to 310 m off and 880 to 920 m off, and one crossing the line
+  -- diagonally from 1.5 km away
+  for _, off in ipairs({ 290, 300, 310, 880, 900, 920, -295, -905 }) do
+    local pts = {}
+    for x = 1000, 5000, 40 do pts[#pts + 1] = { x, wob(x) + off } end
+    road(pts)
+  end
+  local diag = {}
+  for k = 0, 60 do diag[#diag + 1] = { 2000 + k * 50, -1500 + k * 50 } end
+  road(diag)
+  -- a long straight whose ends are near the line and whose middle is not (a chord across the line's big bend)
+  road({ { 300, wob(300) + 3 }, { 2000, wob(2000) + 3 } })
+  -- an edge from the line out past its end, as far again: its far node is ~800 m off (past 2 x CORRIDOR_M) and the
+  -- edge is still kept, because its other end and its middle are both on the line -- the case the reach must cover
+  local endX, endY = 6000, wob(6000)
+  local fromX, fromY = 5200, wob(5200)
+  local farName = road({ { fromX, fromY }, { 2 * endX - fromX, 2 * endY - fromY } })
+  local stage = { id = 'grid-stage', name = 'Grid', line = line,
+    controls = { atc = { lat = at(-30, 5)[1], lon = at(-30, 5)[2] } } }
+
+  local was = auto.NEAR_GRID
+  auto.NEAR_GRID = false
+  local old = auto.match(stage, graph)
+  local fr = auto.frame(line[1][1], line[1][2])
+  local kml = {}
+  for i, q in ipairs(line) do kml[i] = fr.xy(q[1], q[2]) end
+  local gOld = auto.build(graph, kml, fr)
+  auto.NEAR_GRID = true
+  local new = auto.match(stage, graph)
+  local gNew = auto.build(graph, kml, fr)
+  auto.NEAR_GRID = was
+  T.check(old and new and #old.points > 1000 and old.roadEdges > 100,
+    'grid: the stage matches (' .. tostring(old and #old.points) .. ' points, ' .. tostring(old and old.roadEdges) ..
+    ' edges)')
+  old.date, new.date, old.seconds, new.seconds = nil, nil, nil, nil
+  local same, where = deepEq(old, new, 'file')
+  T.check(same, 'grid: the matched file is the same as measuring every segment' .. (where and (': ' .. where) or ''))
+  T.check(old and old.maxOffMapLineM > 0 and old.maxOffMapLineM == new.maxOffMapLineM,
+    'grid: maxOffMapLineM the same (' .. tostring(old and old.maxOffMapLineM) .. ')')
+  -- and the graph under it: every edge kept or dropped, and every weight, the same
+  local sameEdges, edgeWhere = deepEq(gOld.nbr, gNew.nbr, 'nbr')
+  T.check(sameEdges and gOld.edges == gNew.edges,
+    'grid: every edge and every weight the same (' .. gOld.edges .. ' / ' .. gNew.edges .. ')' ..
+    (edgeWhere and (': ' .. edgeWhere) or ''))
+  T.check(next(gNew.nbr[farName]) ~= nil and gOld.near[farName] > 2 * auto.CORRIDOR_M,
+    string.format('grid: the edge out to a node %.0f m off is kept', gOld.near[farName]))
+  local exact, far, wrong, all = 0, 0, 0, 0
+  for name, d in pairs(gNew.near) do
+    all = all + 1
+    if d == math.huge and gOld.near[name] > auto.NEAR_REACH_M then far = far + 1
+    elseif d == gOld.near[name] then exact = exact + 1
+    else wrong = wrong + 1 end
+  end
+  T.check(far > 0 and wrong == 0 and exact + far == all,
+    'grid: every node within the reach measured exactly, only those past it "too far" (' .. exact .. ' exact, ' ..
+    far .. ' far, ' .. wrong .. ' wrong)')
+end
+
 T.done('test_autorecce')
