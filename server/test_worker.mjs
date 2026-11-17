@@ -1,107 +1,49 @@
-// Offline test of the stats Worker: D1 stood in by Node's built-in SQLite (Node 22.5+), no install needed.
-//   node server/test_worker.mjs
+// Offline test of the downloads dashboard Worker. Nothing to install.   node server/test_worker.mjs
 import assert from "node:assert/strict"
-import { makeDb } from "./d1shim.mjs"
 
 const here = new URL(".", import.meta.url)
-const { db, D1 } = makeDb()
-const env = { DB: D1, DASHBOARD_KEY: "k".repeat(32) }
-globalThis.caches = { default: { match: async () => null, put: async () => {} } }
-globalThis.fetch = async () => new Response(JSON.stringify([{ tag_name: "v1.6.2-alpha", assets: [{ download_count: 12 }] }]))
-const ctx = { waitUntil() {} }
-
 const worker = (await import(new URL("src/worker.js", here))).default
-const { clean } = await import(new URL("src/worker.js", here))
-const post = (path, body) => worker.fetch(new Request("http://x" + path, { method: "POST", body: JSON.stringify(body) }), env, ctx)
+const { DASHBOARD_HTML, DASHBOARD_JS } = await import(new URL("src/dashboard.js", here))
+const req = (url, method = "GET") => worker.fetch(new Request(url, { method }))
 
-const id = "0123456789abcdef0123456789abcdef"
-const day = new Date().toISOString().slice(0, 10)
-const base = { session: id, mod: "1.6.2-alpha+stats", game: "0.40.5.0", earth: "1.10", day }
-
-// clean: unknown events, bad ids and extra fields refused
-assert.equal(clean({ ...base, event: "nope" }), null)
-assert.equal(clean({ ...base, event: "session_start", session: "Bob" }), null)
-assert.equal(clean({ ...base, event: "error", code: "x", message: "C:/Users/Bob" }).message, undefined)
-assert.equal(clean({ ...base, event: "session_start", day: "1999-01-01" }).day, day)
-assert.equal(clean({ ...base, event: "stage_finished", time_s: 412.4, resets: -3 }).time_s, 412)
-assert.equal(clean({ ...base, event: "stage_finished", resets: -3 }).resets, undefined)
-
-let r = await post("/v1/events", { events: [
-  { ...base, event: "session_start" },
-  { ...base, event: "stage_started", rally: "ARA 2026", stage: "SS1", pass: 1 },
-  { ...base, event: "stage_finished", rally: "ARA 2026", stage: "SS1", pass: 1, result: "finished", time_s: 400, resets: 1 },
-  { ...base, event: "stage_started", rally: "ARA 2026", stage: "SS1", pass: 1 },
-  { ...base, event: "stage_finished", rally: "ARA 2026", stage: "SS1", pass: 1, result: "finished", time_s: 420, resets: 0 },
-  { ...base, event: "error", code: "menu_action_drive", module: "main" },
-] })
-assert.equal(r.status, 204)
-assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events").get().n, 6)
-assert.equal((await post("/v1/events", { events: new Array(51).fill({ ...base, event: "session_start" }) })).status, 400)
-assert.equal((await worker.fetch(new Request("http://x/v1/events", { method: "POST", body: "x".repeat(40000) }), env, ctx)).status, 400)
-
-// the dashboard: locked without the key
-assert.equal((await worker.fetch(new Request("http://x/api/summary"), env, ctx)).status, 401)
-r = await worker.fetch(new Request("http://x/api/summary?days=30", { headers: { authorization: "Bearer " + env.DASHBOARD_KEY } }), env, ctx)
-assert.equal(r.status, 200)
-const s = await r.json()
-assert.equal(s.totals.sessions, 1)
-assert.equal(s.totals.started, 2)
-assert.equal(s.totals.finished, 2)
-assert.equal(s.stages[0].runs, 2)
-assert.equal(s.stages[0].median_s, 410)
-assert.equal(s.errors[0].code, "menu_action_drive")
-assert.equal(s.downloads, undefined)          // (fetched by the owner's browser from GitHub)
-assert.equal(s.errors[0].first_ever, day)
-assert.equal(s.errors[0].first_code, day)
-assert.equal(s.totals.last_day, day)
-assert.equal(s.totals.sessions_ever, undefined)  // (a full scan nobody reads)
-
-// the dashboard page: served without the key (it asks for it), carries no data, https only off localhost
-r = await worker.fetch(new Request("http://localhost/dashboard"), env, ctx)
+// the page and its script, https, with the CSP; GitHub the only outside address
+let r = await req("https://x/dashboard")
 assert.equal(r.status, 200)
 assert.match(r.headers.get("content-type"), /text\/html/)
 const csp = r.headers.get("content-security-policy")
-assert.match(csp, /frame-ancestors 'none'/)
-assert.match(csp, /script-src 'self';/)        // no inline script can run, so a player-made name can never be code
-const page = await r.text()
-assert.ok(!/<script>/.test(page) && page.includes('<script src="/dashboard.js"></script>'), "no inline script")
-assert.ok(!page.includes(env.DASHBOARD_KEY) && !page.includes("ARA 2026"), "no key, no data in the page")
-r = await worker.fetch(new Request("http://localhost/dashboard.js"), env, ctx)
-assert.match(r.headers.get("content-type"), /javascript/)
-const script = await r.text()
-assert.ok(script.includes("/api/summary") && script.includes("function esc("))
-// the script parses (a stray backtick or dollar-brace in String.raw would break it)
-new Function(script)
-r = await worker.fetch(new Request("http://stats.example.workers.dev/dashboard"), env, ctx)
-assert.equal(r.status, 301)
-assert.equal(r.headers.get("location"), "https://stats.example.workers.dev/dashboard")
-r = await worker.fetch(new Request("http://localhost/dashboard", { method: "HEAD" }), env, ctx)
+assert.match(csp, /script-src 'self'/)
+assert.match(csp, /connect-src https:\/\/api\.github\.com;/)
+assert.equal(await r.text(), DASHBOARD_HTML)
+r = await req("https://x/dashboard.js")
 assert.equal(r.status, 200)
+assert.match(r.headers.get("content-type"), /javascript/)
+assert.equal(await r.text(), DASHBOARD_JS)
 
-// first seen reads by the events_err index, not the whole table
-const plan = db.prepare("EXPLAIN QUERY PLAN SELECT code, module, mod, MIN(day) AS first FROM events WHERE event = 'error' GROUP BY code, module, mod").all()
-assert.ok(plan.some(p => /events_err/.test(p.detail)), JSON.stringify(plan))
+// no inline script, no key, no stats left in the page
+assert.doesNotMatch(DASHBOARD_HTML, /<script>/)
+assert.doesNotMatch(DASHBOARD_HTML + DASHBOARD_JS, /api\/summary|DASHBOARD_KEY|localStorage/)
+// every value from GitHub goes through esc() (tag names, file names, links)
+assert.match(DASHBOARD_JS, /esc\(r\.tag\)/)
+assert.match(DASHBOARD_JS, /esc\(r\.url\)/)
 
-// no delete route any more (no install number to delete by)
-assert.equal((await post("/v1/delete", { session: id })).status, 404)
+// plain http goes to https (except on this computer); / goes to the page
+r = await req("http://x.workers.dev/dashboard")
+assert.equal(r.status, 301)
+assert.equal(r.headers.get("location"), "https://x.workers.dev/dashboard")
+assert.equal((await req("http://localhost:8787/dashboard")).status, 200)
+r = await req("https://x/")
+assert.equal(r.status, 302)
+assert.equal(r.headers.get("location"), "https://x/dashboard")
 
-// a message with two sessions (events waiting from an earlier game): both stored
-const id2 = "fedcba9876543210fedcba9876543210"
-assert.equal((await post("/v1/events", { events: [{ ...base, event: "session_start" }, { ...base, session: id2, event: "session_start" }] })).status, 204)
-assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events WHERE session = ?").get(id2).n, 1)
+// the old stats addresses are gone; nothing is taken in
+assert.equal((await req("https://x/v1/events", "POST")).status, 405)
+assert.equal((await req("https://x/api/summary")).status, 404)
+assert.equal((await req("https://x/nope")).status, 404)
+r = await req("https://x/dashboard", "HEAD")
+assert.equal(r.status, 200)
+assert.equal(await r.text(), "")
 
-// the per-session cap, counted over every day: a full session skipped, the other in the same message still stored
-const count = () => db.prepare("SELECT COUNT(*) AS n FROM events").get().n
-db.exec(`INSERT INTO events (day, event, session) SELECT '2026-01-01', 'session_start', '${id}' FROM (WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 1000) SELECT x FROM c)`)
-let n = count()
-assert.equal((await post("/v1/events", { events: [{ ...base, event: "session_start" }, { ...base, session: id2, event: "error", code: "y" }] })).status, 204)
-assert.equal(count(), n + 1)
-
-// prune: a year-old row archived
-db.exec("DELETE FROM events")
-db.exec(`INSERT INTO events (day, event, session) VALUES ('2020-01-05', 'session_start', '${id}')`)
-await worker.scheduled({}, env)
-assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events").get().n, 0)
-assert.equal(db.prepare("SELECT n FROM archive WHERE month = '2020-01'").get().n, 1)
+// the page's script parses
+new Function(DASHBOARD_JS)
 
 console.log("test_worker: all passed")
