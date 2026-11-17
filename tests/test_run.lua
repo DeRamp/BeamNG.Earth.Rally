@@ -2347,6 +2347,28 @@ do
   T.check(lineFor('two') == nil, 'a stop leaves no ending line behind: it is not an ending')
   T.check(not main.uiAction('autoRecceStop').ok, 'Stop with nothing running: refused')
 
+  -- (1.7.2) Stop while a full rally gets its stages ready stops them all, not only the one under way: the next one
+  -- used to start a frame later, so the player pressed Stop once a stage. The rally is left as Save and quit does.
+  do
+    local rallyRun = require('earthRally/rallyRun')
+    local oldPreparing, oldQuit = rallyRun.preparing, rallyRun.quit
+    local prep = { list = { {}, {}, {} }, i = 1 }
+    local quits = 0
+    rallyRun.preparing = function() return prep end
+    rallyRun.quit = function() quits = quits + 1 prep = nil return true end
+    resetGraph()
+    T.check(main.uiAction('autoRecce', 'test8', 'two').ok, 'prep: an auto recce of the first of three starts')
+    local a = main.uiState().auto
+    T.check(a and a.prepLeft == 3, 'prep: the page is told three are left with this one (' ..
+      tostring(a and a.prepLeft) .. ')')
+    local r = main.uiAction('autoRecceStop')
+    T.check(r.ok and r.message and r.message:find('3 stages left', 1, true) and r.message:find('rally was left', 1, true),
+      'prep: Stop says it stopped all three and left the rally (' .. tostring(r.message) .. ')')
+    T.check(quits == 1 and not auto.active() and main.uiState().auto == nil,
+      'prep: the rally is left and nothing is running')
+    rallyRun.preparing, rallyRun.quit = oldPreparing, oldQuit
+  end
+
   -- ---------------------------------------------------------------- ending: no map data anywhere (grey, not red)
   resetGraph()
   graph.allIncomplete = true
@@ -2646,6 +2668,14 @@ do
   T.check(dl and dl.phase == 'downloading', 'the sequence is downloading (' .. tostring(dl and dl.phase) .. ')')
   T.check(dl.area and dl.area.total == 30, 'and carries the area progress (' ..
     tostring(dl.area and dl.area.done) .. ' / ' .. tostring(dl.area and dl.area.total) .. ')')
+  -- (1.7.2, the page's bar) the size asked about, and how long the count has sat still: it never moves here
+  T.check(dl.downloaded == true and type(dl.bytes) == 'number' and dl.bytes > 0,
+    'and the size it asked about, for "about N MB in all" (' .. tostring(dl.bytes) .. ')')
+  local q0 = dl.quietS
+  tick(4)
+  local q1 = main.uiState().auto.quietS
+  T.check(type(q0) == 'number' and type(q1) == 'number' and q1 >= q0 + 2,
+    'and the seconds the count has sat still grow while it does not move (' .. tostring(q0) .. ' -> ' .. tostring(q1) .. ')')
 
   -- it finishes, the match is tried again -- and the road graph still finds nothing, so it must NOT loop
   area.state = 'done'

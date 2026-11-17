@@ -32,7 +32,7 @@
         <BngButton v-if="st.run && st.run.busy" :accent="ACCENTS.outlined" @click="action('abort')">Stop the run</BngButton>
         <!-- No Download / Not now here: the answer lives in the stage's own row and on its page, in the Auto
              recce column, so one press is answered where it was made. The banner still SAYS what is waiting. -->
-        <BngButton v-if="auto" :accent="ACCENTS.outlined" @click="action('autoRecceStop')">Stop</BngButton>
+        <BngButton v-if="auto" :accent="ACCENTS.outlined" @click="action('autoRecceStop')">{{ autoStopLabel }}</BngButton>
         <template v-if="st.recce">
           <BngButton :accent="ACCENTS.main" @click="action('recceSave')">Save recce</BngButton>
           <BngButton :accent="ACCENTS.outlined" @click="action('recceSaveAnyway')">Save anyway</BngButton>
@@ -137,7 +137,7 @@
             <span v-else class="er-ss"><span v-for="(p, k) in passList(s)" :key="k"><s v-if="p.cancelled">{{ p.ss }}</s><template v-else>{{ p.ss }}</template><template v-if="k < passList(s).length - 1"> · </template></span></span>
             <span class="er-clip">{{ s.name }}</span><span class="er-r er-mono">{{ len(s.lengthM) }}</span>
             <span class="er-st">
-              <span v-if="autoRow(s)" class="er-pill working" :style="{ '--er-done': autoPct }">{{ STATUS.working.label }} <span class="er-wn">{{ autoLeg }}</span></span>
+              <span v-if="autoRow(s)" class="er-pill working" :class="{ live: autoLive }" :style="{ '--er-done': autoPct }">{{ STATUS.working.label }} <span class="er-wn">{{ autoLeg }}</span></span>
               <span v-else class="er-pill" :class="pill(s.status).cls">{{ pill(s.status).label }}</span>
             </span>
             <!-- @click.stop: the whole row opens the stage, so without it the button would do both. The row's
@@ -151,7 +151,7 @@
                 <BngButton :accent="ACCENTS.main" @click.stop="action('autoRecceDownload')">Download</BngButton>
                 <BngButton :accent="ACCENTS.outlined" @click.stop="action('autoRecceSkip')">Not now</BngButton>
               </template>
-              <BngButton v-else-if="autoRow(s)" :accent="ACCENTS.outlined" @click.stop="action('autoRecceStop')">Stop</BngButton>
+              <BngButton v-else-if="autoRow(s)" :accent="ACCENTS.outlined" @click.stop="action('autoRecceStop')">{{ autoStopLabel }}</BngButton>
               <BngButton v-else-if="st.autoOk && s.status === 'none'" :accent="ACCENTS.secondary" :disabled="busy" @click.stop="action('autoRecce', rly.id, s.id)">{{ outcomeFor(s) ? "Try again" : "Auto recce" }}</BngButton>
               <!-- Reset takes the same cell on a stage that HAS a line, so every row has exactly one control and
                    the column reads as one question. Deliberately NOT gated on st.autoOk: it removes files and asks
@@ -237,12 +237,27 @@
               </template>
             </div>
           </template>
-          <div v-if="autoHere" class="er-card er-line-note">
-            <span class="er-pill working" :style="{ '--er-done': autoPct }">{{ STATUS.working.label }} <span class="er-wn">{{ autoLeg }}</span></span>
-            <span v-if="auto.phase === 'going'">Going to the start of the stage and waiting for the world to load. A road graph can only be asked for near where you are.</span>
-            <span v-else-if="auto.phase === 'planning'">Working out what map data is missing along the stage.</span>
-            <span v-else-if="auto.phase === 'downloading'">Downloading the map data along the stage. It is gated so it cannot slow the world down, so it can take a few minutes, and it carries on if you leave this page.<template v-if="auto.area && auto.area.msg"> {{ auto.area.msg }}</template></span>
-            <span v-else>Matching the line to the map's roads, {{ auto.stepM }} m at a time. No map data is downloaded. You can leave this page.</span>
+          <!-- (1.7.2) the auto recce under way: the four steps of one press, a real bar, the time, and a line when the
+               count sits still. BeamNG.Earth reports items, not bytes, and the items differ a lot in size, so the
+               fill only moves on its count while the stripes say it is still going (docs/mockups-1.7.2). -->
+          <div v-if="autoHere" class="er-card er-dl">
+            <div class="er-dl-steps">
+              <span v-for="(p, k) in autoSteps" :key="k" :class="p.state" :data-n="k + 1">{{ p.label }}</span>
+            </div>
+            <div class="er-dl-top"><b>{{ autoWhat }}</b><span class="er-mono">{{ autoCount }}</span></div>
+            <div class="er-dl-bar" :class="{ live: autoLive }"><i :style="{ width: autoFill }"></i></div>
+            <div class="er-dl-foot er-mono"><span>{{ autoFootL }}</span><span>{{ autoFootR }}</span></div>
+            <div class="er-dl-note">
+              <template v-if="auto.phase === 'going'">Waiting for the world to load. A road graph can only be asked for near where you are.</template>
+              <template v-else-if="auto.phase === 'planning'">Working out what map data is missing along the stage.</template>
+              <template v-else-if="auto.phase === 'asking'">BeamNG.Earth needs {{ MB(auto.ask && auto.ask.bytes) }} of map data along the stage: Download, or Not now.</template>
+              <template v-else-if="auto.phase === 'downloading'">
+                <span v-if="autoQuiet" class="er-dl-wait">Still going: a big piece is downloading, and the count jumps when it lands ({{ auto.quietS }} s since the last).</span>
+                <template v-else>Gated so it cannot slow the world down, so it can take a few minutes.</template>
+                It carries on if you leave this page.<template v-if="auto.area && auto.area.msg"> {{ auto.area.msg }}</template>
+              </template>
+              <template v-else>No map data is downloaded now. You can leave this page.</template>
+            </div>
           </div>
           <div v-else class="er-card er-line-note"><span class="er-pill" :class="pill(stg.status).cls">{{ pill(stg.status).label }}</span><span>{{ stg.note }}</span></div>
           <!-- Auto recce is the fourth button, before Recce, so the two recce buttons sit together and the cheap
@@ -254,7 +269,7 @@
               <BngButton :accent="ACCENTS.main" @click="action('autoRecceDownload')">Download {{ MB(autoAsk.bytes) }}</BngButton>
               <BngButton :accent="ACCENTS.outlined" @click="action('autoRecceSkip')">Not now</BngButton>
             </template>
-            <BngButton v-else-if="autoHere" :accent="ACCENTS.outlined" @click="action('autoRecceStop')">Stop the auto recce</BngButton>
+            <BngButton v-else-if="autoHere" :accent="ACCENTS.outlined" @click="action('autoRecceStop')">{{ auto.prepLeft > 1 ? autoStopLabel : "Stop the auto recce" }}</BngButton>
             <BngButton v-else-if="stg.autoCan" :accent="ACCENTS.secondary" :disabled="busy || !st.autoOk" @click="action('autoRecce', stg.eventId, stg.id)">Auto recce</BngButton>
             <!-- menu.lua sets autoCan only on a stage with no line, so on a stage that has one the Auto recce
                  button is already absent and Reset is simply its v-else-if: the row keeps four buttons, never
@@ -400,13 +415,57 @@ const autoLeg = computed(() => {
   if (a.phase === "going") return "going there"
   if (a.phase === "planning") return "checking"
   if (a.phase === "asking") return a.ask ? MB(a.ask.bytes) + "?" : "your call"
-  if (a.phase === "downloading") return a.area && a.area.total ? `${a.area.done || 0} / ${a.area.total}` : "starting"
+  if (a.phase === "downloading") return `${a.area && a.area.total ? `${a.area.done || 0}/${a.area.total}` : "starting"} · ${mmss(a.waitedS)}`
   return `${autoWindow.value} / ${a.windows || 1}`
 })
 // What is waiting on the player, or null. `bytes` is the only figure shown: BeamNG.Earth's own documentation says
 // not to show `seconds` (a serial model with no bandwidth in it -- it said 132 s for a download that took 43) and
 // `km2` is the corridor's geometry, far smaller than the ground actually fetched.
 const autoAsk = computed(() => (auto.value && auto.value.phase === "asking" && auto.value.ask) || null)
+// (1.7.2) the stage page's progress card and the Stop labels (docs/mockups-1.7.2/download.html)
+const mmss = v => { const t = Math.max(0, Math.floor(v || 0)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}` }
+const AUTO_STEP = { planning: 0, asking: 0, downloading: 1, going: 2, matching: 3 }
+const autoSteps = computed(() => {
+  const a = auto.value
+  const at = a && a.phase in AUTO_STEP ? AUTO_STEP[a.phase] : 3
+  // (Download crossed out once it is behind and nothing was downloaded: the ground was already here)
+  return ["Check", "Download", "Go to the start", "Match the line"].map((label, k) => ({ label,
+    state: k < at ? (k === 1 && !(a && a.downloaded) ? "skip" : "done") : k === at ? "on" : "" }))
+})
+const autoWhat = computed(() => ({ planning: "Checking the map data", asking: "Map data to download",
+  downloading: "Downloading the map data", going: "Going to the start of the stage" }[auto.value && auto.value.phase]
+  || "Matching the line to the map's roads"))
+const autoCount = computed(() => {
+  const a = auto.value
+  if (!a) return ""
+  if (a.phase === "downloading") return a.area && a.area.total ? `${a.area.done || 0} of ${a.area.total} pieces` : "starting"
+  if (a.phase === "matching") return `window ${autoWindow.value} of ${a.windows || 1}`
+  if (a.phase === "asking") return MB(a.ask && a.ask.bytes)
+  return ""
+})
+// the card's bar fills only on a real count: the download's items, the match's windows; nothing on the other legs
+const autoFill = computed(() => {
+  const a = auto.value
+  return a && (a.phase === "downloading" || a.phase === "matching") ? autoPct.value : "0%"
+})
+// the stripes: a leg that is working with no count moving to show for it (the match's windows move on their own)
+const autoLive = computed(() => !!(auto.value && auto.value.phase !== "matching" && auto.value.phase !== "asking"))
+const autoQuiet = computed(() => {
+  const a = auto.value
+  return !!(a && a.phase === "downloading" && (a.quietS || 0) >= 15 && a.area && a.area.total &&
+    (a.area.done || 0) < a.area.total)
+})
+const autoFootL = computed(() => {
+  const a = auto.value
+  if (!a) return ""
+  return a.phase === "matching" ? `${a.stepM} m at a time, from what is on this computer` : `${mmss(a.waitedS)} so far`
+})
+const autoFootR = computed(() => {
+  const a = auto.value
+  return a && a.phase === "downloading" && a.bytes ? `about ${MB(a.bytes)} in all` : ""
+})
+// (1.7.2) a full rally getting its stages ready: Stop stops them all, and says how many
+const autoStopLabel = computed(() => (auto.value && auto.value.prepLeft > 1 ? `Stop all ${auto.value.prepLeft}` : "Stop"))
 const autoRow = s => !!(auto.value && rly.value && auto.value.eventId === rly.value.id && auto.value.stageId === s.id)
 const autoHere = computed(() => !!(auto.value && stg.value &&
   auto.value.eventId === stg.value.eventId && auto.value.stageId === stg.value.id))
@@ -563,7 +622,7 @@ const banner = computed(() => {
     if (s.auto.phase === "asking") return `${n}: ${MB(s.auto.ask && s.auto.ask.bytes)} of map data to download -- your call`
     if (s.auto.phase === "downloading") {
       const a = s.auto.area
-      return `${n}: downloading the map data${a && a.total ? `, ${a.done || 0} of ${a.total} items` : ""}`
+      return `${n}: downloading the map data${a && a.total ? `, ${a.done || 0} of ${a.total} pieces` : ""}, ${mmss(s.auto.waitedS)}`
     }
     // "no map data is downloaded" is not padding: someone watching a progress bar assumes it is downloading, and
     // the matching leg reads only what is already on this computer -- which is still true, and is why this
@@ -857,8 +916,14 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
     background: linear-gradient(to right, rgba(31, 143, 255, 0.62) var(--er-done, 0%), rgba(31, 143, 255, 0.22) var(--er-done, 0%));
     .er-wn { font-family: "Overpass Mono", monospace; font-weight: 700; margin-left: -2px; }
     &::before { animation: er-pulse 1.2s ease-in-out infinite; }
+    /* (1.7.2) stripes along the unfilled part while it works, so a count that sits still never reads as stuck;
+       the fill still only moves on a real number */
+    &.live { background: linear-gradient(to right, rgba(31, 143, 255, 0.62) var(--er-done, 0%), transparent var(--er-done, 0%)),
+        repeating-linear-gradient(-45deg, rgba(31, 143, 255, 0.3) 0 8px, rgba(31, 143, 255, 0.16) 8px 16px);
+      background-size: 100% 100%, 22.6px 100%; animation: er-run 1s linear infinite; }
   }
 }
+@keyframes er-run { to { background-position: 0 0, 22.6px 0; } }
 @keyframes er-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
 .er-clip { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
@@ -959,6 +1024,29 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .er-pt.none .er-l { color: #6f7480; }
 .er-pts-help { margin: 0 0 22px; font-size: 15px; line-height: 1.5; color: var(--er-muted); }
 .er-pts-help b { color: #fff; }
+/* (1.7.2) the auto recce's progress card on the stage page */
+.er-dl { padding: 16px 18px 14px; }
+.er-dl-steps { display: flex; margin-bottom: 14px; font-size: 14px;
+  span { flex: 1; display: flex; align-items: center; gap: 8px; color: var(--er-muted); }
+  span::before { content: attr(data-n); width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font: 700 12px "Overpass Mono", monospace; background: rgba(255, 255, 255, 0.08); }
+  .done { color: #9fd8b2; }
+  .done::before { content: "\2713"; background: rgba(40, 140, 80, 0.55); color: #d9ffe6; }
+  .skip { text-decoration: line-through; }
+  .skip::before { content: "\2013"; }
+  .on { color: #fff; font-weight: 600; }
+  .on::before { background: #1f8fff; color: #fff; }
+}
+.er-dl-top { display: flex; justify-content: space-between; align-items: baseline; font-size: 17px; margin-bottom: 8px;
+  b { font-weight: 600; } .er-mono { font-weight: 600; color: #cfe8ff; } }
+.er-dl-bar { position: relative; height: 14px; border-radius: 7px; overflow: hidden; background: rgba(255, 255, 255, 0.1);
+  &.live { background: repeating-linear-gradient(-45deg, rgba(31, 143, 255, 0.26) 0 10px, rgba(31, 143, 255, 0.12) 10px 20px);
+    background-size: 28.3px 100%; animation: er-run2 1s linear infinite; }
+  i { position: absolute; left: 0; top: 0; bottom: 0; background: #1f8fff; border-radius: 7px; transition: width 0.6s ease; }
+}
+@keyframes er-run2 { to { background-position: 28.3px 0; } }
+.er-dl-foot { display: flex; justify-content: space-between; font-size: 14px; color: var(--er-muted); margin-top: 8px; }
+.er-dl-note { font-size: 15px; line-height: 1.45; margin-top: 10px; }
+.er-dl-wait { color: #ffe08a; }
 .er-line-note { display: flex; align-items: center; gap: 14px; padding: 14px 18px; font-size: 17px; }
 .er-actions { display: flex; gap: 14px; margin-top: 24px; flex-wrap: wrap; }
 .er-act-help { margin-top: 16px; font-size: 15px; line-height: 1.7; color: var(--er-muted); }
