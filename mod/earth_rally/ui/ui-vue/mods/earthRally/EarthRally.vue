@@ -241,7 +241,7 @@
             <span class="er-pill working" :style="{ '--er-done': autoPct }">{{ STATUS.working.label }} <span class="er-wn">{{ autoLeg }}</span></span>
             <span v-if="auto.phase === 'going'">Going to the start of the stage and waiting for the world to load. A road graph can only be asked for near where you are.</span>
             <span v-else-if="auto.phase === 'planning'">Working out what map data is missing along the stage.</span>
-            <span v-else-if="auto.phase === 'downloading'">Downloading the map data along the stage. It is gated so it cannot slow the world down, and it carries on if you leave this page.<template v-if="auto.area && auto.area.msg"> {{ auto.area.msg }}</template></span>
+            <span v-else-if="auto.phase === 'downloading'">Downloading the map data along the stage. It is gated so it cannot slow the world down, so it can take a few minutes, and it carries on if you leave this page.<template v-if="auto.area && auto.area.msg"> {{ auto.area.msg }}</template></span>
             <span v-else>Matching the line to the map's roads, {{ auto.stepM }} m at a time. No map data is downloaded. You can leave this page.</span>
           </div>
           <div v-else class="er-card er-line-note"><span class="er-pill" :class="pill(stg.status).cls">{{ pill(stg.status).label }}</span><span>{{ stg.note }}</span></div>

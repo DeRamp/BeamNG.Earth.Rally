@@ -35,7 +35,7 @@ loadScreen.moving = function() return runner.originMoving() or earth.rebasing() 
 local M = {}
 local logTag = 'earthRally'
 local logPausedSim         -- (below, by onUpdate)
-M.VERSION = '1.7.0-alpha'
+M.VERSION = '1.7.0-alpha+download'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_FLOOR_S = 1             -- the HUD's streams sent when what they show changes, and at least this often
 M.STREAM_GAP_S = 0.1              -- ... the stock stream at most this often outside waitStart / running
@@ -580,6 +580,39 @@ M.GOING, M.ASKING, M.DOWNLOADING = 'going', 'asking', 'downloading'
 
 local autoSeq = nil   -- { ev, stage, ss, phase, t, ready, plan, areaId, downloaded, why, how }
 
+-- The saved area each stage's download went into: autoKey -> { id, name }, kept in the user folder so a second
+-- press -- this session or the next -- follows the area it already has instead of adding another. BeamNG.Earth
+-- 1.10 dropped its ten-area cap (upstream PR #1264), so nothing else stops a stage piling up copies of itself, each
+-- one pinned on the player's disk (the owner had Stage Road three times and Orchard - Shoreline twice, 2026-11-16).
+M.AREA_BOOK_FILE = '/settings/earthRally_areas.json'
+M.AREA_LOG_EVERY_S = 10      -- a progress line in the log this often while downloading (it was silent: read as a hang)
+M.AREA_GONE_S = 10           -- the area missing from BeamNG.Earth's list this long: the player deleted it
+local areaBook = nil
+local function areaBookLoad()
+  if areaBook then return areaBook end
+  local ok, t = pcall(function()
+    return FS:fileExists(M.AREA_BOOK_FILE) and jsonReadFile(M.AREA_BOOK_FILE) or nil
+  end)
+  areaBook = (ok and type(t) == 'table' and type(t.areas) == 'table') and t.areas or {}
+  return areaBook
+end
+local function areaBookPut(key, id, name)
+  areaBookLoad()[key] = { id = id, name = name }
+  local ok, ret = pcall(jsonWriteFile, M.AREA_BOOK_FILE, { version = 1, areas = areaBook }, true)
+  if not ok or ret == false then
+    log('W', logTag, 'auto recce: could not save the area list: ' .. tostring(ret))
+  end
+end
+-- The status of the area booked for `key`, when BeamNG.Earth still has it; else nil. Matched on the id (BeamNG.Earth
+-- never hands one out twice) and the name we booked it under (a stage renamed is a different corridor) -- not on the
+-- name BeamNG.Earth shows, which it cuts to 60 characters.
+local function areaBookStatus(key, name)
+  local b = areaBookLoad()[key]
+  if type(b) ~= 'table' or type(b.id) ~= 'string' or b.name ~= name then return nil end
+  return earth.areaStatus(b.id)
+end
+M._areaBookReset = function() areaBook = nil end
+
 local autoSeqStep     -- (declared here: autoDone drives the sequence on, and is defined above it)
 
 -- (1.3.0 to the first cut of 1.3.1 had an autoFixable() here, to decide whether a refusal was one a download
@@ -731,24 +764,39 @@ autoSeqStep = function(what, arg)
         autoRecce.NODATA)
       return true
     end
+    -- Yes, and this stage already has an area from an earlier press: follow that one rather than add the same
+    -- corridor again. The press itself is unchanged (priced and asked every time, the user, 2026-11-14); only what
+    -- Download does differs, and what it does is the download the player already has. A finished one goes straight
+    -- on to the match, carrying its unavailable count if it has one.
+    local name = 'Earth Rally: ' .. sq.stage.name
+    local had = areaBookStatus(autoKey(sq.ev.id, sq.stage.id), name)
+    if had then
+      sq.areaId, sq.phase, sq.t, sq.downloaded, sq.logT, sq.seen = had.id, M.DOWNLOADING, 0, true, 0, true
+      log('I', logTag, string.format('auto recce: %s already has area %s (%s, %d of %d): using it, not adding '
+        .. 'another', sq.stage.name, had.id, tostring(had.state), had.done or 0, had.total or 0))
+      return true
+    end
     local pts = autoRecce.corridor(sq.stage.line)
     sq.phase, sq.t, sq.downloaded = M.DOWNLOADING, 0, true
-    local ok, why = earth.areaAdd(pts, 'Earth Rally: ' .. sq.stage.name, function(r) autoSeqStep('added', r) end)
+    local ok, why = earth.areaAdd(pts, name, function(r) autoSeqStep('added', r) end)
     if not ok then autoSeqEnd('Could not start the download: ' .. tostring(why)) end
     return true
 
   elseif what == 'added' then
     local r = arg
     if type(r) ~= 'table' or r.ok ~= true or type(r.id) ~= 'string' then
-      -- the refusal worth surfacing rather than working around: the saved areas' share of the cache is full, or
-      -- all ten slots are taken. Both are the player's to act on. The stage is still tried with what is here.
+      -- the refusal worth surfacing rather than working around: the saved areas' share of the cache is full, the
+      -- disk has no room, or (BeamNG.Earth before 1.10) all ten slots are taken. The player's to act on. The stage
+      -- is still tried with what is here.
       local reason = tostring(type(r) == 'table' and r.error or 'no reason given')
       log('I', logTag, 'auto recce: BeamNG.Earth would not take the area (' .. reason .. ')')
       sq.addRefused = reason
       goThenMatch()
       return true
     end
-    sq.areaId, sq.t = r.id, 0
+    sq.areaId, sq.t, sq.logT = r.id, 0, 0
+    areaBookPut(autoKey(sq.ev.id, sq.stage.id), r.id, 'Earth Rally: ' .. sq.stage.name)
+    log('I', logTag, string.format('auto recce: BeamNG.Earth took the area (%s): downloading', r.id))
     return true
 
   elseif what == 'matched' then
@@ -762,6 +810,10 @@ autoSeqStep = function(what, arg)
     local note = nil
     if sq.addRefused then
       note = 'BeamNG.Earth would not take the download: ' .. sq.addRefused
+    elseif sq.areaPaused then
+      note = "Its download is paused in BeamNG.Earth's areas: resume it there, then run the auto recce again."
+    elseif sq.areaGone then
+      note = "Its download was deleted from BeamNG.Earth's areas before it finished."
     elseif (sq.unavailable or 0) > 0 then
       note = string.format('The download finished with %d item(s) nothing could fetch. %s',
         sq.unavailable, tostring(sq.areaMsg or 'Resume that area to try those again.'))
@@ -794,7 +846,19 @@ autoSeqStep = function(what, arg)
       end
     elseif sq.phase == M.DOWNLOADING and sq.areaId then
       local st = earth.areaStatus(sq.areaId)
-      if st and (st.state == 'done' or st.state == 'failed') then
+      if st then sq.seen = true end
+      if st and sq.t - (sq.logT or 0) >= M.AREA_LOG_EVERY_S then
+        sq.logT = sq.t
+        log('I', logTag, string.format('auto recce: downloading %s: %s, %d of %d item(s), %d s', tostring(sq.areaId),
+          tostring(st.state), st.done or 0, st.total or 0, math.floor(sq.t)))
+      end
+      if st and st.state == 'paused' then
+        -- paused by the player in BeamNG.Earth's areas: it will not move until they resume it, so match with what
+        -- is here and say so, rather than show "downloading" for half an hour
+        log('I', logTag, 'auto recce: area ' .. tostring(sq.areaId) .. ' is paused; matching with what is here')
+        sq.areaPaused = true
+        goThenMatch()
+      elseif st and (st.state == 'done' or st.state == 'failed') then
         -- `done` does not mean every tile arrived: after enough failed passes the rest are counted unavailable and
         -- the area is marked done anyway (measured here: an area finished done with 122 of 1079 unavailable). So
         -- the ground is re-checked by matching rather than trusted, and the area's own message is carried through.
@@ -803,6 +867,14 @@ autoSeqStep = function(what, arg)
           log('I', logTag, string.format('auto recce: the download finished with %d item(s) unavailable (%s)',
             st.unavailable, tostring(st.msg)))
         end
+        log('I', logTag, string.format('auto recce: the download of %s finished (%d of %d) after %d s',
+          tostring(sq.areaId), st.done or 0, st.total or 0, math.floor(sq.t)))
+        goThenMatch()
+      elseif not st and sq.seen and sq.t > M.AREA_GONE_S then
+        -- seen in BeamNG.Earth's list and gone from it now (the player deleted it): waiting would be forever. (Not
+        -- before it was ever seen: a fresh add can be missing from the broadcast for a moment.)
+        log('I', logTag, 'auto recce: area ' .. tostring(sq.areaId) .. ' is gone; matching with what is here')
+        sq.areaGone = true
         goThenMatch()
       elseif sq.t > M.AREA_WAIT_S then
         autoSeqEnd('The download is taking very long: it carries on in the background, so try again later.')

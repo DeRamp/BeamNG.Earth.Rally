@@ -2574,7 +2574,7 @@ do
     return true
   end
   beamngEarth_api.areaStatus = function(id)
-    if id ~= 'a9' then return nil end
+    if id ~= 'a9' or area.gone then return nil end
     return { id = 'a9', name = area.lastName, state = area.state, done = 12, total = 30,
              unavailable = area.unavailable, msg = area.msg }
   end
@@ -2655,6 +2655,58 @@ do
     'and the estimate was asked for once for this press, not again after the download (' .. area.plans .. ')')
   T.check(main.uiState().auto == nil, 'the sequence has ended rather than going round again')
   T.check(main.uiAction('reset', 'seq', 'near').ok, 'and the page is free')
+
+  -- ------------------------------------------------------------ one area a stage (BeamNG.Earth 1.10 has no cap)
+  -- The owner had Stage Road three times and Orchard - Shoreline twice (2026-11-16): every Download added another
+  -- pinned area. The press is unchanged -- priced and asked every time (the user, 2026-11-14) -- but Download on a
+  -- stage that already has an area uses that one.
+  area.state = 'running'
+  local addsWas = area.adds
+  main.uiAction('autoRecce', 'seq', 'n2')
+  T.check(main.uiState().auto and main.uiState().auto.phase == 'asking',
+    'a stage with an area still downloading is asked, as every press is')
+  main.uiAction('autoRecceDownload')
+  T.check(main.uiState().auto and main.uiState().auto.phase == 'downloading', 'Download follows it')
+  T.check(area.adds == addsWas, 'and adds no second area (' .. area.adds .. ')')
+  area.state = 'done'
+  tick(6)
+  T.check(main.uiState().auto == nil, 'it ends when that download does')
+  -- the book is read back from the file: the next session's press still finds the area
+  main._areaBookReset()
+  area.unavailable, area.msg = 3, '3 items unavailable: Resume tries again'
+  main.uiAction('autoRecce', 'seq', 'n2')
+  main.uiAction('autoRecceDownload')
+  T.check(area.adds == addsWas, 'after a reload, a finished area is not added again (' .. area.adds .. ')')
+  tick(6)
+  T.check(main.uiState().auto == nil, 'and the sequence ends')
+  local un = main.uiStage('seq', 'n2')
+  T.check(un and un.autoLine and tostring(un.autoLine.text):find('Resume'),
+    'the player is told to resume it (' .. tostring(un and un.autoLine and un.autoLine.text) .. ')')
+  area.unavailable, area.msg = 0, nil
+  -- paused by the player: not waited on for half an hour
+  area.state = 'paused'
+  main.uiAction('autoRecce', 'seq', 'n2')
+  main.uiAction('autoRecceDownload')
+  tick(4)
+  T.check(main.uiState().auto == nil, 'a paused area ends the wait (' ..
+    tostring(main.uiState().auto and main.uiState().auto.phase) .. ')')
+  local pz = main.uiStage('seq', 'n2')
+  T.check(pz and pz.autoLine and tostring(pz.autoLine.text):find('paused'),
+    'and says it is paused (' .. tostring(pz and pz.autoLine and pz.autoLine.text) .. ')')
+  -- deleted mid-download: not waited on either
+  area.state = 'running'
+  main.uiAction('autoRecce', 'seq', 'n2')
+  main.uiAction('autoRecceDownload')
+  tick(2)
+  area.gone = true
+  tick(30)
+  T.check(main.uiState().auto == nil, 'a deleted area ends the wait (' ..
+    tostring(main.uiState().auto and main.uiState().auto.phase) .. ')')
+  local gone = main.uiStage('seq', 'n2')
+  T.check(gone and gone.autoLine and tostring(gone.autoLine.text):find('deleted'),
+    'and says so (' .. tostring(gone and gone.autoLine and gone.autoLine.text) .. ')')
+  T.check(area.adds == addsWas, 'and in all of it, one area for the stage (' .. area.adds .. ')')
+  area.gone = false
 
   -- ------------------------------------------------------------ a FAR stage goes there first
   -- A road-graph window is placed in the anchor's frame, so one asked for 3400 km away lands hundreds of km from
