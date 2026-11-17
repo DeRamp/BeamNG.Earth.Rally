@@ -382,7 +382,11 @@ function M.replayLoop(r, loop, board)
   local it = M.current(r)
   if it and it.kind ~= 'stage' then M.serviceOut(r) end
   for _, x in ipairs(res) do
-    if M.over(r) or not M.stageDone(r, x) then break end
+    if M.over(r) then break end
+    -- (a stage given up with no service to rejoin at: scored under Super Rally again, the rally on at the next stage)
+    if x.recovered then
+      if not M.recover(r, board) then break end
+    elseif not M.stageDone(r, x) then break end
   end
   it = M.current(r)
   if loop.started and it and it.kind == 'stage' then M.recover(r, board) end

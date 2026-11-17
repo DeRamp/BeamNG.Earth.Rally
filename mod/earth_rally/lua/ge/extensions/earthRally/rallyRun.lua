@@ -1148,7 +1148,16 @@ function M.answer(what)
     endedByRecovery()
   else
     recoveredAt = R.pos
-    if out.stage then goToStageStart(out.stage) else goToStop() end
+    if out.stage then
+      -- (a rally with no service is never saved again after its start: the loop is all a Continue has, so it must
+      -- hold this recovery too, or the next stage's time would be replayed onto the stage given up)
+      if loop then
+        loop.results[#loop.results + 1] = { recovered = true }
+        loop.started = false
+        saveLoop()
+      end
+      goToStageStart(out.stage)
+    else goToStop() end
   end
   return true
 end

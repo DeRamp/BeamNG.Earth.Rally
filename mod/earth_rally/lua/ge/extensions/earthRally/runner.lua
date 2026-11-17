@@ -619,11 +619,9 @@ local function pendingText(es)
 end
 
 local function stepTravel(dt)
-  -- (checked in at the board: held from here, the car stopped there, until the origin move is over)
-  if run.checkInNow and not run.moveHeldFrom then
-    run.moveHeldFrom = true
-    holdForMove(true)
-  end
+  -- (checked in at the board, or any load under a loading screen, whose pause is off from here (menuPause.waitFor):
+  -- held until the origin move is over; tried each frame, as a car still creeping is frozen only once stopped)
+  if not run.teleported and holdsForMove() then holdForMove(true) end
   run.t = run.t + dt
   if run.teleported and run.t < 2 then return end
   if not earth.ready() then
@@ -2097,10 +2095,11 @@ sitesTick = function(dt)
   sitesT = sitesT - (dt or 0)
   if sitesT > 0 then return end
   sitesT = M.SITES_POLL_S
+  -- (looked at with no site too: a shift seen late would take a finish's boards put down after it for stale ones)
+  worldShifted()
   if props.siteCount() == 0 then return end
   local p = carPos()
   if not p then return end
-  worldShifted()
   props.update(p, earth.toGame)
   props.dropFar(p, earth.toGame, M.LEFT_DROP_M)
 end

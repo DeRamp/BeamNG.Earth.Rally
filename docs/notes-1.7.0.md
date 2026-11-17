@@ -724,3 +724,18 @@ The mock-ups (`docs/mockups-1.7.0/rev4.html`) are OK'd, with these answers:
   - recover on a transit: taken to the next stage's start, nothing missed;
   - recover on the last stage: the rally ends.
 - No transit after the last stage when the rally has no service: it ends at the last stage.
+
+## Revision 4 (issues #51-#71, built 2026-11-16)
+
+Built on `full-rally-mvp`; not yet driven. Changes from the plan and the mock-ups:
+- #58: the "Load the stage?" prompt pauses the game too (so A reaches it, as Recover?).
+- #58: besides 25 m from the board, a stop within 60 m of the start line, or of an off-road ATC point, also counts.
+- #63: the diagnosis changed in review. The drive log shows our pause did not stop sim time, and BeamNG.Earth
+  replaced our origin move with a resync at its old anchor; on SS3 its request landed 22 s after we gave up, mid
+  stage. Now: wait for BeamNG.Earth's own request to finish (up to 90 s), whatever anchor it lands on. New log lines:
+  the origin move's ask / pending / commit, game time passing under each Earth Rally pause, each pacenote called and
+  notes on/off. Read these after the next drive.
+- #64: the card has no Due row: the rally keeps no due time to show.
+- #71: no final service when the rally has no service (the owner's rule).
+- Recovery rules: see "Owner's recovery rules" above.
+- Not done: rebuilding the co-driver's positions after a mid-run world shift (#65); the next drive's log decides.

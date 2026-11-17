@@ -424,6 +424,12 @@ do
   out = rally.recover(r, board)
   T.check(out and out.stage == nil and out.stop == nil and r.done and r.unclassified,
     'no stop: the last stage given up ends the rally, unclassified')
+
+  -- Continue after a quit: never saved since the start, so the loop replays SS1 driven, SS2 given up, SS3 driven
+  local q = newR(e, { mode = 'realistic', class = 'L4WD' })
+  rally.replayLoop(q, { results = { { timeS = 600 }, { recovered = true }, { timeS = 650 } } }, board)
+  T.check(rally.current(q).ss == 'SS4' and q.results.SS1.timeS == 600 and q.results.SS2.superRally
+    and q.results.SS3.timeS == 650, 'no stop: a recovery in the loop replayed as one, the next time on SS3')
 end
 
 T.done('test_rally')

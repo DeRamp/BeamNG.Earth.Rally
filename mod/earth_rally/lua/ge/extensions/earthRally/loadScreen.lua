@@ -15,7 +15,8 @@
 local M = {}
 
 M.WORLD_WAIT_S = 90       -- the world share not reached this long after the rest is done: let go anyway
-M.STEP_WAIT_S = 240       -- a step that never finishes: let go (the probe's own timeouts come first)
+M.STEP_WAIT_S = 300       -- a step that never finishes: let go (the probe's own timeouts come first: the run's
+                          -- world wait, 180 s, then BeamNG.Earth's origin move, up to runner.ANCHOR_PENDING_MAX_S)
 
 local earth = require('earthRally/earthAdapter')
 local settings = require('earthRally/settings')
