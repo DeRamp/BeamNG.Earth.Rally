@@ -2347,30 +2347,6 @@ do
   T.check(lineFor('two') == nil, 'a stop leaves no ending line behind: it is not an ending')
   T.check(not main.uiAction('autoRecceStop').ok, 'Stop with nothing running: refused')
 
-  -- (1.7.2) Stop while a full rally gets its stages ready stops them all, not only the one under way: the next one
-  -- used to start a frame later, so the player pressed Stop once a stage. The prep skips the rest and ends as after
-  -- its last stage (prepDone holds out the ones with no line); the rally is not left.
-  do
-    local rallyRun = require('earthRally/rallyRun')
-    local oldPreparing, oldSkip, oldQuit = rallyRun.preparing, rallyRun.prepSkipRest, rallyRun.quit
-    local prep = { list = { {}, {}, {} }, i = 1 }
-    local skips, quits = 0, 0
-    rallyRun.preparing = function() return prep end
-    rallyRun.prepSkipRest = function() skips = skips + 1 prep.i = #prep.list return true end
-    rallyRun.quit = function() quits = quits + 1 return true end
-    resetGraph()
-    T.check(main.uiAction('autoRecce', 'test8', 'two').ok, 'prep: an auto recce of the first of three starts')
-    local a = main.uiState().auto
-    T.check(a and a.prepLeft == 3, 'prep: the page is told three are left with this one (' ..
-      tostring(a and a.prepLeft) .. ')')
-    local r = main.uiAction('autoRecceStop')
-    T.check(r.ok and r.message and r.message:find('3 stages left', 1, true) and r.message:find('held out', 1, true),
-      'prep: Stop says it stopped all three and that a stage with no line is held out (' .. tostring(r.message) .. ')')
-    T.check(skips == 1 and quits == 0, 'prep: the rest of the prep skipped, the rally not left (' .. skips .. ', '
-      .. quits .. ')')
-    T.check(not auto.active() and main.uiState().auto == nil, 'prep: nothing is left running')
-    rallyRun.preparing, rallyRun.prepSkipRest, rallyRun.quit = oldPreparing, oldSkip, oldQuit
-  end
 
   -- ---------------------------------------------------------------- ending: no map data anywhere (grey, not red)
   resetGraph()
@@ -3200,6 +3176,66 @@ do
     T.check(props.site('service') == nil, 'rally end: driven away, the board and tent taken away (#68)')
     core_input_actionFilter = nil
     rallyRun.abandon('test19f')
+    teleports, moved = 0, false
+  end
+
+  -- 3d2. (1.7.2) Stop while a full rally gets its stages ready stops them all, through the real prep: the owner
+  -- pressed Stop once a stage before, as the next started a frame later. The prep ends at once with the ending
+  -- those presses reached -- the stages with no line held out, the rally going on -- and says so; with no stage
+  -- left to drive the rally ends, and the message says that instead.
+  do
+    local rallyRun = require('earthRally/rallyRun')
+    local main = require('earthRally/main')
+    local parkLat, parkLon = atcLat - 8000 / 111195, full[11][2]
+    local base
+    for _, st in ipairs(ev.stages) do if st.id == 'hill' then base = st end end
+    local stages = {}
+    for _, id in ipairs({ 'hill', 'hillB', 'hillC' }) do
+      local c = {}
+      for k2, v in pairs(base) do c[k2] = v end
+      c.id, c.name = id, 'Hill ' .. id
+      stages[#stages + 1] = c
+    end
+    local function evFor(id)
+      files['/earthRally/events/' .. id .. '.json'] = { format = 1, id = id, name = 'Test ' .. id, stages = stages,
+        itinerary = { { ss = 'SS1', stage = 'hill', run = 1, day = 1, km = 3 },
+          { ss = 'SS2', stage = 'hillB', run = 1, day = 1, km = 3 }, { ss = 'SS3', stage = 'hillC', run = 1, day = 1, km = 3 } },
+        rallyStops = {}, rallyStart = { name = 'Park', lat = parkLat, lon = parkLon } }
+    end
+    evFor('test72a')
+    evFor('test72b')
+    files['/earthRally/matched/test72b__hill.json'] = { format = 1, points = recFrom }
+    events.list(true)
+    rallyRun.ui.openCard = function() end
+    core_input_actionFilter = { setGroup = function() end, addAction = function() end }
+    car.lat, car.lon, car.speed = parkLat, parkLon, 0
+
+    -- one stage has its line: the other two held out, the rally goes on
+    local okB, whyB = rallyRun.start('test72b', { mode = 'casual', class = 'L4WD' })
+    T.check(okB, 'stop all: a rally with two stages to recce started (' .. tostring(whyB) .. ')')
+    local pr = rallyRun.preparing()
+    T.check(pr and #pr.list == 2, 'stop all: two stages to get ready (' .. tostring(pr and #pr.list) .. ')')
+    T.check(main.uiState().auto == nil or main.uiState().auto.prepLeft == 2, 'stop all: two left')
+    local r = main.uiAction('autoRecceStop')
+    T.check(r.ok and not r.rallyEnded and r.message:find('2 stages with no line held out', 1, true),
+      'stop all: one press stops both, and says they are held out (' .. tostring(r.message) .. ')')
+    local act = rallyRun.active()
+    T.check(rallyRun.preparing() == nil and act ~= nil and #(act.heldOut or {}) == 2,
+      'stop all: the prep is over, the rally goes on with both held out (' .. tostring(act and #(act.heldOut or {})) .. ')')
+    frames(5)
+    T.check(main.uiState().auto == nil, 'stop all: and no auto recce starts on the next frames')
+    T.check(not main.uiAction('autoRecceStop').ok, 'stop all: a second Stop finds nothing to stop')
+    rallyRun.quit()
+
+    -- no stage has its line: nothing left to drive, the rally ends -- and the message says so
+    T.check(rallyRun.start('test72a', { mode = 'casual', class = 'L4WD' }), 'stop all: a rally with every stage to recce started')
+    r = main.uiAction('autoRecceStop')
+    T.check(r.ok and r.rallyEnded and r.message:find('rally ended', 1, true),
+      'stop all: with no line anywhere, Stop says the rally ended (' .. tostring(r.message) .. ')')
+    T.check(rallyRun.active() == nil and rallyRun.preparing() == nil, 'stop all: and it has')
+    core_input_actionFilter = nil
+    rallyRun.abandon('test72a')
+    rallyRun.abandon('test72b')
     teleports, moved = 0, false
   end
 

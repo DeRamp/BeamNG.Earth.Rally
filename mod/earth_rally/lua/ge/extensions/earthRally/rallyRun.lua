@@ -333,15 +333,6 @@ function M.prepNext()
   return prep.current, prep.i, #prep.list
 end
 function M.preparing() return prep end
--- (1.7.2) Stop pressed during the prep: no more auto recces, every stage left counted as tried. The prep then ends
--- as it would after the last one (main.lua's stepRallyPrep finds nothing next and calls prepDone, which holds out
--- the stages with no line), the same ending a Stop on each of them reached, in one press.
-function M.prepSkipRest()
-  if not prep then return false end
-  prep.i = #prep.list
-  prep.current = nil
-  return true
-end
 function M.moving() return move end
 
 -- The time card's tracker while the stages are got ready (#34): { i, of, name, stages = [{ ss, name, km, state =
@@ -361,9 +352,10 @@ function M.prepInfo()
   end
   return out
 end
--- main.lua: every stage on the list tried. The rally goes on.
+-- main.lua: every stage on the list tried (or Stop pressed: 1.7.2). The rally goes on. Returns the stages held out
+-- (a count) and whether that left none to drive and ended the rally, for Stop's message.
 function M.prepDone()
-  if not (R and prep) then return end
+  if not (R and prep) then return 0, false end
   local thenDo = prep.thenDo
   prep = nil
   local held = holdOutBad()
@@ -377,9 +369,10 @@ function M.prepDone()
       finish()
       if M.ui.openCard then M.ui.openCard() end
     else M.quit() end
-    return
+    return #held, true
   end
   if thenDo then thenDo() end
+  return #held, false
 end
 
 -- Get the stages ready, then thenDo(). With nothing to recce, at once.

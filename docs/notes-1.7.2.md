@@ -28,6 +28,11 @@ Mock-up, approved by the owner 2026-11-16: [`mockups-1.7.2/download.html`](mocku
   stops them all.
 - **Stop during a full rally's prep** stops every stage left in one press, with the ending a Stop on each reached:
   the prep ends, a stage with no line is held out, and the rally goes on. The buttons say `Stop all N`.
+- **Stop's message says what happened:** how many stages were held out, or "No stage has its line yet, so the
+  rally ended" when none is left to drive (a first run where no stage has a line). It also says a map download
+  already started carries on in BeamNG.Earth's Areas.
+- **Held out, with the reason:** the time card and start screen said "road missing from the map" for every
+  held-out stage. They now give each stage's own reason, such as "no line on the roads".
 - Not done: leaving the rally on Stop (the first cut). A rally just started is not saved until its first service,
   so leaving would throw it away, and Save and quit has its own button and confirm.
 - Not possible: BeamNG.Earth's API cannot pause or remove an area, so a download already handed to it carries
@@ -36,8 +41,15 @@ Mock-up, approved by the owner 2026-11-16: [`mockups-1.7.2/download.html`](mocku
 ## Files
 
 - `main.lua`: `quietS`, `bytes`, `downloaded` and `prepLeft` in the page's state; Stop ends the prep.
-- `rallyRun.lua`: `prepSkipRest`.
+- `rallyRun.lua`: `prepDone` returns how many it held out and whether the rally ended.
 - `store.js`: `mmss`, the download clock.
 - `EarthRally.vue`: the stage page's card, the striped pill, the Stop labels, the time in the banner.
 - `EarthRallyFull.vue`: the prep tracker's stripes, time and Stop.
-- `tests/test_run.lua`: Stop during a prep skips all three without leaving the rally; the new fields are there.
+- `tests/test_run.lua`: Stop through the real prep, both endings: two stages held out and the rally goes on; no
+  line anywhere and the rally ends. The new download fields are there.
+
+## For the owner to decide
+
+- Should Stop cut the stages left out of this rally (as now, and as a Stop on each did), or stop and let you try
+  them again later? The second needs the prep to be resumable.
+- Stop has no confirm. On a first run where no stage has a line, it ends the rally.

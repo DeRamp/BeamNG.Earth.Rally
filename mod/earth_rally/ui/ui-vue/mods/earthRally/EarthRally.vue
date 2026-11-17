@@ -423,11 +423,12 @@ const autoLeg = computed(() => {
 // `km2` is the corridor's geometry, far smaller than the ground actually fetched.
 const autoAsk = computed(() => (auto.value && auto.value.phase === "asking" && auto.value.ask) || null)
 // (1.7.2) the stage page's progress card and the Stop labels (docs/mockups-1.7.2/download.html)
-const AUTO_STEP = { planning: 0, asking: 0, downloading: 1, going: 2, matching: 3 }
+const AUTO_STEP = { planning: 0, asking: 1, downloading: 1, going: 2, matching: 3 }
 const autoSteps = computed(() => {
   const a = auto.value
   const at = a && a.phase in AUTO_STEP ? AUTO_STEP[a.phase] : 3
-  // (Download crossed out once it is behind and nothing was downloaded: the ground was already here)
+  // (Download crossed out once it is behind and nothing was downloaded: the ground was already here, or BeamNG.Earth
+  // would not take the area -- the stage's ending line says which)
   return ["Check", "Download", "Go to the start", "Match the line"].map((label, k) => ({ label,
     state: k < at ? (k === 1 && !(a && a.downloaded) ? "skip" : "done") : k === at ? "on" : "" }))
 })

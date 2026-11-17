@@ -587,7 +587,7 @@ end
 local function prepLeft()
   local pr = rallyRun.preparing()
   if not (pr and type(pr.list) == 'table') then return nil end
-  return math.max(1, #pr.list - (pr.i or 0) + 1)
+  return math.max(1, #pr.list - math.max(1, pr.i or 0) + 1)
 end
 
 local autoSeq = nil   -- { ev, stage, ss, phase, t, ready, plan, areaId, downloaded, why, how }
@@ -958,15 +958,24 @@ doAction = function(what, eventId, stageId, fromPanel)
     -- (1.7.2) A full rally getting its stages ready runs one auto recce after another (stepRallyPrep), so stopping
     -- only the one under way had the next start a frame later: the player pressed Stop once a stage (the owner,
     -- 2026-11-16: "it should stop all downloads ... otherwise you have to keep clicking it"). Stop now ends the prep
-    -- at once, with the ending those presses reached: prepDone holds out the stages with no line and the rally goes
-    -- on. Not rallyRun.quit: a rally just started is not saved until its first service, so leaving it would throw
-    -- it away, and Save and quit has its own button and confirm on the time card.
-    local left = prepLeft()
-    if left then
-      rallyRun.prepSkipRest()
-      log('I', logTag, string.format('auto recce: stopped with the rally prep, %d stage(s) not got ready', left))
-      return res(true, string.format('Auto recce stopped for the %d %s left. A stage with no line is held out of '
-        .. 'the rally.', left, left == 1 and 'stage' or 'stages'))
+    -- here and now, with the ending those presses reached: prepDone holds out the stages with no line and the rally
+    -- goes on -- or, with no stage left to drive, ends, as it always has. Not rallyRun.quit: a rally just started is
+    -- not saved until its first service, so leaving one that still has stages would throw it away, and Save and
+    -- quit has its own button and confirm. Ended now rather than on the next frame, so the message says what
+    -- happened, and no frame is left with a prep that has stopped but still shows a stage under way.
+    -- A download BeamNG.Earth already took carries on in its Areas: its API cannot pause or remove one.
+    if rallyRun.preparing() then
+      local held, ended = rallyRun.prepDone()
+      log('I', logTag, string.format('auto recce: stopped with the rally prep: %d stage(s) held out%s', held or 0,
+        ended and ', none left to drive: the rally ended' or ''))
+      local msg = ended and 'Auto recce stopped. No stage has its line yet, so the rally ended.'
+        or (held or 0) > 0 and string.format('Auto recce stopped. %d %s with no line held out of the rally.', held,
+          held == 1 and 'stage' or 'stages')
+        or 'Auto recce stopped.'
+      if hadSeq then msg = msg .. " A map download already started carries on in BeamNG.Earth's Areas." end
+      local out = res(true, msg)
+      out.rallyEnded = ended == true
+      return out
     end
     return res(stopped, stopped and string.format('Auto recce of %s stopped.',
       was and was.stageName or 'the stage') or 'No auto recce is running.')

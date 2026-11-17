@@ -48,7 +48,7 @@
           </template>
           <div class="er-foot">
             <div v-if="s.toRecce" class="er-muted er-small">{{ s.toRecce }} {{ s.toRecce === 1 ? "stage gets its" : "stages get their" }} line first: the auto recce takes you to each.</div>
-            <div v-if="arr(s.heldOut).length" class="er-warn er-small">Held out, road missing from the map: {{ arr(s.heldOut).map(h => h.name).join(", ") }}</div>
+            <div v-if="arr(s.heldOut).length" class="er-warn er-small">Held out: {{ arr(s.heldOut).map(h => h.why ? `${h.name} (${h.why})` : h.name).join(", ") }}</div>
           </div>
         </div>
       </div>
@@ -101,7 +101,7 @@
               </div>
             </template>
           </div>
-          <div v-if="arr(c.heldOut).length" class="er-muted er-small">Held out, road missing from the map: {{ arr(c.heldOut).map(h => h.ss).join(", ") }}</div>
+          <div v-if="arr(c.heldOut).length" class="er-muted er-small">Held out: {{ arr(c.heldOut).map(h => h.why ? `${h.ss} (${h.why})` : h.ss).join(", ") }}</div>
         </div>
         <div class="er-col er-gap">
           <!-- the Super Rally card, once, at the service rejoined at -->
@@ -280,7 +280,7 @@ function prepBar() {
   const a = prepAuto()
   if (!a) return null
   if (a.windows) return Math.round(100 * (a.done || 0) / a.windows)
-  if (a.area && a.area.total) return Math.round(100 * (a.area.done || 0) / a.area.total)
+  if (a.phase === "downloading" && a.area && a.area.total) return Math.round(100 * (a.area.done || 0) / a.area.total)
   return null
 }
 function prepPct(p) { const b = prepBar(); return b == null ? "Working" : `${b}%` }
@@ -291,7 +291,7 @@ function prepDetail(p) {
   if (!a) return "Starting"
   let t = AUTO_WORDS[a.phase] || "Working"
   if (a.windows) t += ` · window ${Math.min((a.done || 0) + 1, a.windows)} of ${a.windows}`
-  else if (a.area && a.area.total) t += ` · ${a.area.done || 0} of ${a.area.total}`
+  else if (a.phase === "downloading" && a.area && a.area.total) t += ` · ${a.area.done || 0} of ${a.area.total}`
   // (1.7.2) the download's time, and a word when its count sits still: the items differ a lot in size
   if (a.phase === "downloading") {
     t += ` · ${mmss(a.waitedS)}`
@@ -302,8 +302,11 @@ function prepDetail(p) {
 // the stripes: working with no count moving to show for it
 function prepLive() { const a = prepAuto(); return !a || (a.phase !== "matching" && a.phase !== "asking") }
 // (1.7.2) Stop: no more auto recces. The prep ends as after the last one -- a stage with no line held out -- and the
-// rally goes on (main.lua autoRecceStop), so the card stays
-function stopPrep() { action("autoRecceStop", null, null) }
+// rally goes on (main.lua autoRecceStop), so the card stays; with no stage left to drive the rally ended, so its page
+function stopPrep() {
+  const id = c.value && c.value.id
+  action("autoRecceStop", null, null, r => { if (r && r.rallyEnded) emit("view", "rally", id) })
+}
 function prepStopLabel() {
   const p = c.value && c.value.prep
   const left = p ? p.of - Math.max(1, p.i) + 1 : 0
