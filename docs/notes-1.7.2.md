@@ -1,6 +1,6 @@
 # 1.7.2 notes: download progress and Stop all
 
-Branch `fix/download-progress`, from `main` at 1.7.1. Build: `1.7.1-alpha+progress`, lands as the next patch.
+Branch `fix/download-progress`, from `main` at 1.7.1. Build: `1.7.1-alpha+progress`, released as 1.7.2-alpha.
 Mock-up, approved by the owner 2026-11-16: [`mockups-1.7.2/download.html`](mockups-1.7.2/download.html).
 
 ## What the owner asked
