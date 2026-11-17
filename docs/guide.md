@@ -79,6 +79,20 @@ where the line has its bridges (the in-game recce cannot see them; `tools/auto_r
 BeamNG.Earth's own). A casual co-driver voice hears only what it can say. All of it, and the figures behind it:
 [`docs/pacenotes-1.5.0.md`](pacenotes-1.5.0.md).
 
+## A full rally
+
+* **Drive rally** on the home page lists every rally whose pack has an event file. Pick one, choose the mode and
+  whether to drive cancelled stages, then **Start**.
+* **Realistic**: no restarts; a recovery sends you to the next service under Super Rally (the class's fastest
+  time +10 min on the first stage missed, +7 min on each after). **Casual**: free recoveries and restarts.
+* The time card lists every control. **Start transit** routes you to the next one; stop at its board to check in.
+  At a stage's time control, **Load the stage?** readies the stage behind a loading screen.
+* At service and overnight the car is fully repaired and the rally is saved. Damage carries over in between.
+* The rally's recovery is **Backspace** or **D-pad right**, and asks **Recover?** first. On a transit to service it
+  takes you to service; in a rally with no service, to the next stage's start.
+* After the last stage, drive back to service, then **New rally** or **Continue driving**. Your rally goes on the
+  rally's **Results** tab.
+
 ## Controls
 
 | what | keyboard | controller |

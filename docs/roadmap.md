@@ -110,7 +110,7 @@ docs/plan-1.6.0-stage-dressing.md.
 | ✔ | Atmosphere: spectators, marshals, radio points (29), from the organisers' map first, placed by rule otherwise | built |
 | → | Not reached, for the user to place: ghost car and replays (27), stage sketches and height profiles (15), stages wider than ~26 km (8), stage pre-loading before the start (21), no penalty for a late start | |
 
-## 1.6.2: the loop holds (building, branch release-1.6.2)
+## 1.6.2: the loop holds (released 2026-11-15)
 
 Every open issue (#5-#19) fixed. The owner called the enhancements among them gameplay-loop bugs to fix before the
 alpha MVP (2026-11-15), and moved the Recce notes update milestone into it as fixes to 1.5.0. Notes, test plan and
@@ -123,7 +123,7 @@ the owner's findings in docs/notes-1.6.2.md.
 | ✔ | Menus: rally menu pauses (#13), controller (#14), finish time in the top bar (#17), Close on the results card (#18) | built |
 | ✔ | Route to stage gets the stage ready as you arrive (#19) | built |
 
-## 1.7.0: the full rally (MVP building, branch full-rally-mvp)
+## 1.7.0: the full rally (released 2026-11-16)
 
 From a single stage to a whole event: moved ahead of make and share stages (the owner, 2026-11-15). The design is
 the full-rally GDD (draft 2, kept with the owner's rally data: it carries real crews and times). The MVP chains the

@@ -3,6 +3,38 @@
 Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/writing-standard.md). Downloads:
 [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
 
+## 1.7.0-alpha: the full rally (2026-11-16)
+
+Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)
+(official 1.6+ works, without the auto recce).
+
+Drive a whole rally from a rally pack, start to finish: stages, transits, time controls and service.
+
+### New
+* **Drive rally** on the home page: any rally whose pack has an event file, run in its own order, day by day.
+* Two modes, picked at the start: **Realistic** (no restarts; a recovery sends you to the next service under Super
+  Rally) and **Casual** (free recoveries and restarts).
+* **Cancelled stages**: skip them as on the day, or drive them all.
+* Your car's class is set for you; pick another from the list.
+* Transits are driven: the time card lists every control, and **Start transit** routes you to the next.
+* Stop at each control's board to check in. At a stage's time control, **Load the stage?** readies it behind a
+  loading screen.
+* Service and overnight: a board and a tent, a full repair, and the rally saved there. Damage carries over between.
+* The rally's own recovery (**Backspace** or **D-pad right**) asks **Recover?** first. The game's resets are off.
+* After the last stage, back to service, then **New rally** or **Continue driving**.
+* Your rallies on the rally's **Results** tab, overall and in class, with each driven stage's time.
+
+### Changed
+* Home page: **Drive rally** and **Drive stage** tiles, and a **Continue** strip for a rally under way.
+* Loading screens show each step and a **World** bar, and wait until most of the world around you has loaded
+  (setting **World loaded before driving**, default 60%).
+* Finish boards and tents stay until you drive out of range.
+* One highlight on menus, for mouse and controller alike.
+
+### Known issues
+* Transits have no target times, so being late on the road costs nothing.
+* If the world moves mid-stage and the co-driver goes quiet, please report it with `beamng.log`.
+
 ## 1.6.2-alpha: the loop holds (2026-11-15)
 
 Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)

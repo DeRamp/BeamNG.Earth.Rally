@@ -16,6 +16,7 @@ with BeamNG.drive's own co-driver calling pacenotes worked out from the road.
 * Time controls, a start tree and countdown, penalties, a flying finish and a results card.
 * Pacenotes from the road: corners, hairpins, crests, jumps, junctions, cautions.
 * **Rally packs** carry a whole season: itinerary, real results, rules and pictures.
+* **Drive a whole rally**: transits, time controls, service and Super Rally, Realistic or Casual.
 * Leaderboards against the real crews, rally totals and season standings.
 * Stages dressed like an event: course tape, direction boards, marshals, radio points and spectators.
 
