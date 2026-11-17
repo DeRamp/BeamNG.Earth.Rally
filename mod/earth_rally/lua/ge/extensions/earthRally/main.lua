@@ -43,6 +43,7 @@ local message = nil
 local facing = nil       -- after Go to start: turn the car along the stage once BeamNG.Earth has set it down
 local scanIn = nil       -- seconds until the import folder is looked at (a file changed in it)
 local menuOpen = false   -- the menu page is the screen now (onUiChangedState)
+local statsMenuUp = false  -- the same, as stats last saw it (onUiChangedState only)
 local openAt = nil       -- the page to show when the menu opens next: { view, eventId, stageId }
 local earthSeen = false  -- the BeamNG.Earth level has been loaded at least once since the mod loaded. The version
                          -- check runs again then: that is where the game's rally engine can be looked at without
@@ -102,9 +103,12 @@ end
 -- BeamNG.Earth's own apps do the same (its credits.lua: `toState:sub(1, 4) == 'menu' or toState == 'loading'`).
 function M.onUiChangedState(toState)
   if type(toState) ~= 'string' then return end
-  local was = menuOpen
   menuOpen = toState == M.ROUTE
-  -- stats: sent while the menu is up (the game is paused there); the menu left with the question still up is a No
+  -- stats: sent while the menu is up (the game is paused there); the menu left with the question still up is a No.
+  -- (their own flag, set only here: openMenu/closeMenu set menuOpen before this event comes, so a change of
+  -- menuOpen was never seen -- found in game, 2026-11-16)
+  local was = statsMenuUp
+  statsMenuUp = menuOpen
   if menuOpen and not was then pcall(stats.sessionStart) pcall(stats.flushSoon) end
   if was and not menuOpen then pcall(stats.menuClosed) end
   -- Our own full-screen page counts too: it is not called 'menu...' but it is just as much in the way. So does

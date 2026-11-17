@@ -1906,6 +1906,25 @@ do
   main.onUiChangedState('earthRally')
   main.toggleMenu()
   T.check(navs[1] == 'earthRally' and navs[2] == 'play', 'Ctrl+Alt+K opens the menu page and closes it')
+  -- stats: the menu opened by Ctrl+Alt+K (openMenu sets menuOpen before the UI event comes) still asks for a send,
+  -- and leaving it is still seen (found in game, 2026-11-16: neither happened)
+  do
+    local stats = require('earthRally/stats')
+    local hadFlush, hadStart, hadClosed = stats.flushSoon, stats.sessionStart, stats.menuClosed
+    local seen = {}
+    stats.flushSoon = function() seen.flush = (seen.flush or 0) + 1 end
+    stats.sessionStart = function() seen.start = (seen.start or 0) + 1 end
+    stats.menuClosed = function() seen.closed = (seen.closed or 0) + 1 end
+    main.onUiChangedState('play')
+    seen = {}                -- (the test above left the page up: that close counted; start again from play)
+    main.toggleMenu()
+    main.onUiChangedState('earthRally')
+    T.check(seen.flush == 1 and seen.start == 1, 'stats: menu opened by Ctrl+Alt+K: a send asked for')
+    main.toggleMenu()
+    main.onUiChangedState('play')
+    T.check(seen.closed == 1, 'stats: menu closed by Ctrl+Alt+K: seen (' .. tostring(seen.closed) .. ')')
+    stats.flushSoon, stats.sessionStart, stats.menuClosed = hadFlush, hadStart, hadClosed
+  end
   -- the Escape menu ('pause' in 0.40): our HUD hidden, and BeamNG.Earth's imgui strips told it is a menu (earthMenuFix)
   do
     local told = {}

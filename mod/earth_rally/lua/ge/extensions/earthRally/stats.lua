@@ -228,21 +228,42 @@ function M.parseUrl(u)
   return host, tonumber(port) or 80, (path ~= '' and path or '/')
 end
 
+-- The server's address: toip first, then getaddrinfo (in the game, 2026-11-16, toip failed for the workers.dev
+-- name), an IPv4 address preferred. Returns ip, family ('inet'|'inet6'), or nil and every reason, for the log.
+function M.lookup(socket, host)
+  local ip, err = socket.dns.toip(host)
+  if ip then return ip, 'inet' end
+  local why = 'toip: ' .. tostring(err)
+  if socket.dns.getaddrinfo then
+    local ok, info, err2 = pcall(socket.dns.getaddrinfo, host)
+    if ok and type(info) == 'table' then
+      for _, a in ipairs(info) do if a.family == 'inet' and a.addr then return a.addr, 'inet' end end
+      for _, a in ipairs(info) do if a.family == 'inet6' and a.addr and socket.tcp6 then return a.addr, 'inet6' end end
+      why = why .. '; getaddrinfo: ' .. (#info > 0 and 'no usable address' or tostring(err2))
+    else
+      why = why .. '; getaddrinfo: ' .. tostring(ok and err2 or info)
+    end
+  end
+  return nil, why
+end
+
 -- One POST, in a coroutine: yields while waiting. Returns the HTTP status, or nil and why.
 function M.post(url, body, now)
   local host, port, path = M.parseUrl(url)
   if not host then return nil, 'no address' end
   local okS, socket = pcall(require, 'socket')
   if not okS then return nil, 'no luasocket' end
-  local ip = dnsCache[host]
-  if not ip then
+  local addr = dnsCache[host]
+  if not addr then
     if dnsFailed then return nil, 'name lookup failed earlier' end
-    ip = socket.dns.toip(host)
-    if not ip then dnsFailed = true return nil, 'name lookup failed' end
-    dnsCache[host] = ip
+    local ip, fam = M.lookup(socket, host)
+    if not ip then dnsFailed = true return nil, 'name lookup failed (' .. tostring(fam) .. ')' end
+    addr = { ip = ip, family = fam }
+    dnsCache[host] = addr
   end
+  local ip = addr.ip
   local t0 = now()
-  local c = socket.tcp()
+  local c = addr.family == 'inet6' and socket.tcp6() or socket.tcp()
   sock = c
   c:settimeout(0)
   local function late() return now() - t0 > M.TIMEOUT_S end

@@ -17,7 +17,13 @@ local sent, answer, lookups, closed = {}, 'HTTP/1.1 204 No Content', 0, 0
 local hold = false                       -- true: the answer never comes (a send left under way)
 package.preload['socket'] = function()
   return {
-    dns = { toip = function(h) lookups = lookups + 1 return h == 'stats.example' and '10.0.0.1' or nil end },
+    dns = {
+      toip = function(h) lookups = lookups + 1 if h == 'stats.example' then return '10.0.0.1' end return nil, 'host not found' end,
+      getaddrinfo = function(h)
+        if h == 'alt.example' then return { { family = 'inet6', addr = '::2' }, { family = 'inet', addr = '10.0.0.2' } } end
+        return nil, 'host not found'
+      end,
+    },
     select = function(_, w) return nil, w end,
     tcp = function()
       local c, sends, reads, conns = {}, 0, 0, 0
@@ -187,6 +193,13 @@ local before = lookups
 stats.flushSoon() frames()
 stats.update(stats.RETRY_S + 1, true) stats.flushSoon() frames()
 T.check(lookups == before + 1, 'one lookup only')
+
+-- the lookup: getaddrinfo when toip fails (as in the game), IPv4 preferred; both reasons when neither works
+local sock = require('socket')
+local ip, fam = stats.lookup(sock, 'alt.example')
+T.check(ip == '10.0.0.2' and fam == 'inet', 'toip failed: getaddrinfo, IPv4 first')
+local none, why = stats.lookup(sock, 'nowhere.example')
+T.check(none == nil and why:find('toip: host not found', 1, true) and why:find('getaddrinfo: host not found', 1, true), 'both reasons kept: ' .. tostring(why))
 
 -- the address
 local h, p, path = stats.parseUrl('http://a.b.workers.dev:8080/x')
