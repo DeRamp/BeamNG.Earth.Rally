@@ -3,6 +3,23 @@
 Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/writing-standard.md). Downloads:
 [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
 
+## 1.7.1-alpha: the map downloads (2026-11-16)
+
+Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)
+(official 1.6+ works, without the auto recce).
+
+The auto recce's map download, fixed for BeamNG.Earth 1.10.
+
+### Fixed
+* Saying **Download** again on a stage uses its area already in BeamNG.Earth instead of adding another.
+* The log shows the download's progress every 10 s, and when it finishes.
+* A download paused or deleted in BeamNG.Earth's areas stops the auto recce with a message, instead of waiting 30
+  minutes.
+* The menu says a download can take a few minutes, and carries on if you leave the page.
+
+### Known issues
+* The item count can sit still for a minute while big pieces download. It is not stuck.
+
 ## 1.7.0-alpha: full stage rally support (2026-11-16)
 
 Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)

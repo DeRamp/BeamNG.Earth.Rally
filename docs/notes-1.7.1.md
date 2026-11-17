@@ -1,6 +1,6 @@
 # 1.7.1 notes: the auto recce download
 
-Branch `fix/auto-recce-download`, from `main` at 1.7.0. Build: `1.7.0-alpha+download`.
+Branch `fix/auto-recce-download`, from `main` at 1.7.0. Build: `1.7.0-alpha+download`, released as 1.7.1-alpha.
 
 ## What was wrong
 
