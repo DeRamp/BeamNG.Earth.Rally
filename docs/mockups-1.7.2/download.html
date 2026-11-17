@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Rally 1.7.2 · auto recce download progress</title>
+<!-- Mock-up for the owner's "better progress bars for auto recce downloads" (2026-11-16), 1920x1080. "Now" is 1.7.1
+     as built: the blue pill filled by BeamNG.Earth's item count, "2 / 59", and a sentence. "Proposed" adds a real
+     bar to the stage page and keeps the pill on the rally's stage row (a 58px row has no room for a second line).
+     The pill CSS is EarthRally.vue's own; the page around it is a stand-in.
+     What BeamNG.Earth gives: areaStatus = { state, done, total, unavailable, msg } -- a count of items, no bytes.
+     The items differ in size by a lot, so the count sits still while a big one downloads (Perkins on Ojibwe: 2 of
+     59 for 45 s, then 59 of 59 at 49 s). The plan's downloadBytes (asked before the download) is the only size.
+     Press Play to run the Perkins download at 4x. Open with #now or #new; ?shot for a bare 1920x1080 screen. -->
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700;800&family=Overpass+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto Sans", system-ui, sans-serif; }
+.mock-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 16px; background: #1a1d22; border-bottom: 1px solid #2a2e35; position: sticky; top: 0; z-index: 10; }
+.mock-bar b { margin-right: 8px; font-weight: 600; }
+.mock-bar button { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 4px; border: 1px solid #3a3f48; background: #23272e; color: #ddd; cursor: pointer; }
+.mock-bar button.on { background: #c75b1e; border-color: #c75b1e; color: #fff; }
+.mock-bar .sep { width: 1px; height: 22px; background: #3a3f48; margin: 0 6px; }
+.mock-bar .clock { font: 600 13px "Overpass Mono", monospace; color: #9ab; margin-left: 8px; }
+.stage-wrap { padding: 16px; }
+.screen-box { position: relative; width: 100%; max-width: 1920px; margin: 0 auto; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 6px; box-shadow: 0 0 0 1px #2a2e35; }
+.screen { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-size: 16px; overflow: hidden;
+  background: linear-gradient(160deg, #2b3a2a, #1c2420 40%, #14171a); }
+.shot .mock-bar { display: none; } .shot .stage-wrap { padding: 0; }
+.shot .screen-box { width: 1920px; height: 1080px; aspect-ratio: auto; border-radius: 0; box-shadow: none; }
+.who { position: absolute; left: 330px; bottom: 14px; z-index: 7; width: 1260px; background: rgba(255,250,150,.96); color: #222; font: 500 17px/1.45 "Noto Sans", sans-serif; padding: 10px 16px; border-radius: 4px; }
+body.m-new [data-m="now"], body.m-now [data-m="new"] { display: none !important; }
+
+
+/* ---------- stand-in: the Earth Rally page (EarthRally.vue), two columns ---------- */
+.page { position: absolute; left: 80px; top: 70px; width: 1760px; height: 900px; background: rgba(12,14,17,.86); border-radius: .5rem; padding: 34px 40px; display: grid; grid-template-columns: 820px 1fr; gap: 26px 40px; align-content: start; }
+.h { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: #9aa3ad; margin-bottom: 10px; }
+.banner { grid-column: 1 / -1; background: rgba(31,143,255,.16); border-left: 4px solid #1f8fff; padding: 10px 16px; border-radius: .25rem; font-size: 17px; }
+.row { display: flex; align-items: center; gap: 18px; height: 58px; padding: 0 16px; border-radius: .25rem; background: rgba(255,255,255,.04); margin-bottom: 6px; font-size: 18px; }
+.row .ss { width: 54px; font: 700 16px "Overpass Mono", monospace; color: #9aa3ad; }
+.row .nm { flex: 1; } .row .km { width: 80px; text-align: right; color: #9aa3ad; font-family: "Overpass Mono", monospace; }
+.row.sel { background: rgba(255,255,255,.09); }
+.title { font-size: 34px; font-weight: 700; margin: 0 0 4px; } .sub { color: #9aa3ad; margin-bottom: 22px; }
+.er-card { background: rgba(255,255,255,.06); border-radius: .35rem; padding: 14px 16px; }
+.er-line-note { display: flex; gap: 14px; align-items: center; font-size: 16px; line-height: 1.45; }
+.btns { display: flex; gap: 10px; margin-top: 18px; }
+.btn { font: 600 18px "Noto Sans"; padding: 12px 20px; border-radius: .25rem; background: rgba(255,255,255,.12); color: #fff; }
+.btn.main { background: oklch(61.95% 0.1801 43.40); }
+
+/* ---------- the pill, as EarthRally.vue has it ---------- */
+.er-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; padding: 3px 12px; border-radius: 999px; white-space: nowrap; flex: none;
+  &::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  &.ready { background: rgba(40,140,80,.55); color: #d9ffe6; }
+  &.working { color: #cfe8ff;
+    background: linear-gradient(to right, rgba(31,143,255,.62) var(--er-done, 0%), rgba(31,143,255,.22) var(--er-done, 0%));
+    .er-wn { font-family: "Overpass Mono", monospace; font-weight: 700; margin-left: -2px; }
+    &::before { animation: er-pulse 1.2s ease-in-out infinite; } }
+  /* proposed: while bytes are moving, stripes run along the unfilled part, so a count that sits still never reads
+     as stuck. The fill itself still only moves on a real number. */
+  &.working.live { background:
+      linear-gradient(to right, rgba(31,143,255,.62) var(--er-done, 0%), transparent var(--er-done, 0%)),
+      repeating-linear-gradient(-45deg, rgba(31,143,255,.30) 0 8px, rgba(31,143,255,.16) 8px 16px);
+    background-size: 100% 100%, 22.6px 100%; animation: er-run 1s linear infinite; }
+}
+@keyframes er-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+@keyframes er-run { to { background-position: 0 0, 22.6px 0; } }
+
+/* ---------- proposed: the download card on the stage page ---------- */
+.dl { background: rgba(255,255,255,.06); border-radius: .35rem; padding: 16px 18px 14px; }
+.dl-steps { display: flex; gap: 0; margin-bottom: 14px; font-size: 14px; }
+.dl-steps span { flex: 1; display: flex; align-items: center; gap: 8px; color: #6f7883; }
+.dl-steps span::before { content: attr(data-n); width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font: 700 12px "Overpass Mono", monospace; background: rgba(255,255,255,.08); }
+.dl-steps .done { color: #9fd8b2; } .dl-steps .done::before { content: "✓"; background: rgba(40,140,80,.55); color: #d9ffe6; }
+.dl-steps .on { color: #fff; font-weight: 600; } .dl-steps .on::before { background: #1f8fff; color: #fff; }
+.dl-top { display: flex; justify-content: space-between; align-items: baseline; font-size: 17px; margin-bottom: 8px; }
+.dl-top b { font-weight: 600; } .dl-top .n { font: 600 16px "Overpass Mono", monospace; color: #cfe8ff; }
+.dl-bar { position: relative; height: 14px; border-radius: 7px; overflow: hidden;
+  background: repeating-linear-gradient(-45deg, rgba(31,143,255,.26) 0 10px, rgba(31,143,255,.12) 10px 20px);
+  background-size: 28.3px 100%; animation: er-run2 1s linear infinite; }
+.dl-bar.still { animation: none; background: rgba(255,255,255,.1); }
+.dl-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: #1f8fff; border-radius: 7px; transition: width .6s ease; }
+@keyframes er-run2 { to { background-position: 28.3px 0; } }
+.dl-foot { display: flex; justify-content: space-between; font-size: 14px; color: #9aa3ad; margin-top: 8px; font-family: "Overpass Mono", monospace; }
+.dl-note { font-size: 15px; line-height: 1.45; color: #c9d0d8; margin-top: 10px; min-height: 44px; }
+.dl-note .wait { color: #ffe08a; }
+</style>
+</head>
+<body class="m-new">
+<div class="mock-bar">
+  <b>Auto recce download</b>
+  <button data-go="now">Now (1.7.1)</button>
+  <button data-go="new" class="on">Proposed</button>
+  <span class="sep"></span>
+  <button id="play">▶ Play Perkins at 4x</button>
+  <button data-at="5">At 0:05</button>
+  <button data-at="30">At 0:30 (sat still)</button>
+  <button data-at="49">At 0:49 (done)</button>
+  <button data-at="60">Matching</button>
+  <span class="clock" id="clk"></span>
+</div>
+<div class="stage-wrap"><div class="screen-box"><div class="screen" id="screen">
+  <div class="page">
+    <div class="banner" id="banner"></div>
+    <div>
+      <div class="h">Ojibwe Forests Rally · stages</div>
+      <div class="row"><span class="ss">SS1</span><span class="nm">Height O' Land</span><span class="er-pill ready">Ready</span><span class="km">9.8</span></div>
+      <div class="row sel"><span class="ss">SS2</span><span class="nm">Perkins</span><span class="er-pill working" id="rowPill"></span><span class="km">12.4</span></div>
+      <div class="row"><span class="ss">SS3</span><span class="nm">Spider Lake</span><span class="er-pill ready">Ready</span><span class="km">7.1</span></div>
+      <div class="row"><span class="ss">SS4</span><span class="nm">Gun Lake</span><span class="er-pill ready">Ready</span><span class="km">14.0</span></div>
+    </div>
+    <div>
+      <div class="title">SS2 Perkins</div>
+      <div class="sub">12.4 km · gravel · Ojibwe Forests Rally</div>
+
+      <!-- now: the pill and the sentence -->
+      <div class="er-card er-line-note" data-m="now">
+        <span class="er-pill working" id="nowPill"></span>
+        <span id="nowText"></span>
+      </div>
+
+      <!-- proposed: steps, a bar, the time, and a word when the count sits still -->
+      <div class="dl" data-m="new">
+        <div class="dl-steps" id="steps">
+          <span data-n="1">Check</span><span data-n="2">Download</span><span data-n="3">Go to the start</span><span data-n="4">Match the line</span>
+        </div>
+        <div class="dl-top"><b id="dlWhat"></b><span class="n" id="dlN"></span></div>
+        <div class="dl-bar" id="dlBar"><i id="dlFill"></i></div>
+        <div class="dl-foot"><span id="dlLeft"></span><span id="dlRight"></span></div>
+        <div class="dl-note" id="dlNote"></div>
+      </div>
+
+      <div class="btns"><span class="btn">Stop</span><span class="btn">Drive</span><span class="btn">Recce</span></div>
+    </div>
+  </div>
+  <div class="who" data-m="new"><b>Proposed.</b> The stage page gets a real bar with the four steps of one press above it. Stripes run along the bar while the download is going, so it never looks frozen; the fill only moves on BeamNG.Earth's real count. The time ticks, and when the count has not moved for 15 s a line says why. The stage row keeps its pill, striped too, with the time added.</div>
+  <div class="who" data-m="now"><b>Now (1.7.1).</b> The pill fills by item count and says "2 / 59". For Perkins it sat at 2 / 59 for 45 s, then jumped to the end. Nothing moves meanwhile but the dot.</div>
+</div></div></div>
+
+<script>
+// The Perkins download as logged: 2 of 59 from 4 s to 45 s, a few more at 46-48, all 59 at 49 s. 31 MB asked.
+const TOTAL = 59, MB = 31
+function doneAt(t) { if (t < 4) return 0; if (t < 45) return 2; if (t < 46) return 9; if (t < 47) return 27; if (t < 49) return 44; return 59 }
+function lastChange(t) { const d = doneAt(t); let s = t; while (s > 0 && doneAt(s - 1) === d) s--; return s }
+const mmss = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`
+let t = 30, timer = null
+function render() {
+  const match = t >= 52, d = doneAt(t), pct = Math.round(100 * d / TOTAL)
+  const win = match ? Math.min(19, 1 + Math.floor((t - 52) / 2)) : 0
+  document.getElementById("clk").textContent = match ? `matching, window ${win} of 19` : `download at ${mmss(t)}`
+  // now
+  const np = document.getElementById("nowPill")
+  np.style.setProperty("--er-done", match ? `${Math.round(100 * win / 19)}%` : `${pct}%`)
+  np.innerHTML = `Auto recce <span class="er-wn">${match ? `${win} / 19` : `${d} / ${TOTAL}`}</span>`
+  document.getElementById("nowText").textContent = match
+    ? "Matching the line to the map's roads, 150 m at a time. No map data is downloaded. You can leave this page."
+    : "Downloading the map data along the stage. It is gated so it cannot slow the world down, so it can take a few minutes, and it carries on if you leave this page."
+  // proposed: the row pill
+  const isNew = document.body.classList.contains("m-new")
+  const rp = document.getElementById("rowPill")
+  rp.classList.toggle("live", isNew && !match)
+  rp.style.setProperty("--er-done", match ? `${Math.round(100 * win / 19)}%` : `${pct}%`)
+  rp.innerHTML = isNew
+    ? `Auto recce <span class="er-wn">${match ? `${win} / 19` : `${d}/${TOTAL} · ${mmss(t)}`}</span>`
+    : `Auto recce <span class="er-wn">${match ? `${win} / 19` : `${d} / ${TOTAL}`}</span>`
+  document.getElementById("banner").textContent = match
+    ? `Auto recce of SS2 Perkins: window ${win} of 19, no map data is downloaded`
+    : isNew ? `Auto recce of SS2 Perkins: downloading the map data, ${d} of ${TOTAL} pieces, ${mmss(t)}`
+            : `Auto recce of SS2 Perkins: downloading the map data, ${d} of ${TOTAL} items`
+  // proposed: the card
+  const steps = [...document.querySelectorAll("#steps span")], on = match ? 3 : 1
+  steps.forEach((s, i) => { s.className = i < on ? "done" : i === on ? "on" : "" })
+  document.getElementById("dlWhat").textContent = match ? "Matching the line to the map's roads" : "Downloading the map data"
+  document.getElementById("dlN").textContent = match ? `window ${win} of 19` : `${d} of ${TOTAL} pieces`
+  document.getElementById("dlFill").style.width = (match ? Math.round(100 * win / 19) : pct) + "%"
+  document.getElementById("dlBar").classList.toggle("still", match)
+  document.getElementById("dlLeft").textContent = match ? "150 m at a time, from what is on this computer" : `${mmss(t)} so far`
+  document.getElementById("dlRight").textContent = match ? "" : `about ${MB} MB in all`
+  const quiet = t - lastChange(t)
+  document.getElementById("dlNote").innerHTML = match
+    ? "No map data is downloaded now. You can leave this page."
+    : quiet >= 15 && d < TOTAL
+      ? `<span class="wait">Still going: a big piece is downloading, and the count jumps when it lands (${quiet} s since the last).</span> It carries on if you leave this page.`
+      : "Gated so it cannot slow the world down, so it can take a few minutes. It carries on if you leave this page."
+}
+function go(m) { document.body.className = "m-" + m; document.querySelectorAll("[data-go]").forEach(b => b.classList.toggle("on", b.dataset.go === m)); location.hash = m; render() }
+document.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go))
+document.querySelectorAll("[data-at]").forEach(b => b.onclick = () => { clearInterval(timer); timer = null; t = +b.dataset.at; render() })
+document.getElementById("play").onclick = () => { clearInterval(timer); t = 0; render(); timer = setInterval(() => { t++; if (t > 70) { clearInterval(timer); timer = null } render() }, 250) }
+function fit() { const s = document.getElementById("screen"); s.style.transform = `scale(${s.parentElement.clientWidth / 1920})` }
+addEventListener("resize", fit)
+if (location.search.includes("shot")) document.documentElement.classList.add("shot")
+fit(); go(location.hash === "#now" ? "now" : "new")
+</script>
+</body>
+</html>
