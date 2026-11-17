@@ -30,3 +30,9 @@ Branch `fix/auto-recce-download`, from `main` at 1.7.0. Build: `1.7.0-alpha+down
 - The old duplicate areas stay: delete the extra Stage Road and Orchard - Shoreline areas by hand.
 - The estimate over-asks (a corridor two map cells wider than the match reads). Narrowing it is for later.
 - The fork's server crashed on shutdown ("PyEval_SaveThread ... GIL is released"). That is a fork bug.
+
+## Found in testing
+
+- Perkins (Ojibwe), 2026-11-16: the menu sat on "2 of 59" for about 45 s, then the download finished (59 of 59
+  after 49 s) and the match ran. Not hung. BeamNG.Earth's item count stays put while its big items download, then
+  jumps at the end. The counter alone looks stuck. Possible later fix: show elapsed time or MB next to the count.
