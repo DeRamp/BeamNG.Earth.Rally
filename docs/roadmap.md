@@ -141,6 +141,15 @@ stages: road sections skipped, saved only at service. Plan in docs/plan-1.7.0.md
 | | Weather and time of day per stage (25) | M |
 | | Split times (15) | S |
 
+## 1.7.3-alpha+mainmenu: play from the main menu (built, not merged)
+
+The owner asked for it, 2026-11-18. Its number is given at merge.
+
+| | Item | Size |
+|---|---|---|
+| ✔ | An Earth Rally tile on the game's Play > Rally page that opens the menu with no level loaded | built |
+| ✔ | BeamNG.Earth loads only when a stage is driven or a rally started, then the button runs | built |
+
 ## 1.8.0: make and share stages
 
 Players build their own stages and pass them around.

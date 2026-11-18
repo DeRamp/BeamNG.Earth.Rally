@@ -25,7 +25,7 @@
           <div class="er-seg er-wrap">
             <span v-for="c in arr(s.classes)" :key="c" tabindex="0" bng-nav-item :class="{ on: cls === c }" @click="cls = c" @keydown.enter="cls = c">{{ c }}</span>
           </div>
-          <div class="er-muted er-small">{{ cls === s.class ? "Picked from your car's drivetrain." : "Your pick." }}</div>
+          <div class="er-muted er-small">{{ s.car && s.car.pending ? "Pick the class of the car you will drive." : cls === s.class ? "Picked from your car's drivetrain." : "Your pick." }}</div>
         </div>
         <div class="er-card er-pad er-col">
           <h3 class="er-sec">Rally settings</h3>
@@ -67,7 +67,7 @@
     <!-- ===== time card ===== -->
     <template v-else>
       <div v-if="!c" class="er-muted">Loading...</div>
-      <div v-else-if="c.none" class="er-card er-pad">No rally is under way.</div>
+      <div v-else-if="c.none" class="er-card er-pad">No rally is under way.<div v-if="state.message" class="er-muted">{{ state.message }}</div></div>
       <!-- (#71) finished: the result, Full results, and the two ways on, New rally selected -->
       <template v-else-if="c.done">
         <div class="er-card er-fin">
@@ -205,7 +205,7 @@
 import { ref, computed, watch, nextTick } from "vue"
 import { BngButton, ACCENTS } from "@/common/components/base"
 import { vBngUiNavFocus } from "@/common/directives"
-import { action, mmss, rallyStart, rallyCard, rallyAction, busyMsg, closeMenu, focusButton, arr, len, time, longTime, ord } from "./store.js"
+import { state, action, mmss, rallyStart, rallyCard, rallyAction, busyMsg, closeMenu, focusButton, arr, len, time, longTime, ord } from "./store.js"
 
 const props = defineProps({ kind: { type: String, default: "card" }, id: { type: String, default: null } })
 const emit = defineEmits(["view"])

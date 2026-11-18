@@ -95,6 +95,22 @@ end
 -- No BeamNG.Earth world to act in: the main menu, another map, or BeamNG.Earth not loaded.
 function M.needsWorld() return not earth.inWorld() end
 local fromGame = false     -- the menu opened from the game's Rally page with no level: closed back to that page
+local lastUi = nil         -- the UI state now (onUiChangedState)
+M.EARTH_LEVEL = 'beamng_earth'
+
+-- Ask the game for the BeamNG.Earth level (free roam on it). Returns ok, why.
+local function startEarthLevel()
+  local fr = rawget(_G, 'freeroam_freeroam')
+  if not fr and extensions and extensions.load then
+    pcall(extensions.load, 'freeroam_freeroam')
+    fr = rawget(_G, 'freeroam_freeroam')
+  end
+  if not (fr and fr.startFreeroamByName) then return false, 'the game cannot load a map from here' end
+  local ok, started = pcall(fr.startFreeroamByName, M.EARTH_LEVEL)
+  if not ok then return false, 'BeamNG.Earth could not be loaded: ' .. tostring(started) end
+  if started == false then return false, 'The BeamNG.Earth map is not installed: install BeamNG.Earth first.' end
+  return true
+end
 
 -- The menu page: opened at view ('rallies', 'rally', 'stage', 'settings'), closed back to driving.
 function M.openMenu(view, eventId, stageId)
@@ -260,6 +276,7 @@ end
 -- BeamNG.Earth's own apps do the same (its credits.lua: `toState:sub(1, 4) == 'menu' or toState == 'loading'`).
 function M.onUiChangedState(toState)
   if type(toState) ~= 'string' then return end
+  lastUi = toState
   menuOpen = toState == M.ROUTE
   -- (the page closed under a time control card that is ready: taken as its Continue, #40)
   if not menuOpen then pcall(loadScreen.pageClosed) end
@@ -508,16 +525,10 @@ local function updatePlaytest(dt)
     -- (at the main menu: ask for the level, once, after a moment for the menu to settle)
     if not playtest.levelAsked and playtest.t > 6 then
       playtest.levelAsked = true
-      local fr = rawget(_G, 'freeroam_freeroam')
-      if not fr and extensions and extensions.load then
-        pcall(extensions.load, 'freeroam_freeroam')
-        fr = rawget(_G, 'freeroam_freeroam')
-      end
-      if fr and fr.startFreeroamByName then
-        log('I', logTag, 'playtest: loading the BeamNG.Earth level')
-        pcall(fr.startFreeroamByName, 'beamng_earth')
-      else
-        log('W', logTag, 'playtest: cannot load the level (no freeroam_freeroam.startFreeroamByName)')
+      log('I', logTag, 'playtest: loading the BeamNG.Earth level')
+      local okL, whyL = startEarthLevel()
+      if not okL then
+        log('W', logTag, 'playtest: cannot load the level (' .. tostring(whyL) .. ')')
         playtest = nil
       end
     end
@@ -546,60 +557,54 @@ end
 -- Browsing, leaderboards and Settings need no world. A button that does (Drive, Go to start, Recce, Auto recce, Route
 -- to start, a full rally's Start or Continue) loads the BeamNG.Earth level first, behind a loading screen, and is
 -- pressed again for the player once the world is up with a car in it.
-M.EARTH_LEVEL = 'beamng_earth'
 M.WORLD_UP_WAIT_S = 240    -- the level and its world given this long (inside the loading screen's own 300 s)
 M.WORLD_UP_SETTLE_S = 2    -- ... and this long once BeamNG.Earth says ready, for the car to be set down
 M.WORLD_ACTIONS = { drive = 'Drive stage', goStart = 'Go to start', recce = 'Recce', autoRecce = 'Auto recce',
   route = 'Route to start' }
 M.WORLD_RALLY_ACTIONS = { start = 'Full rally', resume = 'Full rally' }
-local worldWait = nil      -- { t, ready, opened }: the level loading for a button pressed with no world
+local worldWait = nil      -- { t, ready, up, screen, thenView }: the level loading for a button pressed with no world
+
+-- The wait, if its loading screen is still the one up: a screen ended without its done (cancelled after an error,
+-- replaced by a rally's own) takes the wait with it, or every world button would be refused for the session.
+local function waiting()
+  if worldWait and loadScreen.active() ~= worldWait.screen then worldWait = nil end
+  return worldWait
+end
 
 -- Load the level, then run(). kick: the loading screen's top line. Returns ok, why.
 local function loadWorldThen(kick, run, thenView)
-  if worldWait then return false, 'BeamNG.Earth is loading: wait for it.' end
+  if waiting() then return false, 'BeamNG.Earth is loading: wait for it.' end
   if loadScreen.active() then return false, 'Something is loading: wait for it.' end
   -- (already on the BeamNG.Earth level, its world just not up yet: wait for it, do not load it again)
   if not levelName():lower():find(M.EARTH_LEVEL, 1, true) then
-    local fr = rawget(_G, 'freeroam_freeroam')
-    if not fr and extensions and extensions.load then
-      pcall(extensions.load, 'freeroam_freeroam')
-      fr = rawget(_G, 'freeroam_freeroam')
-    end
-    if not (fr and fr.startFreeroamByName) then return false, 'The game cannot load a map from here.' end
-    local ok, started = pcall(fr.startFreeroamByName, M.EARTH_LEVEL)
-    if not ok then return false, 'BeamNG.Earth could not be loaded: ' .. tostring(started) end
-    if started == false then return false, 'The BeamNG.Earth map is not installed: install BeamNG.Earth first.' end
+    local ok, why = startEarthLevel()
+    if not ok then return false, why end
   end
   log('I', logTag, 'from the menu: loading BeamNG.Earth for ' .. tostring(kick))
-  worldWait = { t = 0, ready = 0 }
+  local w = { t = 0, ready = 0, thenView = thenView }
+  worldWait = w
   local steps = { 'The BeamNG.Earth map', 'Its world server and your car' }
-  loadScreen.begin({ kind = 'stage', kick = kick, title = 'Loading BeamNG.Earth', steps = steps, noWorld = true,
+  w.screen = loadScreen.begin({ kind = 'stage', kick = kick, title = 'Loading BeamNG.Earth', steps = steps, noWorld = true,
     thenView = thenView,
     tip = "Start the game with BeamNG.Earth's launcher: its world server has to be running.",
     probe = function()
-      local w = worldWait
-      if not w then return 1, nil, nil, 'stopped' end
+      if worldWait ~= w then return 1, nil, nil, 'stopped' end
       if w.t > M.WORLD_UP_WAIT_S then
         return 1, nil, nil, string.format('BeamNG.Earth did not load in %d minutes. Is its launcher running?',
           math.floor(M.WORLD_UP_WAIT_S / 60))
       end
       if not earth.inWorld() then return 1, 0, steps[1] end
-      -- (the level's own loading took the screen: the page back up as soon as there is a world under it)
-      if not w.opened then
-        w.opened = true
-        if not menuOpen then M.openMenu(thenView) end
-      end
       if w.ready < M.WORLD_UP_SETTLE_S then return 2, 0.5, steps[2] end
       return 3
     end,
     done = function(ok, why)
-      worldWait = nil
-      fromGame = false
+      if worldWait == w then worldWait = nil end
       if not ok then
         message = 'Could not load BeamNG.Earth: ' .. tostring(why)
         runner.say(message, 8, 'warning', 'Earth Rally')
         return
       end
+      fromGame = false   -- (a level now: Close goes back to driving)
       local okR, err = pcall(run)
       if not okR then
         log('E', logTag, 'from the menu: ' .. tostring(err))
@@ -614,13 +619,28 @@ end
 M._loadWorldThen = loadWorldThen
 function M._worldWaitClear() worldWait = nil end   -- (tests)
 
--- Every frame while the level loads: the time it has taken, and how long BeamNG.Earth has been ready with a car.
+-- Every frame while the level loads: the time it has taken, how long BeamNG.Earth has been ready with a car, and the
+-- page put back up over the level once the game's own loading screen has let go ('play'). BeamNG.Earth says it is in
+-- its world before then (at onClientStartMission), so opening the page at that moment had it closed again under it.
+-- Only on 'play': a player who opens the Escape menu meanwhile is not fought; the page comes back when they leave it.
 local function updateWorldWait(dt)
-  local w = worldWait
+  local w = waiting()
   if not w then return end
   w.t = w.t + (dt or 0)
+  local inWorld = earth.inWorld()
+  if inWorld then w.up = true end
   local car = getPlayerVehicle and getPlayerVehicle(0)
-  if earth.inWorld() and earth.ready() and car then w.ready = w.ready + (dt or 0) else w.ready = 0 end
+  if inWorld and earth.ready() and car then w.ready = w.ready + (dt or 0) else w.ready = 0 end
+  if inWorld and not menuOpen and lastUi == 'play' then M.openMenu(w.thenView) end
+end
+
+-- The level gone while it was still coming up (the player went back to the main menu): the wait ends with it.
+local function endWorldWait()
+  local w = waiting()
+  if not (w and w.up) then return end   -- (not up yet: this is the old level going, on the way to ours)
+  worldWait = nil
+  loadScreen.cancel()
+  log('I', logTag, 'from the menu: the level was left before BeamNG.Earth was ready')
 end
 
 ------------------------------------------------------------------------------------------ the auto recce
@@ -1431,10 +1451,11 @@ function M.uiState()
   local ok, why = earth.check()
   s.version = M.VERSION
   s.earthOk, s.earthWhy = ok, (not ok) and why or nil
-  -- (at the main menu, or on another map: not a fault, the level loads with the first button that needs it)
-  if not ok and (levelName() == '' or why == earth.NOT_IN_WORLD) then
+  -- (at the main menu, or on another map: not a fault, the level loads with the first button that needs it. Only that
+  --  one reason: BeamNG.Earth missing or too old is still said, before a level load that could only fail)
+  if not ok and why == earth.NOT_IN_WORLD then
     s.earthWhy = nil
-    s.earthNote = worldWait and 'Loading BeamNG.Earth...' or
+    s.earthNote = waiting() and 'Loading BeamNG.Earth...' or
       'BeamNG.Earth loads when you drive a stage or start a rally.'
   end
   -- what changed under the mod since it was built (versions.lua): nothing to show in the normal case
@@ -1505,7 +1526,7 @@ function M.uiRallyStart(eventId)
   if not ok then log('E', logTag, 'rally start: ' .. tostring(r)) return { missing = true, id = eventId } end
   -- (at the main menu there is no car yet: the rally starts in the one the game spawns with BeamNG.Earth)
   if type(r) == 'table' and not r.missing and not r.car and M.needsWorld() then
-    r.car = { name = 'Your default car', note = 'BeamNG.Earth loads when you start' }
+    r.car = { name = 'Your default car', note = 'BeamNG.Earth loads when you start', pending = true }
   end
   return r
 end
@@ -2107,6 +2128,7 @@ end
 -- strip left held outlives the level it was held in.
 function M.onClientEndMission()
   pcall(menuPause.releaseAll)   -- (the menu's pause request, if the level went with the page up)
+  pcall(endWorldWait)
   if selftest then pcall(selftest.onClientEndMission) end
   if recce.active() then pcall(recce.stop, false) end
   -- An auto recce converts each window through the world's origin, so one still in flight when the level goes

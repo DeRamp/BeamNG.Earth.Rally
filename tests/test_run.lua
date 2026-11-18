@@ -2211,7 +2211,10 @@ do
   world, getPlayerVehicle = true, gpv
   navs = {}
   tick(1, 0.1)
-  T.check(navs[1] == 'earthRally' and runner.current() == nil, 'the world up: the page back, the stage not yet asked for')
+  T.check(#navs == 0, "the world up under the game's own loading screen: the page not opened under it")
+  main.onUiChangedState('play')            -- (the game's loading screen lets go)
+  tick(1, 0.1)
+  T.check(navs[1] == 'earthRally' and runner.current() == nil, 'then the page back, the stage not yet asked for')
   main.onUiChangedState('earthRally')
   tick(10)
   T.check(runner.current() ~= nil, 'then the stage is driven, as if Drive were pressed now')
@@ -2230,9 +2233,26 @@ do
   T.check(main.uiState().message and main.uiState().message:find('Is its launcher running', 1, true),
     'and says why (' .. tostring(main.uiState().message) .. ')')
 
+  -- the level left while BeamNG.Earth was still coming up: the wait ends with it, nothing run
+  T.check(main.uiAction('drive', 'test8', 'hill').ok and #asked == 3, 'Drive again: the level asked for')
+  world = true
+  tick(1, 0.1)
+  world = false
+  main.onClientEndMission()
+  tick(10)
+  T.check(not loadScreen.active() and runner.current() == nil and main.uiState().earthNote ~= 'Loading BeamNG.Earth...',
+    'the level left mid-load: the wait gone, nothing driven')
+  -- a loading screen put away without its end (cancelled after an error): the wait does not stick
+  T.check(main.uiAction('drive', 'test8', 'hill').ok and #asked == 4, 'Drive again')
+  loadScreen.cancel()
+  local again = main.uiAction('drive', 'test8', 'hill')
+  T.check(again.ok and #asked == 5, 'its screen cancelled: the next press is not refused (' .. tostring(again.message) .. ')')
+  loadScreen.cancel()
+  main._worldWaitClear()
+
   -- already on the BeamNG.Earth level, its world not up yet: waited for, not loaded again
   getMissionFilename = function() return 'levels/beamng_earth/main.level.json' end
-  T.check(main.uiAction('recce', 'test8', 'hill').ok and #asked == 2, 'on BeamNG.Earth already: not loaded a second time')
+  T.check(main.uiAction('recce', 'test8', 'hill').ok and #asked == 5, 'on BeamNG.Earth already: not loaded a second time')
   loadScreen.cancel()
   main._worldWaitClear()
   getMissionFilename = nil
@@ -2246,10 +2266,11 @@ do
   -- a full rally's Start: loaded first, then started in the car the game spawned
   freeroam_freeroam.startFreeroamByName = function(n) asked[#asked + 1] = n return true end
   local rr = main.uiRallyAction('start', 'test8', { mode = 'casual', class = 'L4WD' })
-  T.check(rr.ok and #asked == 3 and loadScreen.active() and not rallyRun.active(),
+  T.check(rr.ok and #asked == 6 and loadScreen.active() and not rallyRun.active(),
     'Start rally with no world: the level asked for first, no rally yet')
   T.check(main.uiLoading().thenView == 'timecard', 'and the page goes on to the time card')
   world, getPlayerVehicle = true, gpv
+  main.onUiChangedState('play')
   tick(10)
   -- (test8 has no event file: rallyRun's own refusal coming back proves Start was pressed again, now with a world)
   T.check(not loadScreen.active() and (main.uiState().message or ''):find('no event file', 1, true),

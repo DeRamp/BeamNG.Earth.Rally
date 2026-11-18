@@ -74,7 +74,7 @@ function M.update(dt)
   if failed then finish(false, failed) return end
   if c.ready then return end
   c.step, c.bar, c.barText = tonumber(step) or 1, bar, barText
-  c.world = M.world()
+  c.world = c.spec.noWorld and 0 or M.world()
   if c.step <= n then
     if c.t > M.STEP_WAIT_S then
       log('W', logTag, 'loading screen: ' .. tostring(c.title) .. ' took too long, let go')
