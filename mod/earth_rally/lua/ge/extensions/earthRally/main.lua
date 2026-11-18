@@ -116,7 +116,17 @@ local function startEarthLevel(car)
   if not (fr and fr.startFreeroamByName) then return false, 'the game cannot load a map from here' end
   local spawn = nil
   if type(car) == 'table' and type(car.model) == 'string' then
-    spawn = { car.model, { config = car.config } }
+    local opts = { config = car.config }
+    -- (the paint picked, by name, as freeroamConfigurator.startFreeroam turns it into the model's paints)
+    local cv = rawget(_G, 'core_vehicles')
+    if type(car.paints) == 'table' and cv and cv.getModel then
+      local okM, m = pcall(cv.getModel, car.model)
+      local paints = okM and type(m) == 'table' and type(m.model) == 'table' and m.model.paints or nil
+      if type(paints) == 'table' then
+        opts.paint, opts.paint2, opts.paint3 = paints[car.paints[1] or ''], paints[car.paints[2] or ''], paints[car.paints[3] or '']
+      end
+    end
+    spawn = { car.model, opts }
   end
   local ok, started = pcall(fr.startFreeroamByName, M.EARTH_LEVEL, nil, nil, spawn)
   if not ok then return false, 'BeamNG.Earth could not be loaded: ' .. tostring(started) end
@@ -588,9 +598,26 @@ local function carFrom(model, config)
   return out
 end
 
+-- The car's model and setup on this computer (a mod removed since: the game would spawn its default car instead).
+local function carInstalled(car)
+  if type(car) ~= 'table' or type(car.model) ~= 'string' then return false end
+  local cv = rawget(_G, 'core_vehicles')
+  if not (cv and cv.getModel) then return true end      -- (nothing to ask: let the game decide)
+  local okM, m = pcall(cv.getModel, car.model)
+  if not (okM and type(m) == 'table' and m.model) then return false end
+  if type(car.config) ~= 'string' then return true end
+  if car.config:sub(-3) == '.pc' then
+    local okF, there = pcall(function() return FS:fileExists(car.config) end)
+    return okF and there == true
+  end
+  local okC, c = pcall(cv.getConfig, car.model, car.config)
+  return okC and c ~= nil
+end
+M._carInstalled = carInstalled
+
 local function readLastCar()
   local ok, t = pcall(function() return FS:fileExists(M.LAST_CAR_FILE) and jsonReadFile(M.LAST_CAR_FILE) or nil end)
-  if ok and type(t) == 'table' and type(t.model) == 'string' then return t end
+  if ok and type(t) == 'table' and type(t.model) == 'string' and carInstalled(t) then return t end
 end
 -- The car driven in now, remembered as your last (a rally started, a stage driven).
 local function rememberCar()
@@ -610,11 +637,14 @@ function M.uiPickCar(eventId, purpose)
     return { ok = false, message = "The game's vehicle picker is not there." }
   end
   local done = false
-  local function back(model, config)
+  local function back(model, config, extra)
     if done then return end
     done = true
     if type(model) == 'string' then
       local car = carFrom(model, config)
+      local vs2 = rawget(_G, 'ui_vehicleSelector_general')
+      if vs2 and vs2.trackRecentVehicle then pcall(vs2.trackRecentVehicle, model, config) end
+      if type(extra) == 'table' then car.paints = { extra.paint, extra.paint2, extra.paint3 } end
       if purpose == 'resume' then
         local ok, why = rallyRun.setSavedCar(eventId, car)
         message = ok and string.format('%s found: the rally can continue.', car.name) or why
@@ -1589,7 +1619,8 @@ function M.uiRally(eventId)
   out.rallySaved = okS and saved or nil
   -- (at the main menu: a rally saved before cars were remembered cannot bring its car back; found once, it can)
   if out.rallySaved and M.needsWorld() then
-    local cur = rallyRun.readFile(eventId).current
+    local okR, t = pcall(rallyRun.readFile, eventId)
+    local cur = okR and type(t) == 'table' and t.current or nil
     local c = cur and type(cur.car) == 'table' and cur.car or {}
     out.savedCar = { name = c.name or 'its car', known = c.model ~= nil }
   end
@@ -1681,6 +1712,11 @@ function M.uiRallyAction(what, eventId, opts)
       if not (car and car.model) then
         message = string.format('This rally was saved before cars were remembered: find the %s first.',
           tostring(car and car.name or 'car it was started in'))
+        return { ok = false, message = message }
+      end
+      if not carInstalled(car) then
+        message = string.format('The %s is not on this computer any more (a mod removed?): this rally cannot continue.',
+          tostring(car.name))
         return { ok = false, message = message }
       end
     end

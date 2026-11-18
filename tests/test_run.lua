@@ -2307,6 +2307,18 @@ do
   loadScreen.cancel()
   runner.abort(true)
 
+  -- the same car: model and setup once a save has them, else the name
+  T.check(rallyRun.sameCar({ name = 'A', model = 'sunburst', config = 'rally_a' }, { name = 'B', model = 'sunburst', config = 'rally_a' }),
+    'same model and setup: the same car, whatever the (translated) name')
+  T.check(not rallyRun.sameCar({ name = 'A', model = 'sunburst', config = 'rally_a' }, { name = 'A', model = 'covet', config = 'x' }),
+    'another model: not the same car, even by the same name')
+  T.check(rallyRun.sameCar({ name = 'A' }, { name = 'A', model = 'm' }) and not rallyRun.sameCar({ name = 'A' }, { name = 'B' }),
+    'an older save: by name')
+  -- a last car from a mod since removed: not offered
+  core_vehicles = { getModel = function(m) return m == 'sunburst' and { model = {} } or {} end, getConfig = function(m, c) return m == 'sunburst' and c == 'rally_a' and {} or nil end }
+  T.check(main._carInstalled({ model = 'sunburst', config = 'rally_a' }) and not main._carInstalled({ model = 'gone', config = 'x' })
+    and not main._carInstalled({ model = 'sunburst', config = 'nope' }), 'a car from a removed mod: not installed')
+  core_vehicles = nil
   beamngEarth_api.inWorld, getPlayerVehicle = inWorld0, gpv
   freeroam_freeroam = nil
   main.closeMenu()

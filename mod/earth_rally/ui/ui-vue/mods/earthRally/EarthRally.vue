@@ -106,7 +106,7 @@
           <template v-else>
             <!-- (at the main menu, a rally saved before cars were remembered: its car found once in the game's picker) -->
             <BngButton v-if="rly.rallySaved && rly.savedCar && !rly.savedCar.known" :accent="ACCENTS.main" :disabled="busy" @click="pickCar(rly.id, 'resume')">Find the {{ rly.savedCar.name }}…</BngButton>
-            <BngButton v-if="rly.rallySaved" :accent="ACCENTS.main" :disabled="busy || !!(rly.savedCar && !rly.savedCar.known)" @click="resumeRally(rly.id)">Continue</BngButton>
+            <BngButton v-if="rly.rallySaved" :accent="ACCENTS.main" :disabled="busy || !!(rly.savedCar && !rly.savedCar.known)" @click="resumeRally(rly.id)">{{ rly.savedCar && rly.savedCar.known ? `Continue in the ${rly.savedCar.name}` : "Continue" }}</BngButton>
             <BngButton :accent="rly.rallySaved ? ACCENTS.outlined : ACCENTS.main" :disabled="busy" @click="openStart(rly.id)">{{ rly.rallySaved ? "Start again" : "Start the rally" }}</BngButton>
             <BngButton v-if="rly.rallySaved" :accent="ACCENTS.outlined" :disabled="busy" @click="retireAsk = rly.id">Retire</BngButton>
           </template>
