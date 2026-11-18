@@ -35,6 +35,7 @@ local settings = require('earthRally/settings')
 local hudFrame = require('earthRally/hudFrame')
 local dressing = require('earthRally/dressing')
 local junctions = require('earthRally/junctions')
+local online = require('earthRally/online')
 
 local M = {}
 local logTag = 'earthRally'
@@ -1693,6 +1694,11 @@ local function stepWaitStart(dt)
     -- marking it called froze the engine's step to the next note, which only moves on when it plays one itself.)
     run.clock = -left          -- (from the minute itself, not this frame)
     setState('running')
+    -- the online board (online.lua, when the player has it on): a run token from GO, and the car's place twice a
+    -- second from here to the flying finish
+    local okO, h = pcall(online.runStart, online.stageDesc(run.event.name, run.stage.name, run.lineStart,
+      run.lineFinish, (run.finishM or 0) - (run.startM or 0)))
+    run.online = okO and h or nil
   end
 end
 
@@ -1743,6 +1749,10 @@ local function stepRunning(dtSim)
   local along, off = progress(p)
   props.update(p, earth.toGame, along)
   run.along, run.off = along, off
+  if run.online then
+    local okP, pose = pcall(earth.pose)
+    if okP and pose then online.runSample(run.online, run.clock, pose.lat, pose.lon) end
+  end
   if off > run.checks.maxOffM then run.checks.maxOffM = off end
   -- off route (a wrong turn): on beyond OFF_ROUTE_M, off again within OFF_ROUTE_CLEAR_M; the way back to the line (its
   -- point level with the car) against the car's heading, for the HUD's arrow
@@ -1786,6 +1796,10 @@ local function stepRunning(dtSim)
       startAt = M.formatClock(run.startAt), date = os.date('!%Y-%m-%dT%H:%M:%SZ'), checks = checks }) end
     run.finalTime, run.best = time, best
     run.sinceFinish = 0
+    if run.online then
+      local okO, errO = pcall(M.sendOnline, time)
+      if not okO then log('E', logTag, 'online: the run was not sent: ' .. tostring(errO)) end
+    end
     if run.inRally and M.onFinished then
       local okF, errF = pcall(M.onFinished, { timeS = time, stageS = run.clock, penaltyS = run.penalty })
       if not okF then log('E', logTag, 'rally: the finish was not taken: ' .. tostring(errF)) end
@@ -1803,6 +1817,19 @@ local function stepRunning(dtSim)
       M.wrapUp()
     end
   end
+end
+
+-- The run to the online board (online.lua): its time, the car and which board (the game's own car as it comes:
+-- stock; anything else: open), its last place at the flying finish.
+function M.sendOnline(time)
+  local cv = rawget(_G, 'core_vehicles')
+  local okD, d = false, nil
+  if cv and cv.getCurrentVehicleDetails then okD, d = pcall(cv.getCurrentVehicleDetails) end
+  d = okD and d or nil
+  local pose = earth.pose()
+  online.runFinish(run.online, { timeS = time, penaltyS = run.penalty or 0, driveS = run.clock,
+    car = online.carName(d), board = online.boardFor(d), lat = pose and pose.lat, lon = pose and pose.lon })
+  run.online = nil
 end
 
 local function stepToStop(dt)

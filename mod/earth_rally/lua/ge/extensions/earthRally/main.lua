@@ -24,6 +24,7 @@ local menuPause = require('earthRally/menuPause')     -- the game paused while t
 local rally = require('earthRally/rally')             -- the full rally (1.7.0): its rules and numbers
 local rallyRun = require('earthRally/rallyRun')       -- ... and driving it in the game
 local loadScreen = require('earthRally/loadScreen')   -- the page's loading screen (1.7.0, #49)
+local online = require('earthRally/online')         -- the online leaderboard (prototype): via the companion
 menuPause.holding = earth.holding                    -- (BeamNG.Earth's own holds: our request waits for them)
 -- (#63: the run moving the world's origin needs the physics on: the page's pause waits for it, the screen shows it.
 -- Only under a loading screen -- the page's pause otherwise stays as it was -- and the run holds the car still then)
@@ -74,7 +75,10 @@ local playtest = nil     -- { event, stage, what, t, levelAsked, ready }
 -- The developer panel (the ImGui window): console toggle; the setting shows / hides it.
 function M.toggle() show[0] = not show[0] end
 function M.show() show[0] = true end
-settings.onChange('main', function(key, v) if key == 'devPanel' then show[0] = v == true end end)
+settings.onChange('main', function(key, v)
+  if key == 'devPanel' then show[0] = v == true end
+  if key == 'onlineBoard' then online.enable(v == true) end
+end)
 
 -- Go to a UI screen (route): ui_router.navigate (BeamNG 0.40), else the old ChangeState (as BeamNG.Earth's settings).
 local function navigate(state)
@@ -1283,6 +1287,39 @@ end
 
 function M.uiSet(key, value) return settings.set(key, value) end
 
+------------------------------------------------------------------------------------------ the online board
+
+-- A stage as the online board knows it (online.stageDesc): where it starts and finishes on the line it is timed on.
+local function onlineDesc(eventId, stageId)
+  local e, stage = menu.findStage(eventId, stageId)
+  if not stage then return nil end
+  local info = events.stageLineInfo(eventId, stageId, stage)
+  if not info then return nil end
+  return online.stageDesc(e and e.name, stage.name, info.start, info.finish, info.lengthM)
+end
+
+-- The stage page's Online tab: { status, board = { data, error, asking }, last = the last run sent }.
+-- board: 'stock' | 'open'.
+function M.uiOnline(eventId, stageId, board, force)
+  local b = board == 'open' and 'open' or 'stock'
+  local out = { status = online.status(), boardName = b, last = online.lastResult, naming = online.lastRegister }
+  if out.status.on then
+    local desc = onlineDesc(eventId, stageId)
+    out.hasLine = desc ~= nil
+    out.board = desc and online.board(desc, b, force == true) or nil
+  end
+  return out
+end
+
+-- A name for the online board (the first one makes the player). Answered on the next uiOnline (naming).
+function M.uiOnlineName(name)
+  online.lastRegister = { asking = true }
+  online.register(tostring(name or ''), function(r)
+    online.lastRegister = { ok = r.ok, error = r.error }
+  end)
+  return { ok = true }
+end
+
 ------------------------------------------------------------------------------------------ the full rally (1.7.0)
 
 -- The start screen's data (rallyRun.startInfo).
@@ -1587,6 +1624,7 @@ function M.onUpdate(dtReal, dtSim)
     scanIn = scanIn - (dtReal or 0)
     if scanIn <= 0 then scanIn = nil M.scanImports(false) end
   end
+  pcall(online.update, dtReal or 0)
   pcall(earthMenuFix.update)   -- (ahead of earth.update, which is not pcall'd)
   pcall(menuPause.update)      -- (a pause request held back while BeamNG.Earth held the game)
   pcall(logPausedSim, dtReal or 0, dtSim or 0)
@@ -1795,6 +1833,8 @@ function M.onExtensionLoaded()
   if veh then pcall(runner._vehCtl, veh, 'off') end
   settings.load()
   show[0] = settings.get('devPanel') == true
+  online.VERSION = M.VERSION
+  online.enable(settings.get('onlineBoard') == true)
   -- (new maps in the import folder)
   scanIn = 0.5
   log('I', logTag, 'Earth Rally ' .. M.VERSION .. ' loaded (Ctrl+Alt+K opens its menu)')

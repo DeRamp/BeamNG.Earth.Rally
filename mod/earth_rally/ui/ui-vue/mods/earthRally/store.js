@@ -274,3 +274,15 @@ export const RUN_WORDS = {
   waitStart: "on the start line", running: "on the stage", toStop: "on to the stop control",
   finished: "stage done", failed: "stopped",
 }
+
+// ---- the online board (prototype; main.lua uiOnline / uiOnlineName, online.lua). Players' times, never the rally
+// pack's real results (those are the offline board).
+export function loadOnline(eventId, stageId, board, force, cb) {
+  engineLua(`earthRally_main and earthRally_main.uiOnline(${q(eventId)}, ${q(stageId)}, ${q(board)}, ${force ? "true" : "false"}) or nil`,
+    r => { if (cb) cb(r) })
+}
+export function onlineName(name, cb) {
+  engineLua(`earthRally_main and earthRally_main.uiOnlineName(${q(name)}) or nil`, r => { if (cb) cb(r) })
+}
+// typing in a text box: the game's keys off meanwhile (as BeamNG.Earth's add-ons page does)
+export function typing(on) { engineLua(`if setCEFTyping then setCEFTyping(${on ? "true" : "false"}) end`) }

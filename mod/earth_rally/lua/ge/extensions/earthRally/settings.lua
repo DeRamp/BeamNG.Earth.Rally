@@ -22,10 +22,14 @@ M.SCHEMA = {
     desc = 'How much of the world around the car must load before a loading screen lets you drive. Higher: less '
       .. 'scenery popping in, a longer wait.',
     options = { { 40, '40%' }, { 50, '50%' }, { 60, '60%' }, { 70, '70%' }, { 80, '80%' }, { 90, '90%' } } },
+  onlineBoard = { default = false, label = 'Online leaderboard',
+    desc = 'Send your stage times to the public online board (needs the Earth Rally Online add-on running). '
+      .. 'Sent: your board name, the stage, the car, the time and where the car went.',
+    options = { { true, 'On' }, { false, 'Off' } } },
   devPanel = { default = false, label = 'Developer panel',
     desc = "The old Earth Rally window with each run's checks", options = { { true, 'On' }, { false, 'Off' } } },
 }
-M.ORDER = { 'units', 'resetPenalty', 'zoneBrake', 'clockView', 'worldLoaded', 'devPanel' }
+M.ORDER = { 'units', 'resetPenalty', 'zoneBrake', 'clockView', 'worldLoaded', 'onlineBoard', 'devPanel' }
 
 local values = nil
 -- Settings that were here and are not any more. A saved file still carrying one is not a mistake the player
