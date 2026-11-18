@@ -23,10 +23,14 @@ export const LIMITS = {
   RECORD_SHARE: 0.15,           // a time this much ahead of the board's best ...
   RECORD_MIN_TIMES: 10,         // ... on a board with this many times: looked at before it shows
   STAGES_PER_DAY: 20,           // new stages one player can make a day
+  RESET_PENALTY_MS: 10000,      // the mod's reset penalty: on Stock, each reported reset must have been paid for
+  RESETS_SKIPPED_MAX: 10,       // jumps a run's resets may explain; past this they count as jumps
 }
 
 // Notes that do not take a run off the board.
-export const SOFT_FLAGS = new Set(["trace-gap"])
+// "slow" is soft until it has been tuned in game: a long hitch (the world streaming in, a slow computer) also puts
+// the game's clock behind real time, and gives no advantage.
+export const SOFT_FLAGS = new Set(["trace-gap", "slow"])
 
 // Words a name may not be or hold as a word of its own (matched after folding case and look-alike characters, whole
 // words only, so Nazir, Draper and Scunthorpe pass). Short on purpose: reports and the admin calls catch the rest.
@@ -84,12 +88,13 @@ export function cleanStage(s) {
   const rally = cleanText(s.rally, LIMITS.TEXT_MAX)
   if (!name) return { error: "the stage has no name" }
   if (rally === undefined) return { error: "bad rally name" }
-  if (blocked(name) || (rally && blocked(rally))) return { error: "that stage or rally name is not allowed" }
   if (!isLatLon(s.start) || !isLatLon(s.finish)) return { error: "bad start or finish" }
   if (!isNum(s.lengthM) || s.lengthM < LIMITS.STAGE_MIN_M || s.lengthM > LIMITS.STAGE_MAX_M) {
     return { error: "bad stage length" }
   }
-  return { stage: { name, rally, start: [s.start[0], s.start[1]], finish: [s.finish[0], s.finish[1]], lengthM: s.lengthM } }
+  // (an organiser's name that trips the word list -- a place name, as often as not -- is replaced, never refused)
+  return { stage: { name: blocked(name) ? "Unnamed stage" : name, rally: rally && blocked(rally) ? null : rally,
+    start: [s.start[0], s.start[1]], finish: [s.finish[0], s.finish[1]], lengthM: s.lengthM } }
 }
 
 // How far a known stage row is from a described stage, or null when it is not the same stage.
@@ -130,6 +135,9 @@ export function checkRun(run, stage, wallMs) {
   const resets = Array.isArray(run.resets) ? run.resets.filter(isNum).slice(0, 500) : []
   const nearReset = ms => resets.some(r => ms >= r - 500 && ms - r <= LIMITS.RESET_JUMP_MS)
   const flags = new Set()
+  // (Stock pays for its resets: a client reporting resets it did not pay for is held)
+  if (run.board === "stock" && penaltyMs < resets.length * LIMITS.RESET_PENALTY_MS) flags.add("resets")
+  let skipped = 0
   let pathM = 0
   for (let i = 1; i < tr.length; i++) {
     const dt = tr[i][0] - tr[i - 1][0]
@@ -137,7 +145,8 @@ export function checkRun(run, stage, wallMs) {
     const d = metres(tr[i - 1][1], tr[i - 1][2], tr[i][1], tr[i][2])
     if (dt > LIMITS.TRACE_GAP_MS) flags.add("trace-gap")
     if (d > LIMITS.JUMP_M && d / Math.max(dt, 1) * 1000 > LIMITS.MAX_SPEED_MS) {
-      if (nearReset(tr[i][0])) continue        // (a reset puts the car back: not a teleport, and not driven either)
+      // (a reset puts the car back: not a teleport, and not driven either; only so many of them)
+      if (nearReset(tr[i][0]) && ++skipped <= LIMITS.RESETS_SKIPPED_MAX) continue
       flags.add("jump")
     }
     pathM += d

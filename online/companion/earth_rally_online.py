@@ -47,16 +47,26 @@ log = logging.getLogger("earth_rally_online")
 class Board:
     """The server, the player's identity and the queue of runs not sent yet."""
 
-    def __init__(self, server, data_dir, opener=None):
+    def __init__(self, server, data_dir, opener=None, legacy_dir=None):
         self.server = server.rstrip("/")
         self.data = data_dir
         self.lock = threading.RLock()
         self.open = opener or urllib.request.urlopen
         os.makedirs(self.data, exist_ok=True)
         self.player = self._read("player.json", None)
+        if self.player is None and legacy_dir:
+            # (the first prototype kept the player beside this file: brought over once)
+            old = os.path.join(legacy_dir, "player.json")
+            try:
+                with open(old, encoding="utf-8") as f:
+                    self.player = json.load(f)
+                self._write("player.json", self.player)
+            except (OSError, ValueError):
+                pass
         if self.player and self.player.get("server") != self.server:
             self.player = None          # (an identity on another server is not this one's)
         self.queue = self._read("queue.json", [])
+        self.tries = {}
         if not isinstance(self.queue, list):
             self.queue = []
 
@@ -130,7 +140,7 @@ class Board:
                 log.warning("the board does not know this player (%s): forgotten", a.get("error"))
                 self.player = None
                 try:
-                    os.replace(self._path("player.json"), self._path("player.json.old"))
+                    os.replace(self._path("player.json"), self._path("player.json.%d.old" % time.time()))
                 except OSError:
                     pass
             return True
@@ -189,9 +199,16 @@ class Board:
             if not self.player:
                 break
             st, a = self.call("POST", "/v1/runs", run)
-            if st == 0 or st >= 500 or st == 429:
-                break                       # (still unreachable: the rest wait too)
-            if st != 200:
+            if st == 0 or st == 429:
+                break                       # (still unreachable, or too soon: the rest wait too)
+            if st >= 500:
+                # (the server failing on this one run: the others still go; tried MAX_TRIES times, then dropped)
+                key = json.dumps(run, sort_keys=True)[:200]
+                self.tries[key] = self.tries.get(key, 0) + 1
+                if self.tries[key] < self.MAX_TRIES:
+                    continue
+                log.warning("a queued run failed %d times on the server: dropped (%s)", self.MAX_TRIES, a.get("error"))
+            elif st != 200:
                 log.warning("a queued run was refused: %s", a.get("error"))
             with self.lock:
                 if run in self.queue:
@@ -199,6 +216,8 @@ class Board:
                 self._write("queue.json", self.queue)
             done += 1
         return done
+
+    MAX_TRIES = 10
 
     OPS = ("hello", "register", "start", "submit", "board", "report")
 
@@ -272,7 +291,7 @@ def main(argv=None):
     ap.add_argument("--data", default=os.path.join(os.path.expanduser("~"), ".earth_rally_online"))
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    board = Board(a.server, a.data)
+    board = Board(a.server, a.data, legacy_dir=os.path.dirname(os.path.abspath(__file__)))
     srv = serve(board, a.port)
     log.info("Earth Rally online %s on 127.0.0.1:%d, board %s, player %s", VERSION, a.port, board.server or "(none)",
              board.player["name"] if board.player else "(none yet)")

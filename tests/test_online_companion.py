@@ -34,9 +34,8 @@ class Fake:
         self.calls.append(("/" + path, body, req.headers.get("Authorization")))
         if self.down:
             raise urllib.error.URLError("down")
-        st, a = self.answers.get("/" + path, (200, {}))
-        if callable(a):
-            st, a = a(body)
+        ans = self.answers.get("/" + path, (200, {}))
+        st, a = ans(body) if callable(ans) else ans
         if st != 200:
             raise urllib.error.HTTPError(req.full_url, st, "x", {}, io.BytesIO(json.dumps(a).encode()))
         return Resp(io.BytesIO(json.dumps(a).encode()))
@@ -89,6 +88,17 @@ def main():
         f.down = False
         f.answers["/v1/runs"] = (409, {"error": "this run was sent already"})
         check(b.flush_queue() == 1 and not b.queue, "refused by the server: dropped, not kept for ever")
+
+        # one run the server always fails on: the others behind it still go; it is dropped after MAX_TRIES
+        f.down = True
+        b.handle({"op": "submit", "run": {"token": "bad"}})
+        b.handle({"op": "submit", "run": {"token": "good"}})
+        f.down = False
+        f.answers["/v1/runs"] = lambda body: (500, {"error": "server error"}) if body["token"] == "bad" else (200, {})
+        check(b.flush_queue() == 1 and [r["token"] for r in b.queue] == ["bad"], "a failing run does not hold up the rest")
+        for _ in range(c.Board.MAX_TRIES):
+            b.flush_queue()
+        check(not b.queue, "dropped after MAX_TRIES")
 
         # a server whose database was reset: the player forgotten, a new name makes a new one
         f.answers["/v1/runs/start"] = (401, {"error": "unknown player"})

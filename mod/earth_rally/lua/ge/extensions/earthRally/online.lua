@@ -131,7 +131,7 @@ local function onConnected()
   askHello()
   local again = unsent
   unsent = {}
-  for _, x in ipairs(again) do M._submit(x.run, x.key) end
+  for _, x in ipairs(again) do M._submit(x.run, x.key, true) end
 end
 
 local function startConnect()
@@ -331,8 +331,10 @@ end
 
 -- (a run whose token is valid for a day: the companion gone for a moment -- restarted mid-stage -- keeps it here
 -- until it is back)
-function M._submit(run, key)
+function M._submit(run, key, resent)
   M.request('submit', { run = run }, function(r)
+    -- (sent again: the first went through after all, only its answer was lost)
+    if resent and not r.ok and r.status == 409 then r = { ok = true, status = 'ok', error = nil, resentTaken = true } end
     if r.offline and not r.queued and #unsent < 20 then
       unsent[#unsent + 1] = { run = run, key = key }
       r = { ok = false, queued = true, error = r.error }

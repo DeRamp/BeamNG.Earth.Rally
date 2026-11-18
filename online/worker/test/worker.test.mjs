@@ -85,7 +85,10 @@ test("checks on a run", () => {
   assert.ok(!checkRun({ timeMs: 360000, penaltyMs: 0, trace: jumpy, resets: at.map(x => x - 200) }, row, 400000).flags.includes("jump"))
   assert.ok(checkRun({ timeMs: 360000, penaltyMs: 0, trace: jumpy, resets: [at[0] - 200] }, row, 400000).flags.includes("jump"), "a reset covers its own jump only")
   assert.ok(checkRun({ timeMs: 360000, penaltyMs: 0, trace: jumpy, resets: at.map(x => x - 60000) }, row, 400000).flags.includes("jump"))
-  // slow motion
+  // resets on Stock must be paid for
+  assert.ok(checkRun({ timeMs: 360000, penaltyMs: 0, trace: jumpy, resets: at.map(x => x - 200), board: "stock" }, row, 400000).flags.includes("resets"))
+  assert.ok(!checkRun({ timeMs: 380000, penaltyMs: 20000, trace: jumpy, resets: at.map(x => x - 200), board: "stock" }, row, 400000).flags.includes("resets"))
+  // slow motion: noted (soft until tuned in game)
   assert.ok(checkRun({ timeMs: 360000, penaltyMs: 0, trace: trace(STAGE, 360000), slowMs: 60000 }, row, 400000).flags.includes("slow"))
   assert.deepEqual(checkRun({ timeMs: 360000, penaltyMs: 0, trace: trace(STAGE, 360000), slowMs: 2000 }, row, 400000).flags, [])
 })
@@ -132,8 +135,10 @@ test("register, drive, board", async () => {
     // the same ends, another route (3 % longer): a board of its own
     const longer = await t.call("POST", "/v1/boards", { stage: { ...STAGE, lengthM: 10300 }, board: "stock" })
     assert.equal(longer.body.stage, null)
-    // a stage named rudely is refused
-    assert.equal((await t.call("POST", "/v1/runs/start", { stage: { ...other, name: "Shit Road" } }, ann)).status, 400)
+    // a stage named rudely is renamed, not refused
+    const rude = await t.call("POST", "/v1/runs/start", { stage: { ...other, name: "Shit Road" } }, ann)
+    assert.equal(rude.status, 200)
+    assert.equal((await t.call("POST", "/v1/boards", { stage: other, board: "stock" })).body.stage.name, "Unnamed stage")
   } finally { t.done() }
 })
 
@@ -201,6 +206,14 @@ test("cheats", async () => {
     assert.equal((await t.call("POST", "/v1/runs", { ...run, token: s3.body.token }, ann)).status, 500)
     t.env.DB.prepare = real
     assert.equal((await t.call("POST", "/v1/runs", { ...run, token: s3.body.token }, ann)).status, 200)
+    // a failure after the run is stored: the token kept, so a retry cannot store it twice
+    const s4 = await t.call("POST", "/v1/runs/start", { stage: STAGE }, ann)
+    t.tick(400000)
+    t.tick(61000)
+    t.env.DB.prepare = sql => (sql.startsWith("SELECT time_ms FROM best") ? { bind: () => ({ first: async () => { throw new Error("D1 down") } }) } : real(sql))
+    assert.equal((await t.call("POST", "/v1/runs", { ...run, token: s4.body.token }, ann)).status, 500)
+    t.env.DB.prepare = real
+    assert.equal((await t.call("POST", "/v1/runs", { ...run, token: s4.body.token }, ann)).status, 409)
   } finally { t.done() }
 })
 

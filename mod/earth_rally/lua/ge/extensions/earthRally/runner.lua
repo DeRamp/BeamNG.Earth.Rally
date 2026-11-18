@@ -1832,8 +1832,8 @@ function M.sendOnline(time)
   if cv and cv.getCurrentVehicleDetails then okD, d = pcall(cv.getCurrentVehicleDetails) end
   d = okD and d or nil
   local pose = earth.pose()
-  -- (free resets -- the reset penalty off -- are not the Stock board's rules: Open)
-  local board = settings.get('resetPenalty') == false and 'open' or online.boardFor(d)
+  -- (free resets -- the reset penalty off, or a rally's own recovery -- are not the Stock board's rules: Open)
+  local board = (run.inRally or settings.get('resetPenalty') == false) and 'open' or online.boardFor(d)
   online.runFinish(run.online, { timeS = time, penaltyS = run.penalty or 0, driveS = run.clock,
     car = online.carName(d), board = board, lat = pose and pose.lat, lon = pose and pose.lon })
   run.online = nil

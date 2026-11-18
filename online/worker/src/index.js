@@ -86,7 +86,10 @@ async function rateLimit(db, key, max, now, windowMs = 60000) {
   ).bind(key, win).first()
   if (row && row.n > max) fail(429, windowMs > 60000 ? "too many new stages today" : "too many requests: wait a minute")
   // (minute windows cleared now and then; a day's window is a small number, kept apart by its key)
-  if (Math.random() < 0.02) await db.prepare("DELETE FROM hits WHERE win < ? AND win > 100000").bind(Math.floor(now / 60000) - 60).run()
+  if (Math.random() < 0.02) {
+    await db.prepare("DELETE FROM hits WHERE (win > 100000 AND win < ?) OR (win <= 100000 AND win < ?)")
+      .bind(Math.floor(now / 60000) - 60, Math.floor(now / 86400000) - 2).run()
+  }
 }
 
 // The player a call carries. limit: counted against RATE.any (board reads are not: each costs a D1 write).
@@ -245,10 +248,12 @@ async function route(req, env) {
     if (claim.meta && claim.meta.changes === 0) fail(409, "this run was sent already")
     // (a failure of our own from here -- D1 down -- gives the token back, so the companion's retry is taken; a run
     // the checks refuse keeps it used)
+    let inserted = false
     try {
       const stage = await db.prepare("SELECT * FROM stages WHERE id = ?").bind(t.stage_id).first()
       if (!stage) fail(400, "unknown stage")
-      const run = { timeMs: b.timeMs, penaltyMs: b.penaltyMs ?? 0, trace: b.trace, resets: b.resets, slowMs: b.slowMs }
+      const run = { timeMs: b.timeMs, penaltyMs: b.penaltyMs ?? 0, trace: b.trace, resets: b.resets, slowMs: b.slowMs,
+        board: b.board }
       const c = checkRun(run, stage, now - t.issued_at)
       if (c.reject) fail(422, c.reject)
       const flags = [...c.flags]
@@ -264,6 +269,7 @@ async function route(req, env) {
       ).bind(stage.id, b.board, p.id, car, run.timeMs, run.penaltyMs, JSON.stringify(run.trace), ver, now,
         c.wallRatio, status, flags.join(",") || null, JSON.stringify(c.resets || []),
         Number.isFinite(run.slowMs) ? Math.round(run.slowMs) : null).first()
+      inserted = true
       if (status === "ok") await rebest(db, stage.id, b.board, p.id)
       const mine = await db.prepare("SELECT time_ms FROM best WHERE stage_id = ? AND board = ? AND player_id = ?")
         .bind(stage.id, b.board, p.id).first()
@@ -274,7 +280,7 @@ async function route(req, env) {
         of: of ? of.n : 0,
       })
     } catch (e) {
-      if (!(e instanceof HttpError)) {
+      if (!(e instanceof HttpError) && !inserted) {     // (once the run is in, a retry would store it twice)
         await db.prepare("UPDATE tokens SET used = 0 WHERE token = ?").bind(b.token).run().catch(() => {})
       }
       throw e
@@ -288,7 +294,7 @@ async function route(req, env) {
       if (e instanceof HttpError && e.status === 401) return null
       throw e
     }) : null
-    if (!p) await rateLimit(db, "ip:" + ip, RATE.any, now)
+    await rateLimit(db, (p ? "b:" + p.id : "ip:" + ip), RATE.any, now)
     const s = cleanStage(b.stage)
     if (s.error) fail(400, s.error)
     const board = BOARDS.has(b.board) ? b.board : "stock"

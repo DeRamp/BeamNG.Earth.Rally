@@ -110,6 +110,7 @@ const lastNote = computed(() => {
   if (!l) return ""
   if (l.queued) return "Your last run is waiting to send: the board could not be reached."
   if (!l.ok) return `Your last run was not sent: ${l.error || "no answer"}`
+  if (l.resentTaken) return "Your last run was sent."
   if (l.status === "flagged") return `Your last run is held for a look (${arr(l.flags).join(", ")}). It shows once it is cleared.`
   const label = l.board === "open" ? "Open" : "Stock"
   return `Your last run: ${ord(l.pos)} of ${l.of} on ${label}${l.stage && l.stage.name ? ` (${l.stage.name})` : ""}.`
@@ -122,7 +123,8 @@ function refresh(force) {
     o.value = r
     if (naming.value && r.naming && !r.naming.asking) {
       naming.value = false
-      if (r.naming.ok) renaming.value = false
+      // (the box goes once the name is saved: the game's keys back now, not on a blur that may never come)
+      if (r.naming.ok) { renaming.value = false; typing(false) }
     }
   })
 }
@@ -131,7 +133,6 @@ function saveName() {
   const n = nameText.value.trim()
   if (n.length < 2 || naming.value) return
   naming.value = true
-  typing(false)          // (the box goes once the name is saved: the game's keys back now, not on a blur that may never come)
   onlineName(n, () => refresh(false))
 }
 function startRename() { nameText.value = (o.value && o.value.status.player && o.value.status.player.name) || ""; renaming.value = true }

@@ -22,7 +22,7 @@ The game's Lua can only reach this computer, so the companion makes the internet
 
 **Stock or Open:** a run goes on the Stock board when the car's model and its configuration are both the game's own
 (`Source = 'BeamNG - Official'`) and the reset penalty is on. Anything else goes on Open, including a tune saved in the
-garage and free resets. The label names have not been checked on 0.40.5. Parts changed in the parts selector but not
+garage, free resets and passes of a full rally (its recovery is free). The label names have not been checked on 0.40.5. Parts changed in the parts selector but not
 saved probably still read as official.
 
 **One stage:** players' lines count as the same stage when their start and finish are each within 30 m and their
@@ -30,14 +30,18 @@ lengths within 1.5 %. The offline board's own rule is 25 m and 1 %. The first pl
 
 **What the server checks** (`checks.js`):
 - **Refused outright:** an average over 200 km/h, a run shorter than the server's own clock saw, a resent run, someone
-  else's token, a bad trace, or a rude stage or rally name.
+  else's token, or a bad trace.
 - **Held for a look:**
   - a jump that no reported reset explains (a teleport);
   - not starting at the start or finishing at the finish;
   - a trace much shorter than the stage;
   - a trace clock that doesn't match the time;
-  - the game's clock running slow (slow motion) for more than 5 % of the stage;
+  - on Stock, resets reported but not paid for in penalties, or more than ten jumps put down to resets;
   - more than 15 % faster than the board's best, once it has ten times.
+
+  Slow motion (the game's clock behind real time for more than 5 % of the stage) is noted but doesn't hold the run
+  yet: a long hitch looks the same, so the limit needs tuning in game. Rude stage and rally names are stored as
+  "Unnamed stage", not refused.
 
   A held run stays off the board.
 - **Limits:** 20 new stages a day per player.
