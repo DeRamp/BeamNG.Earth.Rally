@@ -24,6 +24,7 @@ end
 -- The two version failures are told apart on purpose. Before 1.3.2 a BeamNG.Earth whose major was not 1 was
 -- called "too old", which for a 2.x would be exactly backwards and would send the player looking for an update
 -- they already have. versions.lua says the same things at startup, before a stage, with what each one costs.
+M.NOT_IN_WORLD = 'Load the BeamNG.Earth level (Freeroam > BeamNG.Earth)'
 function M.check()
   local a = api()
   if not a then return false, 'BeamNG.Earth is not installed (or not loaded)' end
@@ -36,8 +37,16 @@ function M.check()
     return false, string.format('BeamNG.Earth is too old (its modding API is %s.%s; Earth Rally needs 1.%d)',
       tostring(major), tostring(minor), M.MIN_API_MINOR)
   end
-  if not a.inWorld() then return false, 'Load the BeamNG.Earth level (Freeroam > BeamNG.Earth)' end
+  if not a.inWorld() then return false, M.NOT_IN_WORLD end
   return true
+end
+
+-- The BeamNG.Earth level loaded, its world up (false at the main menu, on another map, or with no BeamNG.Earth).
+function M.inWorld()
+  local a = api()
+  if not a then return false end
+  local ok, w = pcall(a.inWorld)
+  return ok and w == true
 end
 
 -- The things below that BeamNG.Earth has no API for, each either there or not: { { id, what, ok, why } ... },

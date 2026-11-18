@@ -46,6 +46,8 @@
         <BngButton :accent="ACCENTS.main" @click="openCard">Time card</BngButton>
       </div>
       <div v-if="st.earthWhy" class="er-warnline">{{ st.earthWhy }}</div>
+      <!-- (opened from the main menu: no world yet, and that is fine -- it loads with the first stage driven) -->
+      <div v-else-if="st.earthNote" class="er-noteline">{{ st.earthNote }}</div>
       <!-- Something changed under the mod since it was built (versions.lua): the game's version, BeamNG.Earth's
            modding API, or one of the internals it has no API for. Empty in the normal case, so nothing shows. -->
       <div v-for="(n, i) in arr(st.versionNotes)" :key="'vn' + i" class="er-warnline">{{ n }}</div>
@@ -901,6 +903,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .er-row { display: flex; gap: 12px; flex-wrap: wrap; }
 .er-banner { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; padding: 12px 18px; border-radius: 0.5rem; background: rgba(31, 143, 255, 0.25); border-left: 4px solid var(--er-blue); font-size: 18px; span { margin-right: auto; } }
 .er-warnline { margin-bottom: 14px; color: #ffd36b; }
+.er-noteline { margin-bottom: 14px; color: var(--er-muted); }
 .er-fb-warn { color: #ffd36b; align-self: center; }
 .er-msg { margin-top: 12px; color: #ffd36b; }
 .er-stat .er-v { font-family: "Overpass Mono", monospace; font-size: 32px; font-weight: 700; }

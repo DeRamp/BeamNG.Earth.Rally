@@ -2126,6 +2126,145 @@ do
   settings.reset()
 end
 
+------------------------------------------------------------------------------------------ from the main menu
+-- The game's Rally page (Play > Rally) has an Earth Rally tile that opens the menu with no level loaded; a button
+-- that needs the world loads BeamNG.Earth first and is pressed again once it is up (gameTile.lua, main.lua
+-- loadWorldThen). The game's level loading is stood in for: freeroam_freeroam, the world flag, the car.
+do
+  local main = require('earthRally/main')
+  local loadScreen = require('earthRally/loadScreen')
+  local rallyRun = require('earthRally/rallyRun')
+  local navs = {}
+  ui_router = { navigate = function(r) navs[#navs + 1] = r end }
+  local inWorld0, gpv = beamngEarth_api.inWorld, getPlayerVehicle
+  local world = false
+  beamngEarth_api.inWorld = function() return world end
+  getPlayerVehicle = function() return nil end      -- (the main menu: no car)
+  local asked = {}
+  freeroam_freeroam = { startFreeroamByName = function(n) asked[#asked + 1] = n return n == 'beamng_earth' end }
+  runner.abort(true)
+  settings.reset()
+  local function tick(n, dt) for _ = 1, (n or 1) do main.onUpdate(dt or 0.5, dt or 0.5) end end
+
+  -- the tile: on the game's gameplay selector, with the type its Rally page filters on
+  local items = {}
+  main.onGameplaySelectorGetTiles(items, { backendName = 'gameplaySelector' })
+  T.check(#items == 1 and items[1].name == 'Earth Rally' and items[1].type == 'bigMap.missionLabels.rallyStage'
+    and items[1].validBackends.gameplaySelector and items[1].showDetails.earthRally, 'the Rally page has an Earth Rally tile')
+  main.onGameplaySelectorGetTiles(items, { backendName = 'freeroamSelector' })
+  T.check(#items == 1, 'and the free roam selector has none')
+  -- its details: one button, which opens the menu (and is what a double click does)
+  local btns = {}
+  local bi = { addButton = function(fn, meta) btns[#btns + 1] = { fn = fn, meta = meta } return meta end }
+  local details = {}
+  main.onGameplaySelectorGetDetails({ missionId = 'x', key = 'mission_x' }, details, bi, {})
+  T.check(#details == 0 and #btns == 0, "another tile's details: left alone")
+  local recent
+  main.onGameplaySelectorGetDetails(items[1].showDetails, details, bi,
+    { trackRecent = function(k) recent = k end, isFavourite = function() return false end })
+  T.check(#details == 1 and #btns == 1 and btns[1].meta.isDoubleClickAction and btns[1].meta.primary
+    and details[1].buttonInfo[1].label == 'Open Earth Rally', 'its details: one button, Open Earth Rally')
+  navs = {}
+  btns[1].fn()
+  T.check(navs[1] == 'earthRally' and recent == 'earthRally', 'the button opens the menu page (and counts as recent)')
+  main.onUiChangedState('earthRally')
+
+  -- no world: a note, not a warning, and a car to start a rally in
+  local st = main.uiState()
+  T.check(st.earthWhy == nil and st.earthNote and st.earthNote:find('loads when you drive', 1, true),
+    'no world at the main menu: said as a note, not a fault (' .. tostring(st.earthWhy) .. ')')
+  local rs = main.uiRallyStart('test8')
+  T.check(rs.car and rs.car.name == 'Your default car', 'the rally start screen: the default car, not "get in a car first"')
+
+  -- Close goes back to the game's Rally page, through its own opener (its filter back on), else its route
+  local opened = 0
+  ui_gameplaySelector_general = { openRallySelector = function() opened = opened + 1 end }
+  navs = {}
+  main.closeMenu()
+  T.check(opened == 1 and #navs == 0, "Close: back to the game's Rally page")
+  ui_gameplaySelector_general = nil
+  main.openFromGame()
+  main.onUiChangedState('earthRally')
+  navs = {}
+  main.closeMenu()
+  T.check(navs[1] == 'menu.rallySelector', 'and by its route when the opener is not there (' .. tostring(navs[1]) .. ')')
+  main.openFromGame()
+  main.onUiChangedState('earthRally')
+
+  -- a button that needs no world works as it is
+  T.check(main.uiAction('rescan').ok and #asked == 0, 'Rescan at the main menu: no level loaded for it')
+  T.check(not main.uiAction('drive', 'test8', 'nope').ok and #asked == 0, 'a stage that is not there: refused, nothing loaded')
+
+  -- Drive: BeamNG.Earth loaded, behind a loading screen with no world bar
+  local a = main.uiAction('drive', 'test8', 'hill')
+  T.check(a.ok and asked[1] == 'beamng_earth' and loadScreen.active() and runner.current() == nil,
+    'Drive with no world: the BeamNG.Earth level asked for, nothing driven yet (' .. tostring(a.message) .. ')')
+  local L = main.uiLoading()
+  T.check(L and L.noWorld and #L.steps == 2 and L.title == 'Loading BeamNG.Earth' and L.kick:find('Drive stage', 1, true),
+    'its loading screen: two steps, no world bar')
+  T.check(not main.uiAction('drive', 'test8', 'hill').ok and #asked == 1, 'a second press: refused, the level asked for once')
+  T.check(main.uiState().earthNote == 'Loading BeamNG.Earth...', 'the page says it is loading')
+  main.onUiChangedState('loading')         -- (the game's own loading screen takes the UI)
+  tick(20)
+  T.check(loadScreen.active() and runner.current() == nil, 'still waiting while there is no world')
+  -- the world up with a car: the page back at once, the stage driven once BeamNG.Earth has been ready a moment
+  world, getPlayerVehicle = true, gpv
+  navs = {}
+  tick(1, 0.1)
+  T.check(navs[1] == 'earthRally' and runner.current() == nil, 'the world up: the page back, the stage not yet asked for')
+  main.onUiChangedState('earthRally')
+  tick(10)
+  T.check(runner.current() ~= nil, 'then the stage is driven, as if Drive were pressed now')
+  T.check(main.uiState().earthNote == nil, 'and the note is gone')
+  runner.abort(true)
+  loadScreen.cancel()
+
+  -- the world never comes up (no launcher): given up on, said why
+  world = false
+  getPlayerVehicle = function() return nil end
+  main.openFromGame()
+  main.onUiChangedState('earthRally')
+  T.check(main.uiAction('goStart', 'test8', 'hill').ok and #asked == 2, 'Go to start: the level asked for again')
+  tick(30, 10)
+  T.check(not loadScreen.active() and runner.current() == nil, 'no world in 4 minutes: the loading screen ends')
+  T.check(main.uiState().message and main.uiState().message:find('Is its launcher running', 1, true),
+    'and says why (' .. tostring(main.uiState().message) .. ')')
+
+  -- already on the BeamNG.Earth level, its world not up yet: waited for, not loaded again
+  getMissionFilename = function() return 'levels/beamng_earth/main.level.json' end
+  T.check(main.uiAction('recce', 'test8', 'hill').ok and #asked == 2, 'on BeamNG.Earth already: not loaded a second time')
+  loadScreen.cancel()
+  main._worldWaitClear()
+  getMissionFilename = nil
+
+  -- BeamNG.Earth's map not installed: said at once, no loading screen
+  freeroam_freeroam.startFreeroamByName = function() return false end
+  local r = main.uiAction('drive', 'test8', 'hill')
+  T.check(not r.ok and r.message:find('not installed', 1, true) and not loadScreen.active(),
+    'no BeamNG.Earth map: refused at once (' .. tostring(r.message) .. ')')
+
+  -- a full rally's Start: loaded first, then started in the car the game spawned
+  freeroam_freeroam.startFreeroamByName = function(n) asked[#asked + 1] = n return true end
+  local rr = main.uiRallyAction('start', 'test8', { mode = 'casual', class = 'L4WD' })
+  T.check(rr.ok and #asked == 3 and loadScreen.active() and not rallyRun.active(),
+    'Start rally with no world: the level asked for first, no rally yet')
+  T.check(main.uiLoading().thenView == 'timecard', 'and the page goes on to the time card')
+  world, getPlayerVehicle = true, gpv
+  tick(10)
+  -- (test8 has no event file: rallyRun's own refusal coming back proves Start was pressed again, now with a world)
+  T.check(not loadScreen.active() and (main.uiState().message or ''):find('no event file', 1, true),
+    'the world up: Start pressed again, and its own answer said (' .. tostring(main.uiState().message) .. ')')
+  pcall(main.uiRallyAction, 'abandon', 'test8')
+  loadScreen.cancel()
+  runner.abort(true)
+
+  beamngEarth_api.inWorld, getPlayerVehicle = inWorld0, gpv
+  freeroam_freeroam = nil
+  main.closeMenu()
+  main.onUiChangedState('play')          -- (the page down: the HUD shown again for the tests below)
+  settings.reset()
+end
+
 ------------------------------------------------------------------------------------------ the strips given back
 -- A run takes BeamNG.Earth's status bar and banner off screen (earthAdapter.holdStrips, through BeamNG.Earth's own
 -- mount call), and BeamNG.Earth leaves its imgui drawing of a strip out while it believes an app has it. Nothing else

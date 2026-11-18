@@ -20,7 +20,7 @@
           <h2>{{ s.name }}</h2>
           <div class="er-muted">{{ s.stages }} stages · {{ s.days }} {{ s.days === 1 ? "day" : "days" }} · {{ s.services }} {{ s.services === 1 ? "service" : "services" }}<template v-if="s.crews"> · real field: {{ s.crews }} National crews</template></div>
           <div class="er-lbl">Car</div>
-          <div class="er-box"><span>{{ s.car ? s.car.name : "Get in a car first" }}</span><span v-if="s.car && s.car.drivetrain" class="er-muted">{{ s.car.drivetrain }}</span></div>
+          <div class="er-box"><span>{{ s.car ? s.car.name : "Get in a car first" }}</span><span v-if="s.car && s.car.drivetrain" class="er-muted">{{ s.car.drivetrain }}</span><span v-else-if="s.car && s.car.note" class="er-muted">{{ s.car.note }}</span></div>
           <div class="er-lbl">Class</div>
           <div class="er-seg er-wrap">
             <span v-for="c in arr(s.classes)" :key="c" tabindex="0" bng-nav-item :class="{ on: cls === c }" @click="cls = c" @keydown.enter="cls = c">{{ c }}</span>
