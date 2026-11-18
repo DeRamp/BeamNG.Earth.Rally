@@ -136,6 +136,8 @@ export function openMenu(view, eventId) {
 // Where the menu page was left: { view, sel, rallyTab }, kept here because the page itself is unmounted when the
 // menu closes (this module lives as long as the UI does; a UI reload starts on Rallies again).
 export const lastPlace = { at: null }
+// Where the rally start screen was opened from, kept across the game's vehicle picker (the page is unmounted under it)
+export const keep = { startFrom: null }
 export function closeMenu() { engineLua("if earthRally_main then earthRally_main.closeMenu() end") }
 
 // The poll while a page or card is open (a count: started / stopped by each)

@@ -2286,9 +2286,16 @@ do
   T.check(main.uiPickCar('test8', 'start').ok and pickerRoute == 'menu.vehiclesnew', "the game's vehicle picker opened")
   navs = {}
   pickerCb('sunburst', 'rally_a', {})
-  pickerCb()                                -- (its exit callback after it: nothing more)
+  main.onVehicleSelectorClosed()            -- (the picker's unmount after it: nothing more)
   T.check(#navs == 1 and navs[1] == 'earthRally' and main.uiOpenAt().view == 'rallyStart', 'picked: back on the start screen')
   T.check(main.uiRallyStart('test8').car.name == 'sunburst', 'with the picked car on it')
+  main.onUiChangedState('earthRally')
+  -- Back in the picker (the game takes it to its main menu, and only says the picker closed): the menu put back
+  T.check(main.uiPickCar('test8', 'start').ok, 'the picker again')
+  navs = {}
+  main.onVehicleSelectorClosed()
+  T.check(navs[1] == 'earthRally' and main.uiOpenAt().view == 'rallyStart'
+    and main.uiRallyStart('test8').car.name == 'sunburst', 'Back in the picker: the start screen again, the car as it was')
   main.onUiChangedState('earthRally')
   ui_vehicleSelector_general = nil
   local rr = main.uiRallyAction('start', 'test8', { mode = 'casual', class = 'L4WD' })

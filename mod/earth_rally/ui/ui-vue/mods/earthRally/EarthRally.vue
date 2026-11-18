@@ -374,7 +374,7 @@ import EarthRallyFull from "./EarthRallyFull.vue"
 import EarthRallyLoading from "./EarthRallyLoading.vue"
 import {
   state, season, rally, stage, busyMsg, action as luaAction, refreshState, takeOpenAt, loadSeason, loadRally, loadStage,
-  closeMenu, pickCar, lastPlace, loadRallyStart, loadRallyCard, rallyAction, loadDrive, pointTo,
+  closeMenu, pickCar, keep, lastPlace, loadRallyStart, loadRallyCard, rallyAction, loadDrive, pointTo,
   arr, mmss, units, len, lenNum, riseNum, riseUnit, time, longTime, when, ord, days, ssName, STATUS, AUTO_OUTCOME, RUN_WORDS,
 } from "./store.js"
 
@@ -772,6 +772,7 @@ function openResults(id, from) {
 const startFrom = ref(null)
 function openStart(id, from) {
   startFrom.value = from || null
+  keep.startFrom = startFrom.value
   if (from === "pick") pickSel.value = id
   sel.value = { ...sel.value, eventId: id }
   loadRallyStart(id)
@@ -857,7 +858,7 @@ onMounted(() => {
     if (at && at.view === "timecard") openCard()
     else if (at && at.view === "stage" && at.eventId && at.stageId) openStage(at.eventId, at.stageId)
     else if (at && at.view === "rally" && at.eventId) openRally(at.eventId)
-    else if (at && at.view === "rallyStart" && at.eventId) openStart(at.eventId, startFrom.value)
+    else if (at && at.view === "rallyStart" && at.eventId) openStart(at.eventId, keep.startFrom)
     else if (at && at.view === "season" && at.eventId) openSeason(at.eventId)
     else if (at && at.view === "settings") go("settings")
     else if (at && at.view === "rallies") go("rallies")

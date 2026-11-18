@@ -579,7 +579,8 @@ end
 -- your last car is used, and BeamNG.Earth loads with it (docs/mockups-1.7.3+mainmenu/car.html). A saved rally always
 -- continues in its own car.
 M.LAST_CAR_FILE = '/earthRally/lastCar.json'
-local pickedCar = nil      -- { name, drivetrain, model, config }: picked this session for a new rally
+local pickedCar = nil      -- { name, drivetrain, model, config, paints }: picked for a new rally (until a car is driven)
+local pickPending = nil    -- the picker's way back, while it is open (onVehicleSelectorClosed: Back)
 
 -- A car by model and setup: its name and drivetrain from the game's vehicle data.
 local function carFrom(model, config)
@@ -623,6 +624,7 @@ end
 local function rememberCar()
   local ok, c = pcall(rallyRun.car)
   if not (ok and type(c) == 'table' and type(c.model) == 'string') then return end
+  pickedCar = nil          -- (driven now: the car driven is the last car from here on, not an older pick)
   pcall(jsonWriteFile, M.LAST_CAR_FILE, { name = c.name, drivetrain = c.drivetrain, model = c.model, config = c.config }, true)
 end
 M._rememberCar = rememberCar
@@ -640,6 +642,7 @@ function M.uiPickCar(eventId, purpose)
   local function back(model, config, extra)
     if done then return end
     done = true
+    pickPending = nil
     if type(model) == 'string' then
       local car = carFrom(model, config)
       local vs2 = rawget(_G, 'ui_vehicleSelector_general')
@@ -655,6 +658,7 @@ function M.uiPickCar(eventId, purpose)
     end
     M.openMenu(purpose == 'resume' and 'rally' or 'rallyStart', eventId)
   end
+  pickPending = back
   local ok, err = pcall(vs.openVehicleSelectorForChallenge, back, 'menu.vehiclesnew')
   if not ok then
     log('E', logTag, 'vehicle picker: ' .. tostring(err))
@@ -662,6 +666,13 @@ function M.uiPickCar(eventId, purpose)
   end
   menuOpen = false
   return { ok = true }
+end
+-- The game's vehicle picker closed (its unmount, every time). After Select Vehicle nothing is pending; after Back --
+-- which the game sends to its main menu, never calling the picker's exit callback -- the menu is put back.
+function M.onVehicleSelectorClosed()
+  local f = pickPending
+  pickPending = nil
+  if f then pcall(f) end
 end
 
 ------------------------------------------------------------------------------------------ from the main menu

@@ -204,13 +204,14 @@ function M.sameCar(saved, car)
   if saved.model and car.model then
     return saved.model == car.model and (saved.config == nil or car.config == nil or saved.config == car.config)
   end
-  return saved.name == nil or saved.name == car.name
+  return saved.name == nil or saved.name == 'your car' or saved.name == car.name
 end
 
 function M.setSavedCar(id, car)
   local t = M.readFile(id)
   if not t.current then return false, 'there is no rally saved for this one' end
   local want = type(t.current.car) == 'table' and t.current.car.name or nil
+  if want == 'your car' then want = nil end   -- (M.car's name when the game gave none: any car will do)
   -- (an older save named only the model -- the player's own default car, or parts changed in game -- takes any
   --  setup of that model: its name is where the picked car's starts)
   local fits = want == nil or car.name == want or (type(car.name) == 'string' and car.name:sub(1, #want + 1) == want .. ' ')
