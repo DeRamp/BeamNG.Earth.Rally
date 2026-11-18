@@ -78,18 +78,34 @@ local function orderOf(event, cancelled)
   local out = {}
   local function lastIsStop() return out[#out] and out[#out].kind ~= 'stage' end
   local carry = 0       -- (a pass left out: its lateness and road section added to the next one's)
+  -- (a pass left out that a scheduled out time stood before -- a service's, the rally's start: that out time goes on
+  -- to the next pass kept, as holdOut does, else the clock reset is lost and lateness runs on past the service, or
+  -- the opening road section is untimed)
+  local carryOut = nil  -- { t, min }
   for i, p in ipairs(event.itinerary or {}) do
+    local outT = wt.parse(p.outDate, p.outAt)
+    local lat = tonumber(p.latenessMin)
     if not (p.cancelled == true and cancelled ~= 'all') then
       local it = { kind = 'stage', ss = tostring(p.ss), stageId = p.stage, run = p.run, km = p.km, day = p.day,
         cancelledReal = p.cancelled == true or nil }
       -- (the schedule: timed road sections)
-      it.date, it.firstCar, it.latenessMin = p.date, p.firstCar, tonumber(p.latenessMin)
+      it.date, it.firstCar, it.latenessMin = p.date, p.firstCar, lat
       it.targetMin = tonumber(p.targetMin) and (tonumber(p.targetMin) + carry) or nil
-      it.outTargetMin, it.outT = tonumber(p.outTargetMin), wt.parse(p.outDate, p.outAt)
-      carry = 0
+      it.outTargetMin, it.outT = tonumber(p.outTargetMin), outT
+      if not it.outT and carryOut then
+        it.outT = carryOut.t
+        it.outTargetMin = carryOut.min and tonumber(p.targetMin) and (carryOut.min + tonumber(p.targetMin)) or nil
+      end
+      carry, carryOut = 0, nil
       out[#out + 1] = it
     else
-      carry = carry + (tonumber(p.targetMin) or 0) + (tonumber(p.latenessMin) or 0)
+      carry = carry + (tonumber(p.targetMin) or 0) + (lat or 0)
+      if outT then
+        carryOut = { t = outT, min = tonumber(p.outTargetMin) and (tonumber(p.outTargetMin) + (lat or 0)) or nil }
+      elseif carryOut then
+        carryOut.min = carryOut.min and tonumber(p.targetMin) and (carryOut.min + tonumber(p.targetMin) + (lat or 0))
+          or nil
+      end
     end
     for _, s in ipairs(stopsAfter[i] or {}) do
       local kind = s.kind == 'overnight' and 'overnight' or 'service'
@@ -299,6 +315,8 @@ function M.holdOut(r, stageId, why)
     if a.kind ~= 'stage' and b.kind ~= 'stage' then
       -- (#48: the overnight is at the service park: the service's place kept)
       if b.kind == 'overnight' and a.kind == 'service' then a.kind, a.label, a.place = 'overnight', 'Overnight', a.place or b.place end
+      -- (the later stop's out time is the one the stage after them starts from: serviceOut and dueFor agree)
+      a.outT = b.outT or a.outT
       table.remove(r.order, i)
     else
       i = i + 1
@@ -573,8 +591,8 @@ function M.standing(r, board)
     end
   end
   if n == 0 then return nil end
-  -- (your total over the same passes: the ones with a field)
-  local mine = 0
+  -- (your total over the same passes: the ones with a field, and your road penalties, as "Your total" counts them)
+  local mine = M.roadPenaltyS(r)
   for _, d in ipairs(done) do
     local rows = M.field(board, d.item.ss, true)
     if rows and #rows > 0 then mine = mine + (d.result.timeS or 0) end
@@ -628,7 +646,8 @@ end
 -- { pos, of, classPos, classOf } or nil.
 function M.finishedStanding(f, board)
   if type(f) ~= 'table' or f.unclassified then return nil end
-  local r = { class = f.class, order = {}, results = {} }
+  local r = { class = f.class, order = {}, results = {},
+    road = tonumber(f.roadPenaltyS) and { all = { penaltyS = tonumber(f.roadPenaltyS) } } or nil }
   for _, p in ipairs(f.passes or {}) do
     r.order[#r.order + 1] = { kind = 'stage', ss = p.ss }
     r.results[p.ss] = { timeS = p.timeS }

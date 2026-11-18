@@ -475,12 +475,17 @@ local function itineraryOf(evFile, stages, lineId, warn)
     -- (the stretch since the last pass: targets added up in all, and since its last out row)
     local acc, accOut, hasT, reset, first, copy, timed = 0, 0, false, nil, nil, false, false
     local function str0(v) return type(v) == 'string' and v ~= '' and v or nil end
-    -- (a row for other classes only -- a regional crew's own MTC IN beside the National regroup -- is not on our road)
+    -- (a row for other classes only -- a regional crew's own MTC IN beside the National regroup -- is not on our road.
+    -- 'National', 'ARC National', 'national 2WD': any entry naming National keeps it)
     local function forUs(row)
       if type(row.classes) ~= 'table' or #row.classes == 0 then return true end
       for _, c in ipairs(row.classes) do
-        if type(c) == 'string' and c:lower() == 'national' then return true end
+        if type(c) == 'string' and c:lower():find('national', 1, true) then return true end
       end
+      local names = {}
+      for _, c in ipairs(row.classes) do names[#names + 1] = tostring(c) end
+      warn(string.format('itinerary %s %s: for %s only, not on the National road: left out', str(row.control),
+        str(row.type), table.concat(names, ', ')))
       return false
     end
     for _, row in ipairs(evFile.itinerary) do
@@ -507,8 +512,10 @@ local function itineraryOf(evFile, stages, lineId, warn)
         elseif new then
           warn(string.format('itinerary %s "%s": no line of that name in the map', tostring(row.control),
             str(row.stage)))
-          -- (its time carried to the next pass's road section: the chain goes on through it)
+          -- (its time carried to the next pass's road section: the chain goes on through it, from the last out row too)
           acc = acc + (lat or 0)
+          if reset and lat then reset.acc = (reset.acc or 0) + lat end
+          if first and lat and first ~= reset then first.acc = (first.acc or 0) + lat end
           copy = false
         else
           copy = true

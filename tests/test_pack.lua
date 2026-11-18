@@ -845,4 +845,33 @@ else
   T.check(#placesMissing == 0, 'ARA: every start, service and overnight has its place on the map')
 end
 
+------------------------------------------------------------------------------------------ the schedule (review fixes)
+do
+  local warns = {}
+  local function w(m) warns[#warns + 1] = m end
+  local ev = { event = { timezone = 'Australia/Perth' }, itinerary = {
+    { control = 'SVC A OUT', type = 'SVC_OUT', date = '2030-03-01', first_car = '10:00' },
+    { control = 'TC1', type = 'TC', target_min = 10 },
+    { control = 'SS1', type = 'SS', stage = 'Ghost Road', run = 1, lateness_min = 5, day = 1 },
+    -- (a regional crew's own control: not ours; and one naming National among others: ours)
+    { control = 'TC1R', type = 'TC', target_min = 99, classes = { 'Regional' } },
+    { control = 'TC2', type = 'TC', target_min = 20, classes = { 'ARC National 2WD', 'Regional' } },
+    { control = 'SS2', type = 'SS', stage = 'Fernvale South', run = 1, lateness_min = 6, day = 1 },
+  } }
+  local out = pack._itineraryOf(ev, {}, { ['Fernvale South'] = 'fern_s' }, w)
+  T.check(#out == 1 and out[1].ss == 'SS2', 'schedule: the pass with a line kept')
+  -- (E) SS1 has no line: its lateness goes on to SS2's road section, from the service's out time too
+  T.check(out[1].targetMin == 35, 'schedule: no-line pass lateness in targetMin (' .. tostring(out[1].targetMin) .. ')')
+  T.check(out[1].outTargetMin == 35, 'schedule: no-line pass lateness in outTargetMin ('
+    .. tostring(out[1].outTargetMin) .. ')')
+  T.check(out[1].outAt == '10:00', 'schedule: the service out time carried')
+  -- (S) the class filter: substring, any case; a warning for the dropped row only
+  local dropped = 0
+  for _, m in ipairs(warns) do if m:find('TC1R', 1, true) then dropped = dropped + 1 end end
+  T.check(dropped == 1, 'class filter: one warning for the regional-only row')
+  local kept = true
+  for _, m in ipairs(warns) do if m:find('TC2', 1, true) then kept = false end end
+  T.check(kept, "class filter: 'ARC National 2WD' kept, no warning")
+end
+
 T.done('test_pack')

@@ -586,4 +586,71 @@ do
   T.check(rally.current(r3).kind == 'service', 'on to the service')
 end
 
+------------------------------------------------------------------------------------------ review fixes (rally-loop)
+do
+  -- (C) a cancelled first stage: the next one is timed from the rally's start (08:00 + 20 + SS1's 10 + 15 = 08:45)
+  local it, stops, start, timing = pack._itineraryOf(timedEvent(), {}, { A = 'a', B = 'b' }, function() end)
+  it[1].cancelled = true
+  local r = rally.new({ id = 'tm', name = 'Timed Rally', itinerary = it, rallyStops = stops, rallyStart = start,
+    timing = timing }, { cancelled = 'real' })
+  T.check(r.order[2].ss == 'SS2', 'cancelled SS1 left out')
+  rally.serviced(r)
+  rally.serviceOut(r)
+  T.check(wt.hm(rally.dueFor(r, r.pos) or 0) == '08:45', 'cancelled first stage: the opening section still timed: '
+    .. tostring(rally.dueFor(r, r.pos) and wt.hm(rally.dueFor(r, r.pos))))
+  -- (C) a cancelled pass after a service: the next pass starts from the service's out time (09:40 + 18 + SS3's 10
+  -- + 30 = 10:38), not from the stage before the service. The overnight taken away so SS4 follows straight on.
+  it, stops, start, timing = pack._itineraryOf(timedEvent(), {}, { A = 'a', B = 'b' }, function() end)
+  it[3].cancelled = true
+  it[4].outDate, it[4].outAt, it[4].outTargetMin = nil, nil, nil
+  local kept = {}
+  for _, s in ipairs(stops) do if s.after ~= 3 then kept[#kept + 1] = s end end
+  r = rally.new({ id = 'tm', name = 'Timed Rally', itinerary = it, rallyStops = kept, rallyStart = start,
+    timing = timing }, { cancelled = 'real' })
+  rally.serviced(r)
+  rally.serviceOut(r)
+  rally.stageDone(r, { timeS = 1, outT = wt.parse('2031-02-07', '08:35') })
+  rally.stageDone(r, { timeS = 1, outT = wt.parse('2031-02-07', '09:30') })
+  T.check(rally.current(r).kind == 'service' and wt.hm(rally.current(r).outT or 0) == '09:40',
+    'cancelled pass after the service: the service keeps its out time')
+  rally.serviced(r)
+  rally.serviceOut(r)
+  T.check(rally.current(r).ss == 'SS4' and wt.hm(rally.dueFor(r, r.pos) or 0) == '10:38',
+    'cancelled pass after the service: due from the service\'s out time: '
+    .. tostring(rally.dueFor(r, r.pos) and wt.hm(rally.dueFor(r, r.pos))))
+end
+
+do
+  -- (D) a stage held out between Service A and the overnight: the two stops merge, out at the overnight's time
+  local r = timedRally({ mode = 'realistic' })
+  rally.serviced(r)
+  rally.serviceOut(r)
+  rally.stageDone(r, { timeS = 1, outT = wt.parse('2031-02-07', '08:35') })
+  rally.stageDone(r, { timeS = 1, outT = wt.parse('2031-02-07', '09:00') })
+  rally.holdOut(r, 'a', 'test')
+  local stop = rally.current(r)
+  T.check(stop.kind == 'overnight' and r.order[r.pos + 1].ss == 'SS4', 'the stops merged: an overnight, then SS4')
+  T.check(wt.dateText(stop.outT) == 'Sat 8 Feb' and wt.hm(stop.outT) == '07:00', 'the merged stop: the later out time')
+  rally.serviced(r)
+  rally.serviceOut(r)
+  T.check(wt.hm(r.clock.t) == '07:00' and wt.hm(rally.dueFor(r, r.pos) or 0) == '07:10',
+    'out of the merged stop and due at TC4 agree')
+end
+
+do
+  -- (J) the overall place counts the road penalties, as "Your total" does
+  local r = newR(event(), { class = 'L4WD' })
+  rally.stageDone(r, { timeS = 715 })
+  local ov = rally.standing(r, board)
+  T.check(ov.pos == 2, 'overall: 715 is 2nd')
+  r.road = { SS1 = { penaltyS = 30 } }
+  ov = rally.standing(r, board)
+  T.check(ov.pos == 3 and math.abs(ov.gapS - 45) < 1e-6 and math.abs(ov.totalS - rally.totalS(r)) < 1e-6,
+    'overall with 30 s of road penalties: 745 is 3rd, 45 s off, the same total')
+  r.timed = true
+  local f = rally.finished(r, 'x')
+  local fs = rally.finishedStanding(f, board)
+  T.check(fs and fs.pos == 3, 'a finished rally placed with its road penalties too')
+end
+
 T.done('test_rally')
