@@ -12,8 +12,9 @@ Branch `fix/recce-speed`, from `main` at 1.7.1, merged with 1.7.2. Build: `1.7.2
   - Not sooner: BeamNG.Earth downloads one area at a time, in the order added, so an area added ahead would hold
     the current stage up. And neighbouring stages share ground: priced before the current download is done, the
     next stage would count that ground as missing and get a second area over it.
-  - The gain is at most each stage's teleport, settle and windows (about 60 s cold). The downloads themselves still
-    run end to end.
+  - The gain is at most each stage's teleport, settle and windows (about 60 s cold), and it is not measured yet:
+    the next download now runs beside the windows on BeamNG.Earth's one thread, which may slow them. The downloads
+    themselves still run end to end. Compare the timing lines on the Warden rally before keeping it.
   - Stage 1 goes the 1.7.0 way: priced, the question answered yes for the player.
   - At its turn a looked-ahead stage follows its own download, with no new estimate.
   - A look-ahead estimate that failed or timed out is not "nothing missing": the stage is priced again at its turn.
@@ -23,14 +24,16 @@ Branch `fix/recce-speed`, from `main` at 1.7.1, merged with 1.7.2. Build: `1.7.2
   - A looked-ahead area missing from BeamNG.Earth's list, added more than `AREA_GONE_S` ago, counts as deleted.
   - A stage with an area in `settings/earthRally_areas.json` uses it: no duplicates.
   - **Stop** names the look-ahead's download when one was added and is still going, or its add is unanswered:
-    "Auto recce stopped. Map downloads already started carry on in BeamNG.Earth's Areas, Stage Two's too."
+    "Auto recce stopped. Stage Two's map download carries on in BeamNG.Earth's Areas." (The current stage is past
+    its own download by then.)
   - The single-stage button is unchanged: priced and asked every press.
 - **A window that times out is asked again after 15 s** (item 3), twice. BeamNG.Earth keeps building the timed-out
   window on its one thread, so a quick re-ask only queues behind it. Exceptions (any bare class name, such as
   `IncompleteRead`) and answers that could not be read are retried after 2 s. If it still fails, the stage ends red: "BeamNG.Earth did not answer for this part of the
   stage (timed out), so try the auto recce again". It no longer says "no map data".
   - Errors that asking again cannot change end at once with their own reason: BeamNG.Earth's roads off, started
-    without roads, no world yet, bad coordinates (the strings in the fork's `server/earthd.py` road_graph handler).
+    without roads, no world yet, bad coordinates (the strings in the fork's `server/earthd.py` road_graph handler),
+    and `NotOnDisk` (data not in the cache: "no map data").
   - A window with map cells missing is not retried and still says "no map data".
 - **The car is put on the road after the match** (item 4). When the landing found no road at the ATC, the car is
   set down from the matched file's ATC. With the road map in by now: 40 m before the board on the road, facing it.

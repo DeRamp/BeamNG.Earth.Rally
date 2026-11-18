@@ -5,7 +5,8 @@ Status: **Part A items 1, 3, 4, 6, 7 built** (`docs/notes-1.7.3.md`). Item 5 shi
 narrowed to one stage looked ahead, item 4 to the matched road point, item 3 to timeouts and exceptions (2026-11-17).
 Item 1 as built: the next stage is priced and added only once the current one has left its download, because
 BeamNG.Earth downloads one area at a time in the order added, and neighbouring stages share ground. So it saves at
-most each stage's teleport, settle and windows (about 60 s cold); the downloads themselves still run end to end.
+most each stage's teleport, settle and windows (about 60 s cold, not measured yet); the downloads themselves still
+run end to end.
 
 ## Where the time goes (measured, 2026-11-16 logs)
 

@@ -1028,6 +1028,8 @@ doAction = function(what, eventId, stageId, fromPanel, queued)
     -- the sequence goes with it: a teleport already happened and a download already added carries on in the
     -- background (it is the player's area now), but nothing further is asked for and nothing is written
     local hadSeq = autoSeq ~= nil
+    -- (1.7.3) the stage under way still downloading its own area: with the look-ahead's, two downloads go on
+    local ownDl = autoSeq ~= nil and autoSeq.phase == M.DOWNLOADING
     autoSeq = nil
     -- (autoRecce.cancel does not call the done callback -- a stop is not an ending, and leaves no line behind)
     local stopped = autoRecce.cancel() or hadSeq
@@ -1051,7 +1053,9 @@ doAction = function(what, eventId, stageId, fromPanel, queued)
         or (held or 0) > 0 and string.format('Auto recce stopped. %d %s with no line held out of the rally.', held,
           held == 1 and 'stage' or 'stages')
         or 'Auto recce stopped.'
-      if hadSeq and ahead then
+      -- (the look-ahead starts only once the stage under way is past its download, so with it named the plural
+      --  is for the case where that stage is following an area of its own still coming down)
+      if ownDl and ahead then
         msg = msg .. string.format(" Map downloads already started carry on in BeamNG.Earth's Areas, %s's too.", ahead)
       elseif ahead then
         msg = msg .. string.format(" %s's map download carries on in BeamNG.Earth's Areas.", ahead)

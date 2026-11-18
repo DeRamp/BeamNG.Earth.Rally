@@ -92,6 +92,8 @@ local WINDOW_ERRORS = {
   { "without roads", "BeamNG.Earth was started without roads, so it has no road graph: start it with its roads on" },
   { "no world yet", "BeamNG.Earth has no world loaded yet: wait until it is, then run the auto recce again" },
   { "bad coordinates", "BeamNG.Earth could not read a point of this stage (bad coordinates)" },
+  -- (the fork's dem / gradesep exception for data not in the cache: asking again cannot fetch it)
+  { "NotOnDisk", "part of this stage has no map data on this computer (NotOnDisk)" },
 }
 function M.windowErrorWhy(what)
   what = tostring(what or '')

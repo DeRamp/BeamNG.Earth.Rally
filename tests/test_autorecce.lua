@@ -829,6 +829,8 @@ do
     'any bare exception class name, one CamelCase word, is asked again')
   T.check(auto.windowErrorWhy('Broken pool') ~= nil and auto.windowErrorWhy('Nothing') ~= nil,
     'but not words with a space, nor a plain capitalised word')
+  T.check(auto.windowErrorWhy('NotOnDisk') ~= nil and auto.windowErrorWhy('NotOnDisk'):find('no map data', 1, true),
+    'NotOnDisk (data not in the cache) is not asked again: it says no map data')
   T.check(auto.windowErrorWhy('something new') ~= nil, 'an error not known is said as it came, not asked again')
 
   -- cancelled while waiting to ask again: nothing is asked

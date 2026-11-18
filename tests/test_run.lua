@@ -3118,14 +3118,30 @@ do
   main.QUEUE_WAIT_S = hadWait
   done()
 
+  -- ------------------------------------------------------------ the rally gone while a stage waits on its look-ahead
+  go({ S[1], S[2], S[3] }, true)
+  settle()
+  T.check(prep.i == 2 and main._rallyQueue() and main._rallyQueue().next ~= nil,
+    'stage 2\'s turn, waiting on its look-ahead estimate')
+  local hadActive = rallyRun.active
+  rallyRun.active = function() return nil end
+  plans[2](none)                     -- (its look-ahead settles: the stage would start now, but the rally is gone)
+  local okGone, errGone = pcall(tick, 2)
+  rallyRun.active = hadActive
+  T.check(okGone and prepDone == 1 and main._rallyQueue() == nil and phase() == nil
+    and logged("attempt to index local 'rr'") == 0,
+    'no rally any more: the prep ends, nothing started, no error (' .. tostring(errGone) .. ')')
+  done()
+
   -- ------------------------------------------------------------ Stop mid-prep with a look-ahead in flight
   go({ S[1], S[2], S[3] }, true)
   plans[2](need)
   addQ[#addQ]()
   local aheadId = 'q' .. nAdds
   local stop = main.uiAction('autoRecceStop')
+  -- (stage 1 is past its own download by now, so only stage 2's is named: one download, singular)
   T.check(stop.ok and tostring(stop.message):find(
-    "Map downloads already started carry on in BeamNG.Earth's Areas, Stage Two's too.", 1, true),
+    "Auto recce stopped. Stage Two's map download carries on in BeamNG.Earth's Areas.", 1, true),
     'Stop: the look-ahead\'s download is named as still going (' .. tostring(stop.message) .. ')')
   T.check(prepDone == 1 and main._rallyQueue() == nil and phase() == nil, 'and the prep and its look-ahead end')
   status[aheadId] = nil
@@ -3141,7 +3157,7 @@ do
   plans[2](need)
   local lateStop, addsS = addQ[#addQ], nAdds
   stop = main.uiAction('autoRecceStop')
-  T.check(tostring(stop.message):find("Stage Two's too.", 1, true),
+  T.check(tostring(stop.message):find("Stage Two's map download carries on", 1, true),
     'Stop with the look-ahead\'s add unanswered: it is named (' .. tostring(stop.message) .. ')')
   lateStop()
   T.check(nAdds == addsS and files[main.AREA_BOOK_FILE].areas['rq|s2'] ~= nil and phase() == nil,
