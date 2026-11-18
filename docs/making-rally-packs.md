@@ -4,9 +4,18 @@ How to make files Earth Rally can import: a single stage, a whole rally, or a se
 real results, rules and pictures. This guide is for organisers, modders and anyone sharing stages. The full
 format, with every edge case, is in [`rally-file.md`](rally-file.md).
 
-Everything goes in the import folder: **Open folder** on the menu's Rallies page, or
+Everything goes in the import folder: **Open folder** on the menu's **Drive stage** page, or
 `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\earthRally\import\`. The mod imports new and changed files when it
 loads and whenever the folder changes. **Re-scan** imports everything again.
+
+The examples below are fictional and illustrative: each shows one file, and together they don't make a working
+pack.
+
+**Not yet in the alpha:**
+
+* Packs in a `.zip` are untested in game. Use a folder until they are.
+* Pictures may not show in the menu yet; a drawn plate stands in.
+* Rules are shown on the **Rules** tab, not applied. The false start is a fixed 10 s.
 
 ## Contents
 
@@ -29,7 +38,7 @@ loads and whenever the folder changes. **Re-scan** imports everything again.
 |---|---|
 | A `.kml`, `.kmz` or `.gpx` map | One rally. Each line in it is a stage, run once each in map order. |
 | A **stage pack**: a folder or `.zip` with `stage.json` | One stage, with its own name, picture and results. |
-| A **rally pack**: a folder or `.zip` with `rally.json` | One rally with an itinerary, real results, rules and pictures. **Drive rally** needs one. |
+| A **rally pack**: a folder or `.zip` with `rally.json` | One rally with an itinerary, real results, rules and pictures. |
 | A **season pack**: a folder or `.zip` with `season.json` | Several rallies in order, with season standings. |
 
 Every pack starts from a stage map, so make that first.
@@ -69,13 +78,18 @@ A point is a control when its name has a control word in it, and is matched to t
 | `Stop` | stop control (optional) |
 
 * For `Maryhill Up`: `Maryhill Up Start`, `SS Maryhill Up`, `Maryhill Up FF` and `ATC Maryhill Up` all match.
-* Case, years (`2026`, `26`), version tags (`v2`), stage numbers (`SS3`) and the words `control`, `end`, `in` and
-  `out` are ignored when matching. A stage number is not a control word: `SS3 Maryhill Up` alone is not a start.
+* Case, any 2- or 4-digit number (`2026`, `26`, `12`), version tags (`v2`), stage numbers (`SS3`) and the words
+  `control`, `end`, `in` and `out` are ignored when matching. So `Forest 12` and `Forest 34` look the same: name
+  stages so they differ by more than a number.
+* A stage number is not a control word: `SS3 Maryhill Up` alone is not a start.
 * A shortened name works when only one stage starts that way: `Maryhill FF` matches `Maryhill Up`, unless there is
   also a `Maryhill Down`. `Reverse` is never dropped: `Maryhill FF` won't match `Maryhill Reverse`.
-* A point with `service`, `regroup`, `MTC`, `parc`, `spectator`, `jump`, `traffic` or `area` in its name is never a
-  control.
-* **No start point:** the stage starts at the line's first point. **No flying finish:** it ends at the line's end.
+* A point with `service`, `regroup`, `MTC`, `parc`, `spectator`, `jump`, `traffic`, `area`, `VC`, `barricade`,
+  `maybe`, `prohibited` or `expose` in its name is never a control.
+* **Stage names** go through the same rules, so keep those words, and `flying` or `FF`, out of them. A stage called
+  `Quarry Area` or `Service Road` can never get a control.
+* **No start point:** the stage starts at the line's first point (of its longest piece, if drawn in pieces).
+  **No flying finish:** it ends at the line's end.
   So the smallest map that works is one line per stage.
 * With a flying finish but no start, a line drawn backwards is turned round.
 * A start or flying finish more than 100 m from its line is flagged in the Import report.
@@ -98,7 +112,8 @@ Untagged points are read from their words:
 | Spectator | `spectator` in the folder, style, name or description, unless it also says `prohibited`, `closed`, `parking`, `car park`, `toilets`, `no spectators` and the like |
 | Marshal | `marshal` in the folder, style or name, a name like `MP 9`, or a style with `police` in it |
 
-A control is never one of these: `Start Radio` stays the start.
+An untagged control is never one of these: `Start Radio` stays the start. A tagged point is a mark even when its
+name makes it a control too.
 
 ### The smallest example
 
@@ -321,10 +336,10 @@ and the rally can be driven whole with **Drive rally**.
 | Field | What it does |
 |---|---|
 | `type` | `"SS"`. |
-| `control` | The pass's label: `SS1`, `SS2`... A control listed again (one row per class) is read once. |
-| `stage` | The map line's name, **exactly** as in the map. A name with no line is left out and reported. |
+| `control` | **Required.** The pass's label: `SS1`, `SS2`... A control listed again (one row per class) is read once. Without it, the row is not a pass. |
+| `stage` | **Required.** The map line's name, **exactly** as in the map. A name with no line is left out and reported. |
 | `run` | Which time over this stage: `1`, `2`... Default `1`. |
-| `ss_km` | The pass's official length. Players more than 5% off it on their line aren't placed on its leaderboard. |
+| `ss_km` | The pass's official length, when the results file gives none. With results, players more than 5% off it on their line aren't placed on its leaderboard. |
 | `day` | The day number. A change of day between two passes is an overnight halt. |
 | `power_stage` | `true` for the power stage. |
 
@@ -335,23 +350,28 @@ A map line the itinerary never runs shows in the menu as **Not run**.
 For **Drive rally**, other rows say where the stops are. Only the rows between passes matter:
 
 * **Service** after a pass: a `SVC_IN` or `SVC_OUT` row, or a row whose `control` is one of a `service` entry's.
-  An entry's `control` can name several, split by `-` or spaces (`"2A-2B"`), for events that write service as a
+  An entry counts only with `"type": "service"`. Its `control` can name several, split by `-` or spaces (`"2A-2B"`), for events that write service as a
   pair of controls or as refuel zones (`"RZ1"`).
 * **Overnight** after a pass: the next pass has a different `day`.
-* Services are labelled **Service A**, **Service B**... A stop after the last pass is the finish, not a stop.
+* Services are labelled **Service A**, **Service B**...
 * **Where a stop is**: a row's `location`, or its service entry's, names an entry in `locations`, which gives
-  `name`, `lat` and `lon`. The service entry's place wins, then `SVC_OUT`, `SVC_IN`, the day's start (`MTC_OUT`,
-  `PE_OUT`), its end (`MTC_IN`), then any other. An overnight prefers the next morning's start.
-* **The rally's start** is the place of a located row before the first pass, else the first service's.
+  `name`, and `lat` and `lon` as numbers (not strings). The service entry's place wins, then `SVC_OUT`, `SVC_IN`,
+  the day's start (`MTC_OUT`, `PE_OUT`), its end (`MTC_IN`), `PE_IN`, then any other.
+* **The overnight** is at that day's last service park. Only a day with no located service uses the overnight's own
+  place, preferring the next morning's start.
+* **The finish**: after the last stage the rally ends at a **Final service** at the last day's service park (its
+  last located service). A stop listed after the last pass is not used. A rally with no located service ends at
+  its last stage.
+* **The rally's start** is the place of a located row before the first pass, else the first stop with a place.
 * A place's name is shortened for the time card: `"Fernvale Park Service Area (Saturday), Fernvale"` shows as
   *Fernvale Park Service Area*.
 
-Other row types (`TC`, `RG_IN`, `PE_IN` and the rest) are fine to include: they only count as places. Rules are
+Other row types (`TC`, `RG_IN` and the rest) are fine to include: they only count as places. Rules are
 not read from the event file, only from the manifests.
 
-**Drive rally** lists a rally when its pack has an event file with at least one `SS` row that matches a map line.
-Without locations, the rally still runs: each transit goes to the next stage's time control (its start when it
-has none).
+**Drive rally** lists a rally, or a season's round, when it has an event file with at least one `SS` row that
+matches a map line. Without locations, the rally still runs: each transit goes to the next stage's time control
+when that is within 1.5 km of the start, else to the start.
 
 ## The results file: leaderboards
 
@@ -382,7 +402,7 @@ standings.
 | Field | What it does |
 |---|---|
 | `control` | Which itinerary pass this is. Without it, matched by `stage` and `run`. |
-| `stage` | The map line's name, exactly. |
+| `stage` | **Required.** The map line's name, exactly. |
 | `run`, `km` | As in the itinerary. `km` falls back to the itinerary's `ss_km`. |
 | `cancelled` | `true`: no leaderboard, and the pass isn't counted in rally totals. |
 | `times[].seconds` | **Required** for a row to count. Rows without it are left out. |
@@ -413,7 +433,7 @@ Numbers, shown on the rally's **Rules** tab. Every field is optional.
 | `falseStartS` | Seconds for a 1st, 2nd and 3rd false start. |
 | `lateSPerMin` | Seconds per minute (or part) late at a time control. |
 | `earlySPerMin` | Seconds per minute (or part) early at a time control. |
-| `maxLatenessMin` | Minutes late allowed per leg before retirement. |
+| `maxLatenessMin` | Minutes late allowed in a day before retirement. |
 | `startIntervalMin` | Minutes between cars. |
 
 Set them in a season, a round or a rally manifest; the most specific wins, field by field.
@@ -428,20 +448,25 @@ folder, so the pack can be moved after import. A missing picture is reported and
 1. Drop the pack into the import folder. Open the rally in the menu and read its **Import report**: each stage's
    length and controls, and anything to fix.
 2. The report flags a line name the itinerary or results use that isn't in the map, a control far from its line,
-   points that matched no stage (with the nearest stage name), a missing picture or an unreadable file.
-3. Edit the pack where it is. The mod imports it again when its files change, or press **Re-scan**.
+   control points that matched no stage (with a suggestion when one is close), a missing picture or an unreadable
+   file.
+3. A pack that fails as a whole (two manifests, a `format` too high, a `.kmz` in a `.zip`, a missing map) shows on
+   the **Drive stage** page's last-import line. Season-level warnings (a round listed twice, an id clash) are in
+   `beamng.log`.
+4. The report is kept until the game closes. After a restart, press **Re-scan** to see it again.
+5. Edit the pack where it is. The mod imports it again when its files change, or press **Re-scan**.
 
 To keep players' times when you update a pack:
 
 * **Give every season, round and rally an `id`** and never change it. Times are saved against the rally's id and
   the stage's line name.
 * **Don't rename lines** in the map. A renamed line is a new stage, with no times.
-* A pack without ids that is renamed keeps its old ones, as long as its season's name stays the same.
+* A pack without ids that is renamed keeps its old ones when its name (the season's, for a season) stays the same
+  and the old file leaves the folder at the same time.
 * Moving a line's start or finish changes the stage. Players' old times stay in their runs, but only times on the
   stage's current line are placed on leaderboards.
 
 ## Sharing
 
 Route books, photos and results belong to the organisers and name real crews. Ask the event before sharing a pack
-built from them, and never commit one to this repository. Stages you draw yourself on public roads are yours to
-share.
+built from them, and never commit one to this repository.
