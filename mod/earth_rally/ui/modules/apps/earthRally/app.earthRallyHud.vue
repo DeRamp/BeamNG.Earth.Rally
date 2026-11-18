@@ -78,6 +78,18 @@
     </div>
 
     <!-- 4 km done beside the stock progress bar; off route in the bar's place -->
+    <!-- (rally loop) the quarter splits as ticks on the stock progress bar's track, blue once passed -->
+    <div v-if="splitTicks.length && (show.km || (show.finish && f.state === 'toStop'))" class="er-ticks">
+      <span v-for="t in splitTicks" :key="t" class="er-tick" :class="{ 'er-tick-past': donePct >= t }" :style="{ left: (t * 100) + '%' }"></span>
+    </div>
+    <!-- (rally loop) a split just passed, under the stage clock for the 5 s Lua keeps ours.split up -->
+    <div v-if="split && (show.km || show.offRoute)" class="er-split">
+      <div class="er-split-l">Split {{ split.n }}</div>
+      <div class="er-split-row">
+        <span class="er-split-t">{{ fmt.time(split.timeS) }}</span>
+        <span v-if="typeof split.gapS === 'number'" class="er-split-gap" :class="split.gapS < 0 ? 'er-best' : 'er-slower'">{{ fmt.delta(split.gapS) }}</span>
+      </div>
+    </div>
     <div v-if="show.km" class="er-km">{{ fmt.lenValue(f.doneM, units) }} <small>/ {{ fmt.len(f.totalM, units) }}</small></div>
     <div v-if="show.offRoute" class="er-offroute">
       <div class="er-arrow">
@@ -108,7 +120,9 @@
 
     <!-- 6 a Route to start armed, the run before it over (its results card up): one line in the rally block's
          corner. With no run our HUD is off screen, and main.lua says it in the game's Messages app instead. -->
-    <div v-if="show.approach && f.approach" class="er-panel er-approach">
+    <!-- (rally loop) on a timed road section the line's words are Lua's ("due 18:50 · 6:12 left"); the app only
+         colours it from ours.rally.transit: amber under a minute left, red once late, with a bar under the line -->
+    <div v-if="show.approach && f.approach" class="er-panel er-approach" :class="transitLevel && 'er-tr-' + transitLevel">
       <span class="er-approach-l">{{ f.approach.label || "Route" }}</span>
       <span class="er-approach-n">{{ f.approach.name }}</span>
       <span v-if="f.approach.distM !== null && f.approach.distM !== undefined" class="er-approach-d">{{ fmt.len(f.approach.distM, units) }}</span>
@@ -142,6 +156,29 @@ const fin = computed(() => f.value && f.value.finish)
 const hints = computed(() => {
   const h = f.value && f.value.hints
   return h ? (Array.isArray(h) ? h : Object.values(h)) : []
+})
+
+// (rally loop) every field below is absent on an untimed rally or a stage without splits: nothing new draws then
+// a Lua list can arrive as [] or as {} with keys
+const listOf = v => (Array.isArray(v) ? v : (v && typeof v === "object" ? Object.values(v) : []))
+const split = computed(() => {
+  const s = f.value && f.value.split
+  return s && typeof s === "object" && !Array.isArray(s) && s.n ? s : null
+})
+const splitTicks = computed(() =>
+  listOf(f.value && f.value.splitsAt).filter(t => typeof t === "number" && t > 0 && t < 1))
+const donePct = computed(() => {
+  const v = f.value
+  return v && v.totalM > 0 ? (v.doneM || 0) / v.totalM : 0
+})
+// the road section's colour: 'red' late, 'amb' under a minute to the due time, null otherwise
+const transitLevel = computed(() => {
+  const r = f.value && f.value.rally
+  const t = r && r.transit
+  if (!t || typeof t !== "object") return null
+  if (typeof t.late === "number" && t.late > 0) return "red"
+  if (typeof t.leftS === "number" && t.leftS < 60) return "amb"
+  return null
 })
 
 const wayBack = computed(() => {
@@ -281,6 +318,23 @@ const penWords = computed(() => {
   border-left: 1px solid rgba(255, 255, 255, 0.1);
   small { font-size: 17px; color: var(--er-muted); font-weight: 600; }
 }
+/* (rally loop) the split ticks over the stock bar's track: its widget (rallyLoop DistanceWidgetSVGRect) pads 4 px,
+   then 20 px left and 26 px right, and centres the track in a 60 px row -- x 312 to 1038, y 34 on our layout */
+.er-ticks {
+  position: absolute; left: 312px; top: 34px; width: 726px; height: 0;
+  .er-tick { position: absolute; top: 0; width: 3px; height: 16px; transform: translate(-50%, -50%); background: #fff; }
+  .er-tick-past { background: var(--er-theme); }
+}
+/* a split just passed: under the stage clock (288 wide, its blue block's foot at ~86), clear of the visual
+   pacenotes at 17.5 % (189 px) */
+.er-split {
+  position: absolute; left: 0; top: 104px; width: 288px; box-sizing: border-box; padding: 8px 14px 10px;
+  background: rgba(0, 0, 0, 0.8); border-bottom: 4px solid var(--er-theme); border-radius: 0 0 0.5rem 0;
+  .er-split-l { font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--er-muted); }
+  .er-split-row { display: flex; align-items: center; gap: 12px; margin-top: 2px; white-space: nowrap; }
+  .er-split-t { font: 700 30px/1.1 "Overpass Mono", monospace; }
+  .er-split-gap { font-size: 18px; font-weight: 800; padding: 2px 9px; border-radius: 5px; }
+}
 .er-offroute {
   position: absolute; left: 288px; top: 0; width: 780px; height: 96px; background: rgba(255, 176, 0, 0.95); color: #111;
   display: flex; align-items: center; gap: 22px; padding: 0 26px; box-shadow: 0 0 30px rgba(255, 176, 0, 0.6);
@@ -331,6 +385,8 @@ const penWords = computed(() => {
   .er-approach-n { font-size: 20px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .er-approach-d { font: 700 20px "Overpass Mono", monospace; color: var(--er-pink); flex: none; }
   .er-approach-s { font-size: 15px; color: #e8e8e8; flex: none; }
+  &.er-tr-amb { box-shadow: inset 0 -3px 0 var(--er-amber); .er-approach-s { color: var(--er-amber); font-weight: 700; } }
+  &.er-tr-red { box-shadow: inset 0 -3px 0 #ff4d4d; .er-approach-s { color: #ff4d4d; font-weight: 700; } }
 }
 .er-delta { display: inline-block; margin-top: 8px; font-size: 34px; font-weight: 800; padding: 4px 18px; border-radius: 8px; }
 .er-best { background: var(--er-go); color: #002a00; }

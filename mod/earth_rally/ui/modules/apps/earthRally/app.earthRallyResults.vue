@@ -49,6 +49,17 @@
       <span v-else class="er-delta er-slower">{{ fmt.delta(fin.delta) }}</span>
       </template>
     </div>
+    <!-- (rally loop) the three quarter splits and the finish, each with its gap to your best (green ahead, amber
+         behind, none on a first run): one row across the card, so a rally card with its crews still fits -->
+    <div v-if="splits.length" class="er-splits">
+      <div v-for="s in splits" :key="s.n" class="er-split" :class="{ 'er-split-fin': s.n === 4 }">
+        <span class="er-split-l">{{ s.n === 4 ? "Finish" : `Split ${s.n}` }}</span>
+        <span class="er-split-row">
+          <span class="er-v">{{ fmt.time(s.timeS) }}</span>
+          <span v-if="typeof s.gapS === 'number'" class="er-split-gap" :class="s.gapS < 0 ? 'er-best' : 'er-slower'">{{ fmt.delta(s.gapS) }}</span>
+        </span>
+      </div>
+    </div>
     <!-- a full rally's places against the real National field -->
     <div v-if="rc" class="er-rally">
       <div class="er-rplace">
@@ -146,6 +157,14 @@ const rcClass = computed(() => {
 const rcRows = computed(() => {
   const st = rc.value && rc.value.stage
   return st ? (Array.isArray(st.rows) ? st.rows : Object.values(st.rows || {})) : []
+})
+
+// (rally loop) finish.splits = [ { n, timeS, gapS } ], n = 4 the finish; absent on a run without splits. A Lua list
+// can arrive as [] or as {} with keys: in n order either way.
+const splits = computed(() => {
+  const v = fin.value.splits
+  const l = Array.isArray(v) ? v : (v && typeof v === "object" ? Object.values(v) : [])
+  return l.filter(s => s && typeof s.n === "number").sort((a, b) => a.n - b.n)
 })
 
 const penLines = computed(() => {
@@ -347,6 +366,16 @@ function act(what) {
 .er-delta { font-size: 30px; font-weight: 800; padding: 4px 16px; border-radius: 8px; margin-bottom: 14px; }
 .er-best { background: var(--er-go); color: #002a00; }
 .er-slower { background: var(--er-amber); color: #1a1000; }
+.er-splits { margin: 0 40px 14px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.12); padding-top: 8px; }
+.er-split { display: flex; flex-direction: column; gap: 3px; padding: 0 10px; min-width: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.07);
+  &:first-child { padding-left: 0; border-left: none; }
+  .er-split-l { font-size: 14px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--er-muted); }
+  .er-split-row { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .er-v { font-size: 20px; }
+  .er-split-gap { font-size: 15px; font-weight: 800; padding: 1px 7px; border-radius: 5px; }
+  &.er-split-fin { .er-split-l { color: #fff; font-weight: 700; } .er-v { font-weight: 700; } } }
 .er-lines { margin: 0 40px; border-top: 1px solid rgba(255, 255, 255, 0.12); }
 .er-line { display: grid; grid-template-columns: 1fr auto; padding: 9px 0; font-size: 22px; border-bottom: 1px solid rgba(255, 255, 255, 0.07); }
 .er-v { font: 600 22px "Overpass Mono", monospace; }
