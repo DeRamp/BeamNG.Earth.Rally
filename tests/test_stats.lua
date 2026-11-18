@@ -155,6 +155,10 @@ T.check(stats._job() == nil, 'No: the send dropped')
 reply({ ok = true })
 T.check(#stats._queue() == 0 and stats.uiState().last == last, 'No: nothing more sent or queued')
 
+-- No then Yes: the session's start recorded again (No threw it away)
+stats._reset() files = {} stats.init('x') stats.answer(true) stats.answer(false) stats.answer(true)
+T.check(#stats._queue() == 1 and stats._queue()[1].event == 'session_start', 'No then Yes: session_start again')
+
 -- the leaderboard off: nothing recorded
 stats.answer(true)
 active = false

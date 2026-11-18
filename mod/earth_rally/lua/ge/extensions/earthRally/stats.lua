@@ -114,7 +114,8 @@ function M.consent() load() return st.consent end
 function M.answer(yes)
   load()
   st.consent = yes and 'yes' or 'no'
-  if not yes then queue = {} saveQueue() cancelSend() wantSend = false end
+  -- (No throws the session's start away with the rest: a Yes after it records the start again)
+  if not yes then queue = {} saveQueue() cancelSend() wantSend = false sessionSent = false end
   saveState()
   lg('I', 'the player said ' .. st.consent)
   if yes then M.sessionStart() end
