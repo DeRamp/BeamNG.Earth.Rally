@@ -6,8 +6,8 @@ export const LIMITS = {
   NAME_MIN: 2, NAME_MAX: 24,
   TEXT_MAX: 80,                 // a stage's or rally's name
   STAGE_MIN_M: 300, STAGE_MAX_M: 120000,
-  SAME_STAGE_M: 100,            // start and flying finish within this of a known stage's: the same stage
-  SAME_STAGE_LEN: 0.03,         // and its length within this share
+  SAME_STAGE_M: 30,             // start and flying finish within this of a known stage's: the same stage (the offline
+  SAME_STAGE_LEN: 0.015,        // board's events.onLine keeps 25 m / 1 %; a little looser across players' lines)
   MAX_AVG_KMH: 200,             // no stage is driven faster than this on average: refused
   MAX_SPEED_MS: 100,            // between two trace points faster than this (360 km/h) over JUMP_M: a jump
   JUMP_M: 60,
@@ -18,14 +18,21 @@ export const LIMITS = {
   CLOCK_MS: 3000,               // the trace's last time this near the stage time (without penalties)
   WALL_SLACK_MS: 2000,          // the server's clock may run this much under the stage time (latency)
   TOKEN_MAX_AGE_MS: 24 * 3600 * 1000,
+  RESET_JUMP_MS: 3000,          // a jump this soon after a reset the client reported: the reset, not a teleport
+  SLOW_SHARE: 0.05,             // the game's clock ran slow (slow motion) for more than this share of the stage
+  RECORD_SHARE: 0.15,           // a time this much ahead of the board's best ...
+  RECORD_MIN_TIMES: 10,         // ... on a board with this many times: looked at before it shows
+  STAGES_PER_DAY: 20,           // new stages one player can make a day
 }
 
 // Notes that do not take a run off the board.
 export const SOFT_FLAGS = new Set(["trace-gap"])
 
-// Words a name may not hold (matched after folding case and common look-alike characters). Short on purpose: the
-// report button and the admin page catch the rest. Extend as needed.
-const BLOCKED = ["fuck", "shit", "cunt", "nigg", "fag", "rape", "nazi", "hitler", "admin", "moderator", "earthrally"]
+// Words a name may not be or hold as a word of its own (matched after folding case and look-alike characters, whole
+// words only, so Nazir, Draper and Scunthorpe pass). Short on purpose: reports and the admin calls catch the rest.
+const BLOCKED = ["fuck", "fucker", "fucking", "shit", "cunt", "nigger", "nigga", "fag", "faggot", "rape", "rapist",
+  "nazi", "hitler", "admin", "moderator", "earthrally"]
+const BLOCKED_JOINED = ["earthrally"]     // (also caught written as one with other words: "EarthRallyAdmin")
 const FOLD = { 0: "o", 1: "i", 3: "e", 4: "a", 5: "s", 7: "t", "@": "a", $: "s", "!": "i" }
 
 export function metres(lat1, lon1, lat2, lon2) {
@@ -47,9 +54,19 @@ export function cleanName(raw) {
     return { error: `a name is ${LIMITS.NAME_MIN} to ${LIMITS.NAME_MAX} characters` }
   }
   if (!/^[\p{L}\p{N}][\p{L}\p{N} ._'-]*$/u.test(name)) return { error: "letters, numbers, spaces and . _ ' - only" }
-  const folded = [...name.toLowerCase()].map(c => FOLD[c] || c).join("").replace(/[^a-z\p{L}]/gu, "")
-  if (BLOCKED.some(w => folded.includes(w))) return { error: "that name is not allowed" }
+  if (blocked(name)) return { error: "that name is not allowed" }
   return { name }
+}
+
+// Whether a name or title holds a blocked word (see BLOCKED).
+export function blocked(text) {
+  const folded = [...text.toLowerCase()].map(c => FOLD[c] || c).join("")
+  const words = folded.split(/[^a-z\p{L}]+/u).filter(Boolean)
+  if (words.some(w => BLOCKED.includes(w))) return true
+  // (camel case and run-together words split too: "BigShitDriver")
+  const parts = text.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase().split(/[^a-z\p{L}]+/u).filter(Boolean)
+  if (parts.some(w => BLOCKED.includes([...w].map(c => FOLD[c] || c).join("")))) return true
+  return BLOCKED_JOINED.some(w => folded.replace(/[^a-z]/g, "").includes(w))
 }
 
 function cleanText(s, max) {
@@ -67,6 +84,7 @@ export function cleanStage(s) {
   const rally = cleanText(s.rally, LIMITS.TEXT_MAX)
   if (!name) return { error: "the stage has no name" }
   if (rally === undefined) return { error: "bad rally name" }
+  if (blocked(name) || (rally && blocked(rally))) return { error: "that stage or rally name is not allowed" }
   if (!isLatLon(s.start) || !isLatLon(s.finish)) return { error: "bad start or finish" }
   if (!isNum(s.lengthM) || s.lengthM < LIMITS.STAGE_MIN_M || s.lengthM > LIMITS.STAGE_MAX_M) {
     return { error: "bad stage length" }
@@ -90,8 +108,9 @@ export function startBox(st) {
   return [st.start[0] - dLat, st.start[0] + dLat, st.start[1] - dLon, st.start[1] + dLon]
 }
 
-// A run's checks. run: { timeMs, penaltyMs, trace: [[ms, lat, lon]...] }, stage: a stage row (start_lat ...,
-// length_m), wallMs: the server's clock from the run's token to now. Returns { reject } (refused outright) or
+// A run's checks. run: { timeMs, penaltyMs, trace: [[ms, lat, lon]...], resets: [ms...] (when the car was reset or
+// recovered: a jump there is the reset), slowMs (how long the game's clock ran slow) }, stage: a stage row
+// (start_lat ..., length_m), wallMs: the server's clock from the run's token to now. Returns { reject } (refused outright) or
 // { flags: [...], wallRatio } (empty flags: on the board).
 export function checkRun(run, stage, wallMs) {
   const { timeMs, penaltyMs } = run
@@ -108,22 +127,28 @@ export function checkRun(run, stage, wallMs) {
   for (const p of tr) {
     if (!Array.isArray(p) || !isNum(p[0]) || !isLatLon([p[1], p[2]])) return { reject: "bad trace point" }
   }
+  const resets = Array.isArray(run.resets) ? run.resets.filter(isNum).slice(0, 500) : []
+  const nearReset = ms => resets.some(r => ms >= r - 500 && ms - r <= LIMITS.RESET_JUMP_MS)
   const flags = new Set()
   let pathM = 0
   for (let i = 1; i < tr.length; i++) {
     const dt = tr[i][0] - tr[i - 1][0]
     if (dt < 0) return { reject: "trace goes back in time" }
     const d = metres(tr[i - 1][1], tr[i - 1][2], tr[i][1], tr[i][2])
-    pathM += d
     if (dt > LIMITS.TRACE_GAP_MS) flags.add("trace-gap")
-    if (d > LIMITS.JUMP_M && d / Math.max(dt, 1) * 1000 > LIMITS.MAX_SPEED_MS) flags.add("jump")
+    if (d > LIMITS.JUMP_M && d / Math.max(dt, 1) * 1000 > LIMITS.MAX_SPEED_MS) {
+      if (nearReset(tr[i][0])) continue        // (a reset puts the car back: not a teleport, and not driven either)
+      flags.add("jump")
+    }
+    pathM += d
   }
   const first = tr[0], last = tr[tr.length - 1]
   if (metres(first[1], first[2], stage.start_lat, stage.start_lon) > LIMITS.END_M) flags.add("start")
   if (metres(last[1], last[2], stage.finish_lat, stage.finish_lon) > LIMITS.END_M) flags.add("finish")
   if (pathM < stage.length_m * LIMITS.SHORT_SHARE) flags.add("short")
   if (Math.abs(last[0] - driveMs) > LIMITS.CLOCK_MS) flags.add("clock")
-  return { flags: [...flags], wallRatio: isNum(wallMs) ? wallMs / driveMs : null }
+  if (isNum(run.slowMs) && run.slowMs > driveMs * LIMITS.SLOW_SHARE) flags.add("slow")
+  return { flags: [...flags], wallRatio: isNum(wallMs) ? wallMs / driveMs : null, resets }
 }
 
 // Whether flags take a run off the board.

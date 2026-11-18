@@ -16,20 +16,31 @@ The game's Lua can only reach this computer, so the companion makes the internet
 |---|---|---|
 | Server | `online/worker/` | Cloudflare Worker on D1 (`src/index.js`, `src/checks.js`, `schema.sql`). Players, stages found by start / finish / length, run tokens, checks, boards, reports, admin. |
 | Local server | `online/worker/dev/` | The same Worker under Node 22 with its built-in SQLite standing in for D1. For trying it without Cloudflare. |
-| Companion | `online/companion/earth_rally_online.py` | One file, standard library only, run by BeamNG.Earth's Python as a `companion` add-on. Keeps the player's id and secret, and queues runs while the board can't be reached. |
-| Mod | `earthRally/online.lua`, hooks in `runner.lua` and `main.lua` | Off until **Settings > Online leaderboard** is on. A token at GO, the car's position every 0.5 s, and the run sent at the flying finish. |
-| UI | `EarthRallyOnline.vue`, the Offline / Online switch on the stage page | Off / add-on not running / pick a name / no line / the board, with Stock and Open tabs. |
+| Companion | `online/companion/earth_rally_online.py` | One file, standard library only, run by BeamNG.Earth's Python as a `companion` add-on. Keeps the player's id and secret in `~/.earth_rally_online/`, and queues a finished run when the board can't be reached at the finish. A run whose start couldn't reach the board gets no token and is not sent. |
+| Mod | `earthRally/online.lua`, hooks in `runner.lua` and `main.lua` | Off until **Settings > Online leaderboard** is on. A token at the run's start (before the drive to the start), then from GO the car's position every 0.5 s, its resets and recoveries, and any time the game's clock ran slow. The run is sent at the flying finish. |
+| UI | `EarthRallyOnline.vue`, the Offline / Online switch on the stage page | Shown only with the setting on. Add-on not running / no board address / pick a name / no line / the board, with Stock and Open tabs. |
 
 **Stock or Open:** a run goes on the Stock board when the car's model and its configuration are both the game's own
-(`Source = 'BeamNG - Official'`); anything else goes on Open. A tune saved in the garage counts as Open. The label
-names have not been checked on 0.40.5 yet.
+(`Source = 'BeamNG - Official'`) and the reset penalty is on. Anything else goes on Open, including a tune saved in the
+garage and free resets. The label names have not been checked on 0.40.5. Parts changed in the parts selector but not
+saved probably still read as official.
+
+**One stage:** players' lines count as the same stage when their start and finish are each within 30 m and their
+lengths within 1.5 %. The offline board's own rule is 25 m and 1 %. The first player to drive a stage names it.
 
 **What the server checks** (`checks.js`):
 - **Refused outright:** an average over 200 km/h, a run shorter than the server's own clock saw, a resent run, someone
-  else's token, or a bad trace.
-- **Held for a look:** a jump (a teleport), not starting at the start or finishing at the finish, a trace much shorter
-  than the stage, a trace clock that doesn't match the time, or more than 5 % faster than the board's best once it has
-  three times. A held run stays off the board.
+  else's token, a bad trace, or a rude stage or rally name.
+- **Held for a look:**
+  - a jump that no reported reset explains (a teleport);
+  - not starting at the start or finishing at the finish;
+  - a trace much shorter than the stage;
+  - a trace clock that doesn't match the time;
+  - the game's clock running slow (slow motion) for more than 5 % of the stage;
+  - more than 15 % faster than the board's best, once it has ten times.
+
+  A held run stays off the board.
+- **Limits:** 20 new stages a day per player.
 
 Every time is marked unverified.
 
@@ -69,13 +80,15 @@ Not tried in game yet. To check:
 
 Every call carries `Authorization: Bearer admin:<ADMIN_TOKEN>`.
 
-- `GET /v1/admin/flagged`: runs held for a look, or reported by a player.
+- `GET /v1/admin/flagged`: runs held for a look, or reported by a player. The report button isn't in the game yet:
+  reports come only from the API for now.
+- `GET /v1/admin/runs/<id>`: one run, with its trace and resets.
 - `POST /v1/admin/runs/<id> {"status": "ok" | "hidden"}`: clear or remove a run.
 - `POST /v1/admin/players/<id> {"banned": true}`: removes the player from every board.
 
 ## Tests
 
-- `cd online/worker && npm test`: the server, 7 tests.
+- `cd online/worker && npm test`: the server, 8 tests.
 - `python tests/run_tests.py test_online`: the mod's client, against a fake companion.
 - `python tests/test_online_companion.py`: the companion's identity and queue, against a fake server.
 - `python tests/test_online_e2e.py`: the mod's client, then the companion, then the local server, about 15 s. Set

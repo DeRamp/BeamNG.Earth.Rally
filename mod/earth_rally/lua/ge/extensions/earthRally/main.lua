@@ -1302,11 +1302,14 @@ end
 -- board: 'stock' | 'open'.
 function M.uiOnline(eventId, stageId, board, force)
   local b = board == 'open' and 'open' or 'stock'
-  local out = { status = online.status(), boardName = b, last = online.lastResult, naming = online.lastRegister }
+  local out = { status = online.status(), boardName = b, naming = online.lastRegister }
   if out.status.on then
     local desc = onlineDesc(eventId, stageId)
     out.hasLine = desc ~= nil
     out.board = desc and online.board(desc, b, force == true) or nil
+    -- (the last run sent, on its own stage's board only)
+    local last = online.lastResult
+    if desc and last and last.stageKey == online.stageKey(desc) then out.last = last end
   end
   return out
 end
@@ -1806,6 +1809,7 @@ end
 -- all -- and BeamNG.Earth leaves its own imgui status bar and banner out while it believes an app holds them, so a
 -- hold left behind takes its "server not running" message with it on any layout without its apps.
 function M.onExtensionUnloaded()
+  pcall(online.enable, false)  -- (the companion's socket closed: nothing reads it once the module goes)
   pcall(menuPause.releaseAll)   -- (the menu's pause request, if the module goes with the page up: a reload)
   if recce.active() then pcall(recce.stop, false) end
   -- An auto recce converts each window through the world's origin, so one still in flight when the level goes

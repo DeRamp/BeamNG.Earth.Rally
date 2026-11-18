@@ -50,7 +50,9 @@ CREATE TABLE IF NOT EXISTS runs (
   submitted_at INTEGER NOT NULL,
   wall_ratio   REAL,                     -- the server's clock from token to submission over the stage time
   status       TEXT NOT NULL DEFAULT 'ok',
-  flags        TEXT                      -- why it was flagged, comma separated
+  flags        TEXT,                     -- why it was flagged, comma separated
+  resets       TEXT,                     -- JSON [ms...]: when the car was reset or recovered
+  slow_ms      INTEGER                   -- how long the game's clock ran slow (slow motion)
 );
 CREATE INDEX IF NOT EXISTS runs_player ON runs (player_id, submitted_at);
 

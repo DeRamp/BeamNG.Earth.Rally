@@ -57,7 +57,10 @@ test("names", () => {
   assert.ok(cleanName("a").error)
   assert.ok(cleanName("x".repeat(25)).error)
   assert.ok(cleanName("<script>").error)
-  assert.ok(cleanName("Sh1tdriver").error)
+  assert.ok(cleanName("Sh1t driver").error)
+  assert.ok(cleanName("BigShitDriver").error, "camel case split")
+  assert.ok(cleanName("EarthRallyAdmin").error)
+  for (const ok of ["Nazir", "Draper", "Scunthorpe", "Yoshitaka", "Grapefruit"]) assert.equal(cleanName(ok).name, ok)
   assert.equal(cleanName("Kalle Rovanperä").name, "Kalle Rovanperä")
 })
 
@@ -75,6 +78,16 @@ test("checks on a run", () => {
   assert.ok(checkRun({ timeMs: 370000, penaltyMs: 0, trace: trace(STAGE, 360000) }, row, 400000).flags.includes("clock"))
   assert.deepEqual(checkRun({ timeMs: 370000, penaltyMs: 10000, trace: trace(STAGE, 360000) }, row, 400000).flags, [], "a penalty is not driving time")
   assert.ok(Math.abs(metres(...STAGE.start, ...STAGE.finish) - 10000) < 20)
+  // a reset the client reported: its jump is not a teleport
+  const jumpy = trace(STAGE, 360000, 500, 0.4)
+  const at = jumpy.filter((p, i) => i && metres(jumpy[i - 1][1], jumpy[i - 1][2], p[1], p[2]) > 500).map(p => p[0])
+  assert.equal(at.length, 2)
+  assert.ok(!checkRun({ timeMs: 360000, penaltyMs: 0, trace: jumpy, resets: at.map(x => x - 200) }, row, 400000).flags.includes("jump"))
+  assert.ok(checkRun({ timeMs: 360000, penaltyMs: 0, trace: jumpy, resets: [at[0] - 200] }, row, 400000).flags.includes("jump"), "a reset covers its own jump only")
+  assert.ok(checkRun({ timeMs: 360000, penaltyMs: 0, trace: jumpy, resets: at.map(x => x - 60000) }, row, 400000).flags.includes("jump"))
+  // slow motion
+  assert.ok(checkRun({ timeMs: 360000, penaltyMs: 0, trace: trace(STAGE, 360000), slowMs: 60000 }, row, 400000).flags.includes("slow"))
+  assert.deepEqual(checkRun({ timeMs: 360000, penaltyMs: 0, trace: trace(STAGE, 360000), slowMs: 2000 }, row, 400000).flags, [])
 })
 
 test("register, drive, board", async () => {
@@ -96,7 +109,7 @@ test("register, drive, board", async () => {
     assert.equal(slower.body.pos, 2)
 
     // a line a few metres off finds the same stage
-    const near = { ...STAGE, name: "Test Road (my pack)", start: [STAGE.start[0] + 20 * DEG_PER_M, 25.0002], lengthM: 10100 }
+    const near = { ...STAGE, name: "Test Road (my pack)", start: [STAGE.start[0] + 15 * DEG_PER_M, 25.0001], lengthM: 10100 }
     const b = await t.call("POST", "/v1/boards", { stage: near, board: "stock" }, ann)
     assert.equal(b.status, 200)
     assert.equal(b.body.stage.name, "Test Road", "the first name kept")
@@ -116,6 +129,11 @@ test("register, drive, board", async () => {
     const other = { ...STAGE, start: [61, 25], finish: [61 + 10000 * DEG_PER_M, 25] }
     const none = await t.call("POST", "/v1/boards", { stage: other, board: "stock" })
     assert.equal(none.body.stage, null)
+    // the same ends, another route (3 % longer): a board of its own
+    const longer = await t.call("POST", "/v1/boards", { stage: { ...STAGE, lengthM: 10300 }, board: "stock" })
+    assert.equal(longer.body.stage, null)
+    // a stage named rudely is refused
+    assert.equal((await t.call("POST", "/v1/runs/start", { stage: { ...other, name: "Shit Road" } }, ann)).status, 400)
   } finally { t.done() }
 })
 
@@ -134,6 +152,14 @@ test("you below the top rows, with your neighbours", async () => {
     assert.deepEqual(b.body.rows.map(r => r.pos), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16])
     assert.ok(b.body.rows[10].skipped, "a gap before your neighbours")
     assert.ok(b.body.rows[12].you)
+    assert.equal(b.body.rows.filter(r => r.skipped).length, 1)
+    // 11th: straight on from the top ten, no gap
+    const eleventh = await t.register("Eleven")
+    t.tick(61000)
+    await t.drive(eleventh, 309500)
+    const b11 = await t.call("POST", "/v1/boards", { stage: STAGE, board: "stock", top: 10, n: 2 }, eleventh)
+    assert.equal(b11.body.you.pos, 11)
+    assert.ok(!b11.body.rows.some(r => r.skipped), "no gap between 10th and 11th")
   } finally { t.done() }
 })
 
@@ -155,6 +181,7 @@ test("cheats", async () => {
     // a time shorter than the server saw pass
     const fast = await t.drive(bob, 360000, { wallMs: 100000 })
     assert.equal(fast.status, 422)
+    t.tick(61000)
     // a teleport: kept, off the board
     const jump = await t.drive(bob, 340000, { trace: trace(STAGE, 340000, 500, 0.5) })
     assert.equal(jump.body.status, "flagged")
@@ -163,6 +190,17 @@ test("cheats", async () => {
     assert.deepEqual(b.body.rows.map(r => r.name), ["Ann"])
     // a bad secret
     assert.equal((await t.call("POST", "/v1/runs/start", { stage: STAGE }, ann.split(":")[0] + ":nope")).status, 401)
+    assert.equal((await t.call("POST", "/v1/boards", { stage: STAGE, board: "stock" }, "gone:nope")).status, 200,
+      "a board read with stale credentials is read as anyone")
+    // the database failing after the token is claimed: the token given back, the retry taken
+    const s3 = await t.call("POST", "/v1/runs/start", { stage: STAGE }, ann)
+    t.tick(400000)
+    t.tick(61000)
+    const real = t.env.DB.prepare
+    t.env.DB.prepare = sql => (sql.startsWith("INSERT INTO runs") ? { bind: () => ({ first: async () => { throw new Error("D1 down") } }) } : real(sql))
+    assert.equal((await t.call("POST", "/v1/runs", { ...run, token: s3.body.token }, ann)).status, 500)
+    t.env.DB.prepare = real
+    assert.equal((await t.call("POST", "/v1/runs", { ...run, token: s3.body.token }, ann)).status, 200)
   } finally { t.done() }
 })
 
@@ -188,6 +226,22 @@ test("moderation", async () => {
     assert.equal(board.body.of, 0)
     assert.equal((await t.call("POST", "/v1/runs/start", { stage: STAGE }, ann)).status, 403)
     assert.ok(a.body.runId)
+  } finally { t.done() }
+})
+
+test("new stages a day", async () => {
+  const t = setup()
+  try {
+    const ann = await t.register("Ann")
+    let last = null
+    for (let i = 0; i < 21; i++) {
+      const st = { ...STAGE, start: [50 + i * 0.1, 10], finish: [50 + i * 0.1 + 10000 * DEG_PER_M, 10] }
+      last = await t.call("POST", "/v1/runs/start", { stage: st }, ann)
+      if (i < 20) assert.equal(last.status, 200)
+      if (i % 50 === 49) t.tick(61000)
+    }
+    assert.equal(last.status, 429)
+    assert.equal((await t.call("POST", "/v1/runs/start", { stage: STAGE.start && { ...STAGE, start: [50, 10], finish: [50 + 10000 * DEG_PER_M, 10] } }, ann)).status, 200, "a known stage still starts")
   } finally { t.done() }
 })
 

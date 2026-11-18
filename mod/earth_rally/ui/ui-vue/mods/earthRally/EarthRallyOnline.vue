@@ -20,6 +20,11 @@
       <div class="er-row"><BngButton :accent="ACCENTS.main" @click="setSetting('onlineBoard', true)">Turn on</BngButton></div>
     </div>
 
+    <div v-else-if="o.status.connected && !o.status.server" class="er-empty">
+      <b>The add-on has no board address</b>
+      Earth Rally Online is running but does not know where the board is (its --server option).
+    </div>
+
     <div v-else-if="!o.status.connected" class="er-empty">
       <b>Can't reach the online board</b>
       Start <i>Earth Rally Online</i> on BeamNG.Earth's Add-ons page.
@@ -99,7 +104,7 @@ const youGap = computed(() => {
   if (!lead || d.you.pos === 1) return "fastest"
   return `${gap((d.you.timeMs - lead.timeMs) / 1000)} to the fastest`
 })
-// the last run sent, said once on this stage's board
+// the last run sent, when it was on this stage (main.lua uiOnline only gives it then)
 const lastNote = computed(() => {
   const l = o.value && o.value.last
   if (!l) return ""
@@ -126,6 +131,7 @@ function saveName() {
   const n = nameText.value.trim()
   if (n.length < 2 || naming.value) return
   naming.value = true
+  typing(false)          // (the box goes once the name is saved: the game's keys back now, not on a blur that may never come)
   onlineName(n, () => refresh(false))
 }
 function startRename() { nameText.value = (o.value && o.value.status.player && o.value.status.player.name) || ""; renaming.value = true }

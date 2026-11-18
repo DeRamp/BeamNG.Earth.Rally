@@ -450,6 +450,7 @@ end
 -- opts.rally (1.7.0, the full rally: rallyRun.lua): the stage is a pass of a rally in progress. Its time goes to
 -- M.onFinished, not to the stage's own results and boards; recovery is the rally's (no reset penalty); the results
 -- card is the rally's (run.rally, set by rallyRun). opts.ssLabel: the pass's SS label ('SS4').
+-- opts.noOnline: never sent to the online board (the self-test's scripted runs).
 -- opts.keepDamage: BeamNG.Earth's teleport sets the car down repaired (its placePlayer resets the vehicle); for a
 -- rally the car keeps its damage across it (M.keepDamage).
 function M.start(event, stage, opts)
@@ -492,6 +493,15 @@ function M.start(event, stage, opts)
   run.lineKey = events.lineKey(source, kind)
   local span = events.timedSpan(source, stage)
   run.lineStart, run.lineFinish = span and span.start, span and span.finish
+  -- the online board (online.lua, when the player has it on): its run token asked for now, well before GO (the
+  -- server's clock from the token must cover the stage time); the car's place from GO to the flying finish
+  if not (opts and opts.noOnline) then
+    local okO, h = pcall(function()
+      return online.runStart(online.stageDesc(event.name, stage.name, run.lineStart, run.lineFinish,
+        span and span.lengthM))
+    end)
+    run.online = okO and h or nil
+  end
   -- its SS number (the stage's place in the rally's map), its SS label as the menu names it (menu.ssLabel: its
   -- passes from the itinerary, 'SS3' by map order with none, nil for a stage the itinerary never runs: the HUD
   -- says its name alone, never a made-up SS number), how many SS the rally has (the itinerary's counted passes, the
@@ -1694,11 +1704,6 @@ local function stepWaitStart(dt)
     -- marking it called froze the engine's step to the next note, which only moves on when it plays one itself.)
     run.clock = -left          -- (from the minute itself, not this frame)
     setState('running')
-    -- the online board (online.lua, when the player has it on): a run token from GO, and the car's place twice a
-    -- second from here to the flying finish
-    local okO, h = pcall(online.runStart, online.stageDesc(run.event.name, run.stage.name, run.lineStart,
-      run.lineFinish, (run.finishM or 0) - (run.startM or 0)))
-    run.online = okO and h or nil
   end
 end
 
@@ -1819,16 +1824,18 @@ local function stepRunning(dtSim)
   end
 end
 
--- The run to the online board (online.lua): its time, the car and which board (the game's own car as it comes:
--- stock; anything else: open), its last place at the flying finish.
+-- The run to the online board (online.lua): its time, the car and which board (the game's own car as it comes and
+-- the reset penalty on: stock; anything else: open), its last place at the flying finish.
 function M.sendOnline(time)
   local cv = rawget(_G, 'core_vehicles')
   local okD, d = false, nil
   if cv and cv.getCurrentVehicleDetails then okD, d = pcall(cv.getCurrentVehicleDetails) end
   d = okD and d or nil
   local pose = earth.pose()
+  -- (free resets -- the reset penalty off -- are not the Stock board's rules: Open)
+  local board = settings.get('resetPenalty') == false and 'open' or online.boardFor(d)
   online.runFinish(run.online, { timeS = time, penaltyS = run.penalty or 0, driveS = run.clock,
-    car = online.carName(d), board = online.boardFor(d), lat = pose and pose.lat, lon = pose and pose.lon })
+    car = online.carName(d), board = board, lat = pose and pose.lat, lon = pose and pose.lon })
   run.online = nil
 end
 
@@ -2203,7 +2210,9 @@ function M.update(dtReal, dtSim)
   elseif s == 'toAtc' then stepToAtc(dtSim)
   elseif s == 'toStart' then stepToStart(dtSim)
   elseif s == 'waitStart' then stepWaitStart(dtSim)
-  elseif s == 'running' then stepRunning(dtSim)
+  elseif s == 'running' then
+    if run.online then online.runFrame(run.online, dtReal, dtSim) end
+    stepRunning(dtSim)
   elseif s == 'toStop' then stepToStop(dtSim) end
 end
 
@@ -2351,6 +2360,7 @@ end
 -- RESET_DEBOUNCE_S, nor one just after the world's origin moved (BeamNG.Earth moving the car is not the player's).
 function M.onReset(vid)
   if not (run and run.state == 'running') then return false end
+  if run.online then pcall(online.runReset, run.online, run.clock) end
   if run.inRally then
     -- (the game's own recovery is blocked during a rally, rallyRun.lua; one that still got through -- the radial
     -- menu, quick access: they send no vehicle id -- is the rally's. Not another car's, nor BeamNG.Earth moving it.)
@@ -2382,6 +2392,7 @@ end
 -- Recovery, as rally games have it (the player's ask, 2026-11-13): the car moved as the game's own radial-menu "flip
 -- upright" moves it (spawn.safeTeleport, the damage kept), not reset or rewound.
 local function recoverTo(veh, pos, dir)
+  if run and run.online and run.state == 'running' then pcall(online.runReset, run.online, run.clock) end
   local sp = rawget(_G, 'spawn')
   local l = math.sqrt(dir.x * dir.x + dir.y * dir.y)
   if l < 1e-6 then return false end
@@ -2432,6 +2443,7 @@ end
 -- flying finish, the timing carrying on from there. Returns true when moved.
 function M.debugJump(beforeM)
   if not (run and run.line and run.state == 'running' and run.finishM) then return false end
+  run.online = nil          -- (a run jumped to its end is not sent to the online board)
   local _, veh = carPos()
   if not veh then return false end
   local along = math.max(run.startM or 0, run.finishM - (beforeM or 500))

@@ -101,6 +101,10 @@ local h = O.runStart(d)
 T.check(h ~= nil, 'a run handle')
 drain()
 for i = 0, 20 do O.runSample(h, i * 0.25, 60.1 + i * 0.0001, 25.2) end
+O.runReset(h, 2.25)
+O.runFrame(h, 0.1, 0.05)     -- (slow motion: half speed for a tenth of a second)
+O.runFrame(h, 0.1, 0)        -- (paused: not slow motion)
+O.runFrame(h, 0.1, 0.1)
 O.runFinish(h, { timeS = 15.0, penaltyS = 10, driveS = 5.1, car = 'Ibishu Covet', board = 'stock', lat = 60.2, lon = 25.3 })
 drain()
 local sub
@@ -109,7 +113,17 @@ T.check(sub and sub.token == 'tok1' and sub.board == 'stock' and sub.timeMs == 1
   sub.car == 'Ibishu Covet', 'the run sent with its token')
 T.check(sub and #sub.trace == 12 and sub.trace[1][1] == 0 and sub.trace[#sub.trace][1] == 5100 and
   sub.trace[#sub.trace][2] == 60.2, 'the trace: every half second, and the finish')
-T.check(O.lastResult and O.lastResult.ok and O.lastResult.pos == 2 and O.lastResult.board == 'stock', 'the answer kept')
+T.check(sub and sub.resets and sub.resets[1] == 2250 and sub.slowMs == 50, 'resets and slow motion sent')
+T.check(O.lastResult and O.lastResult.ok and O.lastResult.pos == 2 and O.lastResult.board == 'stock' and
+  O.lastResult.stageKey == O.stageKey(d), 'the answer kept, with its stage')
+
+-- the companion's state asked for again now and then (its queue)
+local hellos = 0
+for _, q in ipairs(sent) do if q.op == 'hello' then hellos = hellos + 1 end end
+frames(110)
+local hellos2 = 0
+for _, q in ipairs(sent) do if q.op == 'hello' then hellos2 = hellos2 + 1 end end
+T.check(hellos2 == hellos + 1, 'hello again after HELLO_EVERY_S')
 
 -- a run that finishes before its token arrives is sent when it does
 hold.start = true
@@ -126,6 +140,21 @@ held, hold.start = {}, nil
 drain()
 for i = before + 1, #sent do if sent[i].op == 'submit' then n = n + 1 end end
 T.check(n == 1 and O.lastResult.board == 'open', 'sent once the token is here')
+
+-- the companion gone at the finish: the run kept, and sent when it is back
+before = #sent
+local h4 = O.runStart(d)
+drain()
+local realSend = fakeSock.send
+fakeSock.send = function(self, data) return nil, 'closed', 0 end
+O.runFinish(h4, { timeS = 30, penaltyS = 0, driveS = 30, board = 'stock', lat = 60.2, lon = 25.3 })
+T.check(O.lastResult.queued and not O.lastResult.ok, 'companion gone: the run kept')
+fakeSock.send = realSend
+frames(60)          -- (reconnects)
+drain()
+n = 0
+for i = before + 1, #sent do if sent[i].op == 'submit' and sent[i].run.timeMs == 30000 then n = n + 1 end end
+T.check(n == 1 and O.lastResult.ok, 'sent once the companion is back')
 
 -- naming
 local named

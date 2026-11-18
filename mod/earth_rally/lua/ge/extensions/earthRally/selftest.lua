@@ -411,7 +411,7 @@ local function stepWorld(dt)
     for _, k in ipairs(settings.ORDER or {}) do T.settings[k] = settings.get(k) end
     hooksOn()
     resultsSnapshot()
-    local okS, why = runner.start(ev, stage)
+    local okS, why = runner.start(ev, stage, { noOnline = true })     -- (a scripted run: never on the online board)
     check('the run starts', okS, why)
     if not okS then fail('runner.start: ' .. tostring(why)) return end
     T.run = runner.current()

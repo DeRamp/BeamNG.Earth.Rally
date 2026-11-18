@@ -323,14 +323,14 @@
         </div>
         <!-- the Leaderboard card above Your runs (the user, 2026-11-14), which then shows the last two -->
         <div class="er-rcol">
-        <!-- (prototype) Offline: the rally pack's real results; Online: players' own times (EarthRallyOnline). A stage
-             with no real results shows the online board alone. -->
-        <div v-if="stg.board" class="er-lbswitch">
+        <!-- (prototype) Offline: the rally pack's real results; Online: players' own times (EarthRallyOnline), only
+             once the player has turned the online board on in Settings. The switch shows when there are both. -->
+        <div v-if="stg.board && onlineOn" class="er-lbswitch">
           <span v-for="t in LB_TABS" :key="t.id" tabindex="0" bng-nav-item :class="{ on: lbTab === t.id }"
             @click="lbTab = t.id" @keydown.enter="lbTab = t.id">{{ t.label }}</span>
         </div>
-        <EarthRallyBoard v-if="stg.board && lbTab === 'offline'" :b="stg.board" :best="stg.best" @pass="choosePass" />
-        <EarthRallyOnline v-else :event-id="stg.eventId" :stage-id="stg.id" />
+        <EarthRallyBoard v-if="stg.board && (lbTab === 'offline' || !onlineOn)" :b="stg.board" :best="stg.best" @pass="choosePass" />
+        <EarthRallyOnline v-else-if="onlineOn" :event-id="stg.eventId" :stage-id="stg.id" />
         <div class="er-card er-runs">
           <h3>Your runs</h3>
           <div v-if="stg.best" class="er-best-box"><span class="er-t">{{ time(stg.best) }}</span><span class="er-badge">BEST</span></div>
@@ -394,6 +394,7 @@ const rly = computed(() => (rally.value && !rally.value.missing && rally.value.i
 // the stage page's leaderboard: the rally pack's real results (offline) or players' times (online)
 const LB_TABS = [{ id: "offline", label: "Offline" }, { id: "online", label: "Online" }]
 const lbTab = ref("offline")
+const onlineOn = computed(() => !!(state.value.settings && state.value.settings.settings && state.value.settings.settings.onlineBoard))
 const stg = computed(() => (stage.value && !stage.value.missing && stage.value.id === sel.value.stageId &&
   stage.value.eventId === sel.value.eventId) ? stage.value : null)
 // An auto recce holds the page as a recce does: the Lua does one window at a time, so every other action is

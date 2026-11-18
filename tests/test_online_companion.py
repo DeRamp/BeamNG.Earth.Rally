@@ -90,6 +90,13 @@ def main():
         f.answers["/v1/runs"] = (409, {"error": "this run was sent already"})
         check(b.flush_queue() == 1 and not b.queue, "refused by the server: dropped, not kept for ever")
 
+        # a server whose database was reset: the player forgotten, a new name makes a new one
+        f.answers["/v1/runs/start"] = (401, {"error": "unknown player"})
+        r = b.handle({"op": "start", "stage": {}})
+        check(not r["ok"] and r.get("noPlayer") and b.player is None, "unknown to the server: forgotten")
+        f.answers["/v1/players"] = (200, {"id": "p2", "secret": "s2", "name": "Ann"})
+        check(b.handle({"op": "register", "name": "Ann"})["ok"] and b.player["id"] == "p2", "a name again: a new player")
+
         f.answers["/v1/boards"] = (400, {"error": "bad stage length"})
         r = b.handle({"op": "board", "stage": {}})
         check(not r["ok"] and r["error"] == "bad stage length" and r["status"] == 400, "the server's error passed on")

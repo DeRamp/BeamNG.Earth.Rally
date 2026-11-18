@@ -7,9 +7,10 @@
 -- (luasocket, timeout 0): nothing here holds up a frame. Off until the player turns the online board on (settings
 -- `onlineBoard`): nothing connects or is sent before that.
 --
--- What a run sends (runStart / runSample / runFinish): the stage described by where it is (name, rally, start and
--- flying finish, length: the server finds the same road for players whose lines differ by a few metres), the car,
--- the time and its penalties, and the car's position twice a second (the server's checks, and later ghosts).
+-- What a run sends (runStart / runSample / runReset / runFinish): the stage described by where it is (name, rally,
+-- start and flying finish, length: the server finds the same road for players whose lines differ by a few metres),
+-- the car, the time and its penalties, the car's position twice a second, when it was reset or recovered, and how far
+-- the game's clock fell behind real time (slow motion) -- the server's checks, and later ghosts.
 local M = {}
 
 M.HOST, M.PORT = '127.0.0.1', 47820
@@ -17,6 +18,7 @@ M.RECONNECT_S = 5
 M.CONNECT_TIMEOUT_S = 2
 M.REQUEST_TIMEOUT_S = 20
 M.BOARD_FRESH_S = 30          -- a board is asked for again after this long
+M.HELLO_EVERY_S = 10          -- the companion's state (its queue) asked for again this often
 M.TRACE_STEP_S = 0.5          -- a trace point every this much stage time
 M.TRACE_MAX = 19000           -- (the server takes 20000)
 M.VERSION = nil               -- the mod's version, sent with each run (main.lua sets it)
@@ -29,8 +31,9 @@ local nextId = 0
 local pending = {}            -- id -> { cb, op, age }
 local hello = nil             -- the companion's hello answer
 local boards = {}             -- key -> { at, data, error, asking }
-local runs = {}               -- handle -> { token | nil, asking, finished payload, result }
 local clock = 0
+local helloAt = 0
+local unsent = {}             -- finished runs the companion was not there to take: sent when it is back
 M.lastError = nil
 M.lastResult = nil            -- the last run's answer: { ok, status, pos, of, best, error, queued, stage, board }
 
@@ -54,11 +57,12 @@ function M.stageDesc(eventName, stageName, lineStart, lineFinish, lengthM)
     lengthM = math.floor(lengthM + 0.5) }
 end
 
--- (a board's cache key: the stage to about 10 m, its length to the metre, and the board)
-function M.descKey(desc, board)
-  return string.format('%.4f,%.4f,%.4f,%.4f,%d,%s', desc.start[1], desc.start[2], desc.finish[1], desc.finish[2],
-    desc.lengthM, tostring(board))
+-- (a stage's key here: its ends to about 10 m and its length to the metre; with the board, a board's cache key)
+function M.stageKey(desc)
+  return string.format('%.4f,%.4f,%.4f,%.4f,%d', desc.start[1], desc.start[2], desc.finish[1], desc.finish[2],
+    desc.lengthM)
 end
+function M.descKey(desc, board) return M.stageKey(desc) .. ',' .. tostring(board) end
 
 -- 'stock' when the car is one of the game's own as it comes (its model and its configuration both the game's
 -- official ones), else 'open'. details: core_vehicles.getCurrentVehicleDetails(). A car tuned in the garage and
@@ -115,11 +119,19 @@ local function closeSock(err)
   return was
 end
 
+local function askHello()
+  helloAt = clock
+  M.request('hello', {}, function(r) if r and r.ok then hello = r end end)
+end
+
 local function onConnected()
   state = 'connected'
   M.lastError = nil
   pcall(sock.setoption, sock, 'tcp-nodelay', true)
-  M.request('hello', {}, function(r) if r and r.ok then hello = r end end)
+  askHello()
+  local again = unsent
+  unsent = {}
+  for _, x in ipairs(again) do M._submit(x.run, x.key) end
 end
 
 local function startConnect()
@@ -207,6 +219,7 @@ function M.update(dt)
   end
   flush()
   if state == 'connected' then receive() end
+  if state == 'connected' and clock - helloAt >= M.HELLO_EVERY_S then askHello() end
   for id, p in pairs(pending) do
     p.age = p.age + dt
     if p.age > M.REQUEST_TIMEOUT_S then
@@ -263,12 +276,12 @@ function M.forgetBoards() boards = {} end
 
 ------------------------------------------------------------------------------------------ runs
 
--- A run's clock started: a token asked for (the server's clock from here to the submission is one of its checks).
--- Returns a handle for runFinish, or nil when the online board is off or the stage has no line.
+-- A run begins: a token asked for (the server's clock from here to the submission must be at least the stage
+-- time, so it is asked for at the run's start, well before GO: a slow answer then costs nothing). Returns a handle
+-- for runSample / runReset / runFinish, or nil when the online board is off or the stage has no line.
 function M.runStart(desc)
   if not (enabled and desc) then return nil end
-  local h = { desc = desc, trace = {}, asking = true }
-  runs[h] = true
+  local h = { desc = desc, trace = {}, resets = {}, slowS = 0, asking = true }
   M.request('start', { stage = desc }, function(r)
     h.asking = false
     if r.ok then h.token = r.token else h.error = r.error end
@@ -281,6 +294,20 @@ function M.runSample(h, at, lat, lon)
   if h and not h.finish then M.addPoint(h.trace, at, lat, lon) end
 end
 
+-- The car was reset or recovered at stage time `at` (s): its jump in the trace is that, not a teleport.
+function M.runReset(h, at)
+  if h and not h.finish and type(at) == 'number' and #h.resets < 500 then
+    h.resets[#h.resets + 1] = math.floor(math.max(0, at) * 1000 + 0.5)
+  end
+end
+
+-- A frame of the timed stage: the game's clock behind real time (slow motion; a paused game, dtSim 0, is not).
+function M.runFrame(h, dtReal, dtSim)
+  if h and not h.finish and (dtSim or 0) > 0 and (dtReal or 0) > 0 and dtSim < dtReal * 0.9 then
+    h.slowS = h.slowS + (dtReal - dtSim)
+  end
+end
+
 -- The run is over: { timeS, penaltyS, driveS, car, board, lat, lon (the finish) }. Sent when its token is here.
 function M.runFinish(h, fin)
   if not h or h.finish then return end
@@ -290,18 +317,28 @@ function M.runFinish(h, fin)
 end
 
 function M._send(h)
-  runs[h] = nil
+  local key = M.stageKey(h.desc)
   if not h.token then
-    M.lastResult = { ok = false, error = 'not sent: ' .. tostring(h.error or 'no run token') }
+    M.lastResult = { ok = false, error = 'not sent: ' .. tostring(h.error or 'no run token'), stageKey = key }
     return
   end
   local f = h.finish
   local run = { token = h.token, board = f.board == 'stock' and 'stock' or 'open', car = f.car,
     timeMs = math.floor(f.timeS * 1000 + 0.5), penaltyMs = math.floor((f.penaltyS or 0) * 1000 + 0.5),
-    trace = h.trace, modVersion = M.VERSION }
+    trace = h.trace, resets = h.resets, slowMs = math.floor(h.slowS * 1000 + 0.5), modVersion = M.VERSION }
+  M._submit(run, key)
+end
+
+-- (a run whose token is valid for a day: the companion gone for a moment -- restarted mid-stage -- keeps it here
+-- until it is back)
+function M._submit(run, key)
   M.request('submit', { run = run }, function(r)
+    if r.offline and not r.queued and #unsent < 20 then
+      unsent[#unsent + 1] = { run = run, key = key }
+      r = { ok = false, queued = true, error = r.error }
+    end
     M.lastResult = r
-    r.board = run.board
+    r.board, r.stageKey = run.board, key
     M.forgetBoards()
     if not r.ok and not r.queued then logW('run not taken: ' .. tostring(r.error)) end
   end)
@@ -311,7 +348,7 @@ end
 function M._reset()
   if sock then pcall(sock.close, sock) end
   sock, state, timer, enabled, inbuf, outbuf = nil, 'off', 0, false, '', ''
-  pending, hello, boards, runs, clock, nextId = {}, nil, {}, {}, 0, 0
+  pending, hello, boards, clock, nextId, helloAt, unsent = {}, nil, {}, 0, 0, 0, {}
   M.lastError, M.lastResult = nil, nil
 end
 

@@ -17,7 +17,9 @@ line back is the answer, {"id": n, "ok": true | false, ...}, in whatever order t
     report {runId, why}                 -> {}
 
 The player's id and secret are kept in DATA/player.json, and runs that could not be sent in DATA/queue.json (sent again
-every RETRY_S while this runs).
+every RETRY_S while this runs). DATA is ~/.earth_rally_online by default: not beside this file, which BeamNG.Earth
+replaces when the add-on is updated. A player the server no longer knows (its database was reset) is forgotten, so
+the next name picked makes a new one.
 """
 import argparse
 import json
@@ -110,6 +112,8 @@ class Board:
                 if st == 200:
                     self.player["name"] = a["name"]
                     self._write("player.json", self.player)
+                elif self._forget_if_unknown(st, a):
+                    return self.register(req)
             else:
                 st, a = self.call("POST", "/v1/players", {"name": name}, auth=False)
                 if st == 200:
@@ -119,11 +123,30 @@ class Board:
             return {"ok": False, "error": a.get("error"), "offline": st == 0}
         return {"ok": True, "player": {"name": self.player["name"]}}
 
+    def _forget_if_unknown(self, st, a):
+        """The server no longer knows this player (401): forgotten, so a name picked next makes a new one."""
+        if st == 401 and self.player:
+            with self.lock:
+                log.warning("the board does not know this player (%s): forgotten", a.get("error"))
+                self.player = None
+                try:
+                    os.replace(self._path("player.json"), self._path("player.json.old"))
+                except OSError:
+                    pass
+            return True
+        return False
+
     def _need_player(self):
         return None if self.player else {"ok": False, "error": "pick a name for the online board first", "noPlayer": True}
 
     def start(self, req):
-        return self._need_player() or self._answer(*self.call("POST", "/v1/runs/start", {"stage": req.get("stage")}))
+        miss = self._need_player()
+        if miss:
+            return miss
+        st, a = self.call("POST", "/v1/runs/start", {"stage": req.get("stage")})
+        if self._forget_if_unknown(st, a):
+            return {"ok": False, "error": "the board no longer knows you: pick a name again", "noPlayer": True}
+        return self._answer(st, a)
 
     def submit(self, req):
         miss = self._need_player()
@@ -156,20 +179,26 @@ class Board:
         return {"ok": False, "error": a.get("error"), "status": st or None, "offline": st == 0}
 
     def flush_queue(self):
-        """Send the runs that could not be sent: kept while the server cannot be reached, dropped once it answers."""
+        """Send the runs that could not be sent: kept while the server cannot be reached, dropped once it answers.
+        Each run stays in the queue (and its file) until it is answered, so a run queued meanwhile, or the companion
+        stopping half way, loses none."""
         with self.lock:
-            todo, self.queue = self.queue, []
-        keep = []
+            todo = list(self.queue)
+        done = 0
         for run in todo:
-            st, a = self.call("POST", "/v1/runs", run) if self.player else (0, {})
+            if not self.player:
+                break
+            st, a = self.call("POST", "/v1/runs", run)
             if st == 0 or st >= 500 or st == 429:
-                keep.append(run)
-            elif st != 200:
+                break                       # (still unreachable: the rest wait too)
+            if st != 200:
                 log.warning("a queued run was refused: %s", a.get("error"))
-        with self.lock:
-            self.queue = keep + self.queue
-            self._write("queue.json", self.queue)
-        return len(todo) - len(keep)
+            with self.lock:
+                if run in self.queue:
+                    self.queue.remove(run)
+                self._write("queue.json", self.queue)
+            done += 1
+        return done
 
     OPS = ("hello", "register", "start", "submit", "board", "report")
 
@@ -197,7 +226,7 @@ class Handler(socketserver.StreamRequestHandler):
                 try:
                     self.wfile.write(line)
                     self.wfile.flush()
-                except OSError:
+                except (OSError, ValueError):     # (the connection closed while the answer was on its way)
                     pass
 
         while True:
@@ -217,7 +246,8 @@ class Handler(socketserver.StreamRequestHandler):
 
 class Server(socketserver.ThreadingTCPServer):
     daemon_threads = True
-    allow_reuse_address = True
+    # (not on Windows: there SO_REUSEADDR lets a second companion share the port, each taking some connections)
+    allow_reuse_address = os.name != "nt"
 
 
 def serve(board, port):
@@ -239,7 +269,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="Earth Rally's online board, beside the game")
     ap.add_argument("--port", type=int, default=DEFAULT_PORT)
     ap.add_argument("--server", default=DEFAULT_SERVER)
-    ap.add_argument("--data", default=os.path.dirname(os.path.abspath(__file__)))
+    ap.add_argument("--data", default=os.path.join(os.path.expanduser("~"), ".earth_rally_online"))
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     board = Board(a.server, a.data)
