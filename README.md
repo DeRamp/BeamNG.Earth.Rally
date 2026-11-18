@@ -67,7 +67,8 @@ Menu will not open? See [the player guide](docs/guide.md#the-menu-will-not-open)
 * [Wiki](https://github.com/DeRamp/BeamNG.Earth.Rally/wiki): screenshots and short how-tos
 * [Player guide](docs/guide.md): stages, controls, leaderboards, making your own map
 * [Pacenotes](docs/pacenotes-1.5.0.md): every call and the figures behind it
-* [Rally pack format](docs/rally-file.md)
+* [Making stages and rally packs](docs/making-rally-packs.md): stage maps, pack layout, every file
+* [Rally pack format](docs/rally-file.md): the full spec
 * [Roadmap](docs/roadmap.md)
 * [Developer docs](docs/): tests, tools and design notes
 * [Writing standard](docs/writing-standard.md): README, changelog and releases

@@ -90,6 +90,30 @@ penalties) is ignored. Rules are **not** read from it: they come from the manife
       "day": 1, "power_stage": false } ] }
 ```
 
+For the full rally (1.7.0, **Drive rally**), these are read too:
+
+```jsonc
+{ "locations": [ { "id": "park", "name": "Fernvale Park Service Area (Saturday), Fernvale",
+                   "lat": 60.0102, "lon": -10.0451 } ],            // places a row or service entry names
+  "service": [ { "type": "service", "control": "2A-2B",            // controls split by "-" or spaces
+                 "location": "park" } ],
+  "itinerary": [ { "type": "SVC_IN", "control": "2A", "location": "park", "day": 1 }, ... ] }
+```
+
+- **Stops** come from the rows between two passes; rows after a pass already listed (a class's copy of the running
+  order) add nothing. A **service** follows a pass when a row between it and the next is `SVC_IN` or `SVC_OUT`, or
+  its `control` is one of a `service` entry's (`"2A-2B"`, or `"RZ1"` where service is at refuel zones). An
+  **overnight** follows a pass when the next pass's `day` differs. A stop after the last pass is dropped (the
+  finish). Services are labelled Service A, B...
+- **Where a stop is**: each row between the two passes whose `location` (or its service entry's) names a
+  `locations` entry with numeric `lat` and `lon` is a candidate, ranked: the service entry's place, `SVC_OUT`,
+  `SVC_IN`, `MTC_OUT` / `PE_OUT`, `MTC_IN`, `PE_IN`, any other. An overnight takes `MTC_OUT` / `PE_OUT` (the next
+  morning's start) first. The stop's name is the place's name up to its first comma or ` (`.
+- **The rally's start**: the best located row before the first pass (`MTC_OUT` / `PE_OUT` first), else the first
+  service's place.
+- A rally is offered in **Drive rally** when its event file has at least one `SS` row that matches a map line
+  (`rallyStops` written, even empty). With no event file, or none matching, there is no full rally.
+
 The itinerary is the running order. A row whose `stage` names no line in the map is an import warning and is left
 out. With no event file (or no SS row that matches), the stages run once each in map order, SS1, SS2..., each its
 line's length. A map line the itinerary never runs is a stage with no passes: the menu shows it as "Not run", with

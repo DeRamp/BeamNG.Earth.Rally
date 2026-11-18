@@ -20,3 +20,5 @@ Any road on BeamNG.Earth can be a stage. Draw it in [Google My Maps](https://www
 * Several lines in one file make a rally of several stages.
 
 Radio, medical, marshal and spectator points can be marked too; see [[Stage dressing]].
+
+To turn maps into a rally or season pack: [Making stages and rally packs](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/making-rally-packs.md).
