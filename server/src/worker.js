@@ -30,7 +30,7 @@ const EVENTS = {
   recce_done: ["result"],
   error: ["code", "module", "message"],
 }
-// fields cut to other than 80 characters; message is error text the companion has already scrubbed
+// fields cut to other than 80 characters; message is error text the game cleaned (stats.lua cleanMessage)
 const LENGTHS = { message: 200 }
 const CLASSES = new Set(["stock", "open"])
 const NUMBERS = { pass: [0, 999], time_s: [0, 86400], resets: [0, 9999], stages_total: [0, 999], stages_done: [0, 999] }

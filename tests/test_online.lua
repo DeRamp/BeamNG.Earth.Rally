@@ -26,6 +26,8 @@ T.check(O.boardFor(odd, fromGame, game) == 'open', 'labelled Custom: open')
 local unlabelled = { model = {}, configs = {}, current = official.current }
 T.check(O.boardFor(unlabelled, fromGame, game) == 'stock', "no labels, from the game's files: stock")
 T.check(O.boardFor(unlabelled, fromUser, game) == 'open', "no labels, from the user folder: open")
+T.check(O.boardFor({ model = official.model, configs = official.configs, userDefault = true,
+  current = { pc_file = 'settings/default.pc' } }) == 'open', "the player's saved default car: open")
 T.check(O.boardFor(nil) == 'open', 'no details: open')
 T.check(O.carName(official) == 'Ibishu Covet Rally', 'the car named as rallyRun names it')
 

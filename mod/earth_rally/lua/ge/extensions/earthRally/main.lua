@@ -80,7 +80,10 @@ function M.toggle() show[0] = not show[0] end
 function M.show() show[0] = true end
 settings.onChange('main', function(key, v)
   if key == 'devPanel' then show[0] = v == true end
-  if key == 'onlineBoard' then online.enable(v == true) end
+  if key == 'onlineBoard' then
+    online.enable(v == true)
+    if v == true then pcall(stats.sessionStart) pcall(stats.flushSoon) end
+  end
 end)
 
 -- Go to a UI screen (route): ui_router.navigate (BeamNG 0.40), else the old ChangeState (as BeamNG.Earth's settings).
@@ -1219,8 +1222,7 @@ M._action = doAction
 function M.uiAction(what, eventId, stageId)
   local ok, r = pcall(doAction, what, eventId, stageId)
   if not ok then
-    log('E', logTag, 'menu action ' .. tostring(what) .. ': ' .. tostring(r))
-    pcall(stats.error, 'menu_action_' .. tostring(what):gsub('[^%w]', ''):sub(1, 30), 'main')
+    log('E', logTag, 'menu action ' .. tostring(what) .. ': ' .. tostring(r))   -- (stats: recorded by stats.watchLog)
     return { ok = false, message = tostring(r) }
   end
   if r.message then message = r.message end
@@ -1417,7 +1419,9 @@ function M.uiOnline(eventId, stageId, board, force)
     local cv = rawget(_G, 'core_vehicles')
     local okD, d = false, nil
     if cv and cv.getCurrentVehicleDetails then okD, d = pcall(cv.getCurrentVehicleDetails) end
-    b = (okD and d) and online.boardFor(d) or 'stock'
+    local okB, cls = false, nil
+    if okD and type(d) == 'table' and type(d.current) == 'table' and d.current.key then okB, cls = pcall(online.boardFor, d) end
+    b = (okB and cls) or 'stock'    -- (no car: Stock)
   end
   local out = { status = online.status(), boardName = b, naming = online.lastRegister }
   if out.status.on then
@@ -1528,6 +1532,7 @@ function M.uiStats(what, a, b)
   local ok, r = pcall(function()
     if what == 'yes' or what == 'no' then stats.answer(what == 'yes') if what == 'yes' then stats.flushSoon() end
     elseif what == 'shown' then stats.prompting()     -- (the question is on screen: leaving now is a No)
+    elseif what == 'hidden' then stats.unprompt()     -- (it went without an answer)
     elseif what == 'openFolder' then stats.openFolder()
     elseif what == 'report' then
       local cur = runner.current()

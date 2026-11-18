@@ -11,7 +11,7 @@ Owner and contact for this data: **DeRamp**, through
 
 - The event: a session started, a stage or rally started or finished, a recce done, an error.
 - A random session number, made new each time you start the game and never used again, so your sessions cannot
-  be linked to each other or to you.
+  be linked to each other (see the note under Your controls).
 - The Earth Rally, BeamNG.drive and BeamNG.Earth versions.
 - The day, with no time of day.
 - For a stage: the rally and stage name, the result, the stage time in whole seconds and the number of resets.
@@ -26,7 +26,8 @@ Owner and contact for this data: **DeRamp**, through
 - Your name, your leaderboard name, or your Steam or BeamNG account.
 - Your location or where you drive.
 - Your PC, hardware or other mods.
-- Logs. A log only leaves your PC if you attach it to a bug report yourself.
+- Your log. Only Earth Rally's own error lines are sent, cleaned as above. A whole log only leaves your PC if you
+  attach it to a bug report yourself.
 
 Your IP address reaches the server with each message, as with any internet request. The server never reads or
 stores it, and request logs are off.
@@ -43,7 +44,11 @@ stores it, and request logs are off.
 - **See what was sent:** every message is also saved word for word in `earthRally/telemetry/sent.jsonl` in your
   BeamNG user folder.
 - **Turn it off:** Settings › Privacy › Off. Nothing more is sent, and anything waiting is thrown away.
-- There is no "delete my stats": nothing sent can be traced back to you, so there is nothing to find.
+- There is no "delete my stats": stats carry no name or id, so there is nothing to look them up by.
+
+Stats are only sent while Leaderboards are on, and they never carry your leaderboard name or id. But a finished
+stage's time, car and day are also on the leaderboard, so someone with both databases could match a session to a
+leaderboard time. Earth Rally does not do that.
 
 ## Bug reports
 

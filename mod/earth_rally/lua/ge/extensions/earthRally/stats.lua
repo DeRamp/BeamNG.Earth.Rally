@@ -122,6 +122,8 @@ end
 
 -- The menu shows the question (main.uiState asks): remembered, so leaving the menu with it up is a No.
 function M.prompting() load() if st.consent == 'ask' then prompted = true end end
+-- (the question went without an answer -- Leaderboards turned off under it: not a No)
+function M.unprompt() prompted = false end
 function M.menuClosed() if prompted and st and st.consent == 'ask' then M.answer(false) end prompted = false end
 
 local function earthVersion()
@@ -240,8 +242,8 @@ end
 
 function M.error(code, module, message)
   load()
-  if st.consent ~= 'yes' or errCount >= M.ERRORS_MAX then return false end
-  code = tostring(code or 'error'):gsub('%d+', '#'):sub(1, 80)
+  if st.consent ~= 'yes' or errCount >= M.ERRORS_MAX or not (M.active and M.active()) then return false end
+  code = (M.cleanMessage(tostring(code or 'error')) or 'error'):gsub('%d+', '#'):sub(1, 80)
   local n = (errSeen[code] or 0) + 1
   if n > M.ERROR_REPEAT then return false end
   if not M.record('error', { code = code, module = module, message = M.cleanMessage(message) }) then return false end
@@ -253,15 +255,19 @@ end
 
 -- Every error Earth Rally writes to the game's log (log('E', 'earthRally...', text)) recorded as one, while stats
 -- are on: the global log wrapped once, the original always called first. unwatchLog puts it back.
-local origLog, myLog, inLog = nil, nil, false
+-- (the wrapper keeps its own original: something that wrapped it after us, and later calls it or puts it back,
+-- still reaches the game's log; unwatched, it only passes lines on)
+local origLog, myLog, inLog, watching = nil, nil, false, false
 function M.watchLog()
-  if origLog then return end
+  watching = true
+  if myLog then return end
   local lgf = rawget(_G, 'log')
   if type(lgf) ~= 'function' then return end
-  origLog = lgf
+  local orig = lgf
+  origLog = orig
   myLog = function(level, tag, msg, ...)
-    origLog(level, tag, msg, ...)
-    if level == 'E' and not inLog and type(tag) == 'string' and tag:sub(1, 10) == 'earthRally' and st
+    orig(level, tag, msg, ...)
+    if watching and level == 'E' and not inLog and type(tag) == 'string' and tag:sub(1, 10) == 'earthRally' and st
       and st.consent == 'yes' then
       inLog = true
       local text = tostring(msg)
@@ -274,9 +280,9 @@ function M.watchLog()
   rawset(_G, 'log', myLog)
 end
 function M.unwatchLog()
-  -- (only when it is still ours: something that wrapped it after us keeps its own)
-  if origLog and rawget(_G, 'log') == myLog then rawset(_G, 'log', origLog) end
-  origLog, myLog = nil, nil
+  watching = false
+  -- (put back only when it is still ours on top; else ours stays under the other one, passing lines on)
+  if myLog and rawget(_G, 'log') == myLog then rawset(_G, 'log', origLog) origLog, myLog = nil, nil end
 end
 
 ------------------------------------------------------------------------------------------ sending
@@ -317,7 +323,8 @@ local function sendBatch()
       unqueue(batch)
       for _, e in ipairs(batch) do appendSent(encode(e)) end
       wantSend = #queue > 0
-    elseif code and code >= 400 and code < 500 and code ~= 429 then
+    elseif code and code >= 400 and code < 500 and code ~= 429 and code ~= 404 then
+      -- (404: no stats server at that address yet -- kept, not dropped)
       -- refused (bad, too big, over the cap): sending it again would be refused again
       -- (it did leave the PC, so it goes in the local copy too, marked)
       lg('W', 'the server refused ' .. #batch .. ' events (' .. code .. '); dropped')

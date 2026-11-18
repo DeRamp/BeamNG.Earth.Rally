@@ -77,12 +77,12 @@ local function normPath(p) return (tostring(p or ''):gsub('\\', '/'):gsub('/+', 
 function M.gameOrigin(path, originOf, gamePath)
   local fs = rawget(_G, 'FS')
   originOf = originOf or (fs and function(q)
-    local ok, o = pcall(fs.getFileOriginInfo, fs, q)
+    local ok, o = pcall(function() return fs:getFileOriginInfo(q) end)
     return ok and type(o) == 'table' and (o.mountPath or o.archivePath) or nil
   end)
-  if not gamePath and fs and fs.getGamePath then
-    local ok, g = pcall(fs.getGamePath, fs)
-    gamePath = ok and g or nil
+  if not gamePath and fs then
+    local ok, g = pcall(function() return fs:getGamePath() end)
+    gamePath = ok and type(g) == 'string' and g or nil
   end
   if not (originOf and gamePath and gamePath ~= '') then return false end
   local o = originOf(path)
@@ -98,6 +98,8 @@ function M.boardFor(details, originOf, gamePath)
   local cur = type(details.current) == 'table' and details.current or {}
   local pc = cur.pc_file
   if type(pc) ~= 'string' or not pc:lower():match('%.pc$') then return 'open', 'not a saved preset' end
+  -- (the player's own default car, settings/default.pc: the game gives it the model's labels, but it is theirs)
+  if details.userDefault or pc:lower():find('settings/', 1, true) then return 'open', "the player's default car: " .. pc end
   local labels = 'model ' .. tostring(model.Source) .. ', config ' .. tostring(cfg.Source) .. ', ' .. pc
   if model.Source == M.OFFICIAL and cfg.Source == M.OFFICIAL then return 'stock', labels end
   -- (a configuration from a mod or the player's own is never the game's: only a missing or official model label,

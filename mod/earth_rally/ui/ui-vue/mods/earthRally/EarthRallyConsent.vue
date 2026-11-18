@@ -17,9 +17,9 @@
           <li>A random number, new every session</li></ul></div>
         <div class="er-cs-col no"><h2>Never sent</h2><ul>
           <li>Your leaderboard name, Steam or BeamNG account</li>
-          <li>Your location, or your IP address (never stored)</li>
+          <li>Your location (your IP address reaches the server but is never stored)</li>
           <li>Your other mods or your PC</li>
-          <li>Your log, unless you send a report</li></ul></div>
+          <li>Your whole log (only Earth Rally's error lines, cleaned)</li></ul></div>
       </div>
       <p class="er-cs-small">Change your mind any time in <b>Settings › Privacy</b>. Full details, from DeRamp:
         github.com/DeRamp/BeamNG.Earth.Rally/PRIVACY.md</p>
@@ -32,12 +32,15 @@
 </template>
 
 <script setup>
-import { onMounted } from "vue"
+import { onMounted, onUnmounted } from "vue"
 import { BngButton, ACCENTS } from "@/common/components/base"
 import { statsAction } from "./store.js"
 
-function answer(what) { statsAction(what) }
+let answered = false
+function answer(what) { answered = true; statsAction(what) }
 onMounted(() => statsAction("shown"))
+// (gone without an answer, e.g. Leaderboards turned off under it: not a No)
+onUnmounted(() => { if (!answered) statsAction("hidden") })
 </script>
 
 <style lang="scss" scoped>
