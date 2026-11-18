@@ -6,6 +6,6 @@ compatibility_date = "2026-11-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "earth-rally"
-database_id = "REPLACE-WITH-THE-ID-FROM-wrangler-d1-create"
+database_id = "87caefd8-cb08-4c4a-8c2c-ee8cb912f9e6"
 
 # The admin token is a secret, never in this file: npx wrangler secret put ADMIN_TOKEN

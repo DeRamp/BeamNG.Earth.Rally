@@ -35,7 +35,7 @@ import urllib.request
 VERSION = "0.1.0"
 DEFAULT_PORT = 47820
 # The board's address once it is deployed (online/worker); --server or EARTH_RALLY_BOARD overrides it.
-DEFAULT_SERVER = os.environ.get("EARTH_RALLY_BOARD", "")
+DEFAULT_SERVER = os.environ.get("EARTH_RALLY_BOARD", "https://earth-rally-board.station68.workers.dev")
 HTTP_TIMEOUT_S = 15
 RETRY_S = 60
 LINE_MAX = 4 << 20
