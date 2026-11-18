@@ -8,7 +8,10 @@
                      after a Realistic recovery, your overall place, and Save and quit / Retire, each with a confirm
                      (#28); once finished, the result and New rally / Continue driving (#71).
        Each page's main button is a big one at the lower right (docs/mockups-1.7.0/rev4.html, #56 #57).
-       Data: earthRally_main.uiRallyStart / uiRallyCard (store.js). -->
+       Data: earthRally_main.uiRallyStart / uiRallyCard (store.js).
+       (rally loop, docs/mockups-rally-loop) A timed rally (its event has target times; the card carries a clock)
+       adds the rally clock, each control's Due / In / Road, a service's out time, the transit's due time and time
+       left, and the road penalties; the start screen says when the rally really starts. Untimed: as before. -->
   <section class="er-full">
     <!-- ===== start ===== -->
     <template v-if="kind === 'start'">
@@ -19,6 +22,7 @@
         <div class="er-card er-pad">
           <h2>{{ s.name }}</h2>
           <div class="er-muted">{{ s.stages }} stages · {{ s.days }} {{ s.days === 1 ? "day" : "days" }} · {{ s.services }} {{ s.services === 1 ? "service" : "services" }}<template v-if="s.crews"> · real field: {{ s.crews }} National crews</template></div>
+          <div v-if="s.startsAt && s.startsAt.text" class="er-when"><span class="er-sky" :class="s.startsAt.light || 'day'"></span><span>Starts {{ s.startsAt.text }}{{ LIGHT_WORDS[s.startsAt.light] || "" }}</span></div>
           <div class="er-lbl">Car</div>
           <div class="er-box"><span>{{ s.car ? s.car.name : "Get in a car first" }}</span><span v-if="s.car && s.car.drivetrain" class="er-muted">{{ s.car.drivetrain }}</span></div>
           <div class="er-lbl">Class</div>
@@ -55,6 +59,7 @@
       <!-- (#56) Start out of the settings: the big way in at the lower right, selected as the page opens, its
            warnings just above it -->
       <div class="er-corner">
+        <div v-if="s.worldTime === false" class="er-warn er-nofork">Your BeamNG.Earth can't set the rally's date and weather: the time of day is set, the weather stays live. Install the Earth Rally fork of BeamNG.Earth for the real weather.</div>
         <div v-if="s.saved" class="er-warn">This replaces your saved rally (at {{ s.saved.at }}).</div>
         <div v-if="s.inProgress && s.inProgress !== s.id" class="er-warn">Another rally is under way: leave it from its time card first.</div>
         <BngButton ref="startBtn" v-bng-ui-nav-focus="1" class="er-huge" :accent="ACCENTS.main" :disabled="!s.car" @click="start">
@@ -89,18 +94,26 @@
       <template v-else>
       <div class="er-two er-card-grid">
         <div class="er-card er-pad er-tc">
-          <div class="er-tc-head"><h2>{{ c.name }}</h2><span class="er-mode">{{ c.mode === "realistic" ? "Realistic" : "Casual" }} · {{ c.class }}</span></div>
-          <div class="er-tc-rows">
+          <div class="er-tc-head"><h2>{{ c.name }}</h2><span v-if="timed" class="er-clock">{{ [c.clock.date, c.clock.time].filter(Boolean).join(" · ") }}</span><span class="er-mode">{{ c.mode === "realistic" ? "Realistic" : "Casual" }} · {{ c.class }}</span></div>
+          <div class="er-tc-rows" :class="{ 'er-t2': timed }">
+            <div v-if="timed" class="er-tr er-thd"><span></span><span></span><span class="er-r">Due</span><span class="er-r">In</span><span class="er-r">Road</span><span class="er-r">Stage</span><span class="er-r">Pos</span></div>
             <template v-for="(r, i) in arr(c.rows)" :key="i">
               <div v-if="dayHead(i)" class="er-day">Day {{ r.day }}</div>
               <div class="er-tr" :class="rowCls(r)">
                 <span class="er-mono">{{ r.label }}</span>
-                <span class="er-clip">{{ r.name || "" }}</span>
+                <span v-if="timed" class="er-clip er-nm">{{ r.name || "" }}<small v-if="r.outAt">out {{ r.outAt }}</small></span>
+                <span v-else class="er-clip">{{ r.name || "" }}</span>
+                <template v-if="timed">
+                  <span class="er-mono er-r" :class="{ 'er-dimc': !r.due }">{{ r.due || (r.done ? "" : "–") }}</span>
+                  <span class="er-mono er-r">{{ r.timeIn || "" }}</span>
+                  <span class="er-r" :class="road(r).cls">{{ road(r).text }}</span>
+                </template>
                 <span class="er-mono er-r">{{ r.kind === "stage" ? (r.timeS != null ? time(r.timeS) : (r.next ? "next" : "")) : "" }}</span>
                 <span class="er-mono er-r">{{ r.pos ? `${r.pos} / ${r.of}` : "" }}</span>
               </div>
             </template>
           </div>
+          <div v-if="timed && c.roadPenaltyS != null" class="er-tsum"><span>Road penalties <b :class="{ 'er-late': c.roadPenaltyS > 0 }">{{ c.roadPenaltyS > 0 ? pen(c.roadPenaltyS) : "none" }}</b></span></div>
           <div v-if="arr(c.heldOut).length" class="er-muted er-small">Held out: {{ arr(c.heldOut).map(h => h.why ? `${h.ss} (${h.why})` : h.ss).join(", ") }}</div>
         </div>
         <div class="er-col er-gap">
@@ -142,8 +155,16 @@
             </template>
             <template v-else-if="c.phase === 'transit' || c.phase === 'toStop'">
               <h3>TRANSIT</h3>
-              <div v-if="c.transit">To {{ c.transit.name }}<template v-if="c.transit.distM != null"> · {{ len(c.transit.distM) }}</template></div>
-              <div class="er-muted er-small">Follow the arrows.</div>
+              <!-- timed: the due time and the time left (the rally clock stands still while the menu is open, so it
+                   does not count here), red once late -->
+              <div v-if="c.transit && c.transit.due" class="er-banner" :class="{ late: c.transit.late > 0 }">
+                <span>To {{ c.transit.name }}</span><i>·</i><span>due <span class="er-mono">{{ c.transit.due }}</span></span>
+                <template v-if="c.transit.late > 0"><i>·</i><span>{{ c.transit.late }} min late<template v-if="c.transit.penaltyS > 0"> · {{ pen(c.transit.penaltyS) }}</template></span></template>
+                <template v-else-if="c.transit.leftS != null"><i>·</i><span class="er-mono">{{ mmss(c.transit.leftS) }}</span><span>left</span></template>
+                <template v-if="c.transit.distM != null"><i>·</i><span class="er-mono">{{ len(c.transit.distM) }}</span></template>
+              </div>
+              <div v-else-if="c.transit">To {{ c.transit.name }}<template v-if="c.transit.distM != null"> · {{ len(c.transit.distM) }}</template></div>
+              <div class="er-muted er-small">Follow the arrows.<template v-if="c.transit && c.transit.due"> Late costs a road penalty for each minute.</template></div>
             </template>
             <template v-else-if="c.phase === 'toGo'">
               <h3>NEXT: {{ (c.at && c.at.label || "").toUpperCase() }}</h3>
@@ -160,6 +181,7 @@
               <div class="er-row2"><span>{{ c.class }}</span><b>{{ ord(c.overall.classPos) }} / {{ c.overall.classOf }}</b></div>
               <div class="er-row2"><span>Gap to leader</span><span class="er-mono">{{ c.overall.gapS > 0.05 ? "+" + longTime(c.overall.gapS) : "leading" }}</span></div>
             </template>
+            <div v-if="timed && c.roadPenaltyS > 0" class="er-row2"><span>Road penalties</span><span class="er-mono er-late">{{ pen(c.roadPenaltyS) }}</span></div>
             <div class="er-row2"><span>Your total</span><span class="er-mono">{{ longTime(c.totalS) }}</span></div>
           </div>
           <!-- leaving: continue later, or retire (#28) -->
@@ -210,8 +232,24 @@ import { action, mmss, rallyStart, rallyCard, rallyAction, busyMsg, closeMenu, f
 const props = defineProps({ kind: { type: String, default: "card" }, id: { type: String, default: null } })
 const emit = defineEmits(["view"])
 
+// "at night": the start's light (rallyRun.startInfo startsAt.light, from the sun's height at the start)
+const LIGHT_WORDS = { night: ", at night", dusk: ", at dusk", dawn: ", at dawn", day: ", in daylight" }
 const s = computed(() => (rallyStart.value && rallyStart.value.id === props.id ? rallyStart.value : null))
 const c = computed(() => rallyCard.value)
+// a timed rally: its card carries the rally clock (nil on an untimed one, whose card stays as it was)
+const timed = computed(() => !!(c.value && c.value.clock && typeof c.value.clock === "object"))
+// a road penalty: "+20 s", "+2:10"
+function pen(v) {
+  const t = Math.round(v || 0)
+  return t < 60 ? `+${t} s` : `+${mmss(t)}`
+}
+// A control's Road column: nothing until checked in there, "on time", or the cost in amber, late or early by the
+// time in against the due minute (both "HH:MM" from Lua)
+function road(r) {
+  if (!(r.roadPenaltyS > 0)) return { text: r.timeIn ? "on time" : "", cls: "er-dimc" }
+  const early = r.timeIn && r.due && String(r.timeIn) < String(r.due)
+  return { text: `${pen(r.roadPenaltyS)} ${early ? "early" : "late"}`, cls: "er-late" }
+}
 
 const mode = ref("realistic")
 const canc = ref("real")
@@ -393,5 +431,25 @@ h3 { margin: 0 0 10px; font-size: 20px; letter-spacing: 0.04em; }
     background-size: 22.6px 100%; animation: er-prun 1s linear infinite; } }
 @keyframes er-prun { to { background-position: 22.6px 0; } }
 .er-prstop { margin-top: 14px; }
+/* (rally loop) the timed time card: the clock, Due / In / Road, the transit's due banner, the penalties */
+.er-clock { font: 700 22px "Overpass Mono", monospace; color: rgb(225, 123, 225); text-shadow: 0 0 10px rgba(225, 123, 225, 0.4); }
+.er-t2 .er-tr { grid-template-columns: 96px minmax(0, 1fr) 74px 74px 130px 100px 84px; }
+.er-thd { color: #b8bcc6; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; border-bottom-color: rgba(255, 255, 255, 0.14); padding-top: 4px; padding-bottom: 4px; }
+.er-nm small { display: block; font-size: 14px; font-weight: 600; color: #8a909a; }
+.er-dimc { color: #8a909a; }
+.er-late { color: #ffd36b; }
+.er-tr.next .er-late, .er-tr.next .er-dimc, .er-tr.next .er-nm small { color: #fff; }
+.er-tsum { display: flex; gap: 28px; margin-top: 12px; padding: 0 10px; font-size: 16px; color: #b8bcc6;
+  b { font-family: "Overpass Mono", monospace; color: #fff; font-weight: 700; } b.er-late { color: #ffd36b; } }
+.er-banner { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 12px 16px; border-radius: 6px; background: rgba(42, 109, 244, 0.18);
+  box-shadow: inset 4px 0 0 #2a6df4; font-size: 21px; font-weight: 600;
+  .er-mono { font-weight: 700; } i { font-style: normal; color: #6f7480; }
+  &.late { background: rgba(229, 83, 61, 0.16); box-shadow: inset 4px 0 0 #e5533d; color: #ff8a78; } }
+.er-when { display: flex; align-items: center; gap: 14px; margin-top: 18px; padding: 14px 18px; border-radius: 6px; background: rgba(40, 50, 90, 0.45); box-shadow: inset 4px 0 0 #7c8cff; font-size: 21px; font-weight: 600; }
+.er-sky { width: 26px; height: 26px; border-radius: 50%; flex: none;
+  &.night { box-shadow: inset -8px -3px 0 0 #e8e4c8; transform: rotate(-20deg); }
+  &.dusk, &.dawn { background: linear-gradient(180deg, #ffb46b 50%, transparent 50%); }
+  &.day { background: #ffd36b; } }
+.er-corner .er-nofork { max-width: 620px; text-align: right; line-height: 1.45; }
 .er-row2 { display: flex; justify-content: space-between; padding: 5px 0; font-size: 18px; }
 </style>
