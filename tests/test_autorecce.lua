@@ -728,15 +728,44 @@ end
 
 -- A window that times out or errors is asked again (ERROR_RETRIES), and one that never answers ends FAILED, saying
 -- BeamNG.Earth did not answer -- never "no map data", which sent the player off to drive ground already there.
+-- (1.7.3) Each is asked again only after RETRY_DELAY_S, on auto.update; an error that cannot change ends at once.
 do
+  local hadWall = auto.wall
+  local now = 0
+  auto.wall = function() return now end
+  -- every answer delivered; a window waiting to be asked again is asked once its delay is over, and not before
+  local function drain(maxSteps)
+    local guard = 0
+    while guard < (maxSteps or 200) do
+      guard = guard + 1
+      if #pending > 0 then table.remove(pending, 1)()
+      elseif auto.active() then
+        now = now + 1
+        auto.update()
+      else break end
+    end
+  end
+
   reset()
   world.roads = { eastRoad('r', 3200, 20, 0) }
   world.errorCalls = { [2] = 'timed out', [3] = 'RuntimeError' }      -- the second window fails twice, then answers
-  local res = run(EVENT, stageOf(lineEast(3000, 200)))
+  local res = { }
+  auto.start(EVENT, stageOf(lineEast(3000, 200)), function(o, m, w) res.ok, res.why = o, w end)
+  table.remove(pending, 1)()           -- window 1 answers
+  table.remove(pending, 1)()           -- window 2 times out
+  local calls = world.calls
+  T.check(#pending == 0 and calls == 2, 'a window that timed out is not asked again at once (' .. world.calls .. ')')
+  now = now + auto.RETRY_DELAY_S - 0.5
+  auto.update()
+  T.check(world.calls == 2, 'nor before RETRY_DELAY_S (' .. world.calls .. ')')
+  now = now + 0.5
+  auto.update()
+  T.check(world.calls == 3, 'but once it is over (' .. world.calls .. ')')
+  drain()
   T.check(res.ok == true and matchedFile() ~= nil, 'a window that failed twice and then answered: matched (' ..
     tostring(res.why) .. ')')
   local asked = 0
-  for _, l in ipairs(logs) do if l:find('asking again %(') then asked = asked + 1 end end
+  for _, l in ipairs(logs) do if l:find('asking again in') then asked = asked + 1 end end
   T.check(asked == 2, 'and it was asked again twice (' .. asked .. ')')
 
   reset()
@@ -744,8 +773,7 @@ do
   world.errorCalls = { [2] = 'timed out', [3] = 'timed out', [4] = 'timed out' }
   local how
   auto.start(EVENT, stageOf(lineEast(3000, 200)), function(o, m, w, h) how = { ok = o, why = w, how = h } end)
-  local guard = 0
-  while #pending > 0 and guard < 200 do table.remove(pending, 1)() guard = guard + 1 end
+  drain()
   T.check(how and how.ok == false and how.how.kind == auto.FAILED,
     'a window that never answers: FAILED (' .. tostring(how and how.how and how.how.kind) .. ')')
   T.check(how and how.why:find('did not answer') and how.why:find('try') and not how.why:find('map data'),
@@ -753,15 +781,62 @@ do
   T.check(how and how.how.done == 1, 'at the window that failed (' .. tostring(how and how.how.done) .. ' done)')
   T.check(world.calls == 4 and matchedFile() == nil, 'asked 1 + 2 times, then nothing written (' .. world.calls .. ')')
 
+  -- an answer that could not be read back is asked again too
+  reset()
+  world.roads = { eastRoad('r', 3200, 20, 0) }
+  world.errorCalls = { [2] = 'the graph was built but could not be read back from x.json' }
+  res = {}
+  auto.start(EVENT, stageOf(lineEast(3000, 200)), function(o, m, w) res.ok, res.why = o, w end)
+  drain()
+  asked = 0
+  for _, l in ipairs(logs) do if l:find('could not be read back from x.json: asking again in') then asked = asked + 1 end end
+  T.check(res.ok == true and asked == 1, 'an answer that could not be read back: asked again, matched (' ..
+    asked .. ')')
+
+  -- errors that asking again cannot change (the fork's earthd.py road_graph): at once, with their own reason
+  for _, c in ipairs({
+    { "no map data (BeamNG.Earth's roads are off)", 'roads are off' },
+    { 'the app was started without roads (--traffic off): there is no road graph', 'started without roads' },
+    { 'no world yet (no anchor): ask once api.ready()', 'no world loaded yet' },
+    { 'bad coordinates', 'bad coordinates' } }) do
+    reset()
+    world.roads = { eastRoad('r', 3200, 20, 0) }
+    world.errorCalls = { [2] = c[1] }
+    how = nil
+    auto.start(EVENT, stageOf(lineEast(3000, 200)), function(o, m, w, h) how = { ok = o, why = w, how = h } end)
+    drain()
+    T.check(how and how.ok == false and how.how.kind == auto.FAILED and world.calls == 2,
+      'a window answered "' .. c[1] .. '": not asked again (' .. world.calls .. ' calls)')
+    T.check(how and how.why:find(c[2], 1, true) and not how.why:find('did not answer'),
+      'and it says its own reason, not "did not answer" (' .. tostring(how and how.why) .. ')')
+  end
+  T.check(auto.windowErrorWhy('timed out') == nil and auto.windowErrorWhy('OSError') == nil
+    and auto.windowErrorWhy('RuntimeError') == nil and auto.windowErrorWhy('no answer') == nil,
+    'timeouts, exceptions and no answer are the ones asked again')
+  T.check(auto.windowErrorWhy('something new') ~= nil, 'an error not known is said as it came, not asked again')
+
+  -- cancelled while waiting to ask again: nothing is asked
+  reset()
+  world.roads = { eastRoad('r', 3200, 20, 0) }
+  world.errorCalls = { [2] = 'timed out' }
+  auto.start(EVENT, stageOf(lineEast(3000, 200)), function() end)
+  table.remove(pending, 1)()
+  table.remove(pending, 1)()
+  auto.cancel()
+  now = now + 10
+  auto.update()
+  T.check(world.calls == 2, 'stopped while waiting to ask again: not asked (' .. world.calls .. ')')
+
   -- a window with cells missing is not an error: no retry, the coverage ending as before
   reset()
   world.roads = { eastRoad('r', 3200, 20, 0) }
-  world.incompleteAt = 2
+  world.incompleteAt, world.errorCalls = 2, nil
   local res3 = run(EVENT, stageOf(lineEast(3000, 200)))
   local again = 0
   for _, l in ipairs(logs) do if l:find('asking again') then again = again + 1 end end
   T.check(res3.ok == false and again == 0 and tostring(res3.why):find('no map data'),
     'a window with cells missing is not asked again, and still says no map data (' .. tostring(res3.why) .. ')')
+  auto.wall = hadWall
 end
 
 ------------------------------------------------------------------------------------------ the grid (1.7.2, item 6)

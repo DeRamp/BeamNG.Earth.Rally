@@ -2319,10 +2319,14 @@ end
 
 -- (1.7.2, item 4) After an auto recce whose landing found no road (faceAtc above: the road map round the car had not
 -- come in yet), the car set down from the matched file's ATC instead: `atc` is its controls.atc (autoRecce
--- controlOnRoad: roadLat, roadLon, the road's bearing deg either way). CAR_BEFORE_ATC_M before the board on the road,
--- facing it, as faceAtc means to: along the road map's road from there when it has come in by now, else straight
--- back along the matched road's bearing, turned the way that leads on to the start. Only when the car is still
--- where the landing left it (within ATC_LEFT_NEAR_M of the ATC): a car the player has driven off is not moved.
+-- controlOnRoad: lat, lon the organisers' point, roadLat, roadLon on the road, offM between them, the road's bearing
+-- deg either way). When the road map has its road there by now: CAR_BEFORE_ATC_M before the board on it, facing it,
+-- as faceAtc means to. Without one (1.7.3, the owner, 2026-11-17: "set down on the ATC road point"): ON the matched
+-- road point, at its ground height, turned along the matched road the way that leads on to the start. Not stepped
+-- 40 m back across ground with no road known: it stays inside DRIVEN_THERE_MIN_M of the board, so Run stage sets it
+-- down properly later, as it does a car left on the raw point. A road point further than that from the board is
+-- not used: the car stays on the raw point, where it already is inside. Only when the car is still where the landing
+-- left it (within ATC_LEFT_NEAR_M of the ATC): a car the player has driven off is not moved.
 -- Returns true and how, or false and why.
 M.ATC_LEFT_NEAR_M = 200
 function M.faceAtcFrom(stage, atc)
@@ -2347,8 +2351,16 @@ function M.faceAtcFrom(stage, atc)
     M.placeCar(veh, spot, { x = spot.dx, y = spot.dy, z = 0 })
     return true, 'on the road map, at the matched ATC'
   end
-  -- 2. the matched road's own bearing: a step along it in lat / lon, turned into game coordinates (the frame's north
-  -- is not true north away from the origin), the way on to the start chosen of its two ways
+  -- 2. no road map there yet: on the matched road point itself, if that is inside DRIVEN_THERE_MIN_M of the board
+  -- Run stage measures from (the stage's own ATC, the organisers' point)
+  local board = (type(atc.lat) == 'number' and type(atc.lon) == 'number') and atc
+    or (stage.controls and stage.controls.atc)
+  if type(board) == 'table' and type(board.lat) == 'number' and type(board.lon) == 'number'
+     and geo.metres(board.lat, board.lon, atc.roadLat, atc.roadLon) >= M.DRIVEN_THERE_MIN_M - 1 then
+    return false, 'the matched road point is too far from the board: left for Run stage'
+  end
+  -- turned along the matched road's bearing: a step along it in lat / lon, turned into game coordinates (the frame's
+  -- north is not true north away from the origin), the way on to the start chosen of its two ways
   local r = math.rad(atc.deg)
   local mLat = math.rad(1) * 6371008.8
   local b = ctlGame({ lat = atc.roadLat + math.cos(r) * 10 / mLat,
@@ -2359,9 +2371,8 @@ function M.faceAtcFrom(stage, atc)
   if l < 1e-6 then return false, 'no bearing' end
   dx, dy = dx / l, dy / l
   if dx * (sp.x - a.x) + dy * (sp.y - a.y) < 0 then dx, dy = -dx, -dy end
-  local x, y = a.x - dx * M.CAR_BEFORE_ATC_M, a.y - dy * M.CAR_BEFORE_ATC_M
-  local z = groundNear(x, y, p.z)
-  M.placeCar(veh, { x = x, y = y, z = z + 1.0 }, { x = dx, y = dy, z = 0 })
+  local z = groundNear(a.x, a.y, p.z)
+  M.placeCar(veh, { x = a.x, y = a.y, z = z + 1.0 }, { x = dx, y = dy, z = 0 })
   return true, 'on the matched ATC road point'
 end
 

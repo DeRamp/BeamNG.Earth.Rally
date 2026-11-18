@@ -1,7 +1,8 @@
 # Plan: a faster, lighter, sturdier auto recce
 
 Branch `fix/recce-speed`, from `main` at 1.7.1. Build: `1.7.1-alpha+recce`. Mod-side work lands as the next patch.
-Status: **plan only, nothing built.** Waiting for the owner's go.
+Status: **Part A items 1, 3, 4, 6, 7 built** (`docs/notes-1.7.3.md`). Item 5 shipped in 1.7.2. Item 1 was
+narrowed to one stage looked ahead, item 4 to the matched road point, item 3 to timeouts and exceptions (2026-11-17).
 
 ## Where the time goes (measured, 2026-11-16 logs)
 

@@ -591,10 +591,11 @@ local function prepLeft()
 end
 
 local autoSeq = nil   -- { ev, stage, ss, phase, t, ready, plan, areaId, downloaded, why, how, tm, leftOff }
--- (1.7.2, item 1) a full rally's downloads queued up front (stepRallyPrep): { prep, eventId, order = { stageId },
--- e = { [stageId] = entry }, next, nextI, nextN, waited }; entry: { stage, priced, priceS, plan, needs, had, adding,
--- areaId, addedAt, refused, resolved }
+-- (1.7.3, item 1) a full rally's one stage looked ahead (stepRallyPrep): { prep, eventId, e = { [stageId] = entry },
+-- next, nextI, nextN, waited }; entry: { stage, priced, priceS, plan, needs, had, adding, areaId, addedAt, refused,
+-- failed, resolved, taken }
 local rallyQ = nil
+local queueAheadDownloading   -- (below, with the look-ahead: Stop reads it)
 
 -- The saved area each stage's download went into: autoKey -> { id, name }, kept in the user folder so a second
 -- press -- this session or the next -- follows the area it already has instead of adding another. BeamNG.Earth
@@ -676,8 +677,9 @@ local function autoDone(ok, matched, why, how)
       logTiming(sq, how, kind)
       -- (1.7.2, item 4) The landing found no road at the ATC (the road map round the car had not come in yet: every
       -- logged 1.7.1 run said so), so the car was left on the organisers' raw point. The matched file has the ATC on
-      -- its road now, with the road's bearing (controls.atc): the car set down from that, before the board and
-      -- facing it, as faceAtc meant to. Not in a full rally's prep: the next stage's teleport, or the rally's own
+      -- its road now, with the road's bearing (controls.atc): the car set down from that (runner.faceAtcFrom: before
+      -- the board on the road map's road if it is in by now, else on the matched road point, turned along the road,
+      -- 1.7.3). Not in a full rally's prep: the next stage's teleport, or the rally's own
       -- move to its start, takes the car away the moment this one is done, so setting it down would be for nothing.
       if sq.leftOff and not rallyRun.preparing() then
         local atc = type(matched) == 'table' and type(matched.controls) == 'table' and matched.controls.atc or nil
@@ -838,9 +840,9 @@ autoSeqStep = function(what, arg)
     return true
 
   elseif what == 'queued' then
-    -- (1.7.2, item 1) A full rally's stage whose ground was priced, and whose download was added, when the rally
-    -- began (queueStart, by stepRallyPrep): no estimate and no question now, only the wait for its own download, if
-    -- it has one, and then the same going and matching as a press of the button.
+    -- (1.7.3, item 1) A full rally's stage whose ground was priced, and whose download was added, while the stage
+    -- before it ran (queueLookAhead, by stepRallyPrep): no estimate and no question now, only the wait for its own
+    -- download, if it has one, and then the same going and matching as a press of the button.
     local e = arg
     if sq.tm then
       sq.tm.price, sq.tm.queued = e.priceS, true
@@ -849,6 +851,10 @@ autoSeqStep = function(what, arg)
     sq.plan = e.plan
     if e.areaId then
       sq.areaId, sq.phase, sq.t, sq.downloaded, sq.logT, sq.seen = e.areaId, M.DOWNLOADING, 0, true, 0, e.had or nil
+      -- (added a while ago: missing from BeamNG.Earth's list now means deleted, not "too fresh to be listed yet", so
+      --  the area-gone ending can fire rather than a half-hour wait. The tick says the same once it is that old.)
+      sq.addedAt = e.addedAt
+      if e.addedAt and wall() - e.addedAt > M.AREA_GONE_S then sq.seen = true end
       if sq.tm then sq.tm.dl0 = e.addedAt or wall() end
       log('I', logTag, string.format('auto recce: %s: following its queued download (area %s)', sq.stage.name,
         tostring(e.areaId)))
@@ -928,7 +934,7 @@ autoSeqStep = function(what, arg)
       end
     elseif sq.phase == M.DOWNLOADING and sq.areaId then
       local st = earth.areaStatus(sq.areaId)
-      if st then sq.seen = true end
+      if st or (sq.addedAt and wall() - sq.addedAt > M.AREA_GONE_S) then sq.seen = true end
       -- (1.7.2) when the item count last moved, for the page's "still going" line: the items differ a lot in size,
       -- so the count can sit still for most of a minute while a big one comes down (Perkins: 2 of 59 for 45 s)
       if st and st.done ~= sq.lastDone then sq.lastDone, sq.lastDoneT = st.done, sq.dlS or 0 end
@@ -978,8 +984,9 @@ end
 --   reset                             remove a stage's line, both kinds, so it can be made again
 --   recceSave / recceSaveAnyway / recceCancel / abort
 --   openFolder / rescan
--- queued: (1.7.2) a full rally's stage whose download was queued up front (stepRallyPrep's queue entry): no estimate
--- and no question, only its own download's wait. Nothing else passes it: the button is priced and asked every press.
+-- queued: (1.7.3) a full rally's stage looked ahead while the stage before it ran (stepRallyPrep's queue entry): no
+-- estimate and no question, only its own download's wait. Nothing else passes it: the button is priced and asked
+-- every press.
 doAction = function(what, eventId, stageId, fromPanel, queued)
   local ev, stage = nil, nil
   if eventId then ev, stage = menu.findStage(eventId, stageId) end
@@ -1034,6 +1041,9 @@ doAction = function(what, eventId, stageId, fromPanel, queued)
     -- happened, and no frame is left with a prep that has stopped but still shows a stage under way.
     -- A download BeamNG.Earth already took carries on in its Areas: its API cannot pause or remove one.
     if rallyRun.preparing() then
+      -- (1.7.3) the next stage's look-ahead: its area, if one was added, downloads on too, so it is named
+      local ahead = queueAheadDownloading()
+      rallyQ = nil
       local held, ended = rallyRun.prepDone()
       log('I', logTag, string.format('auto recce: stopped with the rally prep: %d stage(s) held out%s', held or 0,
         ended and ', none left to drive: the rally ended' or ''))
@@ -1041,7 +1051,11 @@ doAction = function(what, eventId, stageId, fromPanel, queued)
         or (held or 0) > 0 and string.format('Auto recce stopped. %d %s with no line held out of the rally.', held,
           held == 1 and 'stage' or 'stages')
         or 'Auto recce stopped.'
-      if hadSeq then msg = msg .. " A map download already started carries on in BeamNG.Earth's Areas." end
+      if hadSeq and ahead then
+        msg = msg .. string.format(" Map downloads already started, %s's too, carry on in BeamNG.Earth's Areas.", ahead)
+      elseif ahead then
+        msg = msg .. string.format(" %s's map download carries on in BeamNG.Earth's Areas.", ahead)
+      elseif hadSeq then msg = msg .. " A map download already started carries on in BeamNG.Earth's Areas." end
       local out = res(true, msg)
       out.rallyEnded = ended == true
       return out
@@ -1097,7 +1111,7 @@ doAction = function(what, eventId, stageId, fromPanel, queued)
       autoSeqStep('queued', queued)
       if not autoSeq then return res(false, (autoLines[autoKey(ev.id, stage.id)] or {}).text or
         'the auto recce could not be started') end
-      return res(true, string.format('Auto recce of %s: its map data was queued with the rest of the rally.',
+      return res(true, string.format('Auto recce of %s: its map data was looked at with the stage before it.',
         stage.name))
     end
     -- The estimate first, because it needs no anchor: `areaPlan` takes lat/lon on the server and knows nothing of
@@ -1376,21 +1390,13 @@ function M.uiRallyCard()
   if r and r.prep then
     local okA, sum = pcall(runSummary)
     r.prep.auto = okA and sum and sum.auto or nil
-    -- (1.7.2, item 1) with the downloads queued up front: a stage whose turn it is but whose own estimate or add
-    -- is not answered yet is checking its map data, not "starting"; and a stage still waiting its turn can be
-    -- downloading already, which its row carries as `area` (the same figures as the stage in progress's)
+    -- (1.7.3, item 1) a stage whose turn it is but whose look-ahead estimate or add is not answered yet is checking
+    -- its map data, not "starting" (with the stages left, for Stop all, as runSummary gives the stage under way)
     local q = rallyQ
-    if q and q.prep == rallyRun.preparing() then
-      if not r.prep.auto and q.next then r.prep.auto = { phase = 'planning', stageId = q.next.id } end
-      for k, row in ipairs(r.prep.stages or {}) do
-        local st = q.prep.list and q.prep.list[k]
-        local e = st and q.e[st.id]
-        if row.state == 'wait' and e then
-          row.queued = e.needs or nil
-          local a = e.areaId and earth.areaStatus(e.areaId)
-          if a then row.area = { state = a.state, done = a.done, total = a.total } end
-        end
-      end
+    if q and q.prep == rallyRun.preparing() and not r.prep.auto and q.next then
+      local rr = rallyRun.active()
+      r.prep.auto = { phase = 'planning', eventId = rr and rr.eventId, stageId = q.next.id, stageName = q.next.name,
+        prepLeft = prepLeft() }
     end
   end
   return r or { none = true }
@@ -1427,7 +1433,7 @@ function M.uiRallyAction(what, eventId, opts)
       -- (left while the stages are being got ready: the auto recce under way stops with it)
       local act = rallyRun.active()
       if rallyRun.preparing() and act and act.eventId == eventId then
-        autoSeq = nil
+        autoSeq, rallyQ = nil, nil
         if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
       end
     end
@@ -1632,124 +1638,148 @@ M._sendStreams = sendStreams
 -- (1.7.0, #23) A full rally getting its stages ready: the auto recce run on each stage with no line, one after the
 -- other, its download question answered yes (the player asked for the rally), then the rally told.
 --
--- (1.7.2, item 1, docs/plan-recce-speed.md) Every download is queued up front. When the prep begins, every stage on
--- its list is priced at once (areaPlan needs no anchor), and the ones with ground missing get their area added, in
--- the list's order (BeamNG.Earth downloads its areas one at a time, in list order, so stage 1's comes in first).
--- Then each stage in turn is taken to and matched as its own download is done: stage 2's downloads while stage 1
--- matches. A stage that already has an area in the area book follows that one, as a press of the button does, so a
--- rally run twice adds nothing twice. Without the area capability there is no queue, and each stage goes the 1.7.0
--- way. The single stage's button is untouched: priced and asked every press.
-M.QUEUE_WAIT_S = 300         -- a stage's queue entry not settled after this long: that stage goes the 1.7.0 way
+-- (1.7.3, item 1, docs/plan-recce-speed.md) One stage looked ahead. While a stage runs its own auto recce, the NEXT
+-- stage on the list is priced (areaPlan needs no anchor) and, with ground missing, its area added: the next stage
+-- downloads while this one matches. Only that one: at most one look-ahead is out at a time, so Stop or leaving the
+-- rally leaves at most one download the player has not reached yet (the owner, 2026-11-17: "keep, made safer"; the
+-- first cut priced and added every stage at once). At its turn the stage follows its own download. A look-ahead
+-- whose estimate failed or timed out is no answer: the stage is priced again at its turn, the 1.7.0 way, its
+-- question answered yes. A stage that already has an area in the area book follows that one, as a press of the
+-- button does, so a rally run twice adds nothing twice. Without the area capability there is no look-ahead. The
+-- single stage's button is untouched: priced and asked every press.
+M.QUEUE_WAIT_S = 300         -- a look-ahead not settled this long after its stage's turn came: given up (below)
 local prepWas = nil
--- (rallyQ, the queue: declared with autoSeq, above, as uiRallyCard reads it too)
+-- (rallyQ: declared with autoSeq, above, as uiRallyCard and Stop read it too)
 
--- The areas added, one at a time and in the prep's order: each waits for every stage before it to be priced and
--- for the add before it to be answered. (A callback can come inside the call, as the tests' stand-ins answer.)
-local function queueAdvance(q)
-  for _, id in ipairs(q.order) do
-    local e = q.e[id]
-    if not e.priced or e.adding then return end
-    if e.needs and not e.areaId and not e.refused then
-      e.adding = true
-      local name = 'Earth Rally: ' .. e.stage.name
-      local key = autoKey(q.eventId, id)
-      local ok, why = earth.areaAdd(autoRecce.corridor(e.stage.line), name, function(r)
-        local took = type(r) == 'table' and r.ok == true and type(r.id) == 'string'
-        -- (booked whatever became of the rally since: the area is in the player's list now, and the next press or
-        --  the next rally must follow it rather than add another)
-        if took then areaBookPut(key, r.id, name) end
-        if rallyQ ~= q then return end
-        e.adding = false
-        if took then
-          e.areaId, e.addedAt = r.id, wall()
-          log('I', logTag, string.format('rally: %s: BeamNG.Earth took the area (%s): queued', e.stage.name, r.id))
-        else
-          e.refused = tostring(type(r) == 'table' and r.error or 'no reason given')
-          log('I', logTag, string.format('rally: %s: BeamNG.Earth would not take the area (%s)', e.stage.name,
-            e.refused))
-        end
-        e.resolved = true
-        queueAdvance(q)
-      end)
-      if ok then return end  -- (its answer goes on down the list: now, if it came inside the call, else later)
-      e.adding, e.refused, e.resolved = false, tostring(why or 'the download could not be started'), true
+-- This look-ahead's answer still wanted: the same prep, the same queue, not settled or given up on.
+local function queueLive(q, e)
+  return rallyQ == q and q.prep == rallyRun.preparing() and not e.resolved
+end
+
+-- Add the look-ahead's area, its estimate having said ground is missing.
+local function queueAdd(q, e)
+  local name = 'Earth Rally: ' .. e.stage.name
+  local key = autoKey(q.eventId, e.stage.id)
+  e.adding = true
+  local ok, why = earth.areaAdd(autoRecce.corridor(e.stage.line), name, function(r)
+    local took = type(r) == 'table' and r.ok == true and type(r.id) == 'string'
+    -- (booked whatever became of the rally since: the area is in the player's list now, and the next press or the
+    --  next rally must follow it rather than add another)
+    if took then areaBookPut(key, r.id, name) end
+    if not queueLive(q, e) then
+      if took then log('I', logTag, string.format('rally: %s: BeamNG.Earth took the area (%s) after the look-ahead '
+        .. 'was given up: booked for the next press', e.stage.name, r.id)) end
+      return
     end
+    e.adding = false
+    if took then
+      e.areaId, e.addedAt = r.id, wall()
+      log('I', logTag, string.format('rally: %s: BeamNG.Earth took the area (%s): downloading ahead', e.stage.name,
+        r.id))
+    else
+      e.refused = tostring(type(r) == 'table' and r.error or 'no reason given')
+      log('I', logTag, string.format('rally: %s: BeamNG.Earth would not take the area (%s)', e.stage.name, e.refused))
+    end
+    e.resolved = true
+  end)
+  if not ok and queueLive(q, e) then
+    e.adding, e.refused, e.resolved = false, tostring(why or 'the download could not be started'), true
   end
 end
 
--- Price every stage on the prep's list at once: { ... } as rallyQ above, or nil without the area capability.
-local function queueStart(pr, eventId)
-  if not (earth.hasRoadGraph() and earth.hasAreaRoute()) then return nil end
-  local q = { prep = pr, eventId = eventId, order = {}, e = {}, waited = 0 }
-  for _, st in ipairs(pr.list or {}) do
-    if not q.e[st.id] then
-      q.e[st.id] = { stage = st }
-      q.order[#q.order + 1] = st.id
+-- Price the stage after the one under way, once, if it has no entry yet. Called every frame while a stage's own
+-- auto recce runs.
+local function queueLookAhead(q)
+  local pr = q.prep
+  local st = pr.list and pr.list[(pr.i or 0) + 1]
+  if not (st and st.line) or q.e[st.id] then return end
+  local e = { stage = st }
+  q.e[st.id] = e
+  local t0 = wall()
+  log('I', logTag, string.format('rally: pricing the map data of %s ahead of its turn', tostring(st.name)))
+  local function priced(r)
+    if e.priced or not queueLive(q, e) then return end
+    e.priced, e.priceS = true, wall() - t0
+    if type(r) ~= 'table' or r.ok ~= true or type(r.downloadBytes) ~= 'number' then
+      -- (timed out or failed: no answer, which is not "nothing missing". Priced again at its turn, the 1.7.0 way.)
+      e.failed, e.resolved = tostring(type(r) == 'table' and r.error or r), true
+      log('I', logTag, string.format('rally: %s: no estimate ahead (%s): priced again at its turn', st.name, e.failed))
+      return
+    end
+    e.plan = r
+    if (r.missing or 0) <= 0 or r.downloadBytes <= 0 then e.resolved = true return end
+    e.needs = true
+    log('I', logTag, string.format('rally: %s needs %.1f MB of map data (%d of %d item(s) missing)', st.name,
+      r.downloadBytes / 1e6, r.missing or 0, r.items or 0))
+    local had = areaBookStatus(autoKey(q.eventId, st.id), 'Earth Rally: ' .. st.name)
+    if had then
+      e.areaId, e.had, e.addedAt, e.resolved = had.id, true, wall(), true
+      log('I', logTag, string.format('rally: %s already has area %s: using it, not adding another', st.name, had.id))
+      return
+    end
+    queueAdd(q, e)
+  end
+  local pts = autoRecce.corridor(st.line)
+  local ok, why = false, 'no corridor'
+  if pts then ok, why = earth.areaPlan(pts, priced) end
+  if not ok then priced({ ok = false, error = tostring(why or 'BeamNG.Earth refused the estimate') }) end
+end
+
+-- For Stop's message: the name of the stage whose look-ahead area was added and is still downloading, its turn not
+-- come yet; or nil.
+queueAheadDownloading = function()
+  local q = rallyQ
+  if not (q and q.prep == rallyRun.preparing()) then return nil end
+  for _, e in pairs(q.e) do
+    if e.areaId and not e.had and not e.taken then
+      local st = earth.areaStatus(e.areaId)
+      if not (st and (st.state == 'done' or st.state == 'failed')) then return e.stage.name end
     end
   end
-  rallyQ = q
-  log('I', logTag, string.format('rally: pricing the map data of %d stage(s) at once', #q.order))
-  for _, id in ipairs(q.order) do
-    local e = q.e[id]
-    local t0 = wall()
-    local function priced(r)
-      if rallyQ ~= q or e.priced then return end
-      e.priced, e.priceS = true, wall() - t0
-      -- (as a press of the button reads its estimate: none, or nothing missing, and the stage is matched with what is
-      --  on disk; something missing, and it is downloaded -- the rally answers yes for the player)
-      if type(r) == 'table' and r.ok == true and type(r.downloadBytes) == 'number' and (r.missing or 0) > 0
-         and r.downloadBytes > 0 then
-        e.plan, e.needs = r, true
-        log('I', logTag, string.format('rally: %s needs %.1f MB of map data (%d of %d item(s) missing)', e.stage.name,
-          r.downloadBytes / 1e6, r.missing or 0, r.items or 0))
-        local had = areaBookStatus(autoKey(eventId, id), 'Earth Rally: ' .. e.stage.name)
-        if had then
-          e.areaId, e.had, e.addedAt, e.resolved = had.id, true, wall(), true
-          log('I', logTag, string.format('rally: %s already has area %s: using it, not adding another', e.stage.name,
-            had.id))
-        end
-      else
-        e.plan, e.resolved = type(r) == 'table' and r or nil, true
-      end
-      queueAdvance(q)
-    end
-    local pts = autoRecce.corridor(e.stage.line)
-    local ok = pts and earth.areaPlan(pts, priced)
-    if not ok then priced(nil) end
-  end
-  return q
+  return nil
 end
 M._rallyQueue = function() return rallyQ end
 
 local function stepRallyPrep(dt)
   local pr = rallyRun.preparing()
   if not pr then prepWas, rallyQ = nil, nil return end
+  if prepWas ~= pr then
+    prepWas, rallyQ = pr, nil
+    local rr0 = rallyRun.active()
+    if rr0 and earth.hasRoadGraph() and earth.hasAreaRoute() then
+      rallyQ = { prep = pr, eventId = rr0.eventId, e = {}, waited = 0 }
+    end
+  end
+  local q = rallyQ
   if autoSeq or autoRecce.active() then
     if autoSeq and autoSeq.phase == M.ASKING then autoSeqStep('answer', true) end
+    -- (the stage under way runs its own auto recce: the next one is looked ahead)
+    if q then queueLookAhead(q) end
     return
   end
   local rr = rallyRun.active()
-  if prepWas ~= pr then
-    prepWas, rallyQ = pr, nil
-    if rr then queueStart(pr, rr.eventId) end
-  end
-  local q = rallyQ
   local st, i, n
   if q and q.next then
     st, i, n = q.next, q.nextI, q.nextN
   else
     st, i, n = rallyRun.prepNext()
-    if not (rr and st) then rallyRun.prepDone() return end
+    if not (rr and st) then rallyQ = nil rallyRun.prepDone() return end
     if q then q.next, q.nextI, q.nextN, q.waited = st, i, n, 0 end
   end
-  -- (its turn, but its own price or add not answered yet: wait for it, a while)
+  -- (its turn, but its look-ahead's estimate or add not answered yet: wait for it, a while)
   local e = q and q.e[st.id]
   if e and not e.resolved then
     q.waited = q.waited + (dt or 0)
     if q.waited < M.QUEUE_WAIT_S then return end
-    log('W', logTag, 'rally: ' .. tostring(st.name) .. "'s queued download did not settle: getting it ready alone")
-    e = nil
+    -- Given up: marked settled and refused, so an answer that comes late adds nothing more (queueLive). An add still
+    -- out may yet be taken: it is booked then, and this stage is matched with what is here now rather than priced
+    -- and added a second time. An estimate still out: the stage priced again at its turn, the 1.7.0 way.
+    log('W', logTag, 'rally: ' .. tostring(st.name) .. "'s look-ahead did not settle: getting it ready alone")
+    e.resolved, e.refused = true, 'it did not answer in time'
+    if not e.adding then e = nil end
   end
+  if e and e.failed then e = nil end                -- (no estimate ahead: priced at its turn)
+  if e then e.taken = true end
   if q then q.next = nil end
   runner.say(string.format('%s (%d of %d): making its line on the roads.', st.name, i, n), 6, 'info', 'Auto recce')
   local r = doAction('autoRecce', rr.eventId, st.id, true, e)
@@ -1777,6 +1807,9 @@ function M.onUpdate(dtReal, dtSim)
   pcall(rallyRun.update, dtReal)
   local okP, errP = pcall(stepRallyPrep, dtReal or 0)
   if not okP then log('E', logTag, 'rally prep: ' .. tostring(errP)) end
+  -- (1.7.3, item 3) a road-graph window waiting to be asked again after a timeout
+  local okU, errU = pcall(autoRecce.update)
+  if not okU then log('E', logTag, 'auto recce: ' .. tostring(errU)) end
   -- switched off a frame ago: stop running (see onModDeactivated)
   if unloadNext then
     unloadNext = false
@@ -1919,7 +1952,7 @@ function M.onClientEndMission()
   -- running. It stops the way a recce does, and writes nothing.
   -- autoSeq as well: a sequence between its legs has no window in flight, so cancelling the auto recce alone
   -- would leave it behind and the page busy for ever (the guard in doAction refuses everything while one runs)
-  autoSeq = nil
+  autoSeq, rallyQ = nil, nil
   if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
@@ -1951,7 +1984,7 @@ function M.onModDeactivated()
   -- running. It stops the way a recce does, and writes nothing.
   -- autoSeq as well: a sequence between its legs has no window in flight, so cancelling the auto recce alone
   -- would leave it behind and the page busy for ever (the guard in doAction refuses everything while one runs)
-  autoSeq = nil
+  autoSeq, rallyQ = nil, nil
   if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
@@ -1976,7 +2009,7 @@ function M.onExtensionUnloaded()
   -- running. It stops the way a recce does, and writes nothing.
   -- autoSeq as well: a sequence between its legs has no window in flight, so cancelling the auto recce alone
   -- would leave it behind and the page busy for ever (the guard in doAction refuses everything while one runs)
-  autoSeq = nil
+  autoSeq, rallyQ = nil, nil
   if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)

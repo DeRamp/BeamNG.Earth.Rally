@@ -76,6 +76,31 @@ M.RETRIES = 2               -- a window re-asked for this many times when the wo
 -- BeamNG.Earth builds windows on one thread behind the world's own load, and in the 1.7.1 logs a cold window took
 -- up to 21 s. One that never answers is BeamNG.Earth not answering, not ground with no map data.
 M.ERROR_RETRIES = 2
+M.RETRY_DELAY_S = 2         -- (1.7.3) ... each after this long: a window that timed out is not asked again at once
+
+-- (1.7.3) BeamNG.Earth's road-graph errors that asking again cannot change (the fork's server/earthd.py road_graph
+-- handler): its own reason for the player, or nil for one worth asking again -- a timeout, an exception's name, an
+-- answer that could not be read. An error not known here is not asked again either: it is said as it came.
+local WINDOW_ERRORS = {
+  { "roads are off",
+    "BeamNG.Earth's roads are off, so it has no road graph: turn its roads on, then run the auto recce again" },
+  { "without roads", "BeamNG.Earth was started without roads, so it has no road graph: start it with its roads on" },
+  { "no world yet", "BeamNG.Earth has no world loaded yet: wait until it is, then run the auto recce again" },
+  { "bad coordinates", "BeamNG.Earth could not read a point of this stage (bad coordinates)" },
+}
+function M.windowErrorWhy(what)
+  what = tostring(what or '')
+  for _, e in ipairs(WINDOW_ERRORS) do
+    if what:find(e[1], 1, true) then return e[2] end
+  end
+  if what == 'timed out' or what == 'no answer' or what == 'no roads in the answer'
+     or what:find('could not be read', 1, true) or what:find('world moved on', 1, true)
+     or what:match('^[%a_][%w_%.]*Error$') or what:match('^[%a_][%w_%.]*Exception$')
+     or what:match('^[%a_][%w_%.]*Timeout$') then
+    return nil
+  end
+  return 'BeamNG.Earth could not give the roads for this part of the stage (' .. what .. ')'
+end
 
 -- There is no bridge flag in the road graph. Nodes on a bridge carry the deck height, which is the right height,
 -- but nothing in the nodes or the edges says "this stretch is a bridge", and it cannot be recovered from the
@@ -973,6 +998,14 @@ function M.progress()
   return { windows = #job.plan, done = job.i - 1, stage = job.stage.id, event = job.event.id }
 end
 
+-- (1.7.3) Every frame (main.lua onUpdate): a window waiting out RETRY_DELAY_S is asked again once the wait is over.
+function M.update()
+  local j = job
+  if not (j and j.retryAt) or M.wall() < j.retryAt then return end
+  j.retryAt = nil
+  M.ask(j.i)
+end
+
 function M.cancel()
   if not job then return false end
   gen = gen + 1                      -- (a window still in flight answers into nothing)
@@ -1073,17 +1106,28 @@ local function onWindow(myGen, token, i, r)
   end
   j.tries = 0
   if type(r) ~= 'table' or r.error ~= nil or type(r.nodes) ~= 'table' then
-    -- (1.7.2) Timed out, an error, or rows that could not be read: asked again, ERROR_RETRIES times. Then the stage
-    -- ends FAILED and says BeamNG.Earth did not answer. Before, the window was marked incomplete and the ending said
-    -- the ground had "no map data on this computer", which sent the player off to drive ground that was already
-    -- there. (A window that answers with cells missing is `complete = false` with no error: the branch below, as
-    -- before.)
+    -- (1.7.2) Timed out, an exception, or rows that could not be read: asked again, ERROR_RETRIES times, each after
+    -- RETRY_DELAY_S (1.7.3: a window that timed out was asked again at once, into the same busy server). Then the
+    -- stage ends FAILED and says BeamNG.Earth did not answer. Before, the window was marked incomplete and the
+    -- ending said the ground had "no map data on this computer", which sent the player off to drive ground that was
+    -- already there. (A window that answers with cells missing is `complete = false` with no error: the branch
+    -- below, as before.) (1.7.3) An error that asking again cannot change -- BeamNG.Earth's roads off, started
+    -- without roads, no world yet, bad coordinates -- ends at once with its own reason.
     local what = type(r) == 'table' and tostring(r.error or 'no roads in the answer') or 'no answer'
+    local why = M.windowErrorWhy(what)
+    if why then
+      log('W', 'earthRally', string.format('auto recce: window %d of %d: %s: not asked again', i, #j.plan, what))
+      w.complete = false
+      return finish(false, nil, why, M.FAILED, { windowError = what })
+    end
     j.errTries = (j.errTries or 0) + 1
     if j.errTries <= M.ERROR_RETRIES then
-      log('W', 'earthRally', string.format('auto recce: window %d of %d: %s: asking again (%d of %d)', i, #j.plan,
-        what, j.errTries, M.ERROR_RETRIES))
-      return M.ask(i)
+      log('W', 'earthRally', string.format('auto recce: window %d of %d: %s: asking again in %g s (%d of %d)', i,
+        #j.plan, what, M.RETRY_DELAY_S, j.errTries, M.ERROR_RETRIES))
+      -- (the token moved on now, so nothing answers into the wait; M.update asks again once it is over)
+      j.token = (j.token or 0) + 1
+      j.retryAt = M.wall() + M.RETRY_DELAY_S
+      return true
     end
     log('W', 'earthRally', string.format('auto recce: window %d of %d: %s, %d time(s): giving up', i, #j.plan, what,
       j.errTries))

@@ -1,27 +1,40 @@
-# 1.7.2 notes: a faster, sturdier auto recce
+# 1.7.3 notes: a faster, sturdier auto recce
 
-Branch `fix/recce-speed`, from `main` at 1.7.1. Build: `1.7.1-alpha+recce`. Part A of `docs/plan-recce-speed.md`.
+Branch `fix/recce-speed`, from `main` at 1.7.1, merged with 1.7.2. Build: `1.7.2-alpha+recce`. Part A of
+`docs/plan-recce-speed.md`. Item 5 (size and time next to the count) shipped in 1.7.2 as the download progress bar.
 
 ## What changed
 
-- **A full rally queues every download up front** (item 1). When the prep starts, every stage that needs a line
-  is priced at once. The ones missing map data get their area added in the rally's order. Each stage is then
-  taken to and matched as its own download finishes, so stage 2 downloads while stage 1 matches. A stage with an
-  area in `settings/earthRally_areas.json` uses it: no duplicates. The single-stage button is unchanged: priced and
-  asked every press.
-- **A window that times out or errors is asked again, twice** (item 3). If it still fails, the stage ends red:
-  "BeamNG.Earth did not answer for this part of the stage (timed out), so try the auto recce again". It no longer
-  says "no map data". A window with map cells missing is not retried and still says "no map data".
+- **A full rally looks one stage ahead** (item 1, made safer on the owner's word, 2026-11-17). While a stage runs
+  its own auto recce, the next stage is priced and, if map data is missing, its area added. So stage 2 downloads
+  while stage 1 matches. Only the next stage: Stop or leaving the rally leaves at most one extra download.
+  - Stage 1 goes the 1.7.0 way: priced, the question answered yes for the player.
+  - At its turn a looked-ahead stage follows its own download, with no new estimate.
+  - A look-ahead estimate that failed or timed out is not "nothing missing": the stage is priced again at its turn.
+  - An add BeamNG.Earth refused: at its turn the stage is matched with what is here and the ending says why.
+  - Not answered `QUEUE_WAIT_S` (300 s) after its turn came: given up, and a late answer adds nothing. An add still
+    out is booked if it is taken later; the stage is matched with what is here.
+  - A looked-ahead area missing from BeamNG.Earth's list, added more than `AREA_GONE_S` ago, counts as deleted.
+  - A stage with an area in `settings/earthRally_areas.json` uses it: no duplicates.
+  - **Stop** names the look-ahead's download when one was added and is still going:
+    "Auto recce stopped. Map downloads already started, Stage Two's too, carry on in BeamNG.Earth's Areas."
+  - The single-stage button is unchanged: priced and asked every press.
+- **A window that times out is asked again after 2 s** (item 3), twice. Timeouts, exceptions and answers that could
+  not be read are retried. If it still fails, the stage ends red: "BeamNG.Earth did not answer for this part of the
+  stage (timed out), so try the auto recce again". It no longer says "no map data".
+  - Errors that asking again cannot change end at once with their own reason: BeamNG.Earth's roads off, started
+    without roads, no world yet, bad coordinates (the strings in the fork's `server/earthd.py` road_graph handler).
+  - A window with map cells missing is not retried and still says "no map data".
 - **The car is put on the road after the match** (item 4). When the landing found no road at the ATC, the car is
-  set down from the matched file's ATC: 40 m before the board, facing it. Not during a full rally's prep: the
-  next stage's teleport moves the car anyway.
+  set down from the matched file's ATC. With the road map in by now: 40 m before the board on the road, facing it.
+  Without it: on the matched ATC road point, at its ground height, turned along the road toward the start. That keeps
+  it inside `DRIVEN_THERE_MIN_M` (15 m) of the board, so Run stage sets it down properly later. Not during a full
+  rally's prep: the next stage's teleport moves the car anyway.
 - **Lighter matching on long stages** (item 6). The distance of each road node to the organisers' line now uses
   the segment grid. Same edges, same weights, same matched file: `test_autorecce` checks it against the old code.
 - **One timing line per auto recce** (item 7). In `beamng.log`:
   `auto recce timing: <stage>: price 2.1 s, download 106.0 s (34.0 MB), teleport and settle 5.2 s, windows 55.0 s (9), match 0.014 s, total 170.3 s (done)`.
-  A rally's stages add "queued with the rally"; their download counts from when the area was added.
-- The time card's tracker: the stage whose turn it is shows "Checking the map data" while its estimate is out.
-  Waiting stages carry their download's progress in the data (`area`), not yet shown (item 5, mock-up).
+  A looked-ahead stage adds "queued with the rally"; its download counts from when its area was added.
 
 ## To test (no driving)
 
@@ -29,10 +42,13 @@ Branch `fix/recce-speed`, from `main` at 1.7.1. Build: `1.7.1-alpha+recce`. Part
   `auto recce timing:` line. Compare with the same stage on 1.7.1 (the logs of 2026-11-16).
 - **Warm single stage.** Press it again: the timing line should show no download and short windows.
 - **Landing.** After a match that landed with "no road on the map there", the log says
-  `the car set down from the matched ATC`. The car is on the road before the ATC board, facing it.
+  `the car set down from the matched ATC: on the matched ATC road point` (or `on the road map`). The car is on the
+  road at the ATC, facing the start. Press Run stage: it should set the car down 40 m before the board.
 - **Full rally.** Start the Warden test rally (3 stages) with no lines. The log shows
-  `rally: pricing the map data of 3 stage(s) at once`, then one `took the area ... queued` per stage needing data.
-  BeamNG.Earth's area list shows them all at once, in stage order. The time card goes through the stages in turn.
+  `rally: pricing the map data of <stage 2> ahead of its turn` while stage 1 runs, then
+  `took the area ... downloading ahead`. BeamNG.Earth's area list never has more than the current stage's and the
+  next one's being added.
+- **Stop all** during the prep, after stage 2's area was added: the message names stage 2's download.
 - **Rally twice.** Delete the matched lines (Reset) and start the rally again: no new areas in BeamNG.Earth's list.
 - **The owner's own check:** drive a stage after the auto recce, from the ATC.
 
@@ -68,8 +84,7 @@ Proposed change:
 ## Not done
 
 - **Item 2** (wait for the world): research above, nothing built.
-- **Item 5** (size and time next to "2 of 59"): mock-up only,
-  [`docs/mockups-1.7.2/download-progress.html`](mockups-1.7.2/download-progress.html). Waiting for the owner's OK.
 - **Part B** (lat/lon road graph, narrower ring): needs a fork release.
-- A queued stage whose estimate or add is not answered in 5 minutes falls back to the 1.7.1 way for that stage.
-  If its add was still in flight, that stage could get a second area. Not seen; BeamNG.Earth answers in seconds.
+- **The look-ahead's download is not shown** on the waiting stage's row: no UI without a mock-up.
+- **Item 4, a matched road point 15 m or more from the board:** not used. The car stays on the raw point for Run
+  stage to set down. The match snaps a control up to 30 m (`CONTROL_SNAP_M`).
