@@ -201,6 +201,8 @@ function M.transitText(tr, units)
   if (tr.late or 0) > 0 then
     parts[#parts + 1] = string.format('%d min late', tr.late)
     if (tr.penaltyS or 0) > 0 then parts[#parts + 1] = string.format('+%d s', tr.penaltyS) end
+  elseif tr.leftS and tr.leftS < 0 then
+    parts[#parts + 1] = 'due now'      -- (inside the due minute: on time still, nothing left to count down)
   elseif tr.leftS then
     parts[#parts + 1] = M.diffText(tr.leftS) .. ' left'
   end

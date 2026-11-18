@@ -80,8 +80,11 @@ local transitGps = nil -- the next stage's GPS, to set again once the stage befo
 local prep = nil       -- the stages being got ready: { list = [stage], i, then = fn, done = {}, current }
 local wait = nil       -- (a timed rally) at a time control before your minute: { item, dueT, tc }
 local world = nil      -- the sky last set to the rally clock: { t (rally clock then), real (realT then) }
+local worldDue = false -- (a jump of the clock made while it was paused: the sky set as it runs again)
+local worldFailed = false -- (BeamNG.Earth said no: not asked again until the clock's next real jump)
 local realT = 0        -- (real seconds, for the sky's drift from the rally clock)
 local wasPaused = false
+local skippedAt = nil  -- (realT of the last skip of a wait: the same key press's Interact swallowed, M.interactHeld)
 -- (main.lua) the rally clock stops while this says so: a loading screen or a menu up
 M.clockPaused = function() return false end
 
@@ -112,22 +115,52 @@ local function placeOf(r)
   return st and st.place or nil
 end
 
--- The sky set to the rally clock (nil: given back). Quiet when BeamNG.Earth cannot.
-local function setWorld(off)
+local function clockPausedNow()
+  local ok, p = pcall(M.clockPaused)
+  return ok and p == true
+end
+
+-- The sky set to the rally clock (off: given back -- also one a Lua reload left set). resync: only to catch up with
+-- drift or a pause, not a jump of the clock: not tried again once BeamNG.Earth has said no. Never while the clock is
+-- paused (BeamNG.Earth's sky would run on from it under the menu): put off until it runs. Without BeamNG.Earth's
+-- world time, the sky is left alone.
+local function setWorld(off, resync)
   if off or not timed() then
-    if world then pcall(earth.setWorldTime, nil) end
-    world = nil
+    local okW, cur = pcall(earth.worldTime)
+    if world or (okW and cur ~= nil) then pcall(earth.setWorldTime, nil) end
+    world, worldDue, worldFailed = nil, false, false
     return
   end
+  if not earth.hasWorldTime() then return end
+  if resync and worldFailed then return end
+  if clockPausedNow() then worldDue = true return end
+  worldDue = false
   local pl = placeOf(R)
   local offS = wt.utcOffset(R.tz, R.clock.t, pl and pl.lon)
-  local ok, how = pcall(earth.setWorldTime, R.clock.t - offS, offS)
+  local ok, how = pcall(earth.setWorldTime, R.clock.t - offS)
   world = { t = R.clock.t, real = realT }
   if ok and how then
+    worldFailed = false
     log('I', logTag, 'rally: the sky set to ' .. wt.startText(R.clock.t) .. ' (' .. tostring(how) .. ')')
+  elseif not worldFailed then
+    worldFailed = true
+    log('W', logTag, 'rally: BeamNG.Earth did not set the sky to ' .. wt.startText(R.clock.t)
+      .. '; tried again at the clock\'s next jump')
   end
 end
 M._setWorld = setWorld
+
+-- (the mod loaded or the level started with no rally running: a world time left set -- a crash, a reload mid-rally --
+-- given back to the player's own sky)
+function M.clearStrayWorld()
+  if R then return false end
+  local ok, cur = pcall(earth.worldTime)
+  if not (ok and cur ~= nil) then return false end
+  pcall(earth.setWorldTime, nil)
+  world, worldDue, worldFailed = nil, false, false
+  log('I', logTag, 'rally: a world time left set with no rally running: given back')
+  return true
+end
 
 -- The due time at the next stage's time control (local), or nil. Ahead of the next stage, only a due time the
 -- schedule fixes (from a stop's out time): one counted from a stage's time out is not known until that stage is done.
@@ -145,7 +178,9 @@ M._dueAt = function(i) return dueAt(i) end
 
 -- (interface 4) The road section being driven: { label, due, leftS, distM, late, penaltyS }, nil when none is timed.
 -- leftS: to the start of the due minute (negative once in it or past it); late: whole minutes past it.
-function M.transitDue()
+local tdCache = { key = nil, v = nil }
+local frameN = 0
+local function transitDueNow()
   if not timed() or prep or move or toStop or R.done or rally.over(R) then return nil end
   local it, i = rally.current(R), R.pos
   if not (it and it.kind == 'stage') or runLiveAny() then return nil end
@@ -156,6 +191,14 @@ function M.transitDue()
   local ap = runner.approachInfo()
   return { label = it.ss .. ' ' .. tostring(stageName(it)), due = wt.hm(dueT), dueT = dueT, leftS = dueT - t,
     distM = ap and ap.distM or nil, late = late, penaltyS = late * (R.lateSPerMin or rally.LATE_S_PER_MIN) }
+end
+-- (asked three or four times a frame -- the Messages line, the stream, the runner's frame and its keys: worked out
+-- once a frame, again only if the clock or where the rally is moved in between)
+function M.transitDue()
+  local key = string.format('%d|%s|%s|%s|%s|%s|%s', frameN, tostring(R), tostring(R and R.pos),
+    tostring(R and R.clock and R.clock.t), tostring(prep), tostring(move), tostring(toStop))
+  if tdCache.key ~= key then tdCache.key, tdCache.v = key, transitDueNow() end
+  return tdCache.v
 end
 runner.transitDueSource = function() return M.transitDue() end
 
@@ -299,7 +342,7 @@ end
 
 function M.active() return R end
 -- (tests only: a rally put in place as it would be after a start or a continue)
-function M._setRally(r) R, wait, world = r, nil, nil end
+function M._setRally(r) R, wait, world, worldDue, worldFailed, skippedAt = r, nil, nil, false, false, nil end
 function M.inRun()
   local r = runner.current()
   return R ~= nil and r ~= nil and r.inRally == true
@@ -751,7 +794,7 @@ function M.atControl(it, stage)
     tc.due = wt.hm(dueT)
     if math.floor(R.clock.t / 60) < math.floor(dueT / 60) then
       wait = { item = it, dueT = dueT, tc = tc }
-      tc.wait = { leftS = math.ceil(dueT - R.clock.t), due = tc.due }
+      tc.wait = M.waitCard(wait)
       log('I', logTag, string.format('rally: early at the time control of %s: due %s, the clock %s', tostring(it.ss),
         tc.due, wt.hm(R.clock.t)))
     else
@@ -775,15 +818,39 @@ end
 
 function M.waiting() return wait end
 
--- (interface 3) The wait skipped: the clock on to the due minute, checked in on time. No-op (false) with no wait.
+-- The card's wait: { leftS, due }, and with the early penalty on what checking in now costs: earlyMin (whole minutes
+-- early), earlyCostS -- the card then offers Continue at that cost and no skip.
+function M.waitCard(w)
+  local out = { leftS = math.max(0, math.ceil(w.dueT - R.clock.t)), due = w.tc and w.tc.due or wt.hm(w.dueT) }
+  if settings.get('earlyPenalty') == true then
+    out.earlyMin = math.max(0, math.floor(w.dueT / 60) - math.floor(R.clock.t / 60))
+    out.earlyCostS = out.earlyMin * (R.earlySPerMin or rally.EARLY_S_PER_MIN)
+  end
+  return out
+end
+
+-- (interface 3) The wait skipped: the clock on to the due minute, checked in on time. No-op (false) with no wait, and
+-- refused with the early penalty on (a free skip would be an early check-in at no cost: Continue does it, at its cost).
 function M.skipWait()
   if not (wait and timed()) then return false end
+  if settings.get('earlyPenalty') == true then return false end
   local w = wait
   wait = nil
   if R.clock.t < w.dueT then R.clock.t = w.dueT end
   M.checkIn(w.item, w.tc, R.clock.t, w.dueT)
+  skippedAt = realT
+  -- (a jump of the clock: the sky follows once the card goes and the clock runs)
   setWorld()
   return true
+end
+
+-- The game's Interact (Shift+E) is ours while waiting at the board -- a skip, or nothing with the early penalty on --
+-- and for a moment after a skip: the page's own key press arrives too, and must not fall through to the start line's
+-- skip of the countdown.
+M.INTERACT_HOLD_S = 0.5
+function M.interactHeld()
+  if wait then return true end
+  return skippedAt ~= nil and realT - skippedAt < M.INTERACT_HOLD_S
 end
 
 -- The time control card's Continue while you wait for your minute: with the early penalty on, the check-in now (early,
@@ -889,7 +956,9 @@ function M.resume(id)
     if timed() then
       if type(t.loop.road) == 'table' then R.road = t.loop.road end
       if type(t.loop.clock) == 'number' then R.clock.t = t.loop.clock end
-      if t.loop.lastOut ~= nil then R.lastOut = t.loop.lastOut end
+      -- (a stage left mid-run was scored as recovered by the replay: it has no time out, and the one saved is the
+      -- stage before it's)
+      if t.loop.lastOut ~= nil and not t.loop.started then R.lastOut = t.loop.lastOut end
     end
     log('I', logTag, string.format('rally: resumed mid-loop, %d stage(s) kept%s', #(t.loop.results or {}),
       t.loop.started and ', the stage left during scored under Super Rally' or ''))
@@ -934,13 +1003,14 @@ end
 -- Leave the rally (continue later): BeamNG's recovery back, the run stopped. The save stays at its last service.
 function M.quit()
   if not R then return true end
+  -- (the sky given back first: nothing after may leave it on the rally's date)
+  pcall(setWorld, true)
   if M.inRun() then pcall(runner.abort, true) end
   runner.disarmApproach('the rally was left')
   if toStop or (R and not R.done) then gpsOff() end
   -- (the service's board and tent: taken away now, unless the rally ended there and the car stands by it)
   local s = props.site('service')
   if s and s.rally and not s.left then props.dropSite('service') end
-  setWorld(true)
   R, card, recoveredAt, loop, move, toStop, prep, wait = nil, nil, nil, nil, nil, nil, nil, nil
   if question then question = nil pcall(runner.askLayout, false) end
   M.block(false)
@@ -1162,27 +1232,32 @@ runner.askKey = function() return question and question.key or nil end
 function M.update(dt, dtSim)
   dt = dt or 0
   realT = realT + dt
+  frameN = frameN + 1
   if timed() and not R.done then
     if wait then
       -- (waiting for your minute at the board: the clock runs on real time under the card, and checks you in on it)
       R.clock.t = R.clock.t + dt
-      wait.tc.wait = { leftS = math.max(0, math.ceil(wait.dueT - R.clock.t)), due = wait.tc.due }
+      wait.tc.wait = M.waitCard(wait)
       if R.clock.t >= wait.dueT then
         local w = wait
         wait = nil
         M.checkIn(w.item, w.tc, w.dueT, w.dueT)
       end
     else
-      local okP, paused = pcall(M.clockPaused)
-      paused = okP and paused == true
+      local paused = clockPausedNow()
       if not paused then R.clock.t = R.clock.t + (dtSim or dt) end
       -- (BeamNG.Earth's sky runs on wall-clock time from where it was set and knows nothing of pauses: set again as a
-      -- loading screen or a menu goes)
-      if wasPaused and not paused and world then setWorld() end
+      -- loading screen or a menu goes -- a jump made under it as a jump, else as a catch-up)
+      if wasPaused and not paused then
+        if worldDue then setWorld() elseif world then setWorld(false, true) end
+      end
+      -- (and whenever the two have drifted apart all the same while the clock runs: a game pause of its own, slow
+      -- motion. Never while it is paused: the sky would be set to a clock standing still)
+      if not paused and world and math.abs((world.t + (realT - world.real)) - R.clock.t) > M.WORLD_DRIFT_S then
+        setWorld(false, true)
+      end
       wasPaused = paused
     end
-    -- (and whenever the two have drifted apart all the same: a game pause of its own, slow motion)
-    if world and math.abs((world.t + (realT - world.real)) - R.clock.t) > M.WORLD_DRIFT_S then setWorld() end
   end
   -- ("Load the stage?" whose approach went -- the rally moved on, a run started: nothing left to answer)
   if question and question.loadAsk then
@@ -1461,7 +1536,9 @@ function M.uiCard()
       -- (interface 2: a timed rally's controls)
       local road = it.kind == 'stage' and type(R.road) == 'table' and R.road[it.ss] or nil
       if road then
+        -- (roadKind: as checked in -- the card cannot tell late from early by 'HH:MM' over midnight)
         row.due, row.timeIn, row.roadPenaltyS = wt.hm(road.dueT), wt.hm(road.inT), road.penaltyS
+        row.roadKind = road.kind
       elseif it.kind == 'stage' then
         row.due = wt.hm(dueAt(i))
       end

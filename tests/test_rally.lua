@@ -653,4 +653,25 @@ do
   T.check(fs and fs.pos == 3, 'a finished rally placed with its road penalties too')
 end
 
+do
+  -- (K) summer time at the changeovers, on the wall clock (2026: US 8 Mar / 1 Nov, EU 29 Mar / 25 Oct, AU 5 Apr /
+  -- 4 Oct)
+  local function off(tz, d, hm) return wt.utcOffset(tz, wt.parse(d, hm)) / 3600 end
+  local cases = {
+    { 'America/New_York', '2026-03-08', '01:59', -5 }, { 'America/New_York', '2026-03-08', '03:00', -4 },
+    { 'America/New_York', '2026-11-01', '00:30', -4 }, { 'America/New_York', '2026-11-01', '01:30', -4 },
+    { 'America/New_York', '2026-11-01', '02:00', -5 },
+    { 'Europe/London', '2026-03-29', '00:59', 0 }, { 'Europe/London', '2026-03-29', '02:00', 1 },
+    { 'Europe/London', '2026-10-25', '01:30', 1 }, { 'Europe/London', '2026-10-25', '02:00', 0 },
+    { 'Europe/Paris', '2026-03-29', '03:00', 2 }, { 'Europe/Paris', '2026-10-25', '02:30', 2 },
+    { 'Europe/Paris', '2026-10-25', '03:00', 1 },
+    { 'Australia/Sydney', '2026-04-05', '02:30', 11 }, { 'Australia/Sydney', '2026-04-05', '03:00', 10 },
+    { 'Australia/Sydney', '2026-10-04', '01:59', 10 }, { 'Australia/Sydney', '2026-10-04', '03:00', 11 },
+  }
+  for _, c in ipairs(cases) do
+    local got = off(c[1], c[2], c[3])
+    T.check(got == c[4], string.format('summer time: %s %s %s is %+g (%+g)', c[1], c[2], c[3], c[4], got))
+  end
+end
+
 T.done('test_rally')

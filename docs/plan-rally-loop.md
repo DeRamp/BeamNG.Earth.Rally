@@ -68,8 +68,9 @@ historical archive (`archive-api.open-meteo.com`, hourly, back to 1940, a few da
 - `has('worldTime')` so Earth Rally can ask.
 
 **Earth Rally:** at the rally start and after each service, `setWorldTime` to the rally clock; on a stage's load, to
-the stage's start. `nil` when the rally ends or is left. Without fork.2: the time of day is set the old way (sun
-moved directly, as the marketing shoot did) and the weather stays live, with one line on the start screen saying so.
+the stage's start. `nil` when the rally ends or is left. Without fork.2: Earth Rally leaves the sky and the weather alone (no
+reaching into BeamNG.Earth's internals, which would show today's date anyway), with one line on the start screen
+saying so.
 
 **Files:** fork `sky.lua`, `weather.lua`, `server/weather.py`, `server/netfetch.py` (the archive host's policy),
 `api.lua`, `ADDONS.md`; Earth Rally `earthAdapter.lua`, `rallyRun.lua`. The fork goes out as `1.10.0-beta.fork.2`
@@ -99,7 +100,8 @@ the HUD app. Tests: `test_run`, `test_events`.
 4. **Early penalty off** also covers the late side of waiting: with it off, sitting at the board until your minute
    is never late.
 5. **Splits** are fixed at quarters, not points from the organisers' maps (they have none).
-6. **Without fork.2**, a rally still runs and is still timed; only the date and the weather are not the real ones.
+6. **Without fork.2**, a rally still runs and is still timed; the date, the time of day and the weather are the
+   player's own, not the rally's.
 7. **Skip the wait** (Shift + E / Y at the board, early penalty off) jumps the clock to your minute, as a service
    does, so you check in on time.
 8. Rows further ahead on the time card show "–" until their due time is known; services show their fixed out time.

@@ -3561,6 +3561,26 @@ do
     T.check(rallyRun.saved('test19r') and rallyRun.saved('test19r').at == 'Service A', 'rally: the save is at Service A')
     rallyRun.abandon('test19r')
     T.check(rallyRun.saved('test19r') == nil, 'rally: retired, the save deleted')
+    -- (a timed rally left mid-run on SS1: the replay scores it as recovered, with no time out -- the loop's saved
+    -- lastOut, the stage before's, not put back over it; left between stages, it is)
+    for _, started in ipairs({ true, false }) do
+      local tr = rally.new(evR, { mode = 'realistic', class = 'L4WD' })
+      tr.timed, tr.clock, tr.road, tr.tz = true, { t = 600000 }, {}, 'UTC'
+      rally.serviced(tr)
+      rally.serviceOut(tr)
+      files['/earthRally/rallies/test19r.json'] = { format = rallyRun.FORMAT, current = tr, finished = {},
+        loop = { results = {}, started = started, lastOut = 599940, clock = 600300, road = {} } }
+      T.check(rallyRun.resume('test19r'), 'rally: a timed save resumed (started = ' .. tostring(started) .. ')')
+      local a = rallyRun.active()
+      if started then
+        T.check(a.results.SS1 and a.results.SS1.superRally and a.lastOut == nil,
+          'rally: resumed after leaving mid-run: SS1 recovered, no stale time out (' .. tostring(a.lastOut) .. ')')
+      else
+        T.check(a.lastOut == 599940 and a.clock.t == 600300, 'rally: resumed between stages: the loop\'s time out kept')
+      end
+      rallyRun.quit()
+      rallyRun.abandon('test19r')
+    end
     core_input_actionFilter = nil
     teleports, moved = 0, false
   end
@@ -3948,7 +3968,9 @@ do
   T.check(runner.onReset(nil) == false and rallyResets == 2, 'a reset with no vehicle id (the radial menu): the rally too')
   local oldBest = events.best
   events.best = function() return nil end      -- (a stage never driven before: no best to show)
+  car.speed = 1000      -- (the stand-in car jumps 25 points a second: as fast, so its splits are believed)
   driveTo(11, #full)
+  car.speed = 0
   events.best = oldBest
   T.check(runner.state() == 'finished' and #finished == 1 and math.abs(finished[1].timeS - rr.finalTime) < 1e-9,
     'the finish handed to the rally (' .. runner.state() .. ')')
@@ -4016,37 +4038,56 @@ do
   local _, ours = hud.build(fr2, { now = 0 })
   T.check(ours.split and ours.split.n == 1 and ours.show.split and ours.splitsAt[2] == 0.5,
     'the stream: ours.split and the progress bar\'s ticks')
+  -- (M1) a hairpin: progress jumps 320 m ahead in a frame at 20 m/s -- no split until the car could have got there
+  files['/earthRally/results/sp__h.json'] = nil
+  local hp = { event = { id = 'sp' }, stage = { id = 'h' }, state = 'running', startM = 0, finishM = 1000,
+    along = 200, clock = 10 }
+  runner._splitsTick(hp, 20)
+  hp.along, hp.clock = 520, 10.1
+  runner._splitsTick(hp, 20)
+  T.check(#hp.splits == 0, 'a jump ahead on a hairpin: no split yet')
+  hp.along, hp.clock = 522, 13
+  runner._splitsTick(hp, 20)
+  T.check(#hp.splits == 0, 'still not: 3 s at 20 m/s is not 320 m')
+  hp.along, hp.clock = 530, 26
+  runner._splitsTick(hp, 20)
+  T.check(#hp.splits == 2 and hp.splits[1] == 26, 'once it could have driven there: the splits passed, at that time')
+  -- (M2) only runs on the line timed now are compared with
+  events.addResult('sp', 'k', { finished = true, timeS = 100, splits = { 20, 45, 70 }, lineKey = 'old' })
+  events.addResult('sp', 'k', { finished = true, timeS = 120, splits = { 30, 60, 90 }, lineKey = 'new' })
+  local bk = events.bestSplits('sp', 'k', 'new')
+  T.check(bk and bk.timeS == 120 and bk.splits[1] == 30, 'best splits: the line timed now only')
+  T.check(events.bestSplits('sp', 'k', 'none') == nil, 'best splits: none on this line')
+  -- (M3) a stage's rally passes capped: the 50 most recent and the best
+  events.addRallyPass('sp', 'c', { timeS = 50, splits = { 1, 2, 3 }, lineKey = 'L' })
+  for i = 1, 60 do events.addRallyPass('sp', 'c', { timeS = 100 + i, splits = { 1, 2, 3 }, lineKey = 'L' }) end
+  local rp = events.results('sp', 'c').rallyPasses
+  T.check(#rp == 51 and rp[1].timeS == 50 and rp[#rp].timeS == 160, 'rally passes capped at 50 and the best: ' .. #rp)
+  T.check(events.bestSplits('sp', 'c', 'L').timeS == 50, 'and the best still there to beat')
 end
 
 ------------------------------------------------------------------------------------------ the rally loop: world time
--- earthAdapter.setWorldTime: BeamNG.Earth's api.setWorldTime when it has it; else its real sky's server-clock hook
--- (never the manual mode, which it would save); else the game's TimeOfDay, put back after.
+-- earthAdapter.setWorldTime: BeamNG.Earth's api.setWorldTime when it has it; without it the sky and the weather are
+-- left alone (no reaching into its sky's internals, no TimeOfDay set).
 do
   local api = beamngEarth_api
-  local had = { has = api.has, set = api.setWorldTime }
-  local calls = {}
+  local had = { has = api.has, set = api.setWorldTime, get = api.worldTime }
+  local calls, now = {}, nil
   api.has = function(n) return n == 'worldTime' or had.has(n) end
-  api.setWorldTime = function(e) calls[#calls + 1] = e or 'nil' return true end
+  api.setWorldTime = function(e) calls[#calls + 1] = e or 'nil' now = e return true end
+  api.worldTime = function() return now end
   T.check(earth.hasWorldTime() and earth.setWorldTime(1000) == 'api' and calls[1] == 1000, 'the API: the moment passed')
-  T.check(earth.setWorldTime(nil) == 'api' and calls[2] == 'nil', 'and given back')
-  api.has, api.setWorldTime = had.has, had.set
-  T.check(not earth.hasWorldTime(), 'an older BeamNG.Earth: no world time')
-  local clockSet, saved = {}, false
-  beamngEarth_sky = { getMode = function() return 'real' end, serverClock = function() return clockSet[#clockSet] end,
-    setServerClock = function(c) clockSet[#clockSet + 1] = c or false end }
-  local how = earth.setWorldTime(6 * 3600 + 18 * 3600, -6 * 3600)
-  T.check(how == 'serverClock' and clockSet[1].hours == 18 and clockSet[1].speed == 1,
-    'the real sky: its server clock at 18:00 local, its mode untouched')
-  T.check(earth.setWorldTime(nil) == 'serverClock' and clockSet[2] == false, 'and the real clock back')
-  clockSet = { { hours = 3 } }
-  T.check(earth.setWorldTime(100, 0) == false, 'a server clock not ours (BeamMP): left alone')
+  T.check(earth.worldTime() == 1000, 'and read back')
+  T.check(earth.setWorldTime(nil) == 'api' and calls[2] == 'nil' and earth.worldTime() == nil, 'and given back')
+  api.has, api.setWorldTime, api.worldTime = had.has, had.set, had.get
+  T.check(not earth.hasWorldTime() and earth.worldTime() == nil, 'an older BeamNG.Earth: no world time')
+  local touched = false
+  beamngEarth_sky = { getMode = function() return 'real' end, serverClock = function() return nil end,
+    setServerClock = function() touched = true end }
   local env = core_environment
-  local tod = { time = 0.25, play = true }
-  core_environment = { getTimeOfDay = function() return { time = tod.time, play = tod.play } end,
-    setTimeOfDay = function(t) tod = t end }
-  beamngEarth_sky.getMode = function() return 'manual' end
-  T.check(earth.setWorldTime(12 * 3600, 0) == 'tod' and math.abs(tod.time) < 1e-9, 'the manual sky: noon set')
-  T.check(earth.setWorldTime(nil) == 'tod' and tod.time == 0.25, 'and the time it had put back')
+  core_environment = { getTimeOfDay = function() return { time = 0.25 } end, setTimeOfDay = function() touched = true end }
+  T.check(earth.setWorldTime(6 * 3600) == false and earth.setWorldTime(nil) == false and not touched,
+    'without the API: the sky and the time of day left alone')
   beamngEarth_sky, core_environment = nil, env
 end
 
@@ -4087,15 +4128,36 @@ do
   rallyRun.update(30, 0)
   T.check(r.clock.t == t0 + 90 and up.wait.leftS == 19 * 60 - 30, 'the wait runs on real time under the card')
   T.check(rallyRun.continueOk() == false and rallyRun.waiting(), 'Continue does not check in early with the setting off')
+  T.check(up.wait.earlyCostS == nil, 'the setting off: no early cost on the card')
+  T.check(rallyRun.interactHeld(), 'waiting at the board: the game\'s Interact is the wait\'s')
   T.check(rallyRun.skipWait() and r.clock.t == t0 + 20 * 60 and up.result.kind == 'onTime' and up.wait == nil,
     'the skip: the clock to 08:20, on time')
   T.check(rallyRun.skipWait() == false, 'a second skip is a no-op')
-  -- the setting on: Continue checks in early, 1 min a minute
+  -- (G) the same key press's Interact arriving after the page's skip: swallowed, not the start line's skip
+  T.check(rallyRun.interactHeld(), 'just after a skip: Interact swallowed')
+  rallyRun.update(0.6, 0)
+  T.check(not rallyRun.interactHeld(), 'half a second on: Interact the start line\'s again')
+  -- the setting on: the card offers Continue at its cost; no skip; Continue checks in early, 1 min a minute
   settings.set('earlyPenalty', true)
   r.clock.t = t0 + 17 * 60
   rallyRun.atControl(r.order[2], { name = 'Hill', lengthM = 3000 })
-  T.check(up.wait and rallyRun.continueOk() == true and up.result.kind == 'early' and up.result.penaltyS == 180,
+  T.check(up.wait and up.wait.earlyMin == 3 and up.wait.earlyCostS == 180,
+    'the setting on: the card says checking in now costs 3 min (' .. tostring(up.wait and up.wait.earlyCostS) .. ' s)')
+  T.check(rallyRun.skipWait() == false and rallyRun.waiting() and r.clock.t == t0 + 17 * 60,
+    'the setting on: the skip refused, the clock as it was')
+  T.check(require('earthRally/main').uiLoadingSkipWait() == false and rallyRun.waiting(), 'the setting on: the page\'s skip refused too')
+  T.check(rallyRun.interactHeld(), 'the setting on: Interact swallowed while waiting (no start-line skip)')
+  T.check(rallyRun.continueOk() == true and up.result.kind == 'early' and up.result.penaltyS == 180,
     'the setting on: Continue checks in 3 min early, +180 s')
+  -- the setting on, waiting it out in real time: on time at the minute
+  r.road = {}
+  r.clock.t = t0 + 19 * 60 + 30
+  rallyRun.atControl(r.order[2], { name = 'Hill', lengthM = 3000 })
+  T.check(up.wait and up.wait.earlyCostS == 60, 'the setting on, 30 s to go: 1 min early costs 60 s')
+  rallyRun.update(31, 0)
+  T.check(not rallyRun.waiting() and up.result.kind == 'onTime' and up.result.penaltyS == 0,
+    'the setting on: waited out to the minute, on time')
+  r.road = { SS1 = { dueT = t0 + 20 * 60, inT = t0 + 17 * 60, kind = 'early', min = 3, penaltyS = 180 } }
   -- late: checked in at once
   r.clock.t = t0 + 22 * 60 + 5
   rallyRun.atControl(r.order[2], { name = 'Hill', lengthM = 3000 })
@@ -4109,6 +4171,7 @@ do
   local row = cardOk and card.rows[2]
   T.check(row and row.due == '08:20' and row.timeIn == '08:22' and row.roadPenaltyS == 20 and card.rows[1].outAt == '08:00',
     'the time card: SS1 due 08:20, in 08:22, +20 s; the start out at 08:00')
+  T.check(row and row.roadKind == 'late', 'the time card: the row says late itself (roadKind)')
   -- the start screen's line
   local sa = rallyRun.startsAt(r)
   T.check(sa and sa.text == 'Fri 7 Feb 2031, 08:22 local' and sa.light == 'day', 'the start screen\'s start and light')
@@ -4119,11 +4182,55 @@ do
   r.clock.t = t0 + 57 * 60 + 10
   td = rallyRun.transitDue()
   T.check(td.late == 2 and td.penaltyS == 20 and td.leftS < 0, 'late on the transit: 2 min, +20 s so far')
+  -- (P) worked out once a frame: the same answer twice, a new one once the clock moves
+  T.check(rallyRun.transitDue() == td, 'the transit: once a frame')
   local hud = require('earthRally/hudFrame')
   local _, ours = hud.build(nil, { rally = true, approach = { name = 'SS2 Hill', distM = 1200, rally = true },
     rallyTransit = td })
   T.check(ours.rally and ours.rally.transit and ours.rally.transit.late == 2 and ours.approach.sub:find('2 min late', 1, true),
     'the HUD stream: ours.rally.transit, and the line says it: ' .. tostring(ours.approach.sub))
+  -- (I) the sky: set on a jump only while the clock runs, again on unpause; never while paused; a refusal not asked
+  -- again every minute
+  local api = beamngEarth_api
+  local had = { has = api.has, set = api.setWorldTime, get = api.worldTime }
+  local sets, answer, now = 0, true, nil
+  api.has = function(n) return n == 'worldTime' or had.has(n) end
+  api.setWorldTime = function(e) sets = sets + 1 if answer then now = e end return answer end
+  api.worldTime = function() return now end
+  rallyRun._setRally(r)
+  rallyRun.clockPaused = function() return true end
+  rallyRun.update(0.1, 0)
+  rallyRun._setWorld()
+  T.check(sets == 0, 'the sky: not set while the clock is paused')
+  for _ = 1, 20 do rallyRun.update(10, 0) end
+  T.check(sets == 0, 'the sky: no drift re-sync while paused')
+  rallyRun.clockPaused = function() return false end
+  rallyRun.update(0.1, 0.1)
+  T.check(sets == 1 and now ~= nil, 'the sky: set as the clock runs again')
+  rallyRun.update(0.1, 120)
+  T.check(sets == 2, 'the sky: set again on drift while running')
+  rallyRun.clockPaused = function() return true end
+  for _ = 1, 20 do rallyRun.update(10, 0) end
+  T.check(sets == 2, 'the sky: paused, no re-sync however far it runs on')
+  rallyRun.clockPaused = function() return false end
+  rallyRun.update(0.1, 0.1)
+  T.check(sets == 3, 'the sky: re-synced as the clock runs again')
+  answer = false
+  rallyRun.update(0.1, 120)
+  local after = sets
+  for _ = 1, 5 do rallyRun.update(0.1, 120) end
+  T.check(sets == after, 'the sky: refused once, not asked again on every drift')
+  rallyRun._setWorld()
+  T.check(sets == after + 1, 'the sky: asked again at the next jump')
+  answer = true
+  rallyRun._setWorld()
+  -- (B) left: the sky given back; and a world time left set with no rally running given back at load
+  rallyRun.quit()
+  T.check(now == nil and rallyRun.active() == nil, 'quit: the sky given back')
+  now = 12345
+  T.check(rallyRun.clearStrayWorld() and now == nil, 'no rally running, a world time left set: given back')
+  T.check(rallyRun.clearStrayWorld() == false, 'nothing set: nothing done')
+  api.has, api.setWorldTime, api.worldTime = had.has, had.set, had.get
   rallyRun._setRally(nil)
   rallyRun.clockPaused = function() return false end
   rallyRun.ui.atControl = nil

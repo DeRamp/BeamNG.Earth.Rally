@@ -1608,18 +1608,26 @@ local function sendStreams(dt)
   if over and okT and td then
     hudT = hudT + dt
     local key = hudFrame.transitKey(td) .. '|' .. tostring(runner.uiHidden)
-    if key ~= transitSentKey or hudT >= M.STREAM_FLOOR_S then
+    -- (the finished run's one-off blanking still done: the stock apps go inactive and nothing of the run stays up)
+    local blank = not inactiveSent
+    if blank or key ~= transitSentKey or hudT >= M.STREAM_FLOOR_S then
       transitSentKey, hudT = key, 0
-      local _, ours = runner.uiFrame()
+      local rl, ours = runner.uiFrame()
+      if blank and rl then gh.queueStream('rallyLoop', { activeState = 'inactive', showStageApps = false }) end
+      -- (the idle frame, with the transit's line alongside: not the finished run's cards)
+      local show = { approach = ours.show and ours.show.approach or nil }
+      ours.state, ours.show = 'idle', show
       gh.queueStream('earthRally', ours)
+      inactiveSent = true
     end
-    inactiveSent = false
     return
   end
+  -- (a transit line just gone: the idle frame again, without it)
+  local wasTransit = transitSentKey ~= nil
   transitSentKey = nil
   if over then
     -- (once: the stock apps blank, ours hides)
-    if not inactiveSent then
+    if not inactiveSent or wasTransit then
       local rl, ours = runner.uiFrame()
       if rl then gh.queueStream('rallyLoop', { activeState = 'inactive', showStageApps = false }) end
       ours.state, ours.show = 'idle', {}
@@ -1902,6 +1910,8 @@ function M.onUpdate(dtReal, dtSim)
   -- since the last time, so this is not a per-frame cost.
   if not earthSeen and earth.inWorld() then
     earthSeen = true
+    -- (the level up with no rally running: a world time a crash or a reload left set, given back)
+    pcall(rallyRun.clearStrayWorld)
     pcall(versions.check, M.VERSION)
   end
   if recce.active() and recce.update() == 'done' then
@@ -1947,8 +1957,12 @@ end
 
 -- The game's Interact control (Shift+E; the modifier + Y on a pad): on the start line, skip to 6 s before the start.
 function M.onGameplayInteract()
-  -- (a timed rally's wait for your minute at a time control: the same key skips it, as at the start line)
+  -- (a timed rally's wait for your minute at a time control: the same key skips it, as at the start line -- or does
+  -- nothing, with the early penalty on. Just after a skip, the same press's second arrival (the page's key and this
+  -- hook both see Shift+E) is swallowed: it must not skip the start line's countdown as well)
   if M.uiLoadingSkipWait() then return end
+  local okH, held = pcall(rallyRun.interactHeld)
+  if okH and held then return end
   pcall(runner.onGameplayInteract)
 end
 
@@ -2085,6 +2099,7 @@ function M.onExtensionLoaded()
   pcall(require('earthRally/props').sweep)
   pcall(earth.holdStrips, false)
   pcall(rallyRun.release)      -- (a full rally's block on the game's recovery, if a reload cut it short)
+  pcall(rallyRun.clearStrayWorld) -- (and its world time on BeamNG.Earth's sky)
   local veh = getPlayerVehicle and getPlayerVehicle(0)
   if veh then pcall(runner._vehCtl, veh, 'off') end
   settings.load()

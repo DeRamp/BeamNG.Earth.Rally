@@ -560,4 +560,13 @@ do
   T.check(not hid.show.loadAsk and hid.rally == nil, 'a menu up: not drawn')
 end
 
+do
+  -- (the rally loop) a timed transit's line: time left, then due now inside the due minute, then late
+  T.check(hud.transitText({ due = '18:50', leftS = 372, late = 0 }, 'km'):find('6:12 left', 1, true) ~= nil, 'time left')
+  local now = hud.transitText({ due = '18:50', leftS = -30, late = 0 }, 'km')
+  T.check(now == 'due 18:50 · due now', 'inside the due minute: due now (' .. now .. ')')
+  T.check(hud.transitText({ due = '18:50', leftS = -90, late = 1, penaltyS = 10 }, 'km') == 'due 18:50 · 1 min late · +10 s',
+    'a minute late')
+end
+
 T.done('test_hud')

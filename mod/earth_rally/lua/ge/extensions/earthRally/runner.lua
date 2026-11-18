@@ -1760,15 +1760,28 @@ function M.onGameplayInteract() return M.skipCountdown() end
 -- run.along, against the splits of your best run on the stage (events.bestSplits: any mode, a rally's passes too).
 -- run.splits = { timeS... } as they are passed; run.splitShow = { n, timeS, gapS, at = run.clock } for SPLIT_SHOW_S.
 M.SPLITS_AT = hudFrame.SPLITS_AT
-local function splitsTick()
+-- (progress can jump ahead in one frame -- a hairpin, where the line's later leg is near and the follow looks up to
+-- FOLLOW_AHEAD_M on: a split is crossed only on progress the car could have driven since the last one trusted, at its
+-- speed (SPLIT_MAX_MS when not known) plus SPLIT_SLACK_M)
+M.SPLIT_SLACK_M = 25
+M.SPLIT_MAX_MS = 70
+local function splitsTick(spd)
   if run.splitBest == nil then
-    local ok, b = pcall(events.bestSplits, run.event.id, run.stage.id)
+    local ok, b = pcall(events.bestSplits, run.event.id, run.stage.id, run.lineKey)
     run.splitBest = (ok and b) or false
   end
   run.splits = run.splits or {}
   local span = (run.finishM or 0) - (run.startM or 0)
   if span <= 0 then return end
-  local done = (run.along or 0) - run.startM
+  local a, tr = run.along or 0, run.splitTrust
+  if not tr or a <= tr.along then
+    run.splitTrust = { along = a, clock = run.clock }
+  else
+    local dt = math.max(0, (run.clock or 0) - (tr.clock or 0))
+    local v = tonumber(spd) or M.SPLIT_MAX_MS
+    if a - tr.along <= v * dt + M.SPLIT_SLACK_M then run.splitTrust = { along = a, clock = run.clock } end
+  end
+  local done = run.splitTrust.along - run.startM
   while #run.splits < #M.SPLITS_AT and done >= span * M.SPLITS_AT[#run.splits + 1] do
     local n = #run.splits + 1
     local t = run.clock
@@ -1779,7 +1792,7 @@ local function splitsTick()
       b and string.format(' (%+.1f s)', t - b) or ''))
   end
 end
-M._splitsTick = function(r) local was = run run = r splitsTick() run = was end
+M._splitsTick = function(r, spd) local was = run run = r splitsTick(spd) run = was end
 
 M.splitRows = hudFrame.splitRows
 
@@ -1802,7 +1815,7 @@ local function stepRunning(dtSim)
   local along, off = progress(p)
   props.update(p, earth.toGame, along)
   run.along, run.off = along, off
-  pcall(splitsTick)
+  pcall(splitsTick, speed())
   if off > run.checks.maxOffM then run.checks.maxOffM = off end
   -- off route (a wrong turn): on beyond OFF_ROUTE_M, off again within OFF_ROUTE_CLEAR_M; the way back to the line (its
   -- point level with the car) against the car's heading, for the HUD's arrow
@@ -1848,7 +1861,7 @@ local function stepRunning(dtSim)
     -- so the next run on the stage, in any mode, has them to beat)
     if run.inRally and run.splits and #run.splits == #M.SPLITS_AT then
       pcall(events.addRallyPass, run.event.id, run.stage.id, { timeS = time, splits = run.splits,
-        date = os.date('!%Y-%m-%dT%H:%M:%SZ') })
+        lineKey = run.lineKey, date = os.date('!%Y-%m-%dT%H:%M:%SZ') })
     end
     run.finalTime, run.best = time, best
     run.sinceFinish = 0

@@ -8,7 +8,8 @@
        A presses Continue as soon as it is ready, wherever the focus is (#61): the ok handler is on the screen itself,
        and the game's nav runs the deepest handler in the page's scope when the focused element has none.
        (rally loop) In a timed rally the card adds Due and, once checked in, Result; arrived early with the early
-       penalty off it waits for your minute (card.wait) and Y skips the wait, as A presses Continue. -->
+       penalty off it waits for your minute (card.wait) and Y skips the wait, as A presses Continue; with it on, Continue
+       checks in now at its cost (card.wait.earlyCostS) and there is no skip. -->
   <div v-if="L" class="er-load-wrap" v-bng-on-ui-nav:ok="okPress" v-bng-on-ui-nav:context="skipWait">
     <div class="er-load-top"><span class="er-accent">Earth</span> Rally</div>
     <div class="er-load-mid">
@@ -28,7 +29,7 @@
           <div v-else class="er-wait">
             <div class="er-w1">Due {{ wait.due || L.card.due }} — check in at your minute</div>
             <div class="er-cd">{{ mmss(wait.leftS) }}</div>
-            <div class="er-w2" @click="skipWait"><span class="er-kbd">Shift+E</span>or <span class="er-k er-ky">Y</span>Skip the wait</div>
+            <div v-if="!earlyCost" class="er-w2" @click="skipWait"><span class="er-kbd">Shift+E</span>or <span class="er-k er-ky">Y</span>Skip the wait</div>
           </div>
         </div>
         <div class="er-r">
@@ -41,7 +42,9 @@
             <div class="er-wt"><b>World</b><span v-if="L.moving">Moving the world...</span><span v-else-if="L.worldReady" class="er-ok">Ready to drive</span><span v-else>{{ L.world || 0 }}%</span></div>
             <div class="er-wbar"><i v-if="L.moving" class="move"></i><i v-else :class="{ full: L.worldReady }" :style="{ width: Math.min(100, L.world || 0) + '%' }"></i><em :style="{ left: L.need + '%' }"></em><u :style="{ left: L.need + '%' }">{{ L.need }}%</u></div>
           </div>
-          <BngButton v-if="wait" class="er-big" :accent="ACCENTS.secondary" disabled>Check in at {{ wait.due || L.card.due }}</BngButton>
+          <!-- (the early check-in penalty on: Continue checks in now, at its cost; off: the card waits for the minute) -->
+          <BngButton v-if="wait && earlyCost && L.ready" ref="contBtn" v-bng-ui-nav-focus="1" class="er-big" :accent="ACCENTS.main" @click="cont">Check in now · {{ earlyCost }}</BngButton>
+          <BngButton v-else-if="wait" class="er-big" :accent="ACCENTS.secondary" disabled>Check in at {{ wait.due || L.card.due }}</BngButton>
           <BngButton v-else-if="L.ready" ref="contBtn" v-bng-ui-nav-focus="1" class="er-big" :accent="ACCENTS.main" @click="cont">{{ L.button || "Continue" }}</BngButton>
           <BngButton v-else class="er-big" :accent="ACCENTS.secondary" disabled>Loading the stage...</BngButton>
         </div>
@@ -67,7 +70,8 @@
       </div>
     </div>
     <div class="er-load-foot">
-      <span v-if="wait"><span class="er-k er-ky">Y</span>Skip the wait</span>
+      <span v-if="wait && earlyCost && L.ready"><span class="er-k">A</span>Check in now · {{ earlyCost }}</span>
+      <span v-else-if="wait && !earlyCost"><span class="er-k er-ky">Y</span>Skip the wait</span>
       <span v-else-if="L.kind === 'atc' && L.ready"><span class="er-k">A</span>Continue</span>
       <span class="er-paused">Game paused</span>
     </div>
@@ -104,7 +108,7 @@ function cont() {
 }
 // A on the screen: Continue once ready, else nothing (nothing under a loading screen is to be pressed; nor while
 // waiting for your minute: the card checks you in on it)
-function okPress() { if (L.value && L.value.kind === "atc" && L.value.ready && !wait.value) cont() }
+function okPress() { if (L.value && L.value.kind === "atc" && L.value.ready && (!wait.value || earlyCost.value)) cont() }
 
 // ---- the rally loop, timed: nil on an untimed rally, so its card is as before
 const wait = computed(() => {
@@ -116,6 +120,14 @@ function pen(s) {
   const t = Math.round(s || 0)
   return t < 60 ? `+${t} s` : `+${mmss(t)}`
 }
+// (the early check-in penalty on, Lua's wait.earlyCostS) what checking in now costs: "+2 min"; null with it off --
+// then no early check-in, only the wait or its skip
+const earlyCost = computed(() => {
+  const w = wait.value
+  if (!w || typeof w.earlyCostS !== "number") return null
+  const t = Math.round(w.earlyCostS)
+  return t % 60 === 0 ? `+${t / 60} min` : pen(t)
+})
 const result = computed(() => {
   const r = L.value && L.value.kind === "atc" && L.value.card && L.value.card.result
   if (!r || typeof r !== "object" || wait.value) return null
@@ -131,15 +143,15 @@ function stepText(s, i) { return wait.value && i === 0 && s.text === "Checked in
 // the wait is gone).
 let skipSent = false
 function skipWait() {
-  if (!wait.value || skipSent) return
+  if (!wait.value || earlyCost.value || skipSent) return
   skipSent = true
   engineLua("earthRally_main and earthRally_main.uiLoadingSkipWait and earthRally_main.uiLoadingSkipWait()", () => { skipSent = false; poll() })
 }
-function onKey(e) { if (wait.value && e.shiftKey && (e.key === "E" || e.key === "e")) skipWait() }
+function onKey(e) { if (wait.value && !earlyCost.value && e.shiftKey && (e.key === "E" || e.key === "e")) skipWait() }
 // (#61) the ready button takes the real focus as it appears, not only on a controller's first page
 // (also as a wait for your minute ends: the button was "Check in at" until then)
 const contBtn = ref(null)
-watch(() => !!(L.value && L.value.ready && !wait.value), r => { if (r) nextTick(() => focusButton(contBtn.value)) })
+watch(() => !!(L.value && L.value.ready && (!wait.value || earlyCost.value)), r => { if (r) nextTick(() => focusButton(contBtn.value)) })
 watch(() => !!L.value, up => { sent = false; emit("up", up) })
 onMounted(() => { poll(); timer = setInterval(poll, 250); window.addEventListener("keydown", onKey) })
 onUnmounted(() => { if (timer) clearInterval(timer); window.removeEventListener("keydown", onKey) })

@@ -59,7 +59,7 @@
       <!-- (#56) Start out of the settings: the big way in at the lower right, selected as the page opens, its
            warnings just above it -->
       <div class="er-corner">
-        <div v-if="s.worldTime === false" class="er-warn er-nofork">Your BeamNG.Earth can't set the rally's date and weather: the time of day is set, the weather stays live. Install the Earth Rally fork of BeamNG.Earth for the real weather.</div>
+        <div v-if="s.worldTime === false" class="er-warn er-nofork">Your BeamNG.Earth can't set the rally's date, time of day and weather. Install the Earth Rally fork of BeamNG.Earth to drive it on the real day.</div>
         <div v-if="s.saved" class="er-warn">This replaces your saved rally (at {{ s.saved.at }}).</div>
         <div v-if="s.inProgress && s.inProgress !== s.id" class="er-warn">Another rally is under way: leave it from its time card first.</div>
         <BngButton ref="startBtn" v-bng-ui-nav-focus="1" class="er-huge" :accent="ACCENTS.main" :disabled="!s.car" @click="start">
@@ -243,12 +243,11 @@ function pen(v) {
   const t = Math.round(v || 0)
   return t < 60 ? `+${t} s` : `+${mmss(t)}`
 }
-// A control's Road column: nothing until checked in there, "on time", or the cost in amber, late or early by the
-// time in against the due minute (both "HH:MM" from Lua)
+// A control's Road column: nothing until checked in there, "on time", or the cost in amber, late or early as Lua
+// checked it in (r.roadKind: "HH:MM" strings cannot tell over midnight)
 function road(r) {
   if (!(r.roadPenaltyS > 0)) return { text: r.timeIn ? "on time" : "", cls: "er-dimc" }
-  const early = r.timeIn && r.due && String(r.timeIn) < String(r.due)
-  return { text: `${pen(r.roadPenaltyS)} ${early ? "early" : "late"}`, cls: "er-late" }
+  return { text: `${pen(r.roadPenaltyS)} ${r.roadKind === "early" ? "early" : "late"}`, cls: "er-late" }
 }
 
 const mode = ref("realistic")

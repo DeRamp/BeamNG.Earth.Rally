@@ -142,7 +142,10 @@ function M.utcOffset(tz, t, lon)
     return floor((tonumber(lon) or 0) / 15 + 0.5) * 3600, false
   end
   local off = z[1] * 3600
-  if z[2] and type(t) == 'number' and summer(z[2], t, z[1]) then off = off + 3600 end
+  -- (t is the wall clock; the rules switch at a standard-time hour. Summer time when t read as summer time -- an
+  -- hour on from standard -- falls inside it: the hour the clocks go back reads as summer time, its first pass, and
+  -- the hour skipped in spring as standard)
+  if z[2] and type(t) == 'number' and summer(z[2], t - 3600, z[1]) then off = off + 3600 end
   return off, true
 end
 
