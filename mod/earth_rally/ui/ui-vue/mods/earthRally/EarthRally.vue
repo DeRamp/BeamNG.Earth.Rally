@@ -104,7 +104,9 @@
             <BngButton :accent="ACCENTS.outlined" @click="retireAsk = null">Cancel</BngButton>
           </template>
           <template v-else>
-            <BngButton v-if="rly.rallySaved" :accent="ACCENTS.main" :disabled="busy" @click="resumeRally(rly.id)">Continue</BngButton>
+            <!-- (at the main menu, a rally saved before cars were remembered: its car found once in the game's picker) -->
+            <BngButton v-if="rly.rallySaved && rly.savedCar && !rly.savedCar.known" :accent="ACCENTS.main" :disabled="busy" @click="pickCar(rly.id, 'resume')">Find the {{ rly.savedCar.name }}…</BngButton>
+            <BngButton v-if="rly.rallySaved" :accent="ACCENTS.main" :disabled="busy || !!(rly.savedCar && !rly.savedCar.known)" @click="resumeRally(rly.id)">Continue</BngButton>
             <BngButton :accent="rly.rallySaved ? ACCENTS.outlined : ACCENTS.main" :disabled="busy" @click="openStart(rly.id)">{{ rly.rallySaved ? "Start again" : "Start the rally" }}</BngButton>
             <BngButton v-if="rly.rallySaved" :accent="ACCENTS.outlined" :disabled="busy" @click="retireAsk = rly.id">Retire</BngButton>
           </template>
@@ -372,7 +374,7 @@ import EarthRallyFull from "./EarthRallyFull.vue"
 import EarthRallyLoading from "./EarthRallyLoading.vue"
 import {
   state, season, rally, stage, busyMsg, action as luaAction, refreshState, takeOpenAt, loadSeason, loadRally, loadStage,
-  closeMenu, lastPlace, loadRallyStart, loadRallyCard, rallyAction, loadDrive, pointTo,
+  closeMenu, pickCar, lastPlace, loadRallyStart, loadRallyCard, rallyAction, loadDrive, pointTo,
   arr, mmss, units, len, lenNum, riseNum, riseUnit, time, longTime, when, ord, days, ssName, STATUS, AUTO_OUTCOME, RUN_WORDS,
 } from "./store.js"
 
@@ -855,6 +857,7 @@ onMounted(() => {
     if (at && at.view === "timecard") openCard()
     else if (at && at.view === "stage" && at.eventId && at.stageId) openStage(at.eventId, at.stageId)
     else if (at && at.view === "rally" && at.eventId) openRally(at.eventId)
+    else if (at && at.view === "rallyStart" && at.eventId) openStart(at.eventId, startFrom.value)
     else if (at && at.view === "season" && at.eventId) openSeason(at.eventId)
     else if (at && at.view === "settings") go("settings")
     else if (at && at.view === "rallies") go("rallies")

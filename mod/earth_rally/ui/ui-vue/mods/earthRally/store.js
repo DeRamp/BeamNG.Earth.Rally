@@ -120,6 +120,14 @@ export function setSetting(key, value) {
   })
 }
 
+// The game's vehicle picker for a rally at the main menu: purpose 'start' (a new rally's car) or 'resume' (a saved
+// rally's car found once). The menu comes back by itself.
+export function pickCar(eventId, purpose) {
+  engineLua(`earthRally_main and earthRally_main.uiPickCar(${q(eventId)}, ${q(purpose)}) or nil`, r => {
+    busyMsg.value = (r && !r.ok && r.message) || ""
+  })
+}
+
 // view: the page to open at; none opens where the menu was left (EarthRally.vue's lastPlace)
 export function openMenu(view, eventId) {
   engineLua(`if earthRally_main then earthRally_main.openMenu(${q(view)}, ${q(eventId)}) end`)

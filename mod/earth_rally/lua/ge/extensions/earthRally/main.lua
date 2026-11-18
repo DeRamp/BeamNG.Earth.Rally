@@ -105,15 +105,20 @@ local fromGame = false     -- the menu opened from the game's Rally page with no
 local lastUi = nil         -- the UI state now (onUiChangedState)
 M.EARTH_LEVEL = 'beamng_earth'
 
--- Ask the game for the BeamNG.Earth level (free roam on it). Returns ok, why.
-local function startEarthLevel()
+-- Ask the game for the BeamNG.Earth level (free roam on it), with car = { model, config } spawned in it (as the
+-- game's own free roam setup does) or the game's default car. Returns ok, why.
+local function startEarthLevel(car)
   local fr = rawget(_G, 'freeroam_freeroam')
   if not fr and extensions and extensions.load then
     pcall(extensions.load, 'freeroam_freeroam')
     fr = rawget(_G, 'freeroam_freeroam')
   end
   if not (fr and fr.startFreeroamByName) then return false, 'the game cannot load a map from here' end
-  local ok, started = pcall(fr.startFreeroamByName, M.EARTH_LEVEL)
+  local spawn = nil
+  if type(car) == 'table' and type(car.model) == 'string' then
+    spawn = { car.model, { config = car.config } }
+  end
+  local ok, started = pcall(fr.startFreeroamByName, M.EARTH_LEVEL, nil, nil, spawn)
   if not ok then return false, 'BeamNG.Earth could not be loaded: ' .. tostring(started) end
   if started == false then return false, 'The BeamNG.Earth map is not installed: install BeamNG.Earth first.' end
   return true
@@ -558,6 +563,77 @@ local function updatePlaytest(dt)
   end
 end
 
+------------------------------------------------------------------------------------------ the car, at the main menu
+-- A full rally started from the main menu has no car yet: it is picked in the game's own vehicle picker (its
+-- pick-and-return mode, ui_vehicleSelector_general.openVehicleSelectorForChallenge, as its challenges use), else
+-- your last car is used, and BeamNG.Earth loads with it (docs/mockups-1.7.3+mainmenu/car.html). A saved rally always
+-- continues in its own car.
+M.LAST_CAR_FILE = '/earthRally/lastCar.json'
+local pickedCar = nil      -- { name, drivetrain, model, config }: picked this session for a new rally
+
+-- A car by model and setup: its name and drivetrain from the game's vehicle data.
+local function carFrom(model, config)
+  local out = { name = tostring(model), model = model, config = config }
+  local cv = rawget(_G, 'core_vehicles')
+  if cv and cv.getModel then
+    local okM, m = pcall(cv.getModel, model)
+    local mm = okM and type(m) == 'table' and type(m.model) == 'table' and m.model or {}
+    local okC, c = pcall(function() return cv.getConfig(model, config) end)
+    c = okC and type(c) == 'table' and c or {}
+    local brand, nm = c.Brand or mm.Brand, c.Name or mm.Name
+    if nm then out.name = (brand and not tostring(nm):find(tostring(brand), 1, true)) and (brand .. ' ' .. nm) or nm end
+    local dt = c.Drivetrain or mm.Drivetrain
+    out.drivetrain = type(dt) == 'table' and dt[1] or dt
+  end
+  return out
+end
+
+local function readLastCar()
+  local ok, t = pcall(function() return FS:fileExists(M.LAST_CAR_FILE) and jsonReadFile(M.LAST_CAR_FILE) or nil end)
+  if ok and type(t) == 'table' and type(t.model) == 'string' then return t end
+end
+-- The car driven in now, remembered as your last (a rally started, a stage driven).
+local function rememberCar()
+  local ok, c = pcall(rallyRun.car)
+  if not (ok and type(c) == 'table' and type(c.model) == 'string') then return end
+  pcall(jsonWriteFile, M.LAST_CAR_FILE, { name = c.name, drivetrain = c.drivetrain, model = c.model, config = c.config }, true)
+end
+M._rememberCar = rememberCar
+-- The car a new rally from the main menu starts in: the one picked, else your last.
+function M.menuCar() return pickedCar or readLastCar() end
+
+-- The game's vehicle picker, for a rally: purpose 'start' (the car for a new rally) or 'resume' (a saved rally's car
+-- found once, for a save from before cars were remembered). Back to the page either way.
+function M.uiPickCar(eventId, purpose)
+  local vs = rawget(_G, 'ui_vehicleSelector_general')
+  if not (vs and vs.openVehicleSelectorForChallenge) then
+    return { ok = false, message = "The game's vehicle picker is not there." }
+  end
+  local done = false
+  local function back(model, config)
+    if done then return end
+    done = true
+    if type(model) == 'string' then
+      local car = carFrom(model, config)
+      if purpose == 'resume' then
+        local ok, why = rallyRun.setSavedCar(eventId, car)
+        message = ok and string.format('%s found: the rally can continue.', car.name) or why
+      else
+        pickedCar = car
+        message = nil
+      end
+    end
+    M.openMenu(purpose == 'resume' and 'rally' or 'rallyStart', eventId)
+  end
+  local ok, err = pcall(vs.openVehicleSelectorForChallenge, back, 'menu.vehiclesnew')
+  if not ok then
+    log('E', logTag, 'vehicle picker: ' .. tostring(err))
+    return { ok = false, message = "The game's vehicle picker could not be opened." }
+  end
+  menuOpen = false
+  return { ok = true }
+end
+
 ------------------------------------------------------------------------------------------ from the main menu
 -- The game's own Rally page (Play > Rally) has an Earth Rally tile (gameTile.lua) that opens this menu with no level
 -- loaded (the owner, 2026-11-18: "open the menu straight away and only load the world when you pick a stage").
@@ -580,12 +656,12 @@ local function waiting()
 end
 
 -- Load the level, then run(). kick: the loading screen's top line. Returns ok, why.
-local function loadWorldThen(kick, run, thenView, view)
+local function loadWorldThen(kick, run, thenView, view, car)
   if waiting() then return false, 'BeamNG.Earth is loading: wait for it.' end
   if loadScreen.active() then return false, 'Something is loading: wait for it.' end
   -- (already on the BeamNG.Earth level, its world just not up yet: wait for it, do not load it again)
   if not levelName():lower():find(M.EARTH_LEVEL, 1, true) then
-    local ok, why = startEarthLevel()
+    local ok, why = startEarthLevel(car)
     if not ok then return false, why end
   end
   log('I', logTag, 'from the menu: loading BeamNG.Earth for ' .. tostring(kick))
@@ -1293,6 +1369,7 @@ doAction = function(what, eventId, stageId, fromPanel, queued)
   end
   if what == 'drive' then
     local ok, why = runner.start(ev, stage)
+    if ok then rememberCar() end
     if ok and not fromPanel then stageLoading(ev, stage, 'Drive stage · ' .. tostring(ev.name), closeAfter) end
     return res(ok, ok and nil or why, fromPanel)
   elseif what == 'route' then
@@ -1510,6 +1587,12 @@ function M.uiRally(eventId)
   out.fullRally = rally.canRun(e) or nil
   local okS, saved = pcall(rallyRun.saved, eventId)
   out.rallySaved = okS and saved or nil
+  -- (at the main menu: a rally saved before cars were remembered cannot bring its car back; found once, it can)
+  if out.rallySaved and M.needsWorld() then
+    local cur = rallyRun.readFile(eventId).current
+    local c = cur and type(cur.car) == 'table' and cur.car or {}
+    out.savedCar = { name = c.name or 'its car', known = c.model ~= nil }
+  end
   local okF, fin = pcall(rallyRun.resultsFor, eventId)
   out.rallyFinished = okF and fin or nil
   local a = rallyRun.active()
@@ -1544,9 +1627,13 @@ function M.uiSet(key, value) return settings.set(key, value) end
 function M.uiRallyStart(eventId)
   local ok, r = pcall(rallyRun.startInfo, eventId)
   if not ok then log('E', logTag, 'rally start: ' .. tostring(r)) return { missing = true, id = eventId } end
-  -- (at the main menu there is no car yet: the rally starts in the one the game spawns with BeamNG.Earth)
-  if type(r) == 'table' and not r.missing and not r.car and M.needsWorld() then
-    r.car = { name = 'Your default car', note = 'BeamNG.Earth loads when you start', pending = true }
+  -- (at the main menu there is no car yet: the one picked in the game's vehicle picker, else your last; BeamNG.Earth
+  --  loads with it when the rally starts)
+  if type(r) == 'table' and not r.missing and M.needsWorld() then
+    local c = M.menuCar()
+    r.car = c and { name = c.name, drivetrain = c.drivetrain, last = (c ~= pickedCar) or nil, pending = true } or nil
+    r.class = c and rally.guessClass(c.drivetrain) or r.class
+    r.canPick = true
   end
   return r
 end
@@ -1583,13 +1670,27 @@ function M.uiRallyAction(what, eventId, opts)
     if not ev then return { ok = false, message = 'That rally is not on this computer any more.' } end
     local bad = earthUnusable()
     if bad then message = bad return { ok = false, message = bad } end
+    -- (the car: the one picked or your last for a new rally; a saved rally's own, always, for Continue)
+    local car
+    if what == 'start' then
+      car = M.menuCar()
+      if not car then message = 'Choose a car first.' return { ok = false, message = message } end
+    else
+      local cur = rallyRun.readFile(eventId).current
+      car = cur and type(cur.car) == 'table' and cur.car or nil
+      if not (car and car.model) then
+        message = string.format('This rally was saved before cars were remembered: find the %s first.',
+          tostring(car and car.name or 'car it was started in'))
+        return { ok = false, message = message }
+      end
+    end
     local okL, why = loadWorldThen(M.WORLD_RALLY_ACTIONS[what] .. ' · ' .. tostring(ev.name), function()
       local r = M.uiRallyAction(what, eventId, opts)
       if r and not r.ok and r.message then
         message = r.message
         runner.say(r.message, 8, 'warning', tostring(ev.name))
       end
-    end, 'timecard')
+    end, 'timecard', nil, car)
     if not okL then message = why end
     return { ok = okL, message = (not okL) and why or nil }
   end
@@ -1604,6 +1705,7 @@ function M.uiRallyAction(what, eventId, opts)
       end
       if recce.active() or autoRecce.active() or autoSeq then return go(false, 'A recce is under way: finish it first.') end
       local okS, why = rallyRun.start(eventId, type(opts) == 'table' and opts or {})
+      if okS then rememberCar() end
       return go(okS, why, okS and 'timecard' or nil)
     elseif what == 'resume' then
       if recce.active() or autoRecce.active() or autoSeq then return go(false, 'A recce is under way: finish it first.') end

@@ -185,9 +185,27 @@ function M.car()
       if nm then out.name = (brand and not tostring(nm):find(tostring(brand), 1, true)) and (brand .. ' ' .. nm) or nm end
       out.drivetrain = cfg.Drivetrain or model.Drivetrain
       if type(out.drivetrain) == 'table' then out.drivetrain = out.drivetrain[1] end
+      -- (the model and its setup: what the game spawns it from, so a saved rally can bring the car back itself)
+      local cur = type(d.current) == 'table' and d.current or {}
+      if type(cur.key) == 'string' then out.model = cur.key end
+      if type(cur.config_key) == 'string' then out.config = cur.config_key end
     end
   end
   return out
+end
+
+-- A saved rally from before cars were kept with their model and setup: given them once, from the car picked for it
+-- (the same car by name). Returns ok, why.
+function M.setSavedCar(id, car)
+  local t = M.readFile(id)
+  if not t.current then return false, 'there is no rally saved for this one' end
+  local want = type(t.current.car) == 'table' and t.current.car.name or nil
+  if want and car.name ~= want then
+    return false, string.format('That is the %s: this rally was started in the %s.', tostring(car.name), want)
+  end
+  t.current.car = { name = car.name, model = car.model, config = car.config }
+  writeFile(id, t)
+  return true
 end
 
 -- The car put right where it stands (the game's own "Repair here": spawn.safeTeleport at its own place with

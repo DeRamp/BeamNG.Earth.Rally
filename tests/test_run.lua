@@ -2174,7 +2174,7 @@ do
   T.check(st.earthWhy == nil and st.earthNote and st.earthNote:find('loads when you drive', 1, true),
     'no world at the main menu: said as a note, not a fault (' .. tostring(st.earthWhy) .. ')')
   local rs = main.uiRallyStart('test8')
-  T.check(rs.car and rs.car.name == 'Your default car', 'the rally start screen: the default car, not "get in a car first"')
+  T.check(rs.car == nil and rs.canPick, 'the rally start screen at the main menu: no car yet, one to choose')
 
   -- Close goes back to the game's Rally page, through its own opener (its filter back on), else its route
   local opened = 0
@@ -2276,8 +2276,24 @@ do
     'no BeamNG.Earth map: refused at once (' .. tostring(r.message) .. ')')
 
   -- a full rally's Start: loaded first, then started in the car the game spawned
-  freeroam_freeroam.startFreeroamByName = function(n) asked[#asked + 1] = n return true end
+  local spawnAsked
+  freeroam_freeroam.startFreeroamByName = function(n, _, _, spawn) asked[#asked + 1] = n spawnAsked = spawn return true end
+  local nr = main.uiRallyAction('start', 'test8', { mode = 'casual', class = 'L4WD' })
+  T.check(not nr.ok and nr.message == 'Choose a car first.' and #asked == 6, 'Start with no car chosen: refused, nothing loaded')
+  -- the game's vehicle picker: a car picked, the page back on the start screen with it
+  local pickerCb
+  ui_vehicleSelector_general = { openVehicleSelectorForChallenge = function(cb, route) pickerCb = cb pickerRoute = route end }
+  T.check(main.uiPickCar('test8', 'start').ok and pickerRoute == 'menu.vehiclesnew', "the game's vehicle picker opened")
+  navs = {}
+  pickerCb('sunburst', 'rally_a', {})
+  pickerCb()                                -- (its exit callback after it: nothing more)
+  T.check(#navs == 1 and navs[1] == 'earthRally' and main.uiOpenAt().view == 'rallyStart', 'picked: back on the start screen')
+  T.check(main.uiRallyStart('test8').car.name == 'sunburst', 'with the picked car on it')
+  main.onUiChangedState('earthRally')
+  ui_vehicleSelector_general = nil
   local rr = main.uiRallyAction('start', 'test8', { mode = 'casual', class = 'L4WD' })
+  T.check(spawnAsked and spawnAsked[1] == 'sunburst' and spawnAsked[2].config == 'rally_a',
+    'BeamNG.Earth loaded with the picked car in it')
   T.check(rr.ok and #asked == 7 and loadScreen.active() and not rallyRun.active(),
     'Start rally with no world: the level asked for first, no rally yet')
   T.check(main.uiLoading().thenView == 'timecard', 'and the page goes on to the time card')
