@@ -72,6 +72,42 @@ M.RADIUS_M = 1000.0         -- each window is a square of this half size round t
 M.MAX_RADIUS_M = 2000.0     -- BeamNG.Earth's own cap on it (assumed: see the note on the API at the foot of this file)
 M.COVER_SAMPLE_M = 20.0     -- the stage corridor is checked for coverage at a point every this far along it
 M.RETRIES = 2               -- a window re-asked for this many times when the world's origin moved under it
+-- (1.7.3) a window that timed out or came back with an error asked again this many times, on a count of its own:
+-- BeamNG.Earth builds windows on one thread behind the world's own load, and in the 1.7.1 logs a cold window took
+-- up to 21 s. One that never answers is BeamNG.Earth not answering, not ground with no map data.
+M.ERROR_RETRIES = 2
+-- (1.7.3) ... each after a wait. After 'timed out', TIMEOUT_RETRY_DELAY_S: BeamNG.Earth's server goes on building the
+-- window that timed out on its one thread, so asking again a moment later only queues behind that same build.
+-- After any other error worth asking again, RETRY_DELAY_S.
+M.RETRY_DELAY_S = 2
+M.TIMEOUT_RETRY_DELAY_S = 15
+
+-- (1.7.3) BeamNG.Earth's road-graph errors that asking again cannot change (the fork's server/earthd.py road_graph
+-- handler): its own reason for the player, or nil for one worth asking again -- a timeout, an exception's name (any
+-- bare class name, one CamelCase word: IncompleteRead, BrokenProcessPool), an answer that could not be read. An
+-- error not known here is not asked again either: it is said as it came.
+local WINDOW_ERRORS = {
+  { "roads are off",
+    "BeamNG.Earth's roads are off, so it has no road graph: turn its roads on, then run the auto recce again" },
+  { "without roads", "BeamNG.Earth was started without roads, so it has no road graph: start it with its roads on" },
+  { "no world yet", "BeamNG.Earth has no world loaded yet: wait until it is, then run the auto recce again" },
+  { "bad coordinates", "BeamNG.Earth could not read a point of this stage (bad coordinates)" },
+  -- (the fork's dem / gradesep exception for data not in the cache: asking again cannot fetch it)
+  { "NotOnDisk", "part of this stage has no map data on this computer (NotOnDisk)" },
+}
+function M.windowErrorWhy(what)
+  what = tostring(what or '')
+  for _, e in ipairs(WINDOW_ERRORS) do
+    if what:find(e[1], 1, true) then return e[2] end
+  end
+  if what == 'timed out' or what == 'no answer' or what == 'no roads in the answer'
+     or what:find('could not be read', 1, true) or what:find('world moved on', 1, true)
+     or what:match('^[%a_][%w_%.]*Error$') or what:match('^[%a_][%w_%.]*Exception$')
+     or what:match('^[%a_][%w_%.]*Timeout$') or what:match('^%u[%l%d]+%u%w*$') then
+    return nil
+  end
+  return 'BeamNG.Earth could not give the roads for this part of the stage (' .. what .. ')'
+end
 
 -- There is no bridge flag in the road graph. Nodes on a bridge carry the deck height, which is the right height,
 -- but nothing in the nodes or the edges says "this stretch is a bridge", and it cannot be recovered from the
@@ -98,6 +134,9 @@ M.DONE, M.PARTIAL, M.NODATA, M.FAILED = 'done', 'partial', 'nodata', 'failed'
 -- Overridable for the tests: wall seconds (`seconds` in the file is how long the whole auto recce took, most of it
 -- spent waiting on BeamNG.Earth between windows, so this is wall time and not os.clock's CPU time).
 function M.clock() return os.time() end
+-- (1.7.3, item 7) The legs' timing for main.lua's one log line: the game's high-resolution wall clock where there is
+-- one (os.clockhp, as runner.lua and props.lua use), else os.clock. Overridable for the tests.
+M.wall = rawget(os, 'clockhp') or os.clock
 
 ------------------------------------------------------------------------------------------ pure geometry
 
@@ -187,9 +226,13 @@ M.polyDist = polyDist
 -- A grid of a polyline's segments, so "is this node on the matched line?" is not every node against every segment
 -- (a 12 km stage: ~3,000 segments against a few thousand junction candidates, which the Python did in numpy and
 -- Lua should not do at all). cell: the bucket size in metres.
+-- (1.7.3) The key is a number, not a string: the build asks this for every node of every window, and a string
+-- made per cell looked at was the garbage the grid was meant to save. Exact for any cell index within +-2^20, which
+-- at the cell sizes used here is thousands of kilometres.
+local NO_SEGS = {}
 local function segGrid(pts, cell)
   local b = {}
-  local function key(cx, cy) return cx .. ':' .. cy end
+  local function key(cx, cy) return (cx + 1048576) * 2097152 + (cy + 1048576) end
   for i = 1, #pts - 1 do
     local a, c = pts[i], pts[i + 1]
     local x0, x1 = floor(math.min(a.x, c.x) / cell), floor(math.max(a.x, c.x) / cell)
@@ -211,7 +254,7 @@ local function segGrid(pts, cell)
     local bd, bi = huge, nil
     for ix = cx - rings, cx + rings do
       for iy = cy - rings, cy + rings do
-        for _, i in ipairs(b[key(ix, iy)] or {}) do
+        for _, i in ipairs(b[key(ix, iy)] or NO_SEGS) do
           local d = segDist(p, pts[i], pts[i + 1])
           if d < bd then
             bd = d
@@ -223,6 +266,28 @@ local function segGrid(pts, cell)
     if bd > reach then return nil end
     return bd, bi
   end
+end
+M.segGrid = segGrid
+
+-- (1.7.3, docs/plan-recce-speed.md item 6) How far from the organisers' line the build measures a node exactly.
+-- An edge is kept when the mean of its two ends' and its middle's distances is within CORRIDOR_M, so a node or a
+-- middle further than 3 x CORRIDOR_M cannot be part of a kept edge whatever the other two are (they are >= 0): it
+-- needs no exact figure, only "too far", which is math.huge here. Inside the reach the grid's answer IS polyDist's
+-- (the same segDist over every segment that can be that near), so every edge kept or dropped and every weight is
+-- the same as measuring each node against every segment. NEAR_GRID = false measures every node the old way, which
+-- tests/test_autorecce.lua uses to show the two give the same file.
+M.NEAR_REACH_M = 3 * M.CORRIDOR_M
+M.NEAR_CELL_M = 300.0
+M.NEAR_GRID = true
+
+-- The distance from p to the organisers' line, with `grid` (segGrid over the line) when there is one: exact within
+-- `reach`, math.huge beyond it (or, with `exact`, polyDist's own answer beyond it).
+local function lineDist(grid, p, kml, reach, exact)
+  if not grid then return polyDist(p, kml) end
+  local d = grid(p, reach)
+  if d then return d end
+  if exact then return polyDist(p, kml) end
+  return huge
 end
 
 ------------------------------------------------------------------------------------------ the graph
@@ -288,14 +353,19 @@ end
 -- nodes already sit every few metres along each smoothed arc, but a long straight is one edge, and its middle is
 -- what says whether it runs away from the line). Direction is ignored, as in the tool: a rally stage is a closed
 -- road, and the one-way field describes normal traffic.
+--
+-- `near` is exact up to NEAR_REACH_M and math.huge past it (see NEAR_REACH_M): only this function reads it.
 function M.build(graph, kml, fr)
   local g = { xy = {}, nbr = {}, near = {}, half = {}, ea = {}, eb = {}, edges = 0 }
+  local grid = M.NEAR_GRID and segGrid(kml, M.NEAR_CELL_M) or nil
+  g.lineGrid = grid                -- (M.match measures the matched line's offset with it too)
+  local reach = M.NEAR_REACH_M
   for name, n in pairs(graph.nodes or {}) do
     local lat, lon, alt = n.lat, n.lon, n.alt
     if lat ~= nil then
       local p = fr.xy(lat, lon)
       g.xy[name] = { x = p.x, y = p.y, z = alt, w = tonumber(n.radius) }
-      g.near[name] = polyDist(p, kml)
+      g.near[name] = lineDist(grid, p, kml, reach)
       g.half[name] = (type(n.radius) == 'number' and n.radius > 0) and n.radius or nil
       g.nbr[name] = {}
     end
@@ -312,10 +382,13 @@ function M.build(graph, kml, fr)
       if not seen[k] then
         seen[k] = true
         local mid = { x = (pa.x + pb.x) / 2, y = (pa.y + pb.y) / 2 }
-        local dm = (g.near[a] + g.near[b] + polyDist(mid, kml)) / 3
+        local dm = (g.near[a] + g.near[b] + lineDist(grid, mid, kml, reach)) / 3
         if dm <= M.CORRIDOR_M then
           local len = dist(pa, pb)
-          local w = len * (1 + (dm / M.NEAR_M) ^ 2)
+          -- (r * r, not ^ 2: LuaJIT's interpreted pow and its compiled x * x can differ by one ulp, so the same
+          --  edge built in an interpreted and a compiled trace could weigh differently)
+          local r = dm / M.NEAR_M
+          local w = len * (1 + r * r)
           g.nbr[a][b] = { w = w, len = len }
           g.nbr[b][a] = { w = w, len = len }
           g.edges = g.edges + 1
@@ -748,9 +821,11 @@ function M.match(stage, graph, info)
   local total, gapM = 0, 0
   for k = 1, #res - 1 do total = total + dist(res[k], res[k + 1]) end
   for _, gp in ipairs(gaps) do gapM = gapM + (gp[2] - gp[1]) end
+  -- (the grid with polyDist behind it beyond its reach: the same figure, without every point of the matched line
+  --  measured against every segment of the organisers' line)
   local maxOff = 0
   for k = 1, #res do
-    local d = polyDist(res[k], kml)
+    local d = lineDist(gr.lineGrid, res[k], kml, M.CORRIDOR_M, true)
     if d > maxOff then maxOff = d end
   end
 
@@ -933,6 +1008,14 @@ function M.progress()
   return { windows = #job.plan, done = job.i - 1, stage = job.stage.id, event = job.event.id }
 end
 
+-- (1.7.3) Every frame (main.lua onUpdate): a window waiting out RETRY_DELAY_S is asked again once the wait is over.
+function M.update()
+  local j = job
+  if not (j and j.retryAt) or M.wall() < j.retryAt then return end
+  j.retryAt = nil
+  M.ask(j.i)
+end
+
 function M.cancel()
   if not job then return false end
   gen = gen + 1                      -- (a window still in flight answers into nothing)
@@ -953,7 +1036,9 @@ local function finish(ok, result, why, kind, extra)
     for _, w in ipairs(j.plan) do if w.complete then withData = withData + 1 end end
     how = { kind = kind or (ok and M.DONE or M.FAILED), windows = #j.plan,
             done = math.min((j.i or 1) - 1, #j.plan), withData = withData,
-            event = j.event and j.event.id, stage = j.stage and j.stage.id }
+            event = j.event and j.event.id, stage = j.stage and j.stage.id,
+            -- (item 7: the windows' wall seconds, from the first asked to the last answered, and the match's)
+            windowsS = j.t0 and ((j.tWin or M.wall()) - j.t0) or nil, matchS = j.matchS }
     for k, v in pairs(extra or {}) do how[k] = v end
   end
   if j and j.done then
@@ -977,6 +1062,7 @@ local function write(j, m)
 end
 
 local function matchAndWrite(j)
+  j.tWin = M.wall()
   local covered, shortM, totalM = M.coverage(j.stage.line, j.plan, j.inner)
   if not covered then
     -- (never a partial line: BeamNG.Earth downloads nothing for a road-graph window, so the cells for this stretch
@@ -996,7 +1082,9 @@ local function matchAndWrite(j)
   if next(j.graph.nodes) == nil then
     return finish(false, nil, 'BeamNG.Earth gave no roads for this stage: nothing written', M.NODATA)
   end
+  local tm = M.wall()
   local m, why = M.match(j.stage, j.graph)
+  j.matchS = M.wall() - tm
   if not m then return finish(false, nil, why or 'the stage could not be matched', M.FAILED) end
   -- the same thing one step later: roads arrived, but none of them near enough the organisers' line to be used
   if (m.gapM or 0) >= (m.lengthM or 0) - M.OUT_STEP_M then
@@ -1028,10 +1116,36 @@ local function onWindow(myGen, token, i, r)
   end
   j.tries = 0
   if type(r) ~= 'table' or r.error ~= nil or type(r.nodes) ~= 'table' then
-    -- not fatal in itself: the coverage record decides, and an incomplete window means no file
-    log('W', 'earthRally', string.format('auto recce: window %d of %d: %s', i, #j.plan,
-      type(r) == 'table' and tostring(r.error) or 'no answer'))
+    -- (1.7.3) Timed out, an exception, or rows that could not be read: asked again, ERROR_RETRIES times. After a
+    -- timeout, TIMEOUT_RETRY_DELAY_S: the server is still building the window that timed out, on its one thread, so
+    -- a quick re-ask would only queue behind it; after another error, RETRY_DELAY_S. Then the
+    -- stage ends FAILED and says BeamNG.Earth did not answer. Before, the window was marked incomplete and the
+    -- ending said the ground had "no map data on this computer", which sent the player off to drive ground that was
+    -- already there. (A window that answers with cells missing is `complete = false` with no error: the branch
+    -- below, as before.) (1.7.3) An error that asking again cannot change -- BeamNG.Earth's roads off, started
+    -- without roads, no world yet, bad coordinates -- ends at once with its own reason.
+    local what = type(r) == 'table' and tostring(r.error or 'no roads in the answer') or 'no answer'
+    local why = M.windowErrorWhy(what)
+    if why then
+      log('W', 'earthRally', string.format('auto recce: window %d of %d: %s: not asked again', i, #j.plan, what))
+      w.complete = false
+      return finish(false, nil, why, M.FAILED, { windowError = what })
+    end
+    j.errTries = (j.errTries or 0) + 1
+    if j.errTries <= M.ERROR_RETRIES then
+      local wait = what == 'timed out' and M.TIMEOUT_RETRY_DELAY_S or M.RETRY_DELAY_S
+      log('W', 'earthRally', string.format('auto recce: window %d of %d: %s: asking again in %g s (%d of %d)', i,
+        #j.plan, what, wait, j.errTries, M.ERROR_RETRIES))
+      -- (the token moved on now, so nothing answers into the wait; M.update asks again once it is over)
+      j.token = (j.token or 0) + 1
+      j.retryAt = M.wall() + wait
+      return true
+    end
+    log('W', 'earthRally', string.format('auto recce: window %d of %d: %s, %d time(s): giving up', i, #j.plan, what,
+      j.errTries))
     w.complete = false
+    return finish(false, nil, string.format('BeamNG.Earth did not answer for this part of the stage (%s), so try ' ..
+      'the auto recce again', what), M.FAILED, { noAnswer = what })
   else
     local added = 0
     for name, node in pairs(r.nodes) do
@@ -1065,6 +1179,7 @@ local function onWindow(myGen, token, i, r)
     log('I', 'earthRally', string.format('auto recce: window %d of %d: %d new node(s)%s', i, #j.plan, added,
       w.complete and '' or ', incomplete (map cells not on this computer)'))
   end
+  j.errTries = 0
   j.i = i + 1
   if j.i > #j.plan then return matchAndWrite(j) end
   return M.ask(j.i)
@@ -1110,7 +1225,7 @@ function M.start(event, stage, done)
   if not plan then return false, why end
   gen = gen + 1
   job = { event = event, stage = stage, plan = plan, radius = radius, inner = inner,
-          graph = { nodes = {}, edges = {} }, seen = {}, i = 1, tries = 0, done = done }
+          graph = { nodes = {}, edges = {} }, seen = {}, i = 1, tries = 0, done = done, t0 = M.wall() }
   log('I', 'earthRally', string.format('auto recce: %s, %d window(s) of %.0f m', stage.id, #plan, radius))
   return M.ask(1)
 end

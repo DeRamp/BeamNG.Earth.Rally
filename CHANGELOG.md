@@ -3,6 +3,25 @@
 Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/writing-standard.md). Downloads:
 [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
 
+## 1.7.3-alpha: a quicker, sturdier auto recce (2026-11-18)
+
+Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)
+(official 1.6+ works, without the auto recce).
+
+A quicker full rally prep, and an auto recce that copes when BeamNG.Earth is slow.
+
+### Changed
+* **Full rally:** the next stage's map download starts while the current stage is still being matched.
+* Matching is lighter on long stages.
+* The log has one timing line per auto recce.
+
+### Fixed
+* A part of the stage that BeamNG.Earth did not answer for in time is asked again, instead of ending "no map data".
+* After an auto recce, the car is set down on the road at the time control, not left where it landed.
+
+### Known issues
+* After **Stop** during a full rally, the next stage's download carries on in BeamNG.Earth's Areas. The message names it.
+
 ## 1.7.2-alpha: download progress (2026-11-17)
 
 Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)

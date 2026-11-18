@@ -90,6 +90,11 @@ beamngEarth_api = {
     -- the window is built in the frame current NOW ...
     local nodes, edges = graphWindow(lat, lon, opts.radius)
     local complete = world.complete and (world.incompleteAt ~= i)
+    -- (1.7.3) BeamNG.Earth's own failures: the call timed out or the build threw, an answer with an error and no rows
+    if world.errorCalls and world.errorCalls[i] then
+      pending[#pending + 1] = function() cb({ complete = false, error = world.errorCalls[i] }) end
+      return true
+    end
     -- ... and the world's origin may move before the answer is delivered, which is what makes those x, y stale:
     -- read in the frame that replaced it they are tens of kilometres out
     if world.rebaseAt == i then
@@ -133,7 +138,7 @@ local function reset()
   pending = {}
   anchor = { lat = 47.0, lon = -123.0 }
   world.roads, world.complete, world.incompleteAt, world.arrays, world.rebaseAt, world.calls = {}, true, nil, false, nil, 0
-  world.answerTwice = nil
+  world.answerTwice, world.errorCalls = nil, nil
   events.forget()
   auto.cancel()
 end
@@ -717,6 +722,249 @@ do
   world.roads = { eastRoad('r', 1500, 20, 0) }
   run(EVENT, stageOf(lineEast(1200, 100)))
   T.check(matchedFile() and matchedFile().controls == nil, 'controls: no controls, none written')
+end
+
+------------------------------------------------------------------------------------------ a window that fails (1.7.3)
+
+-- A window that times out or errors is asked again (ERROR_RETRIES), and one that never answers ends FAILED, saying
+-- BeamNG.Earth did not answer -- never "no map data", which sent the player off to drive ground already there.
+-- (1.7.3) Each is asked again only after a wait, on auto.update: TIMEOUT_RETRY_DELAY_S after 'timed out' (the
+-- server is still building that window), RETRY_DELAY_S after another error; an error that cannot change ends at once.
+do
+  local hadWall = auto.wall
+  local now = 0
+  auto.wall = function() return now end
+  -- every answer delivered; a window waiting to be asked again is asked once its delay is over, and not before
+  local function drain(maxSteps)
+    local guard = 0
+    while guard < (maxSteps or 200) do
+      guard = guard + 1
+      if #pending > 0 then table.remove(pending, 1)()
+      elseif auto.active() then
+        now = now + 1
+        auto.update()
+      else break end
+    end
+  end
+
+  reset()
+  world.roads = { eastRoad('r', 3200, 20, 0) }
+  world.errorCalls = { [2] = 'timed out', [3] = 'RuntimeError' }      -- the second window fails twice, then answers
+  local res = { }
+  auto.start(EVENT, stageOf(lineEast(3000, 200)), function(o, m, w) res.ok, res.why = o, w end)
+  table.remove(pending, 1)()           -- window 1 answers
+  table.remove(pending, 1)()           -- window 2 times out
+  local calls = world.calls
+  T.check(#pending == 0 and calls == 2, 'a window that timed out is not asked again at once (' .. world.calls .. ')')
+  T.check(auto.TIMEOUT_RETRY_DELAY_S >= 10 and auto.RETRY_DELAY_S < auto.TIMEOUT_RETRY_DELAY_S,
+    'a timeout waits longer than another error (' .. auto.TIMEOUT_RETRY_DELAY_S .. ' s)')
+  now = now + auto.TIMEOUT_RETRY_DELAY_S - 0.5
+  auto.update()
+  T.check(world.calls == 2, 'nor before TIMEOUT_RETRY_DELAY_S (' .. world.calls .. ')')
+  now = now + 0.5
+  auto.update()
+  T.check(world.calls == 3, 'but once it is over (' .. world.calls .. ')')
+  table.remove(pending, 1)()           -- window 2 again: RuntimeError
+  T.check(#pending == 0 and world.calls == 3, 'an exception is not asked again at once either')
+  now = now + auto.RETRY_DELAY_S - 0.5
+  auto.update()
+  T.check(world.calls == 3, 'nor before RETRY_DELAY_S (' .. world.calls .. ')')
+  now = now + 0.5
+  auto.update()
+  T.check(world.calls == 4, 'but after RETRY_DELAY_S, not the wait after a timeout (' .. world.calls .. ')')
+  drain()
+  T.check(res.ok == true and matchedFile() ~= nil, 'a window that failed twice and then answered: matched (' ..
+    tostring(res.why) .. ')')
+  local asked = 0
+  for _, l in ipairs(logs) do if l:find('asking again in') then asked = asked + 1 end end
+  T.check(asked == 2, 'and it was asked again twice (' .. asked .. ')')
+
+  reset()
+  world.roads = { eastRoad('r', 3200, 20, 0) }
+  world.errorCalls = { [2] = 'timed out', [3] = 'timed out', [4] = 'timed out' }
+  local how
+  auto.start(EVENT, stageOf(lineEast(3000, 200)), function(o, m, w, h) how = { ok = o, why = w, how = h } end)
+  drain()
+  T.check(how and how.ok == false and how.how.kind == auto.FAILED,
+    'a window that never answers: FAILED (' .. tostring(how and how.how and how.how.kind) .. ')')
+  T.check(how and how.why:find('did not answer') and how.why:find('try') and not how.why:find('map data'),
+    'saying BeamNG.Earth did not answer and to try again, not "no map data" (' .. tostring(how and how.why) .. ')')
+  T.check(how and how.how.done == 1, 'at the window that failed (' .. tostring(how and how.how.done) .. ' done)')
+  T.check(world.calls == 4 and matchedFile() == nil, 'asked 1 + 2 times, then nothing written (' .. world.calls .. ')')
+
+  -- an answer that could not be read back is asked again too
+  reset()
+  world.roads = { eastRoad('r', 3200, 20, 0) }
+  world.errorCalls = { [2] = 'the graph was built but could not be read back from x.json' }
+  res = {}
+  auto.start(EVENT, stageOf(lineEast(3000, 200)), function(o, m, w) res.ok, res.why = o, w end)
+  drain()
+  asked = 0
+  for _, l in ipairs(logs) do if l:find('could not be read back from x.json: asking again in') then asked = asked + 1 end end
+  T.check(res.ok == true and asked == 1, 'an answer that could not be read back: asked again, matched (' ..
+    asked .. ')')
+
+  -- errors that asking again cannot change (the fork's earthd.py road_graph): at once, with their own reason
+  for _, c in ipairs({
+    { "no map data (BeamNG.Earth's roads are off)", 'roads are off' },
+    { 'the app was started without roads (--traffic off): there is no road graph', 'started without roads' },
+    { 'no world yet (no anchor): ask once api.ready()', 'no world loaded yet' },
+    { 'bad coordinates', 'bad coordinates' } }) do
+    reset()
+    world.roads = { eastRoad('r', 3200, 20, 0) }
+    world.errorCalls = { [2] = c[1] }
+    how = nil
+    auto.start(EVENT, stageOf(lineEast(3000, 200)), function(o, m, w, h) how = { ok = o, why = w, how = h } end)
+    drain()
+    T.check(how and how.ok == false and how.how.kind == auto.FAILED and world.calls == 2,
+      'a window answered "' .. c[1] .. '": not asked again (' .. world.calls .. ' calls)')
+    T.check(how and how.why:find(c[2], 1, true) and not how.why:find('did not answer'),
+      'and it says its own reason, not "did not answer" (' .. tostring(how and how.why) .. ')')
+  end
+  T.check(auto.windowErrorWhy('timed out') == nil and auto.windowErrorWhy('OSError') == nil
+    and auto.windowErrorWhy('RuntimeError') == nil and auto.windowErrorWhy('no answer') == nil,
+    'timeouts, exceptions and no answer are the ones asked again')
+  T.check(auto.windowErrorWhy('IncompleteRead') == nil and auto.windowErrorWhy('BrokenProcessPool') == nil
+    and auto.windowErrorWhy('ConnectionResetError') == nil,
+    'any bare exception class name, one CamelCase word, is asked again')
+  T.check(auto.windowErrorWhy('Broken pool') ~= nil and auto.windowErrorWhy('Nothing') ~= nil,
+    'but not words with a space, nor a plain capitalised word')
+  T.check(auto.windowErrorWhy('NotOnDisk') ~= nil and auto.windowErrorWhy('NotOnDisk'):find('no map data', 1, true),
+    'NotOnDisk (data not in the cache) is not asked again: it says no map data')
+  T.check(auto.windowErrorWhy('something new') ~= nil, 'an error not known is said as it came, not asked again')
+
+  -- cancelled while waiting to ask again: nothing is asked
+  reset()
+  world.roads = { eastRoad('r', 3200, 20, 0) }
+  world.errorCalls = { [2] = 'timed out' }
+  auto.start(EVENT, stageOf(lineEast(3000, 200)), function() end)
+  table.remove(pending, 1)()
+  table.remove(pending, 1)()
+  auto.cancel()
+  now = now + 10
+  auto.update()
+  T.check(world.calls == 2, 'stopped while waiting to ask again: not asked (' .. world.calls .. ')')
+
+  -- a window with cells missing is not an error: no retry, the coverage ending as before
+  reset()
+  world.roads = { eastRoad('r', 3200, 20, 0) }
+  world.incompleteAt, world.errorCalls = 2, nil
+  local res3 = run(EVENT, stageOf(lineEast(3000, 200)))
+  local again = 0
+  for _, l in ipairs(logs) do if l:find('asking again') then again = again + 1 end end
+  T.check(res3.ok == false and again == 0 and tostring(res3.why):find('no map data'),
+    'a window with cells missing is not asked again, and still says no map data (' .. tostring(res3.why) .. ')')
+  auto.wall = hadWall
+end
+
+------------------------------------------------------------------------------------------ the grid (1.7.3, item 6)
+
+-- build's distance of each node to the organisers' line, and match's maxOff, now come off a grid of the line's
+-- segments (M.NEAR_GRID) instead of every node against every segment. The same file, figure for figure: a stage that
+-- wanders, the road on it, a parallel road 20 m off, side roads, roads either side of the corridor's edge, one far
+-- out at 2 km, and long straights whose middles are what decide them.
+do
+  local function deepEq(a, b, path)
+    if type(a) ~= type(b) then return false, path end
+    if type(a) ~= 'table' then
+      if a == b then return true end
+      return false, path .. ' (' .. tostring(a) .. ' vs ' .. tostring(b) .. ')'
+    end
+    for k, v in pairs(a) do
+      local ok, at_ = deepEq(v, b[k], path .. '.' .. tostring(k))
+      if not ok then return false, at_ end
+    end
+    for k in pairs(b) do if a[k] == nil then return false, path .. '.' .. tostring(k) .. ' (missing)' end end
+    return true
+  end
+  local graph = { nodes = {}, edges = {} }
+  local seq = 0
+  local function road(pts, link)
+    local prev = link
+    for _, q in ipairs(pts) do
+      seq = seq + 1
+      local name = 'g' .. seq
+      local ll = at(q[1], q[2], 100 + q[1] * 0.005)
+      graph.nodes[name] = { lat = ll[1], lon = ll[2], alt = ll[3], radius = q[3] or 3.5 }
+      if prev then graph.edges[#graph.edges + 1] = { prev, name } end
+      prev = name
+    end
+    return prev
+  end
+  -- the organisers' line: 6 km wandering north and south of y = 0, a point every ~25 m
+  local line, wob = {}, function(x) return 120 * math.sin(x / 700) + 15 * math.sin(x / 90) end
+  for x = 0, 6000, 25 do local p = at(x, wob(x)) line[#line + 1] = { p[1], p[2] } end
+  -- the road on it (2-6 m off it), every 10 m
+  local main = {}
+  for x = -40, 6040, 10 do main[#main + 1] = { x, wob(x) + 2 + 4 * math.sin(x / 33) } end
+  road(main)
+  -- a parallel road 20 m north, every 15 m; a narrower one (for the narrows) on part of it
+  local par = {}
+  for x = 500, 4500, 15 do par[#par + 1] = { x, wob(x) + 20, x > 2500 and 1.5 or 3.5 } end
+  road(par)
+  -- side roads off the main road's nodes, out to 250, 310, 880, 920 and 2000 m: long straights of one edge each
+  local function mainNode(x) return 'g' .. (math.floor((x + 40) / 10) + 1) end
+  for _, sd in ipairs({ { 800, 250 }, { 1600, 310 }, { 2400, 880 }, { 3200, 920 }, { 4000, 2000 } }) do
+    local x0, off = sd[1], sd[2]
+    road({ { x0 + 30, wob(x0) + off / 2 }, { x0 + 60, wob(x0) + off } }, mainNode(x0))
+    road({ { x0 - 30, wob(x0) - off / 2 }, { x0 - 60, wob(x0) - off } }, mainNode(x0))
+  end
+  -- roads lying along the corridor's edge, 290 to 310 m off and 880 to 920 m off, and one crossing the line
+  -- diagonally from 1.5 km away
+  for _, off in ipairs({ 290, 300, 310, 880, 900, 920, -295, -905 }) do
+    local pts = {}
+    for x = 1000, 5000, 40 do pts[#pts + 1] = { x, wob(x) + off } end
+    road(pts)
+  end
+  local diag = {}
+  for k = 0, 60 do diag[#diag + 1] = { 2000 + k * 50, -1500 + k * 50 } end
+  road(diag)
+  -- a long straight whose ends are near the line and whose middle is not (a chord across the line's big bend)
+  road({ { 300, wob(300) + 3 }, { 2000, wob(2000) + 3 } })
+  -- an edge from the line out past its end, as far again: its far node is ~800 m off (past 2 x CORRIDOR_M) and the
+  -- edge is still kept, because its other end and its middle are both on the line -- the case the reach must cover
+  local endX, endY = 6000, wob(6000)
+  local fromX, fromY = 5200, wob(5200)
+  local farName = road({ { fromX, fromY }, { 2 * endX - fromX, 2 * endY - fromY } })
+  local stage = { id = 'grid-stage', name = 'Grid', line = line,
+    controls = { atc = { lat = at(-30, 5)[1], lon = at(-30, 5)[2] } } }
+
+  local was = auto.NEAR_GRID
+  auto.NEAR_GRID = false
+  local old = auto.match(stage, graph)
+  local fr = auto.frame(line[1][1], line[1][2])
+  local kml = {}
+  for i, q in ipairs(line) do kml[i] = fr.xy(q[1], q[2]) end
+  local gOld = auto.build(graph, kml, fr)
+  auto.NEAR_GRID = true
+  local new = auto.match(stage, graph)
+  local gNew = auto.build(graph, kml, fr)
+  auto.NEAR_GRID = was
+  T.check(old and new and #old.points > 1000 and old.roadEdges > 100,
+    'grid: the stage matches (' .. tostring(old and #old.points) .. ' points, ' .. tostring(old and old.roadEdges) ..
+    ' edges)')
+  old.date, new.date, old.seconds, new.seconds = nil, nil, nil, nil
+  local same, where = deepEq(old, new, 'file')
+  T.check(same, 'grid: the matched file is the same as measuring every segment' .. (where and (': ' .. where) or ''))
+  T.check(old and old.maxOffMapLineM > 0 and old.maxOffMapLineM == new.maxOffMapLineM,
+    'grid: maxOffMapLineM the same (' .. tostring(old and old.maxOffMapLineM) .. ')')
+  -- and the graph under it: every edge kept or dropped, and every weight, the same
+  local sameEdges, edgeWhere = deepEq(gOld.nbr, gNew.nbr, 'nbr')
+  T.check(sameEdges and gOld.edges == gNew.edges,
+    'grid: every edge and every weight the same (' .. gOld.edges .. ' / ' .. gNew.edges .. ')' ..
+    (edgeWhere and (': ' .. edgeWhere) or ''))
+  T.check(next(gNew.nbr[farName]) ~= nil and gOld.near[farName] > 2 * auto.CORRIDOR_M,
+    string.format('grid: the edge out to a node %.0f m off is kept', gOld.near[farName]))
+  local exact, far, wrong, all = 0, 0, 0, 0
+  for name, d in pairs(gNew.near) do
+    all = all + 1
+    if d == math.huge and gOld.near[name] > auto.NEAR_REACH_M then far = far + 1
+    elseif d == gOld.near[name] then exact = exact + 1
+    else wrong = wrong + 1 end
+  end
+  T.check(far > 0 and wrong == 0 and exact + far == all,
+    'grid: every node within the reach measured exactly, only those past it "too far" (' .. exact .. ' exact, ' ..
+    far .. ' far, ' .. wrong .. ' wrong)')
 end
 
 T.done('test_autorecce')
