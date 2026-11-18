@@ -59,7 +59,7 @@ h1 { font-size: 44px; margin: 0 0 6px; } .kick { color: var(--or); text-transfor
   <button data-go="now">Now (as built)</button>
   <span class="sep"></span>
   <button data-go="start">Proposed: Start, last car</button>
-  <button data-go="pick">Proposed: choose a car</button>
+  <button data-go="pick">Proposed: choose a car (game picker)</button>
   <button data-go="cont">Proposed: Continue</button>
   <button data-go="old">Proposed: Continue, older save</button>
   <span class="sep"></span>
@@ -90,7 +90,7 @@ const V = {
     ann: [[860, 250, "Which car? The player can't see or choose it."]],
   },
   start: {
-    cap: "<b>Proposed: Start, last car.</b> “Your car” becomes a choice. The car you drove last in Earth Rally is first and already picked, by name with its drivetrain, and the class is set from it as it is in game. <b>Choose another car</b> opens the list (next view). When you press Start, BeamNG.Earth loads with that car, so the rally is in the car shown here. Remembered: the model and the setup (config), saved by Earth Rally when you drive.",
+    cap: "<b>Proposed: Start, last car.</b> “Your car” becomes a choice. The car you drove last in Earth Rally is first and already picked, by name with its drivetrain, and the class is set from it as it is in game. <b>Choose another car</b> opens the game's own vehicle picker (next view). When you press Start, BeamNG.Earth loads with that car, so the rally is in the car shown here. Remembered: the model and the setup (config), saved by Earth Rally when you drive.",
     html: topBar("Rallies › <b>Oregon Trail Rally</b> › Start") + `<div class="body">
       ${head("Full rally · start", "Oregon Trail Rally")}
         <div class="lbl" style="margin-top:28px">Your car</div>
@@ -104,25 +104,19 @@ const V = {
     ann: [[860, 300, "Last car first, already selected: one press to go."], [1500, 860, "BeamNG.Earth loads with this car."]],
   },
   pick: {
-    cap: "<b>Proposed: choose a car.</b> A list in our own page (the game's vehicle screen cannot hand a car back to us at the main menu). Tabs: <b>Recent</b> (cars you have driven in Earth Rally), <b>Rally</b> (every setup whose name says rally), <b>All</b>. Search by name. Select returns to the start screen with the car picked and the class set from it. Thumbnails left out to keep it light (open question).",
-    html: topBar("Rallies › Oregon Trail Rally › Start › <b>Choose a car</b>") + `<div class="body" style="grid-template-columns: 1.3fr 1fr">
-      <div class="card list">
-        <div class="tabs"><span>Recent</span><span class="on">Rally</span><span>All</span></div>
-        <div class="search">Search cars…</div>
-        <div class="row sel"><span>Hirochi Sunburst Rally</span><span class="m">AWD</span><span class="m">last</span></div>
-        <div class="row"><span>Ibishu Covet Rally</span><span class="m">FWD</span><span class="m"></span></div>
-        <div class="row"><span>ETK 800 Series Rally</span><span class="m">RWD</span><span class="m"></span></div>
-        <div class="row"><span>Bruckell Bastion Rally</span><span class="m">RWD</span><span class="m"></span></div>
-        <div class="row"><span>Cherrier FCV Rally</span><span class="m">AWD</span><span class="m"></span></div>
-        <div class="row"><span>Ibishu Pessima Rally</span><span class="m">FWD</span><span class="m"></span></div>
-        <div class="row"><span>Hirochi Sunburst Rally (Group A)</span><span class="m">AWD</span><span class="m"></span></div>
+    cap: "<b>Proposed: choose a car, in the game's own vehicle screen.</b> <b>Choose another car…</b> opens BeamNG's vehicle picker as its challenges and free roam setup do (its pick-and-return mode, <code>openVehicleSelectorForChallenge</code>): every car, with its thumbnails, filters, search and favourites, props and trailers left out. The usual spawn buttons are replaced by one, <b>Select Vehicle</b> (or a double click), which returns to our start screen with that car and setup picked and the class set from its drivetrain. Back returns with nothing changed. Drawn here roughly: it is the game's screen, not ours.",
+    html: `<div class="top" style="background:rgba(0,0,0,.85)"><div class="back">‹ Back</div><div class="crumb">Vehicles › <b>All</b></div><div style="margin-left:auto" class="search">Search…</div></div>
+    <div class="body" style="grid-template-columns: 1.6fr 1fr; background: rgba(20,22,26,.92)">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;align-content:start">
+        ${["Hirochi Sunburst","Ibishu Covet","ETK 800 Series","Bruckell Bastion","Cherrier FCV","Ibishu Pessima","Gavril D-Series","Soliad Wendover","Hirochi SBR4","ETK K-Series","Bruckell LeGran","Civetta Bolide"].map((n,i)=>`<div style="background:rgba(255,255,255,.07);border-radius:6px;overflow:hidden;${i===0?'outline:3px solid var(--or)':''}"><div style="height:120px;background:linear-gradient(135deg,#2c3340,#151a22)"></div><div style="padding:10px 12px;font-size:17px">${n}</div></div>`).join("")}
       </div>
-      <div class="card"><div class="lbl">Selected</div>
-        <div class="box sel"><span>Hirochi Sunburst Rally</span><span class="m">AWD</span></div>
-        <div class="small">Class L4WD. A rally keeps the car it was started in.</div>
-        <div class="go">Use this car</div></div>
-    </div>` + prompts(`<span><span class="k">LB</span><span class="k">RB</span>Tabs</span><span><span class="k">Y</span>Search</span>`),
-    ann: [[260, 170, "Rally tab first: the setups a rally driver wants."]],
+      <div class="card"><div class="lbl">Hirochi Sunburst</div>
+        <div class="box sel"><span>Rally (A)</span><span class="m">AWD · 2.0 turbo</span></div>
+        <div class="box"><span>Rally (M)</span><span class="m">AWD</span></div>
+        <div class="box"><span>Sport RS (A)</span><span class="m">AWD</span></div>
+        <div class="go">Select Vehicle<small>back to the rally's start screen</small></div></div>
+    </div>` + prompts(`<span><span class="k">X</span>Select Vehicle</span>`),
+    ann: [[1500, 760, "The game's spawn buttons swapped for one Select Vehicle."], [260, 110, "The game's own screen: every car, thumbnails, filters."]],
   },
   cont: {
     cap: "<b>Proposed: Continue.</b> A saved rally continues in its own car, and that is not a choice: shown, locked. Because the model and setup are saved with the rally, Continue loads BeamNG.Earth with that car already in it. No more “get in that car to continue it” after a level load.",
@@ -139,7 +133,7 @@ const V = {
     ann: [[860, 300, "Locked: the owner's rule."]],
   },
   old: {
-    cap: "<b>Proposed: Continue, a rally saved before this change.</b> Those saves have only the car's name, not its model or setup, so Earth Rally cannot spawn it. Continue is turned off with the reason, and <b>Find this car</b> opens the list searched for that name. Once found and used, the rally's save gets the model and setup, and Continue works from then on.",
+    cap: "<b>Proposed: Continue, a rally saved before this change.</b> Those saves have only the car's name, not its model or setup, so Earth Rally cannot spawn it. Continue is turned off with the reason, and <b>Find this car</b> opens the game's vehicle picker to find it. Once found and used, the rally's save gets the model and setup, and Continue works from then on.",
     html: topBar("Rallies › <b>Oregon Trail Rally</b>") + `<div class="body">
       ${head("Full rally · saved at service A", "Oregon Trail Rally")}
         <div class="lbl" style="margin-top:28px">Your car</div>
