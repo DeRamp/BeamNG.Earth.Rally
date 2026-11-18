@@ -4,7 +4,7 @@ Players see it as **Leaderboards** (#72); the code and add-on file keep the name
 
 A public leaderboard of players' own stage times, beside the **offline** board (a rally pack's real results, which
 never leave the player's computer). Design and research: [research-online-leaderboards.md](research-online-leaderboards.md).
-On its own branch; not in a release.
+Released in 1.8.0-alpha.
 
 ```
 the game (online.lua) --TCP 127.0.0.1:47820--> companion (earth_rally_online.py) --HTTPS--> Worker + D1 (Cloudflare)
@@ -55,6 +55,13 @@ lengths within 1.5 %. The offline board's own rule is 25 m and 1 %. The first pl
 
 Every time is marked unverified.
 
+## Installing the helper
+
+Players install it from BeamNG.Earth's **Add-ons** page: **Add from GitHub**, paste `DeRamp/earth-rally-leaderboards`,
+**Install**, then **Start** (tick **Start with BeamNG.Earth**). The repository's release asset is
+`earth_rally_online.py` from `online/companion/`; its files are staged in `release/earth-rally-leaderboards/`.
+Without the Add-ons page: `python earth_rally_online.py`, left running while you play.
+
 ## Trying it on one computer
 
 1. Start the local server: `node online/worker/dev/server.mjs --port 8787 --db board.sqlite --admin mysecret`.
@@ -78,7 +85,7 @@ The free plan refuses requests past its daily limits instead of billing.
 
 ## The companion in BeamNG.Earth
 
-BeamNG.Earth's **Add-ons** page only adds add-ons from GitHub. For a local copy, add an entry to
+BeamNG.Earth's **Add-ons** page adds add-ons from GitHub (above). For a local copy under test, add an entry to
 `%LOCALAPPDATA%\beamng-earth\addons\local.json` (kind `companion`, a `local` file path to `earth_rally_online.py`,
 `run: { "port": 47820 }`) and restart BeamNG.Earth: it then shows on the Add-ons page as a program beside the game. Start it, or tick **Start with BeamNG.Earth**. Its log is `run.log` beside it. For a registry
 entry later: `kind: "companion"`, `run: { "port": 47820 }`.

@@ -3,7 +3,7 @@
 Drive real rally stages on the real roads of [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth), timed,
 with BeamNG.drive's own co-driver calling pacenotes worked out from the road.
 
-**Alpha · BeamNG.drive 0.40.5 · BeamNG.Earth modding API 1.6+ · auto recce: [DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)**
+**Alpha · BeamNG.drive 0.40.5 · BeamNG.Earth 1.10+ · auto recce: [DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)**
 [Download](https://github.com/DeRamp/BeamNG.Earth.Rally/releases) · [Wiki](https://github.com/DeRamp/BeamNG.Earth.Rally/wiki) ·
 [Changelog](CHANGELOG.md) · [Player guide](docs/guide.md) · [Report a bug](https://github.com/DeRamp/BeamNG.Earth.Rally/issues)
 
@@ -17,21 +17,22 @@ with BeamNG.drive's own co-driver calling pacenotes worked out from the road.
 * **Rally packs** carry a whole season. The ARA 2026 season comes with the mod.
 * **Drive a whole rally**: transits, time controls, service and Super Rally, Realistic or Casual.
 * Results against the real crews, rally totals and season standings.
-* **Leaderboards**: your times against other players, per stage and class, through the helper below.
-* Opt-in stats and error reports, off unless you say yes. See [privacy](PRIVACY.md).
+* **Leaderboards**: your times against other players, per stage and class.
+* Opt-in stats and error reports. See [privacy](PRIVACY.md).
 
 ## Install
 
-1. Install BeamNG.Earth from [the DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases), with its installer, as you
-   would the official one.
+1. Install BeamNG.Earth 1.10 or newer, e.g. [the DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases), with its
+   installer.
 2. In BeamNG.Earth, open **Add-ons** > **Add from GitHub**, paste `DeRamp/BeamNG.Earth.Rally` and press **Install**.
 3. Paste `DeRamp/earth-rally-leaderboards` the same way, press **Install**, then **Start**. Tick
    **Start with BeamNG.Earth**.
 4. In game: **Freeroam > BeamNG.Earth**, then **Ctrl + Alt + K** for the menu.
 
-The fork adds the modding API the **Auto recce** needs, until an official release has it. Official BeamNG.Earth
-1.6+ also works; you drive a recce instead. Report fork problems here, not to the BeamNG.Earth team.
-Details: [player guide](docs/guide.md#the-auto-recce-and-beamngearth).
+No **Add from GitHub**? Put the zip from Releases in `mods`.
+
+The fork adds the API **Auto recce** needs. Official BeamNG.Earth 1.10+ works without it: you drive a recce
+instead. Report fork problems here, not to the BeamNG.Earth team. Details: [player guide](docs/guide.md#the-auto-recce-and-beamngearth).
 
 ## Updating
 

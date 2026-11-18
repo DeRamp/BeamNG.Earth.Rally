@@ -1,5 +1,5 @@
-Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)
-(official 1.6+ works, without the auto recce).
+Works with BeamNG.drive 0.40.5 · BeamNG.Earth 1.10+ for **Add from GitHub**, e.g. the
+[DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases) (official 1.10+ works, without the auto recce).
 
 Online leaderboards, opt-in stats, and an install through BeamNG.Earth's Add-ons page with the ARA 2026 season included.
 
@@ -18,9 +18,8 @@ Online leaderboards, opt-in stats, and an install through BeamNG.Earth's Add-ons
 
 #### Install
 * Install and update the mod and the helper from BeamNG.Earth's **Add-ons** page: **Add from GitHub**.
+* No **Add from GitHub**? Put the zip from Releases in `mods`.
 * The **ARA 2026** season comes with the mod. A copy already in your import folder is used instead, so nothing doubles.
-
-### Changed
 * Two Earth Rally zips in `mods` are named on the Rallies page, with the one to delete.
 
 ### Known issues
@@ -28,12 +27,14 @@ Online leaderboards, opt-in stats, and an install through BeamNG.Earth's Add-ons
 
 ---
 **Install:**
-1. Install BeamNG.Earth from [the DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases), with its installer, as you
-   would the official one.
+1. Install BeamNG.Earth 1.10 or newer, e.g. [the DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases), with its
+   installer, as you would the official one.
 2. In BeamNG.Earth, open **Add-ons** > **Add from GitHub**, paste `DeRamp/BeamNG.Earth.Rally` and press **Install**.
 3. Paste `DeRamp/earth-rally-leaderboards` the same way, press **Install**, then **Start** (tick
    **Start with BeamNG.Earth**).
-4. Load BeamNG.Earth's freeroam and press **Ctrl + Alt + K**. The ARA 2026 season is included.
+4. In game: **Freeroam > BeamNG.Earth**, then **Ctrl + Alt + K** for the menu. The ARA 2026 season is included.
+
+No **Add from GitHub**? Put `earth_rally-1.8.0-alpha.zip` from below, still zipped, in `mods`.
 
 **Moving from the zip install:** delete `earth_rally-*.zip` from `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\mods\`.
 

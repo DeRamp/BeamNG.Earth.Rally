@@ -45,14 +45,21 @@ VERSION_RE = re.compile(r'^(\d+)\.(\d+)\.(\d+)-alpha$')
 # The ARA 2026 season, a folder pack, and where it goes in the zip (pack.lua finds it under /earthRally/import/).
 PACK_DEFAULT = os.path.join(os.path.expanduser('~'), 'Documents', 'Claude', 'Rally Files', 'ARA Nationals 2026')
 PACK_IN_ZIP = 'earthRally/import/ARA Nationals 2026/'
+# Written into the pack folder in the zip: the season is the organisers' material, not under the mod's licence.
+PACK_NOTICE = ('# ARA Nationals 2026\n\n'
+               'The route books, maps, results and pictures in this folder belong to the event organisers and the\n'
+               'American Rally Association (ARA). They come with Earth Rally for convenience and are not under\n'
+               "Earth Rally's MIT licence.\n")
 INSTALL = """---
 **Install:**
-1. Install BeamNG.Earth from [the DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases), with its installer, as you
-   would the official one.
+1. Install BeamNG.Earth 1.10 or newer, e.g. [the DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases), with its
+   installer, as you would the official one.
 2. In BeamNG.Earth, open **Add-ons** > **Add from GitHub**, paste `DeRamp/BeamNG.Earth.Rally` and press **Install**.
 3. Paste `DeRamp/earth-rally-leaderboards` the same way, press **Install**, then **Start** (tick
    **Start with BeamNG.Earth**).
-4. Load BeamNG.Earth's freeroam and press **Ctrl + Alt + K**. The ARA 2026 season is included.
+4. In game: **Freeroam > BeamNG.Earth**, then **Ctrl + Alt + K** for the menu. The ARA 2026 season is included.
+
+No **Add from GitHub**? Put `earth_rally-{v}.zip` from below, still zipped, in `mods`.
 
 **Moving from the zip install:** delete `earth_rally-*.zip` from `%LOCALAPPDATA%\\BeamNG\\BeamNG.drive\\current\\mods\\`.
 
@@ -197,6 +204,8 @@ def build_zip(tag, version, pack):
         for full, rel in files:
             z.write(full, rel)
             pack_bytes += os.path.getsize(full)
+        if PACK_IN_ZIP + 'NOTICE.md' not in {rel for _, rel in files}:
+            z.writestr(PACK_IN_ZIP + 'NOTICE.md', PACK_NOTICE)
     print(f'release.py: {out}: {n} mod files + ARA 2026 pack {len(files)} files, {pack_bytes / 1e6:.1f} MB '
           f'(zip {os.path.getsize(out) / 1e6:.1f} MB)')
     return out, n + len(files)

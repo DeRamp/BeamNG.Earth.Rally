@@ -185,6 +185,7 @@ end
 
 -- The file names of the active mod zips Earth Rally could be in, from the game's mod manager (an inactive mod is not
 -- loaded, so it is not a second copy). {} when the mod manager cannot say.
+-- An unpacked copy (a developer's mods/unpacked/ folder) is not a zip and is not counted: accepted, players do not have one.
 function M.modZips()
   local out = {}
   local mm = rawget(_G, 'core_modmanager')

@@ -380,7 +380,21 @@ do
   local only = {}
   for _, p in ipairs(pack.find()) do if pack._packKey(p.name) == 'aranationals2026' then only[#only + 1] = p end end
   T.check(#only == 1 and only[1].kind == 'folder', 'find: the folder when there is no zip of it')
-  files[added[2]] = nil
+  -- (a renamed copy: another name, the same season id in its manifest)
+  local SEASON = '{"format":1,"kind":"season","id":"ara-nationals-2026","name":"ARA Nationals 2026","rounds":[]}'
+  files[added[2]] = SEASON
+  local renamed = IMP .. 'ARA-Nationals-2026 (1).zip'
+  files[renamed], zips[renamed] = 'zip bytes', { ['ARA Nationals 2026/season.json'] = SEASON }
+  local got = {}
+  for _, p in ipairs(pack.find()) do if p.name:find('ARA', 1, true) then got[#got + 1] = p end end
+  T.check(#got == 1 and got[1].kind == 'zip' and got[1].name == 'ARA-Nationals-2026 (1).zip',
+    'find: a renamed zip with the same season id is the same pack, the zip kept (' .. #got .. ')')
+  zips[renamed] = { ['season.json'] = (SEASON:gsub('ara%-nationals%-2026', 'another-season')) }
+  files[renamed] = 'zip bytes, changed'
+  local both = 0
+  for _, p in ipairs(pack.find()) do if p.name:find('ARA', 1, true) then both = both + 1 end end
+  T.check(both == 2, 'find: a zip with another id is another pack (' .. both .. ')')
+  files[renamed], zips[renamed], files[added[2]] = nil, nil, nil
 end
 
 ------------------------------------------------------------------------------------------ ids that survive edits

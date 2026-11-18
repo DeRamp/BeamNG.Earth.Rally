@@ -115,8 +115,9 @@ clock's close-up shows.
    * **It opens** — the mod is fine, the key is not reaching the game. On some layouts Ctrl + Alt is AltGr, and some
      overlays take Ctrl + Alt + K. Bind another key.
    * **`attempt to index global 'earthRally_main'`** — the mod is not loaded. Main menu > **Mods** and switch Earth
-     Rally on. Not listed? The zip must be directly in `…\current\mods\`, still zipped, one copy only. BeamMP
-     switches local mods off when you join a server.
+     Rally on. Not listed? Install it from BeamNG.Earth's **Add-ons** page (**Add from GitHub**,
+     `DeRamp/BeamNG.Earth.Rally`). Without that page, the zip from Releases goes directly in `…\current\mods\`,
+     still zipped. One copy only. BeamMP switches local mods off when you join a server.
 3. **It opens with no styling** (plain text, no layout)? This can happen after BeamNG.Earth's map page was opened
    in the same session. Type `reloadUI()` in the console.
 4. Still nothing: `beamng.log` in `…\current\` should say `Earth Rally <version> loaded`. Open an issue with the lines

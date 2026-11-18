@@ -5,8 +5,8 @@ Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rall
 
 ## 1.8.0-alpha: leaderboards (2026-11-18)
 
-Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)
-(official 1.6+ works, without the auto recce).
+Works with BeamNG.drive 0.40.5 · BeamNG.Earth 1.10+ for **Add from GitHub**, e.g. the
+[DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases) (official 1.10+ works, without the auto recce).
 
 Online leaderboards, opt-in stats, and an install through BeamNG.Earth's Add-ons page with the ARA 2026 season included.
 
@@ -25,9 +25,8 @@ Online leaderboards, opt-in stats, and an install through BeamNG.Earth's Add-ons
 
 #### Install
 * Install and update the mod and the helper from BeamNG.Earth's **Add-ons** page: **Add from GitHub**.
+* No **Add from GitHub**? Put the zip from Releases in `mods`.
 * The **ARA 2026** season comes with the mod. A copy already in your import folder is used instead, so nothing doubles.
-
-### Changed
 * Two Earth Rally zips in `mods` are named on the Rallies page, with the one to delete.
 
 ### Known issues
