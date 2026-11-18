@@ -2211,7 +2211,9 @@ do
   world, getPlayerVehicle = true, gpv
   navs = {}
   tick(1, 0.1)
-  T.check(#navs == 0, "the world up under the game's own loading screen: the page not opened under it")
+  tick(10)
+  T.check(#navs == 0 and runner.current() == nil,
+    "the world up under the game's own loading screen: the page not opened, the stage not run under it")
   main.onUiChangedState('play')            -- (the game's loading screen lets go)
   tick(1, 0.1)
   T.check(navs[1] == 'earthRally' and runner.current() == nil, 'then the page back, the stage not yet asked for')
@@ -2250,12 +2252,22 @@ do
   loadScreen.cancel()
   main._worldWaitClear()
 
-  -- already on the BeamNG.Earth level, its world not up yet: waited for, not loaded again
-  getMissionFilename = function() return 'levels/beamng_earth/main.level.json' end
-  T.check(main.uiAction('recce', 'test8', 'hill').ok and #asked == 5, 'on BeamNG.Earth already: not loaded a second time')
+  -- on another map: not loaded from under the player, the old answer
+  getMissionFilename = function() return 'levels/west_coast_usa/main.level.json' end
+  local other = main.uiAction('recce', 'test8', 'hill')
+  T.check(#asked == 5 and not (main.uiLoading() and main.uiLoading().title == 'Loading BeamNG.Earth'),
+    'on another map: BeamNG.Earth not loaded unasked (' .. tostring(other.message) .. ')')
+  runner.abort(true)
+  recce.stop(false)
+  loadScreen.cancel()
+  getMissionFilename = nil
+
+  -- coming from another level: its end (onClientEndMission) mid-wait, before our world is up, keeps the wait
+  T.check(main.uiAction('drive', 'test8', 'hill').ok and #asked == 6, 'Drive again')
+  main.onClientEndMission()
+  T.check(loadScreen.active(), 'the old level ending: the wait goes on')
   loadScreen.cancel()
   main._worldWaitClear()
-  getMissionFilename = nil
 
   -- BeamNG.Earth's map not installed: said at once, no loading screen
   freeroam_freeroam.startFreeroamByName = function() return false end
@@ -2266,7 +2278,7 @@ do
   -- a full rally's Start: loaded first, then started in the car the game spawned
   freeroam_freeroam.startFreeroamByName = function(n) asked[#asked + 1] = n return true end
   local rr = main.uiRallyAction('start', 'test8', { mode = 'casual', class = 'L4WD' })
-  T.check(rr.ok and #asked == 6 and loadScreen.active() and not rallyRun.active(),
+  T.check(rr.ok and #asked == 7 and loadScreen.active() and not rallyRun.active(),
     'Start rally with no world: the level asked for first, no rally yet')
   T.check(main.uiLoading().thenView == 'timecard', 'and the page goes on to the time card')
   world, getPlayerVehicle = true, gpv

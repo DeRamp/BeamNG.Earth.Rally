@@ -92,8 +92,15 @@ local function levelName()
   local ok, f = pcall(function() return getMissionFilename() end)
   return ok and type(f) == 'string' and f or ''
 end
--- No BeamNG.Earth world to act in: the main menu, another map, or BeamNG.Earth not loaded.
-function M.needsWorld() return not earth.inWorld() end
+-- At the main menu (no level at all): a button that needs the world loads BeamNG.Earth first. Not on another map --
+-- that would end the player's game there unasked; they get the old "Load the BeamNG.Earth level" answer.
+function M.needsWorld() return levelName() == '' and not earth.inWorld() end
+-- (2) BeamNG.Earth missing or too old: said at once, not after a level load that could only fail
+local function earthUnusable()
+  local ok, why = earth.check()
+  if not ok and why ~= earth.NOT_IN_WORLD and rawget(_G, 'beamngEarth_api') then return why end
+  return nil
+end
 local fromGame = false     -- the menu opened from the game's Rally page with no level: closed back to that page
 local lastUi = nil         -- the UI state now (onUiChangedState)
 M.EARTH_LEVEL = 'beamng_earth'
@@ -559,6 +566,7 @@ end
 -- pressed again for the player once the world is up with a car in it.
 M.WORLD_UP_WAIT_S = 240    -- the level and its world given this long (inside the loading screen's own 300 s)
 M.WORLD_UP_SETTLE_S = 2    -- ... and this long once BeamNG.Earth says ready, for the car to be set down
+M.NO_SERVER_S = 60         -- the level up but BeamNG.Earth never ready this long: its world server is not running
 M.WORLD_ACTIONS = { drive = 'Drive stage', goStart = 'Go to start', recce = 'Recce', autoRecce = 'Auto recce',
   route = 'Route to start' }
 M.WORLD_RALLY_ACTIONS = { start = 'Full rally', resume = 'Full rally' }
@@ -572,7 +580,7 @@ local function waiting()
 end
 
 -- Load the level, then run(). kick: the loading screen's top line. Returns ok, why.
-local function loadWorldThen(kick, run, thenView)
+local function loadWorldThen(kick, run, thenView, view)
   if waiting() then return false, 'BeamNG.Earth is loading: wait for it.' end
   if loadScreen.active() then return false, 'Something is loading: wait for it.' end
   -- (already on the BeamNG.Earth level, its world just not up yet: wait for it, do not load it again)
@@ -581,7 +589,7 @@ local function loadWorldThen(kick, run, thenView)
     if not ok then return false, why end
   end
   log('I', logTag, 'from the menu: loading BeamNG.Earth for ' .. tostring(kick))
-  local w = { t = 0, ready = 0, thenView = thenView }
+  local w = { t = 0, ready = 0, thenView = thenView, view = view or { thenView } }
   worldWait = w
   local steps = { 'The BeamNG.Earth map', 'Its world server and your car' }
   w.screen = loadScreen.begin({ kind = 'stage', kick = kick, title = 'Loading BeamNG.Earth', steps = steps, noWorld = true,
@@ -594,7 +602,11 @@ local function loadWorldThen(kick, run, thenView)
           math.floor(M.WORLD_UP_WAIT_S / 60))
       end
       if not earth.inWorld() then return 1, 0, steps[1] end
-      if w.ready < M.WORLD_UP_SETTLE_S then return 2, 0.5, steps[2] end
+      if (w.upT or 0) > M.NO_SERVER_S and not earth.ready() then
+        return 2, nil, nil, "BeamNG.Earth's world server is not answering. Start the game with BeamNG.Earth's launcher."
+      end
+      -- (the page back over the level first: a button run under the game's own loading screen opens nothing)
+      if not w.shown or w.ready < M.WORLD_UP_SETTLE_S then return 2, 0.5, steps[2] end
       return 3
     end,
     done = function(ok, why)
@@ -628,10 +640,14 @@ local function updateWorldWait(dt)
   if not w then return end
   w.t = w.t + (dt or 0)
   local inWorld = earth.inWorld()
-  if inWorld then w.up = true end
+  if inWorld then w.up = true w.upT = (w.upT or 0) + (dt or 0) end
   local car = getPlayerVehicle and getPlayerVehicle(0)
-  if inWorld and earth.ready() and car then w.ready = w.ready + (dt or 0) else w.ready = 0 end
-  if inWorld and not menuOpen and lastUi == 'play' then M.openMenu(w.thenView) end
+  if inWorld and w.shown and earth.ready() and car then w.ready = w.ready + (dt or 0) else w.ready = 0 end
+  -- (once: a player who closes the page after that is not fought)
+  if inWorld and not w.shown and not menuOpen and lastUi == 'play' then
+    w.shown = true
+    M.openMenu(w.view and w.view[1], w.view and w.view[2], w.view and w.view[3])
+  end
 end
 
 -- The level gone while it was still coming up (the player went back to the main menu): the wait ends with it.
@@ -1331,8 +1347,12 @@ function M.uiAction(what, eventId, stageId)
   if M.WORLD_ACTIONS[what] and M.needsWorld() then
     local ev, stage = menu.findStage(eventId, stageId)
     if not stage then return { ok = false, message = 'That stage is not on this computer any more.' } end
-    local okL, why = loadWorldThen(M.WORLD_ACTIONS[what] .. ' · ' .. tostring(ev.name),
-      function() return M.uiAction(what, eventId, stageId) end)
+    local bad = earthUnusable()
+    if bad then message = bad return { ok = false, message = bad } end
+    local okL, why = loadWorldThen(M.WORLD_ACTIONS[what] .. ' · ' .. tostring(ev.name), function()
+      local r = M.uiAction(what, eventId, stageId)
+      if r and not r.ok and r.message then runner.say(r.message, 8, 'warning', tostring(stage.name)) end
+    end, nil, { 'stage', eventId, stageId })
     message = okL and 'Loading BeamNG.Earth...' or why
     return { ok = okL, message = message }
   end
@@ -1561,6 +1581,8 @@ function M.uiRallyAction(what, eventId, opts)
   if M.WORLD_RALLY_ACTIONS[what] and M.needsWorld() then
     local ev = menu.findEvent(eventId)
     if not ev then return { ok = false, message = 'That rally is not on this computer any more.' } end
+    local bad = earthUnusable()
+    if bad then message = bad return { ok = false, message = bad } end
     local okL, why = loadWorldThen(M.WORLD_RALLY_ACTIONS[what] .. ' · ' .. tostring(ev.name), function()
       local r = M.uiRallyAction(what, eventId, opts)
       if r and not r.ok and r.message then
