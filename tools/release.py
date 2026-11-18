@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 """Publish an Earth Rally release from a commit already on origin/main: tag it, zip it from the tag, publish it.
 
-    python tools/release.py 1.6.1-alpha <commit> --check     checks only, prints the release body, changes nothing
-    python tools/release.py 1.6.1-alpha <commit>             checks, then tag, zip, push the tag, GitHub pre-release
+    python tools/release.py 1.8.0-alpha <commit> --check       checks only, prints the release body, changes nothing
+    python tools/release.py 1.8.0-alpha <commit>               checks, then tag, zip, push the tag, GitHub release
+    python tools/release.py 1.8.0-alpha [<ref>] --build-only   only the zip, from <ref> (default HEAD): no checks,
+                                                               no tag, nothing pushed (to look at it before a release)
+    --pack PATH       the ARA 2026 season folder put in the zip (default: the Rally Files folder on the owner's PC)
 
 <commit> is the commit on main that carries the release text and version bump (default: origin/main). This script
 commits nothing and never pushes `main`. It reads every
 file from the commit, not the working tree, so it runs from any checkout and a dirty checkout cannot leak into it.
+The one exception is the ARA 2026 season (organisers' material, never in git): it is read from --pack and goes into
+the zip as the folder pack earthRally/import/ARA Nationals 2026/, so the mod's one release asset carries it.
+Releases are full releases, not pre-releases: BeamNG.Earth's Add-ons page installs only the newest full release.
 It refuses, changing nothing, unless:
 
 - the version is X.Y.Z-alpha and the next patch, minor or major after origin's latest v* tag;
@@ -14,7 +20,8 @@ It refuses, changing nothing, unless:
 - the commit's top CHANGELOG entry is `## X.Y.Z-alpha: <name> (<date>)` with a `Works with` line, within the word
   limit (patch 150, minor 400, counted like `wc -w`);
 - the commit's `M.VERSION` is the version, and its README.md names no version;
-- the DeRamp BeamNG.Earth fork's latest release has a Windows installer (.exe).
+- the DeRamp BeamNG.Earth fork's latest release has a Windows installer (.exe);
+- the --pack folder is there, with its season.json at its top.
 
 Each step is skipped when already done (tag on that commit, tag on origin, release on GitHub), so if a step fails,
 running the same command again is the recovery.
@@ -35,12 +42,19 @@ FORK = 'DeRamp/BeamNG.Earth'
 MAIN_LUA = 'mod/earth_rally/lua/ge/extensions/earthRally/main.lua'
 MOD = 'mod/earth_rally'
 VERSION_RE = re.compile(r'^(\d+)\.(\d+)\.(\d+)-alpha$')
+# The ARA 2026 season, a folder pack, and where it goes in the zip (pack.lua finds it under /earthRally/import/).
+PACK_DEFAULT = os.path.join(os.path.expanduser('~'), 'Documents', 'Claude', 'Rally Files', 'ARA Nationals 2026')
+PACK_IN_ZIP = 'earthRally/import/ARA Nationals 2026/'
 INSTALL = """---
 **Install:**
 1. Install BeamNG.Earth from [the DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases), with its installer, as you
    would the official one.
-2. Download `earth_rally-{v}.zip` below and put it, still zipped, in
-   `%LOCALAPPDATA%\\BeamNG\\BeamNG.drive\\current\\mods\\`. Delete the old Earth Rally zip first.
+2. In BeamNG.Earth, open **Add-ons** > **Add from GitHub**, paste `DeRamp/BeamNG.Earth.Rally` and press **Install**.
+3. Paste `DeRamp/earth-rally-leaderboards` the same way, press **Install**, then **Start** (tick
+   **Start with BeamNG.Earth**).
+4. Load BeamNG.Earth's freeroam and press **Ctrl + Alt + K**. The ARA 2026 season is included.
+
+**Moving from the zip install:** delete `earth_rally-*.zip` from `%LOCALAPPDATA%\\BeamNG\\BeamNG.drive\\current\\mods\\`.
 
 [README](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/README.md) · [Player guide](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/guide.md) · [Full changelog](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/CHANGELOG.md)
 """
@@ -109,10 +123,26 @@ def changelog_entry(text, version):
     return m.group(2), entry
 
 
-def checks(version, commit):
+def pack_files(pack):
+    """The ARA season folder's files, [(path on disk, path in the zip)], sorted. Refuses when it is not there."""
+    if not os.path.isfile(os.path.join(pack, 'season.json')):
+        raise Refuse(f'the ARA 2026 pack is not at {pack} (no season.json there): give its folder with --pack PATH')
+    out = []
+    for base, dirs, files in os.walk(pack):
+        dirs.sort()
+        for f in sorted(files):
+            if f.startswith('.') or f.lower() in ('thumbs.db', 'desktop.ini'):
+                continue
+            full = os.path.join(base, f)
+            out.append((full, PACK_IN_ZIP + os.path.relpath(full, pack).replace(os.sep, '/')))
+    return out
+
+
+def checks(version, commit, pack):
     key = vkey(version)
     if not key:
         raise Refuse(f'version `{version}` is not X.Y.Z-alpha')
+    pack_files(pack)
     run('git', 'fetch', '-q', 'origin', 'main')
     remote = remote_tags()
     sha = run('git', 'rev-parse', '--verify', commit + '^{commit}')
@@ -149,21 +179,30 @@ def checks(version, commit):
     return sha, name, body, words, limit
 
 
-def build_zip(tag, version):
-    """The tool/package.py layout (the mod's folders at the top, plus LICENSE), from the tag's tree only."""
+def build_zip(tag, version, pack):
+    """The tool/package.py layout (the mod's folders at the top, plus LICENSE), from the tag's tree only, plus the
+    ARA 2026 season from pack (a folder on this PC) under PACK_IN_ZIP. The one release asset."""
+    files = pack_files(pack)
     tar = run('git', 'archive', '--format=tar', tag, MOD, 'LICENSE', binary=True).stdout
     out = os.path.join(ROOT, 'dist', f'earth_rally-{version}.zip')
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    n = 0
+    n, pack_bytes = 0, 0
     with tarfile.open(fileobj=io.BytesIO(tar)) as t, zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
         for m in sorted((m for m in t.getmembers() if m.isfile()), key=lambda m: m.name):
             rel = m.name[len(MOD) + 1:] if m.name.startswith(MOD + '/') else m.name
+            if rel.startswith(PACK_IN_ZIP):
+                raise Refuse(f'{tag} has {rel} in git: rally data is never in git')
             z.writestr(rel, t.extractfile(m).read())
             n += 1
-    return out, n
+        for full, rel in files:
+            z.write(full, rel)
+            pack_bytes += os.path.getsize(full)
+    print(f'release.py: {out}: {n} mod files + ARA 2026 pack {len(files)} files, {pack_bytes / 1e6:.1f} MB '
+          f'(zip {os.path.getsize(out) / 1e6:.1f} MB)')
+    return out, n + len(files)
 
 
-def publish(version, sha, name, body):
+def publish(version, sha, name, body, pack):
     tag = 'v' + version
     on_origin = bool(run('git', 'ls-remote', '--tags', 'origin', f'refs/tags/{tag}'))
     if not run('git', 'rev-parse', '-q', '--verify', tag, check=False):
@@ -184,19 +223,18 @@ def publish(version, sha, name, body):
     if found:
         rid, draft, pre, url, *assets = found.splitlines()[0].split(' ')
         assets = ','.join(assets).split(',')
-        if draft == 'false' and pre == 'true' and zip_name in assets:
+        if draft == 'false' and pre == 'false' and zip_name in assets:
             return url + ' (already published)'
         if zip_name not in assets:
-            zip_path, n = build_zip(tag, version)
+            zip_path, n = build_zip(tag, version, pack)
             run(gh_exe(), 'release', 'upload', tag, zip_path, '-R', REPO, '--clobber')
-        run(gh_exe(), 'api', '-X', 'PATCH', f'repos/{REPO}/releases/{rid}', '-F', 'draft=false', '-F', 'prerelease=true')
+        run(gh_exe(), 'api', '-X', 'PATCH', f'repos/{REPO}/releases/{rid}', '-F', 'draft=false', '-F', 'prerelease=false')
         return url + ' (finished an incomplete release)'
-    zip_path, n = build_zip(tag, version)
-    print(f'release.py: {zip_path}: {n} files')
+    zip_path, n = build_zip(tag, version, pack)
     with tempfile.NamedTemporaryFile('w', suffix='.md', delete=False, encoding='utf-8') as f:
         f.write(body)
     try:
-        return run(gh_exe(), 'release', 'create', tag, zip_path, '-R', REPO, '--verify-tag', '--prerelease',
+        return run(gh_exe(), 'release', 'create', tag, zip_path, '-R', REPO, '--verify-tag',
                    '--title', f'Earth Rally {version}: {name}', '--notes-file', f.name)
     finally:
         os.unlink(f.name)
@@ -207,18 +245,34 @@ def main():
     sys.stderr.reconfigure(encoding='utf-8')
     args = sys.argv[1:]
     dry = '--check' in args
-    args = [a for a in args if a != '--check']
+    build_only = '--build-only' in args
+    pack = PACK_DEFAULT
+    if '--pack' in args:
+        i = args.index('--pack')
+        if i + 1 >= len(args):
+            print(__doc__)
+            return 1
+        pack = args[i + 1]
+        del args[i:i + 2]
+    args = [a for a in args if a not in ('--check', '--build-only')]
     if len(args) not in (1, 2):
         print(__doc__)
         return 1
-    version, commit = args[0], (args[1] if len(args) > 1 else 'origin/main')
+    pack = os.path.abspath(pack)
     try:
-        sha, name, body, words, limit = checks(version, commit)
+        if build_only:     # (the zip only, from a ref: no checks, no tag, nothing pushed or published)
+            ref = args[1] if len(args) > 1 else 'HEAD'
+            if not vkey(args[0]):
+                raise Refuse(f'version `{args[0]}` is not X.Y.Z-alpha')
+            build_zip(run('git', 'rev-parse', '--verify', ref + '^{commit}'), args[0], pack)
+            return 0
+        version, commit = args[0], (args[1] if len(args) > 1 else 'origin/main')
+        sha, name, body, words, limit = checks(version, commit, pack)
         print(f'release.py: {version} "{name}" on {sha[:7]}, CHANGELOG {words}/{limit} words')
         if dry:
             print('--- release body ---\n' + body)
             return 0
-        print('release.py: published ' + publish(version, sha, name, body))
+        print('release.py: published ' + publish(version, sha, name, body, pack))
         return 0
     except Refuse as e:
         print(f'release.py: refused: {e}\nSteps printed above as "release.py:" are done (a failed `gh release create` '

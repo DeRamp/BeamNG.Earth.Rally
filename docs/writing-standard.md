@@ -34,9 +34,9 @@ Target **400-600 words**. `wc -w README.md` before committing; over 600 means so
 <hero screenshot from docs/media/>
 
 ## What it does        5-8 one-line bullets
-## Install             3-5 numbered steps; BeamNG.Earth from the fork first; `earth_rally-<version>.zip`;
-                      the mods folder; keep it zipped
-## Updating            1-3 bullets: delete the old zip, what carries over
+## Install             3-5 numbered steps; BeamNG.Earth from the fork first; its Add-ons page, Add from
+                      GitHub: DeRamp/BeamNG.Earth.Rally, then DeRamp/earth-rally-leaderboards (Start)
+## Updating            1-3 bullets: updates come through the Add-ons page, the old zip deleted, what carries over
 ## Quick start         3-4 numbered steps to the first stage
 ## Known issues        5 bullets at most, the ones a player will hit
 ## Reporting bugs      what to include: versions, log path, the log lines
@@ -80,8 +80,10 @@ Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com
 * **Tag:** `vX.Y.Z-alpha` on `main`.
 * **Title:** `Earth Rally X.Y.Z-alpha: <name>`, the name 2-5 words, lower case (`the co-driver`). A patch can reuse
   its minor's name or describe the fix (`the first stage goes right`).
-* **Asset:** `earth_rally-X.Y.Z-alpha.zip` from `python tools/package.py X.Y.Z-alpha`. Nothing else attached.
-* **Pre-release** box ticked while we are in alpha.
+* **Asset:** `earth_rally-X.Y.Z-alpha.zip` from `tools/release.py`, with the ARA 2026 season inside it
+  (`earthRally/import/ARA Nationals 2026/`). Nothing else attached: the Add-ons page installs the first `.zip`.
+* **Pre-release** box NOT ticked (since 1.8.0): BeamNG.Earth's Add-ons page installs only the newest full release.
+  The version keeps its `-alpha`.
 * **Body:** the CHANGELOG entry, pasted, then this block:
 
 ```markdown
@@ -89,8 +91,12 @@ Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com
 **Install:**
 1. Install BeamNG.Earth from [the DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases), with its installer, as you
    would the official one.
-2. Download `earth_rally-X.Y.Z-alpha.zip` below and put it, still zipped, in
-   `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\mods\`. Delete the old Earth Rally zip first.
+2. In BeamNG.Earth, open **Add-ons** > **Add from GitHub**, paste `DeRamp/BeamNG.Earth.Rally` and press **Install**.
+3. Paste `DeRamp/earth-rally-leaderboards` the same way, press **Install**, then **Start** (tick
+   **Start with BeamNG.Earth**).
+4. Load BeamNG.Earth's freeroam and press **Ctrl + Alt + K**. The ARA 2026 season is included.
+
+**Moving from the zip install:** delete `earth_rally-*.zip` from `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\mods\`.
 
 [README](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/README.md) · [Player guide](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/guide.md) · [Full changelog](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/CHANGELOG.md)
 ```
@@ -127,7 +133,7 @@ old `docs/release-*.md` files stay as history.
    update what should move.
 4. Land these on `main` (see `CLAUDE.md`).
 5. `/release X.Y.Z-alpha` runs `python tools/release.py X.Y.Z-alpha <commit>`: it tags the commit,
-   builds the zip from the tag and makes the GitHub pre-release with the title, body and asset above.
+   builds the zip from the tag (plus the ARA 2026 season) and makes the GitHub release (not a pre-release) with the title, body and asset above.
 
 ## Other docs
 
