@@ -127,7 +127,8 @@ end
 local function setWorld(off, resync)
   if off or not timed() then
     local okW, cur = pcall(earth.worldTime)
-    if world or (okW and cur ~= nil) then pcall(earth.setWorldTime, nil) end
+    -- (one we did not set is given back only on the way out, never on starting an untimed rally)
+    if world or (off and okW and cur ~= nil) then pcall(earth.setWorldTime, nil) end
     world, worldDue, worldFailed = nil, false, false
     return
   end
@@ -1248,9 +1249,9 @@ function M.update(dt, dtSim)
       if not paused then R.clock.t = R.clock.t + (dtSim or dt) end
       -- (BeamNG.Earth's sky runs on wall-clock time from where it was set and knows nothing of pauses: set again as a
       -- loading screen or a menu goes -- a jump made under it as a jump, else as a catch-up)
-      if wasPaused and not paused then
-        if worldDue then setWorld() elseif world then setWorld(false, true) end
-      end
+      -- (a jump is set as soon as the clock runs, paused before or not: a skip at the board can come unpaused)
+      if not paused and worldDue then setWorld()
+      elseif wasPaused and not paused and world then setWorld(false, true) end
       -- (and whenever the two have drifted apart all the same while the clock runs: a game pause of its own, slow
       -- motion. Never while it is paused: the sky would be set to a clock standing still)
       if not paused and world and math.abs((world.t + (realT - world.real)) - R.clock.t) > M.WORLD_DRIFT_S then

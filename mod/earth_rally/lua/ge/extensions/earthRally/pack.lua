@@ -480,7 +480,7 @@ local function itineraryOf(evFile, stages, lineId, warn)
     local function forUs(row)
       if type(row.classes) ~= 'table' or #row.classes == 0 then return true end
       for _, c in ipairs(row.classes) do
-        if type(c) == 'string' and c:lower():find('national', 1, true) then return true end
+        if type(c) == 'string' and c:lower():find('%f[%a]national%f[%A]') then return true end
       end
       local names = {}
       for _, c in ipairs(row.classes) do names[#names + 1] = tostring(c) end
@@ -514,8 +514,9 @@ local function itineraryOf(evFile, stages, lineId, warn)
             str(row.stage)))
           -- (its time carried to the next pass's road section: the chain goes on through it, from the last out row too)
           acc = acc + (lat or 0)
-          if reset and lat then reset.acc = (reset.acc or 0) + lat end
-          if first and lat and first ~= reset then first.acc = (first.acc or 0) + lat end
+          -- (only onto a target already begun: a lateness alone is not a road section's time)
+          if reset and lat and reset.acc then reset.acc = reset.acc + lat end
+          if first and lat and first ~= reset and first.acc then first.acc = first.acc + lat end
           copy = false
         else
           copy = true
