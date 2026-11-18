@@ -113,3 +113,58 @@ only: **nothing goes into `main` until the owner has driven it and says release.
 
 1. Timed road sections (Earth Rally only). 2. Splits. 3. The fork change and fork.2 build (not released).
 4. Earth Rally's use of it. Then `/handoff`, the owner drives, findings in `docs/notes-<next>.md`.
+
+## Build: builders and interfaces
+
+Four builders at once. **Touch only your own files.** Need something from another builder's files? It is in the
+interfaces below; if not, write it in your report instead of editing their file. Bug-for-bug: no systems beyond this
+plan. Comments in the code's own style (why, not what). Made-up names only in tests and comments.
+
+| Builder | Owns | Items |
+|---|---|---|
+| **Lua** | `mod/earth_rally/lua/**`, `tests/**` | 1 (all logic), 2 (Earth Rally side), 3 (logic) |
+| **Menu** | `mod/earth_rally/ui/ui-vue/mods/earthRally/**` | time card, ATC card, settings row (if not generic), start screen |
+| **HUD** | `mod/earth_rally/ui/modules/apps/earthRally/**` | transit line colours, split card, finish card splits |
+| **Fork** | `..\beamng.earth-fork-release` on a new branch `world-time` (own worktree `..\beamng.earth-world-time`) | 2 (fork side) |
+
+The mock-ups (`docs/mockups-rally-loop/rally-loop.html`, every screen's note) are the look. Where they differ from
+this plan, the plan's owner answers win: **no maximum lateness anywhere; slower than your best is amber.**
+
+### Interfaces
+
+1. **Timed flag.** A rally is *timed* when its event has target times. Untimed rallies behave exactly as today and
+   every field below is nil for them.
+2. **Time card** (`rallyRun.uiCard()`): `clock = { date = 'Fri 6 Feb', time = '18:41' }`; each row may carry
+   `due` ('18:50' or nil until known), `timeIn` ('18:51'), `roadPenaltyS` (number, late/early cost at that control),
+   `outAt` (a service's fixed out time, '20:53'); `transit` adds `due` ('18:50'), `leftS` (seconds to due, negative
+   when late), `late` (whole minutes late, 0 when not); top level `roadPenaltyS` (the total).
+3. **ATC card** (`loadScreen.ui().card`, `kind = 'atc'`): `due` ('18:50'), `result = { kind = 'onTime' | 'late' |
+   'early', min = n, penaltyS = n }` once checked in; while waiting for your minute (early penalty off, or on and
+   not yet checked in): `wait = { leftS = n, due = '18:50' }` and the first step reads "Stopped at the board". The
+   skip: `earthRally_main.uiLoadingSkipWait()` (new; jumps the rally clock to the due minute and checks in on time).
+   The keyboard Shift+E / controller Y already route to the start-line skip in Lua; the Lua builder makes the same
+   key skip the wait while `wait` is up.
+4. **HUD transit line** (hudFrame `ours.rally.transit`): `{ label, due, leftS, distM, late, penaltyS }`. The text
+   stays Lua-side as today; the HUD app colours it: `leftS < 60` amber, `late > 0` red.
+5. **Splits** (hudFrame): `ours.split = { n = 1..3, timeS, gapS }` for 5 s after each split (`gapS` nil on a first
+   run; negative = ahead, green; positive = behind, amber). `finish.splits = [ { n, timeS, gapS } ]` (n = 4 is the
+   finish) on the finish card. Progress bar quarter ticks: `ours.splitsAt = { 0.25, 0.5, 0.75 }`.
+6. **Setting** `earlyPenalty` (bool, default false), label "Early check-in penalty", help "Checking in before your
+   minute costs the rally's early penalty. Off: you wait for your minute." In `settings.lua` SCHEMA / ORDER after
+   `resetPenalty`. The Menu builder only adds Vue if the settings page is not generic over SCHEMA.
+7. **Start screen** (`rallyRun.startInfo()`): `startsAt = { text = 'Fri 6 Feb 2026, 18:00 local', light = 'night'
+   | 'dusk' | 'day' | 'dawn' }` (light from the sun's height at the start place), `worldTime = false` when BeamNG.Earth
+   lacks the API (the screen then shows the fork note from the mock-up).
+8. **Fork API** (modding API 1.10, `has('worldTime')`): `api.setWorldTime(epoch)` sets the sky to that UTC moment at
+   the player and runs on in real time, without changing or saving the player's sky / weather mode; the weather
+   server fetches that hour from `archive-api.open-meteo.com` (falling back to Open-Meteo's historical-forecast
+   API for the last few days) and keeps it while the world time is set; `api.setWorldTime(nil)` goes back to
+   whatever the player had. `api.worldTime()` returns the epoch or nil. Earth Rally reaches it through
+   `earthAdapter.setWorldTime(epoch)` / `earthAdapter.hasWorldTime()`.
+
+### Done means
+
+Each builder: touched tests pass (`python tests/run_tests.py test_x ...`, never the two e2e; the fork builder runs
+the fork's own weather/sky tests); a short report per item: files and functions changed, what it could not do and
+why, anything the others must know. Commits on the branch, each builder its own commits; **no merge into `main`,
+no push** (the lead pushes). Then the lead runs `/handoff` over the whole diff.
