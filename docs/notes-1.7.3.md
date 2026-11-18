@@ -5,9 +5,15 @@ Branch `fix/recce-speed`, from `main` at 1.7.1, merged with 1.7.2. Build: `1.7.2
 
 ## What changed
 
-- **A full rally looks one stage ahead** (item 1, made safer on the owner's word, 2026-11-17). While a stage runs
-  its own auto recce, the next stage is priced and, if map data is missing, its area added. So stage 2 downloads
-  while stage 1 matches. Only the next stage: Stop or leaving the rally leaves at most one extra download.
+- **A full rally looks one stage ahead** (item 1, made safer on the owner's word, 2026-11-17). Once a stage has left
+  its download (going there, settling or matching, or nothing to download), the next stage is priced and, if map
+  data is missing, its area added. So stage 2 downloads while stage 1 teleports, settles and asks its windows. Only
+  the next stage: Stop or leaving the rally leaves at most one extra download.
+  - Not sooner: BeamNG.Earth downloads one area at a time, in the order added, so an area added ahead would hold
+    the current stage up. And neighbouring stages share ground: priced before the current download is done, the
+    next stage would count that ground as missing and get a second area over it.
+  - The gain is at most each stage's teleport, settle and windows (about 60 s cold). The downloads themselves still
+    run end to end.
   - Stage 1 goes the 1.7.0 way: priced, the question answered yes for the player.
   - At its turn a looked-ahead stage follows its own download, with no new estimate.
   - A look-ahead estimate that failed or timed out is not "nothing missing": the stage is priced again at its turn.
@@ -16,11 +22,12 @@ Branch `fix/recce-speed`, from `main` at 1.7.1, merged with 1.7.2. Build: `1.7.2
     out is booked if it is taken later; the stage is matched with what is here.
   - A looked-ahead area missing from BeamNG.Earth's list, added more than `AREA_GONE_S` ago, counts as deleted.
   - A stage with an area in `settings/earthRally_areas.json` uses it: no duplicates.
-  - **Stop** names the look-ahead's download when one was added and is still going:
-    "Auto recce stopped. Map downloads already started, Stage Two's too, carry on in BeamNG.Earth's Areas."
+  - **Stop** names the look-ahead's download when one was added and is still going, or its add is unanswered:
+    "Auto recce stopped. Map downloads already started carry on in BeamNG.Earth's Areas, Stage Two's too."
   - The single-stage button is unchanged: priced and asked every press.
-- **A window that times out is asked again after 2 s** (item 3), twice. Timeouts, exceptions and answers that could
-  not be read are retried. If it still fails, the stage ends red: "BeamNG.Earth did not answer for this part of the
+- **A window that times out is asked again after 15 s** (item 3), twice. BeamNG.Earth keeps building the timed-out
+  window on its one thread, so a quick re-ask only queues behind it. Exceptions (any bare class name, such as
+  `IncompleteRead`) and answers that could not be read are retried after 2 s. If it still fails, the stage ends red: "BeamNG.Earth did not answer for this part of the
   stage (timed out), so try the auto recce again". It no longer says "no map data".
   - Errors that asking again cannot change end at once with their own reason: BeamNG.Earth's roads off, started
     without roads, no world yet, bad coordinates (the strings in the fork's `server/earthd.py` road_graph handler).
@@ -45,9 +52,9 @@ Branch `fix/recce-speed`, from `main` at 1.7.1, merged with 1.7.2. Build: `1.7.2
   `the car set down from the matched ATC: on the matched ATC road point` (or `on the road map`). The car is on the
   road at the ATC, facing the start. Press Run stage: it should set the car down 40 m before the board.
 - **Full rally.** Start the Warden test rally (3 stages) with no lines. The log shows
-  `rally: pricing the map data of <stage 2> ahead of its turn` while stage 1 runs, then
-  `took the area ... downloading ahead`. BeamNG.Earth's area list never has more than the current stage's and the
-  next one's being added.
+  `rally: pricing the map data of <stage 2> ahead of its turn` once stage 1 goes there, then
+  `took the area ... downloading ahead`, only after stage 1's download is done. BeamNG.Earth's area list never has
+  the next stage's area ahead of the current one's.
 - **Stop all** during the prep, after stage 2's area was added: the message names stage 2's download.
 - **Rally twice.** Delete the matched lines (Reset) and start the rally again: no new areas in BeamNG.Earth's list.
 - **The owner's own check:** drive a stage after the auto recce, from the ATC.

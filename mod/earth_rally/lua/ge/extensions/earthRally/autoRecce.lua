@@ -72,15 +72,20 @@ M.RADIUS_M = 1000.0         -- each window is a square of this half size round t
 M.MAX_RADIUS_M = 2000.0     -- BeamNG.Earth's own cap on it (assumed: see the note on the API at the foot of this file)
 M.COVER_SAMPLE_M = 20.0     -- the stage corridor is checked for coverage at a point every this far along it
 M.RETRIES = 2               -- a window re-asked for this many times when the world's origin moved under it
--- (1.7.2) a window that timed out or came back with an error asked again this many times, on a count of its own:
+-- (1.7.3) a window that timed out or came back with an error asked again this many times, on a count of its own:
 -- BeamNG.Earth builds windows on one thread behind the world's own load, and in the 1.7.1 logs a cold window took
 -- up to 21 s. One that never answers is BeamNG.Earth not answering, not ground with no map data.
 M.ERROR_RETRIES = 2
-M.RETRY_DELAY_S = 2         -- (1.7.3) ... each after this long: a window that timed out is not asked again at once
+-- (1.7.3) ... each after a wait. After 'timed out', TIMEOUT_RETRY_DELAY_S: BeamNG.Earth's server goes on building the
+-- window that timed out on its one thread, so asking again a moment later only queues behind that same build.
+-- After any other error worth asking again, RETRY_DELAY_S.
+M.RETRY_DELAY_S = 2
+M.TIMEOUT_RETRY_DELAY_S = 15
 
 -- (1.7.3) BeamNG.Earth's road-graph errors that asking again cannot change (the fork's server/earthd.py road_graph
--- handler): its own reason for the player, or nil for one worth asking again -- a timeout, an exception's name, an
--- answer that could not be read. An error not known here is not asked again either: it is said as it came.
+-- handler): its own reason for the player, or nil for one worth asking again -- a timeout, an exception's name (any
+-- bare class name, one CamelCase word: IncompleteRead, BrokenProcessPool), an answer that could not be read. An
+-- error not known here is not asked again either: it is said as it came.
 local WINDOW_ERRORS = {
   { "roads are off",
     "BeamNG.Earth's roads are off, so it has no road graph: turn its roads on, then run the auto recce again" },
@@ -96,7 +101,7 @@ function M.windowErrorWhy(what)
   if what == 'timed out' or what == 'no answer' or what == 'no roads in the answer'
      or what:find('could not be read', 1, true) or what:find('world moved on', 1, true)
      or what:match('^[%a_][%w_%.]*Error$') or what:match('^[%a_][%w_%.]*Exception$')
-     or what:match('^[%a_][%w_%.]*Timeout$') then
+     or what:match('^[%a_][%w_%.]*Timeout$') or what:match('^%u[%l%d]+%u%w*$') then
     return nil
   end
   return 'BeamNG.Earth could not give the roads for this part of the stage (' .. what .. ')'
@@ -127,7 +132,7 @@ M.DONE, M.PARTIAL, M.NODATA, M.FAILED = 'done', 'partial', 'nodata', 'failed'
 -- Overridable for the tests: wall seconds (`seconds` in the file is how long the whole auto recce took, most of it
 -- spent waiting on BeamNG.Earth between windows, so this is wall time and not os.clock's CPU time).
 function M.clock() return os.time() end
--- (1.7.2, item 7) The legs' timing for main.lua's one log line: the game's high-resolution wall clock where there is
+-- (1.7.3, item 7) The legs' timing for main.lua's one log line: the game's high-resolution wall clock where there is
 -- one (os.clockhp, as runner.lua and props.lua use), else os.clock. Overridable for the tests.
 M.wall = rawget(os, 'clockhp') or os.clock
 
@@ -219,7 +224,7 @@ M.polyDist = polyDist
 -- A grid of a polyline's segments, so "is this node on the matched line?" is not every node against every segment
 -- (a 12 km stage: ~3,000 segments against a few thousand junction candidates, which the Python did in numpy and
 -- Lua should not do at all). cell: the bucket size in metres.
--- (1.7.2) The key is a number, not a string: the build asks this for every node of every window, and a string
+-- (1.7.3) The key is a number, not a string: the build asks this for every node of every window, and a string
 -- made per cell looked at was the garbage the grid was meant to save. Exact for any cell index within +-2^20, which
 -- at the cell sizes used here is thousands of kilometres.
 local NO_SEGS = {}
@@ -262,7 +267,7 @@ local function segGrid(pts, cell)
 end
 M.segGrid = segGrid
 
--- (1.7.2, docs/plan-recce-speed.md item 6) How far from the organisers' line the build measures a node exactly.
+-- (1.7.3, docs/plan-recce-speed.md item 6) How far from the organisers' line the build measures a node exactly.
 -- An edge is kept when the mean of its two ends' and its middle's distances is within CORRIDOR_M, so a node or a
 -- middle further than 3 x CORRIDOR_M cannot be part of a kept edge whatever the other two are (they are >= 0): it
 -- needs no exact figure, only "too far", which is math.huge here. Inside the reach the grid's answer IS polyDist's
@@ -378,7 +383,10 @@ function M.build(graph, kml, fr)
         local dm = (g.near[a] + g.near[b] + lineDist(grid, mid, kml, reach)) / 3
         if dm <= M.CORRIDOR_M then
           local len = dist(pa, pb)
-          local w = len * (1 + (dm / M.NEAR_M) ^ 2)
+          -- (r * r, not ^ 2: LuaJIT's interpreted pow and its compiled x * x can differ by one ulp, so the same
+          --  edge built in an interpreted and a compiled trace could weigh differently)
+          local r = dm / M.NEAR_M
+          local w = len * (1 + r * r)
           g.nbr[a][b] = { w = w, len = len }
           g.nbr[b][a] = { w = w, len = len }
           g.edges = g.edges + 1
@@ -1106,8 +1114,9 @@ local function onWindow(myGen, token, i, r)
   end
   j.tries = 0
   if type(r) ~= 'table' or r.error ~= nil or type(r.nodes) ~= 'table' then
-    -- (1.7.2) Timed out, an exception, or rows that could not be read: asked again, ERROR_RETRIES times, each after
-    -- RETRY_DELAY_S (1.7.3: a window that timed out was asked again at once, into the same busy server). Then the
+    -- (1.7.3) Timed out, an exception, or rows that could not be read: asked again, ERROR_RETRIES times. After a
+    -- timeout, TIMEOUT_RETRY_DELAY_S: the server is still building the window that timed out, on its one thread, so
+    -- a quick re-ask would only queue behind it; after another error, RETRY_DELAY_S. Then the
     -- stage ends FAILED and says BeamNG.Earth did not answer. Before, the window was marked incomplete and the
     -- ending said the ground had "no map data on this computer", which sent the player off to drive ground that was
     -- already there. (A window that answers with cells missing is `complete = false` with no error: the branch
@@ -1122,11 +1131,12 @@ local function onWindow(myGen, token, i, r)
     end
     j.errTries = (j.errTries or 0) + 1
     if j.errTries <= M.ERROR_RETRIES then
+      local wait = what == 'timed out' and M.TIMEOUT_RETRY_DELAY_S or M.RETRY_DELAY_S
       log('W', 'earthRally', string.format('auto recce: window %d of %d: %s: asking again in %g s (%d of %d)', i,
-        #j.plan, what, M.RETRY_DELAY_S, j.errTries, M.ERROR_RETRIES))
+        #j.plan, what, wait, j.errTries, M.ERROR_RETRIES))
       -- (the token moved on now, so nothing answers into the wait; M.update asks again once it is over)
       j.token = (j.token or 0) + 1
-      j.retryAt = M.wall() + M.RETRY_DELAY_S
+      j.retryAt = M.wall() + wait
       return true
     end
     log('W', 'earthRally', string.format('auto recce: window %d of %d: %s, %d time(s): giving up', i, #j.plan, what,

@@ -2317,7 +2317,7 @@ function M.faceAtc(stage)
   return true, 'on the road map'
 end
 
--- (1.7.2, item 4) After an auto recce whose landing found no road (faceAtc above: the road map round the car had not
+-- (1.7.3, item 4) After an auto recce whose landing found no road (faceAtc above: the road map round the car had not
 -- come in yet), the car set down from the matched file's ATC instead: `atc` is its controls.atc (autoRecce
 -- controlOnRoad: lat, lon the organisers' point, roadLat, roadLon on the road, offM between them, the road's bearing
 -- deg either way). When the road map has its road there by now: CAR_BEFORE_ATC_M before the board on it, facing it,

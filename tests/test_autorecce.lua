@@ -90,7 +90,7 @@ beamngEarth_api = {
     -- the window is built in the frame current NOW ...
     local nodes, edges = graphWindow(lat, lon, opts.radius)
     local complete = world.complete and (world.incompleteAt ~= i)
-    -- (1.7.2) BeamNG.Earth's own failures: the call timed out or the build threw, an answer with an error and no rows
+    -- (1.7.3) BeamNG.Earth's own failures: the call timed out or the build threw, an answer with an error and no rows
     if world.errorCalls and world.errorCalls[i] then
       pending[#pending + 1] = function() cb({ complete = false, error = world.errorCalls[i] }) end
       return true
@@ -724,11 +724,12 @@ do
   T.check(matchedFile() and matchedFile().controls == nil, 'controls: no controls, none written')
 end
 
------------------------------------------------------------------------------------------- a window that fails (1.7.2)
+------------------------------------------------------------------------------------------ a window that fails (1.7.3)
 
 -- A window that times out or errors is asked again (ERROR_RETRIES), and one that never answers ends FAILED, saying
 -- BeamNG.Earth did not answer -- never "no map data", which sent the player off to drive ground already there.
--- (1.7.3) Each is asked again only after RETRY_DELAY_S, on auto.update; an error that cannot change ends at once.
+-- (1.7.3) Each is asked again only after a wait, on auto.update: TIMEOUT_RETRY_DELAY_S after 'timed out' (the
+-- server is still building that window), RETRY_DELAY_S after another error; an error that cannot change ends at once.
 do
   local hadWall = auto.wall
   local now = 0
@@ -755,12 +756,22 @@ do
   table.remove(pending, 1)()           -- window 2 times out
   local calls = world.calls
   T.check(#pending == 0 and calls == 2, 'a window that timed out is not asked again at once (' .. world.calls .. ')')
-  now = now + auto.RETRY_DELAY_S - 0.5
+  T.check(auto.TIMEOUT_RETRY_DELAY_S >= 10 and auto.RETRY_DELAY_S < auto.TIMEOUT_RETRY_DELAY_S,
+    'a timeout waits longer than another error (' .. auto.TIMEOUT_RETRY_DELAY_S .. ' s)')
+  now = now + auto.TIMEOUT_RETRY_DELAY_S - 0.5
   auto.update()
-  T.check(world.calls == 2, 'nor before RETRY_DELAY_S (' .. world.calls .. ')')
+  T.check(world.calls == 2, 'nor before TIMEOUT_RETRY_DELAY_S (' .. world.calls .. ')')
   now = now + 0.5
   auto.update()
   T.check(world.calls == 3, 'but once it is over (' .. world.calls .. ')')
+  table.remove(pending, 1)()           -- window 2 again: RuntimeError
+  T.check(#pending == 0 and world.calls == 3, 'an exception is not asked again at once either')
+  now = now + auto.RETRY_DELAY_S - 0.5
+  auto.update()
+  T.check(world.calls == 3, 'nor before RETRY_DELAY_S (' .. world.calls .. ')')
+  now = now + 0.5
+  auto.update()
+  T.check(world.calls == 4, 'but after RETRY_DELAY_S, not the wait after a timeout (' .. world.calls .. ')')
   drain()
   T.check(res.ok == true and matchedFile() ~= nil, 'a window that failed twice and then answered: matched (' ..
     tostring(res.why) .. ')')
@@ -813,6 +824,11 @@ do
   T.check(auto.windowErrorWhy('timed out') == nil and auto.windowErrorWhy('OSError') == nil
     and auto.windowErrorWhy('RuntimeError') == nil and auto.windowErrorWhy('no answer') == nil,
     'timeouts, exceptions and no answer are the ones asked again')
+  T.check(auto.windowErrorWhy('IncompleteRead') == nil and auto.windowErrorWhy('BrokenProcessPool') == nil
+    and auto.windowErrorWhy('ConnectionResetError') == nil,
+    'any bare exception class name, one CamelCase word, is asked again')
+  T.check(auto.windowErrorWhy('Broken pool') ~= nil and auto.windowErrorWhy('Nothing') ~= nil,
+    'but not words with a space, nor a plain capitalised word')
   T.check(auto.windowErrorWhy('something new') ~= nil, 'an error not known is said as it came, not asked again')
 
   -- cancelled while waiting to ask again: nothing is asked
@@ -839,7 +855,7 @@ do
   auto.wall = hadWall
 end
 
------------------------------------------------------------------------------------------- the grid (1.7.2, item 6)
+------------------------------------------------------------------------------------------ the grid (1.7.3, item 6)
 
 -- build's distance of each node to the organisers' line, and match's maxOff, now come off a grid of the line's
 -- segments (M.NEAR_GRID) instead of every node against every segment. The same file, figure for figure: a stage that

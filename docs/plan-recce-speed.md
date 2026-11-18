@@ -1,8 +1,11 @@
 # Plan: a faster, lighter, sturdier auto recce
 
-Branch `fix/recce-speed`, from `main` at 1.7.1. Build: `1.7.1-alpha+recce`. Mod-side work lands as the next patch.
+Branch `fix/recce-speed`, from `main` at 1.7.1. Build: `1.7.2-alpha+recce`. Mod-side work lands as the next patch.
 Status: **Part A items 1, 3, 4, 6, 7 built** (`docs/notes-1.7.3.md`). Item 5 shipped in 1.7.2. Item 1 was
 narrowed to one stage looked ahead, item 4 to the matched road point, item 3 to timeouts and exceptions (2026-11-17).
+Item 1 as built: the next stage is priced and added only once the current one has left its download, because
+BeamNG.Earth downloads one area at a time in the order added, and neighbouring stages share ground. So it saves at
+most each stage's teleport, settle and windows (about 60 s cold); the downloads themselves still run end to end.
 
 ## Where the time goes (measured, 2026-11-16 logs)
 
@@ -36,7 +39,9 @@ Ranked by gain for the player.
 
 1. **A full rally queues every download up front.** Price all the stages that need a line, add all their areas at
    once, then teleport and match each one as its own download finishes. Stage 2 downloads while stage 1 matches.
-   Expected gain on a 6-stage rally: most of 5 downloads' wall time.
+   Expected gain on a 6-stage rally: most of 5 downloads' wall time. (Corrected: BeamNG.Earth downloads one area
+   at a time, so the downloads cannot overlap each other. The gain is at most each stage's teleport, settle and
+   windows, about 60 s cold, overlapped with the next stage's download.)
    Files: `main.lua` (`stepRallyPrep`, `autoSeqStep`), `rallyRun.lua` (`prepInfo` states).
 2. **Let the world settle before asking for windows.** After a teleport, wait until BeamNG.Earth has built the first
    block and its road tiles before the first window, instead of a fixed `TELEPORT_SETTLE_S`. The windows then run on

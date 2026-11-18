@@ -632,7 +632,7 @@ M._areaBookReset = function() areaBook = nil end
 
 local autoSeqStep     -- (declared here: autoDone drives the sequence on, and is defined above it)
 
--- (1.7.2, item 7) One line in the log per auto recce with each leg's seconds, so a build can be compared with the
+-- (1.7.3, item 7) One line in the log per auto recce with each leg's seconds, so a build can be compared with the
 -- one before from the log alone, with no driving: price, download (and its MB from the estimate), teleport and
 -- settle, the windows, the match. On the game's high-resolution wall clock (autoRecce.wall). A leg that did not
 -- happen says "none". A full rally's stage (item 1) was priced and its download added up front, so its download
@@ -675,7 +675,7 @@ local function autoDone(ok, matched, why, how)
       local sq = autoSeq
       autoSeq = nil
       logTiming(sq, how, kind)
-      -- (1.7.2, item 4) The landing found no road at the ATC (the road map round the car had not come in yet: every
+      -- (1.7.3, item 4) The landing found no road at the ATC (the road map round the car had not come in yet: every
       -- logged 1.7.1 run said so), so the car was left on the organisers' raw point. The matched file has the ATC on
       -- its road now, with the road's bearing (controls.atc): the car set down from that (runner.faceAtcFrom: before
       -- the board on the road map's road if it is in by now, else on the matched road point, turned along the road,
@@ -1052,7 +1052,7 @@ doAction = function(what, eventId, stageId, fromPanel, queued)
           held == 1 and 'stage' or 'stages')
         or 'Auto recce stopped.'
       if hadSeq and ahead then
-        msg = msg .. string.format(" Map downloads already started, %s's too, carry on in BeamNG.Earth's Areas.", ahead)
+        msg = msg .. string.format(" Map downloads already started carry on in BeamNG.Earth's Areas, %s's too.", ahead)
       elseif ahead then
         msg = msg .. string.format(" %s's map download carries on in BeamNG.Earth's Areas.", ahead)
       elseif hadSeq then msg = msg .. " A map download already started carries on in BeamNG.Earth's Areas." end
@@ -1638,9 +1638,13 @@ M._sendStreams = sendStreams
 -- (1.7.0, #23) A full rally getting its stages ready: the auto recce run on each stage with no line, one after the
 -- other, its download question answered yes (the player asked for the rally), then the rally told.
 --
--- (1.7.3, item 1, docs/plan-recce-speed.md) One stage looked ahead. While a stage runs its own auto recce, the NEXT
--- stage on the list is priced (areaPlan needs no anchor) and, with ground missing, its area added: the next stage
--- downloads while this one matches. Only that one: at most one look-ahead is out at a time, so Stop or leaving the
+-- (1.7.3, item 1, docs/plan-recce-speed.md) One stage looked ahead. Once a stage under way has LEFT its download
+-- (going there, settling or matching; or nothing to download), the NEXT stage on the list is priced (areaPlan needs
+-- no anchor) and, with ground missing, its area added: the next stage downloads while this one teleports, settles
+-- and asks its windows. Not sooner, for two reasons. BeamNG.Earth downloads one area at a time, in the order they
+-- were added, so an area added ahead of this stage's own would hold this stage up for the whole of the next one's
+-- download. And neighbouring stages share ground: priced before this stage's download finished, the next stage
+-- counts the shared items as missing and gets a second area over the same ground. Only that one: at most one look-ahead is out at a time, so Stop or leaving the
 -- rally leaves at most one download the player has not reached yet (the owner, 2026-11-17: "keep, made safer"; the
 -- first cut priced and added every stage at once). At its turn the stage follows its own download. A look-ahead
 -- whose estimate failed or timed out is no answer: the stage is priced again at its turn, the 1.7.0 way, its
@@ -1688,7 +1692,7 @@ local function queueAdd(q, e)
 end
 
 -- Price the stage after the one under way, once, if it has no entry yet. Called every frame while a stage's own
--- auto recce runs.
+-- auto recce runs, once lookAheadDue says that stage is past its download.
 local function queueLookAhead(q)
   local pr = q.prep
   local st = pr.list and pr.list[(pr.i or 0) + 1]
@@ -1725,12 +1729,21 @@ local function queueLookAhead(q)
   if not ok then priced({ ok = false, error = tostring(why or 'BeamNG.Earth refused the estimate') }) end
 end
 
--- For Stop's message: the name of the stage whose look-ahead area was added and is still downloading, its turn not
--- come yet; or nil.
+-- The stage under way has left its download (see above): going there, settling or matching. Its estimate saying
+-- nothing is missing, failing, or its add refused all go straight on to going or matching too.
+local function lookAheadDue()
+  if not autoSeq then return autoRecce.active() end
+  return autoSeq.phase == M.GOING or autoSeq.phase == 'matching'
+end
+M._lookAheadDue = lookAheadDue
+
+-- For Stop's message: the name of the stage whose look-ahead area was added and is still downloading, or whose add
+-- is still unanswered (BeamNG.Earth may yet take it), its turn not come yet; or nil.
 queueAheadDownloading = function()
   local q = rallyQ
   if not (q and q.prep == rallyRun.preparing()) then return nil end
   for _, e in pairs(q.e) do
+    if e.adding and not e.taken then return e.stage.name end
     if e.areaId and not e.had and not e.taken then
       local st = earth.areaStatus(e.areaId)
       if not (st and (st.state == 'done' or st.state == 'failed')) then return e.stage.name end
@@ -1753,14 +1766,16 @@ local function stepRallyPrep(dt)
   local q = rallyQ
   if autoSeq or autoRecce.active() then
     if autoSeq and autoSeq.phase == M.ASKING then autoSeqStep('answer', true) end
-    -- (the stage under way runs its own auto recce: the next one is looked ahead)
-    if q then queueLookAhead(q) end
+    -- (the stage under way runs its own auto recce: the next one is looked ahead once this one is past its download)
+    if q and lookAheadDue() then queueLookAhead(q) end
     return
   end
   local rr = rallyRun.active()
   local st, i, n
   if q and q.next then
     st, i, n = q.next, q.nextI, q.nextN
+    -- (the rally gone while this stage waited for its look-ahead: nothing to run it in)
+    if not rr then rallyQ = nil rallyRun.prepDone() return end
   else
     st, i, n = rallyRun.prepNext()
     if not (rr and st) then rallyQ = nil rallyRun.prepDone() return end
