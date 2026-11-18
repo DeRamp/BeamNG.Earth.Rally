@@ -41,14 +41,6 @@ function M.check()
   return true
 end
 
--- The BeamNG.Earth level loaded, its world up (false at the main menu, on another map, or with no BeamNG.Earth).
-function M.inWorld()
-  local a = api()
-  if not a then return false end
-  local ok, w = pcall(a.inWorld)
-  return ok and w == true
-end
-
 -- The things below that BeamNG.Earth has no API for, each either there or not: { { id, what, ok, why } ... },
 -- `why` being what stops working without it. nil while BeamNG.Earth is not loaded, so nothing is said too early.
 --
