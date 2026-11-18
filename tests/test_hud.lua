@@ -50,6 +50,11 @@ do
   local ui = settings.uiState()
   T.check(#ui.schema == #settings.ORDER and ui.schema[1].id == 'units' and ui.schema[1].options[2].value == 'mi' and
     ui.schema[1].options[2].label == 'miles' and ui.settings.units == 'km', 'the page gets the schema in order and the values')
+  -- (the rally loop, interface 6) the early check-in penalty: off by default, after Reset penalty
+  local ids = {}
+  for k, row in ipairs(ui.schema) do ids[row.id] = k end
+  T.check(settings.SCHEMA.earlyPenalty.default == false and ids.earlyPenalty == ids.resetPenalty + 1
+    and settings.SCHEMA.earlyPenalty.label == 'Early check-in penalty', 'Early check-in penalty: off, after Reset penalty')
   settings.reset()
   files[settings.FILE] = nil
 end

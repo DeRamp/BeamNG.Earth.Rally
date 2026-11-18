@@ -95,6 +95,34 @@ function M.finishPhase(run)
   return (run.sinceFinish or 0) < M.FINISH_BIG_S and 'big' or 'tucked'
 end
 
+-- (the rally-loop plan, item 3) Split times: at these shares of the timed span (runner.splitsTick); the split card
+-- up this long (stage clock) after each.
+M.SPLITS_AT = { 0.25, 0.5, 0.75 }
+M.SPLIT_SHOW_S = 5
+-- The finish card's splits: { { n, timeS, gapS }... }, n = #SPLITS_AT + 1 the finish (its time with penalties); gapS
+-- against your best run's (run.splitBest: { timeS, splits }), negative ahead, nil with nothing to compare. nil with
+-- no split passed.
+function M.splitRows(run)
+  if not (run and type(run.splits) == 'table' and #run.splits > 0) then return nil end
+  local best = run.splitBest or nil
+  local out = {}
+  for n, t in ipairs(run.splits) do
+    local b = best and best.splits and tonumber(best.splits[n])
+    out[n] = { n = n, timeS = t, gapS = b and (t - b) or nil }
+  end
+  if run.finalTime then
+    local b = best and tonumber(best.timeS)
+    out[#out + 1] = { n = #M.SPLITS_AT + 1, timeS = run.finalTime, gapS = b and (run.finalTime - b) or nil }
+  end
+  return out
+end
+-- The split card while it is up: { n, timeS, gapS } or nil.
+function M.splitCard(run)
+  local sh = run and run.splitShow
+  if not (sh and run.state == 'running' and (run.clock or 0) - (sh.at or 0) < M.SPLIT_SHOW_S) then return nil end
+  return { n = sh.n, timeS = sh.timeS, gapS = sh.gapS }
+end
+
 -- The stage time at the flying finish, against the best before this run.
 local function finishInfo(run, c)
   if not run.finalTime then return nil end
@@ -102,7 +130,7 @@ local function finishInfo(run, c)
   return {
     time = run.finalTime, stageTime = run.stageTime, penalty = run.penalty or 0, best = best,
     delta = best and (run.finalTime - best) or nil, newBest = best == nil or run.finalTime < best, first = best == nil,
-    penalties = penalties(run, c),
+    penalties = penalties(run, c), splits = M.splitRows(run),
   }
 end
 
@@ -153,13 +181,48 @@ function M.approachLine(ours, ctx)
   ours.approach = { name = a.name, distM = a.distM, label = a.waiting and 'Rally' or (a.rally and 'Transit' or 'Route'),
     sub = a.stop or (a.waiting and 'time card: Ctrl+Alt+K to go on' or (a.rally and 'follow the arrows' or 'gets ready as you arrive')),
     stop = a.stop }
+  -- (the rally-loop plan, interface 4: a timed road section -- the due time and the time left in the line's second
+  -- part, which the HUD app colours from ours.rally.transit)
+  local tr = ctx.rallyTransit
+  if type(tr) == 'table' and tr.due and not a.waiting then
+    ours.approach.sub = M.transitText(tr, ctx.units) .. (a.stop and (' · ' .. a.stop) or '')
+    local rl = {}
+    for k, v in pairs(type(ours.rally) == 'table' and ours.rally or {}) do rl[k] = v end
+    rl.transit = { label = tr.label, due = tr.due, leftS = tr.leftS, distM = tr.distM, late = tr.late,
+      penaltyS = tr.penaltyS }
+    ours.rally = rl
+  end
   ours.show.approach = true
 end
 
+-- A timed road section as words: 'due 18:50 · 6:12 left · 4.2 km'; late: 'due 18:50 · 2 min late · +20 s · 4.2 km'.
+function M.transitText(tr, units)
+  local parts = { 'due ' .. tostring(tr.due) }
+  if (tr.late or 0) > 0 then
+    parts[#parts + 1] = string.format('%d min late', tr.late)
+    if (tr.penaltyS or 0) > 0 then parts[#parts + 1] = string.format('+%d s', tr.penaltyS) end
+  elseif tr.leftS then
+    parts[#parts + 1] = M.diffText(tr.leftS) .. ' left'
+  end
+  if tr.distM then parts[#parts + 1] = M.lengthText(tr.distM, units) .. (units == 'mi' and ' mi' or ' km') end
+  return table.concat(parts, ' · ')
+end
+-- (the transit's part of our stream key: the due minute, the seconds left, the minutes late)
+function M.transitKey(tr)
+  if type(tr) ~= 'table' or not tr.due then return 'tr-' end
+  return 'tr' .. tostring(tr.due) .. '|' .. tostring(tr.leftS and math.floor(tr.leftS) or '-') .. '|' ..
+    tostring(tr.late) .. '|' .. tostring(tr.penaltyS)
+end
+
 -- The same line as words, for the game's Messages app: 'Route to Kuhnle · 4.2 km · gets ready as you arrive'.
-function M.approachText(a, units)
+function M.approachText(a, units, tr)
   if type(a) ~= 'table' then return nil end
   local d = a.distM and (' · ' .. M.lengthText(a.distM, units) .. (units == 'mi' and ' mi' or ' km')) or ''
+  -- (a timed road section, tr = rallyRun.transitDue: 'due 18:50 · 6:12 left' before the distance)
+  if type(tr) == 'table' and tr.due and not a.waiting then
+    local t = { distM = nil, due = tr.due, leftS = tr.leftS, late = tr.late, penaltyS = tr.penaltyS }
+    d = ' · ' .. M.transitText(t, units) .. d
+  end
   -- (the HUD app is not on screen between stages: the Messages line carries the transit's controls, #27)
   -- (#35: a rally waiting at a stop for the player: what is next and how to go on)
   if a.waiting then
@@ -239,13 +302,13 @@ function M.build(run, ctx)
   local units = ctx.units == 'mi' and 'mi' or 'km'
   local ours = { v = 1, state = run and run.state or 'idle', units = units, preview = ctx.preview or nil, show = {} }
   if not run then
+    M.askOn(ours, ctx)
     -- (1.7.0: a full rally's transit, no stage loaded: the line to where the car is going, and its controls)
     if ctx.rally and type(ctx.approach) == 'table' and not ctx.uiHidden then
       M.approachLine(ours, ctx)
       ours.hints = M.hintsFor('transit', ctx)
       ours.show.hints = ours.hints and true or nil
     end
-    M.askOn(ours, ctx)
     return (not ctx.noRallyLoop) and INACTIVE or nil, ours
   end
 
@@ -262,6 +325,8 @@ function M.build(run, ctx)
   ours.atcTime, ours.startAt, ours.missedAtc = run.atcTime, run.startAt, run.missedAtc == true
   ours.toControlM = run.toControlM
   ours.finish = finishInfo(run, c)
+  -- (interface 5: the progress bar's split ticks)
+  ours.splitsAt = M.SPLITS_AT
   if s == 'failed' then ours.error = run.error end
 
   -- (the stock apps' label is one SS, or the stage's name (M.stockLabel); their ssLabel is the number after "SS" as
@@ -322,6 +387,9 @@ function M.build(run, ctx)
     local done = math.max(0, math.min(totalM, (run.along or run.startM or 0) - (run.startM or 0)))
     if s == 'toStop' then done = totalM end
     ours.doneM, ours.totalM = done, totalM
+    -- (interface 5: the split card for SPLIT_SHOW_S after each split)
+    ours.split = M.splitCard(run)
+    show.split = ours.split and true or nil
     rl.showStageApps = true
     rl.uiColors = { theme = M.THEME }
     rl.stageData = {
@@ -438,7 +506,9 @@ streamKeys = function(run, k)
   elseif s == 'running' then
     local tenth = math.floor((run.clock or 0) * 10 + 0.5)
     local rl = common .. tenth .. '|' .. sec
+    local sc = M.splitCard(run)
     local ours = common .. b(run.offRoute) .. '|' .. b((run.clock or 0) < M.GO_SHOW_S) .. '|' .. sec .. '|'
+      .. (sc and ('s' .. sc.n) or 's-') .. '|'
     if run.offRoute then
       ours = ours .. i(run.off) .. '|' .. tostring(math.floor((tonumber(run.backBearing) or 0) / 2 + 0.5))
     else

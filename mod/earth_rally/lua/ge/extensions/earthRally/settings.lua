@@ -13,6 +13,10 @@ M.SCHEMA = {
     options = { { 'km', 'km' }, { 'mi', 'miles' } } },
   resetPenalty = { default = true, label = 'Reset penalty',
     desc = '+10 s for each car reset during the timed stage', options = { { true, 'On' }, { false, 'Off' } } },
+  -- (the rally-loop plan, interface 6) a timed rally's time controls: early check-ins cost the rally's early penalty
+  earlyPenalty = { default = false, label = 'Early check-in penalty',
+    desc = "Checking in before your minute costs the rally's early penalty. Off: you wait for your minute.",
+    options = { { true, 'On' }, { false, 'Off' } } },
   zoneBrake = { default = true, label = 'Control-zone brake',
     desc = "The brakes ease on in a control's zone, so you stop at its board", options = { { true, 'On' }, { false, 'Off' } } },
   clockView = { default = 'right', label = 'Start clock view',
@@ -25,7 +29,7 @@ M.SCHEMA = {
   devPanel = { default = false, label = 'Developer panel',
     desc = "The old Earth Rally window with each run's checks", options = { { true, 'On' }, { false, 'Off' } } },
 }
-M.ORDER = { 'units', 'resetPenalty', 'zoneBrake', 'clockView', 'worldLoaded', 'devPanel' }
+M.ORDER = { 'units', 'resetPenalty', 'earlyPenalty', 'zoneBrake', 'clockView', 'worldLoaded', 'devPanel' }
 
 local values = nil
 -- Settings that were here and are not any more. A saved file still carrying one is not a mistake the player

@@ -149,15 +149,41 @@ local run = nil
 local approach = nil           -- Route to start armed: { event, stage, lat, lon, kind, t } (M.armApproach)
 local speed, freeze            -- (below: the car's speed, the game's freeze)
 
--- The rally clock (seconds of the day): the game's time of day when the run began, carried on with game time (so a
--- pause stops it, as the stage clock).
+-- (the rally-loop plan) A timed full rally's clock, set by rallyRun.lua: { now = fn() -> its local time (s since
+-- 1970, worldTime.lua) or nil, shift = fn(s) (moved on: the start-line skip) }. nil: no timed rally.
+M.rallyClock = nil
+local function rallyNow()
+  local rc = M.rallyClock
+  if not (rc and rc.now) then return nil end
+  local ok, t = pcall(rc.now)
+  return ok and type(t) == 'number' and t or nil
+end
+
+-- The rally clock (seconds of the day): a timed rally's own clock; else the game's time of day when the run began,
+-- carried on with game time (so a pause stops it, as the stage clock).
 local function todNow()
+  local t = rallyNow()
+  if t then return t % 86400 end
   local env = rawget(_G, 'core_environment')
   local ok, tod = pcall(function() return env and env.getTimeOfDay and env.getTimeOfDay() end)
   if ok and type(tod) == 'table' and tonumber(tod.time) then return ((tod.time + 0.5) % 1) * 86400 end
   return os.time() % 86400
 end
-function M.clock() return run and run.clockBase and (run.clockBase + run.clockRun) or nil end
+function M.clock()
+  if not (run and run.clockBase) then return nil end
+  -- (a timed rally's run: the rally clock itself, from the midnight of the day the run began, so the clocks agree
+  -- however the rally's moves it -- the wait for a due minute, its skip)
+  if run.rcDay then
+    local t = rallyNow()
+    if t then return t - run.rcDay end
+  end
+  return run.clockBase + run.clockRun
+end
+-- (a timed rally) A run's clock reading (M.clock, a start time) as the rally clock's local time, or nil.
+function M.rallyTimeOf(c)
+  if not (run and run.rcDay and type(c) == 'number') then return nil end
+  return run.rcDay + c
+end
 function M.formatClock(t)
   if not t then return '--:--:--' end
   t = math.floor(t + 0.5) % 86400
@@ -486,6 +512,10 @@ function M.start(event, stage, opts)
     oldRebase = earth.rebaseDistance(),
     clockBase = todNow(), clockRun = 0, realT = 0, resets = 0,
   }
+  do
+    local t = rallyNow()
+    if t and run.inRally then run.rcDay = math.floor(t / 86400) * 86400 end
+  end
   -- the line it is timed on, kept with the time (events.addResult): its start and flying finish on it (a time is
   -- placed while the stage's line has those within a few metres: events.onLine), and its key as a record
   run.lineKey = events.lineKey(source, kind)
@@ -1714,6 +1744,8 @@ function M.skipCountdown()
   if not M.canSkip() then return false end
   local left = run.startAt - M.clock()
   run.clockRun = run.clockRun + (left - M.SKIP_TO_S)
+  -- (a timed rally: its clock moved on with it, as at the game's own skip)
+  if run.rcDay and M.rallyClock and M.rallyClock.shift then pcall(M.rallyClock.shift, left - M.SKIP_TO_S) end
   run.prevLeft = M.SKIP_TO_S        -- (the 30 s and 10 s calls passed over)
   run.skipAt = run.t
   run.checks.skippedS = (run.checks.skippedS or 0) + (left - M.SKIP_TO_S)
@@ -1723,6 +1755,33 @@ end
 
 -- (the game's Interact control: main.lua passes on its hook)
 function M.onGameplayInteract() return M.skipCountdown() end
+
+-- (the rally-loop plan, item 3) Split times: SPLITS_AT of the timed span (start to flying finish), each crossed on
+-- run.along, against the splits of your best run on the stage (events.bestSplits: any mode, a rally's passes too).
+-- run.splits = { timeS... } as they are passed; run.splitShow = { n, timeS, gapS, at = run.clock } for SPLIT_SHOW_S.
+M.SPLITS_AT = hudFrame.SPLITS_AT
+local function splitsTick()
+  if run.splitBest == nil then
+    local ok, b = pcall(events.bestSplits, run.event.id, run.stage.id)
+    run.splitBest = (ok and b) or false
+  end
+  run.splits = run.splits or {}
+  local span = (run.finishM or 0) - (run.startM or 0)
+  if span <= 0 then return end
+  local done = (run.along or 0) - run.startM
+  while #run.splits < #M.SPLITS_AT and done >= span * M.SPLITS_AT[#run.splits + 1] do
+    local n = #run.splits + 1
+    local t = run.clock
+    run.splits[n] = t
+    local b = run.splitBest and run.splitBest.splits and tonumber(run.splitBest.splits[n])
+    run.splitShow = { n = n, timeS = t, gapS = b and (t - b) or nil, at = run.clock }
+    log('I', logTag, string.format('split %d: %s%s', n, M.formatTime(t),
+      b and string.format(' (%+.1f s)', t - b) or ''))
+  end
+end
+M._splitsTick = function(r) local was = run run = r splitsTick() run = was end
+
+M.splitRows = hudFrame.splitRows
 
 local function stepRunning(dtSim)
   routeOff()
@@ -1743,6 +1802,7 @@ local function stepRunning(dtSim)
   local along, off = progress(p)
   props.update(p, earth.toGame, along)
   run.along, run.off = along, off
+  pcall(splitsTick)
   if off > run.checks.maxOffM then run.checks.maxOffM = off end
   -- off route (a wrong turn): on beyond OFF_ROUTE_M, off again within OFF_ROUTE_CLEAR_M; the way back to the line (its
   -- point level with the car) against the car's heading, for the HUD's arrow
@@ -1782,12 +1842,20 @@ local function stepRunning(dtSim)
       penaltyS = run.penalty, jumpStart = run.jumpStart == true, lateMinutes = checks.lateMinutes,
       missedAtc = run.missedAtc == true, resets = run.resets or 0, resetPenaltyS = resetPen, line = checks.line,
       lineKey = run.lineKey, lineM = math.floor(run.finishM - run.startM + 0.5), lineStart = run.lineStart,
-      lineFinish = run.lineFinish,
+      lineFinish = run.lineFinish, splits = (run.splits and #run.splits == #M.SPLITS_AT) and run.splits or nil,
       startAt = M.formatClock(run.startAt), date = os.date('!%Y-%m-%dT%H:%M:%SZ'), checks = checks }) end
+    -- (a rally's pass: kept apart from the stage's runs -- not a single-stage time, not on its boards -- for its splits,
+    -- so the next run on the stage, in any mode, has them to beat)
+    if run.inRally and run.splits and #run.splits == #M.SPLITS_AT then
+      pcall(events.addRallyPass, run.event.id, run.stage.id, { timeS = time, splits = run.splits,
+        date = os.date('!%Y-%m-%dT%H:%M:%SZ') })
+    end
     run.finalTime, run.best = time, best
     run.sinceFinish = 0
     if run.inRally and M.onFinished then
-      local okF, errF = pcall(M.onFinished, { timeS = time, stageS = run.clock, penaltyS = run.penalty })
+      -- (a timed rally: its start and finish on the rally clock, for the stage's time out)
+      local okF, errF = pcall(M.onFinished, { timeS = time, stageS = run.clock, penaltyS = run.penalty,
+        startT = M.rallyTimeOf(run.startAt), finishT = M.rallyTimeOf(M.clock()) })
       if not okF then log('E', logTag, 'rally: the finish was not taken: ' .. tostring(errF)) end
     end
     log('I', logTag, 'run checks: ' .. dumps(checks))
@@ -2521,6 +2589,8 @@ function M.uiFrame()
     rally = M.rallyOn and M.rallyOn() or nil,
     -- (#58, #69: a rally's question with no stage under way -- "Load the stage?", Recover? on a transit)
     rallyAsk = M.askSource and M.askSource() or nil,
+    -- (the rally-loop plan, interface 4: a timed road section's due time, rallyRun.transitDue)
+    rallyTransit = M.transitDueSource and M.transitDueSource() or nil,
     noRallyLoop = extensions and extensions.isExtensionLoaded and extensions.isExtensionLoaded('gameplay_rallyLoop')
       or false,
     c = uiConsts,
@@ -2545,7 +2615,8 @@ function M.uiKeys(slow)
   keyCtx.stopRadiusM = M.STOP_CONTROL_RADIUS_M
   keyCtx.approach = M.approachInfo()
   local kr, kh = hudFrame.streamKeys(run, keyCtx)
-  return kr, kh .. '|' .. tostring(M.askKey and M.askKey() or '') .. '|' .. tostring(cardPaused())
+  return kr, kh .. '|' .. tostring(M.askKey and M.askKey() or '') .. '|' .. tostring(cardPaused()) .. '|' ..
+    hudFrame.transitKey(M.transitDueSource and M.transitDueSource() or nil)
 end
 
 -- The results card's buttons: 'next' (the rally's next stage), 'retry' (this one again), 'menu' / 'close' (the card

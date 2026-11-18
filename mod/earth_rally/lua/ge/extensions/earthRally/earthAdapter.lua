@@ -481,4 +481,81 @@ function M.setRebaseDistance(m)
   end
 end
 
+------------------------------------------------------------------------------------------ world time (rally-loop plan)
+-- A timed rally's sky at its own date and time (interface 8): BeamNG.Earth's api.setWorldTime(epoch) (modding API
+-- 1.10, has('worldTime')): the sky at that UTC moment, running on in real time, and that hour's weather from the
+-- archive, without touching the player's sky or weather setting; nil goes back to what the player had.
+--
+-- Without it, the time of day only (today's date and live weather stay), the least intrusive way there is
+-- (BeamNG.Earth's sky.lua, read 2026-11-18):
+--   - its sky in 'real' mode re-syncs TimeOfDay to the real clock every 30 s, and a time set through core_environment
+--     (setTimeOfDay fires onEnvironmentChanged) is taken as the player changing it: the sky switches to 'manual' AND
+--     SAVES that as the player's setting (switchToManual). Never done here. Instead its own server-clock hook,
+--     beamngEarth_sky.setServerClock({ hours, speed = 1, epoch }) (BeamMP's server time uses it): the real sky keeps
+--     its mode and its date, shows our local hour and runs on in real time; nothing is saved, and nil puts the real
+--     clock back. Left alone when a server clock is already set (a BeamMP session's: not ours to take).
+--   - its sky in 'manual' mode (or no BeamNG.Earth sky): the player's own time, so core_environment's TimeOfDay is
+--     set directly (its hook returns at once outside 'real'), and the time it had is put back at nil.
+-- The sun is then at the right local hour but on today's date (sunrise / sunset of today, not the rally's day).
+function M.hasWorldTime()
+  local a = api()
+  return a ~= nil and type(a.has) == 'function' and a.has('worldTime') == true and type(a.setWorldTime) == 'function'
+end
+
+local worldHow, todBefore = nil, nil
+local function todNowTable()
+  local env = rawget(_G, 'core_environment')
+  if not (env and env.getTimeOfDay and env.setTimeOfDay) then return nil, nil end
+  local ok, tod = pcall(env.getTimeOfDay)
+  return env, ok and type(tod) == 'table' and tod or nil
+end
+
+-- epoch: the UTC moment (os.time's), or nil to give the sky back. utcOffsetS: the rally's offset from UTC there
+-- (for the fallback's local hour). Returns how it was done: 'api', 'serverClock', 'tod', or false.
+function M.setWorldTime(epoch, utcOffsetS)
+  local a = api()
+  if M.hasWorldTime() then
+    -- (it answers true, or nil and why)
+    local okC, res = pcall(a.setWorldTime, epoch)
+    local ok = okC and res ~= nil and res ~= false
+    worldHow = (ok and epoch ~= nil) and 'api' or nil
+    return ok and 'api' or false
+  end
+  local sky = rawget(_G, 'beamngEarth_sky')
+  if epoch == nil then
+    local how = worldHow
+    worldHow = nil
+    if how == 'serverClock' and sky and sky.setServerClock then
+      pcall(sky.setServerClock, nil)
+    elseif how == 'tod' and todBefore then
+      local env, tod = todNowTable()
+      if env and tod then
+        tod.time = todBefore
+        pcall(env.setTimeOfDay, tod)
+      end
+      todBefore = nil
+    end
+    return how or false
+  end
+  local hours = (((epoch + (tonumber(utcOffsetS) or 0)) % 86400) / 3600)
+  local okM, mode = pcall(function() return sky and sky.getMode and sky.getMode() end)
+  mode = okM and mode or nil
+  if sky and mode == 'real' then
+    if not sky.setServerClock then return false end
+    local okC, cur = pcall(function() return sky.serverClock and sky.serverClock() end)
+    if okC and cur ~= nil and worldHow ~= 'serverClock' then return false end
+    local ok = pcall(sky.setServerClock, { hours = hours, speed = 1, epoch = os.time() })
+    worldHow = ok and 'serverClock' or worldHow
+    return ok and 'serverClock' or false
+  end
+  local env, tod = todNowTable()
+  if not (env and tod) then return false end
+  if worldHow ~= 'tod' then todBefore = tod.time end
+  tod.time = (hours / 24 - 0.5) % 1.0          -- (the game's day fraction: noon is 0)
+  local ok = pcall(env.setTimeOfDay, tod)
+  worldHow = ok and 'tod' or worldHow
+  return ok and 'tod' or false
+end
+function M.worldTimeHow() return worldHow end
+
 return M

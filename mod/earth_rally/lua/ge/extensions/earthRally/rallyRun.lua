@@ -19,6 +19,14 @@
 --              has no line yet (main.lua drives it: M.prep*), then holds out of the rally every stage whose line
 --              has stretches with no road on the map.
 --   the menu   main.lua sets M.ui = { openCard(), closeMenu() }.
+--   the clock  (the rally-loop plan, item 1) a timed rally (rally.lua, R.timed) keeps its own clock, R.clock.t (local
+--              time, worldTime.lua): it runs with game time (main.lua's dtSim), stops under a loading screen or a menu
+--              (M.clockPaused), runs on real time while you wait at a time control for your minute, and jumps to a
+--              stop's scheduled out time (rally.serviceOut). The runner's clock is this one during a timed rally
+--              (runner.rallyClock). Due times at the time controls, late and early check-ins, road penalties: below.
+--   the sky    (item 2) the game's sky follows the rally clock through earthAdapter.setWorldTime: at the start, out of
+--              each stop, at each stage's load and after each jump of the clock; given back when the rally ends or
+--              is left.
 local runner = require('earthRally/runner')
 local rally = require('earthRally/rally')
 local events = require('earthRally/events')
@@ -26,6 +34,8 @@ local menu = require('earthRally/menu')
 local earth = require('earthRally/earthAdapter')
 local geo = require('earthRally/geo')
 local props = require('earthRally/props')
+local wt = require('earthRally/worldTime')
+local settings = require('earthRally/settings')
 
 local M = {}
 local logTag = 'earthRally'
@@ -68,8 +78,86 @@ local move = nil       -- the car on its way to a stop by teleport: { item, t, r
 local toStop = nil     -- a service being driven to: { item, lat, lon, t, distM }
 local transitGps = nil -- the next stage's GPS, to set again once the stage before has let the arrows go (#42)
 local prep = nil       -- the stages being got ready: { list = [stage], i, then = fn, done = {}, current }
+local wait = nil       -- (a timed rally) at a time control before your minute: { item, dueT, tc }
+local world = nil      -- the sky last set to the rally clock: { t (rally clock then), real (realT then) }
+local realT = 0        -- (real seconds, for the sky's drift from the rally clock)
+local wasPaused = false
+-- (main.lua) the rally clock stops while this says so: a loading screen or a menu up
+M.clockPaused = function() return false end
 
 local function say(text, s, kind, title) pcall(runner.say, text, s or 4, kind or 'info', title) end
+local stageName                  -- (below)
+-- (a run of the rally loaded and not over: no road section being driven)
+local function runLiveAny()
+  local r = runner.current()
+  return r ~= nil and r.inRally == true and r.state ~= 'finished' and r.state ~= 'failed'
+end
+
+------------------------------------------------------------------------------------------ the rally clock
+
+local function timed()
+  return R ~= nil and R.timed == true and type(R.clock) == 'table' and type(R.clock.t) == 'number'
+end
+function M.clockNow() return timed() and R.clock.t or nil end
+
+-- (the runner's clock during a timed rally's run: runner.rallyClock)
+runner.rallyClock = {
+  now = function() return timed() and R.clock.t or nil end,
+  shift = function(sec) if timed() and type(sec) == 'number' then R.clock.t = R.clock.t + sec end end,
+}
+
+-- Where the rally is, for its sky and its zone's offset: the start's place, else nil.
+local function placeOf(r)
+  local st = r and r.order and r.order[1]
+  return st and st.place or nil
+end
+
+-- The sky set to the rally clock (nil: given back). Quiet when BeamNG.Earth cannot.
+local function setWorld(off)
+  if off or not timed() then
+    if world then pcall(earth.setWorldTime, nil) end
+    world = nil
+    return
+  end
+  local pl = placeOf(R)
+  local offS = wt.utcOffset(R.tz, R.clock.t, pl and pl.lon)
+  local ok, how = pcall(earth.setWorldTime, R.clock.t - offS, offS)
+  world = { t = R.clock.t, real = realT }
+  if ok and how then
+    log('I', logTag, 'rally: the sky set to ' .. wt.startText(R.clock.t) .. ' (' .. tostring(how) .. ')')
+  end
+end
+M._setWorld = setWorld
+
+-- The due time at the next stage's time control (local), or nil. Ahead of the next stage, only a due time the
+-- schedule fixes (from a stop's out time): one counted from a stage's time out is not known until that stage is done.
+local function dueAt(i)
+  if not timed() then return nil end
+  if i < R.pos then return nil end
+  local nx = select(2, rally.nextStage(R))
+  if i ~= nx then
+    local it, prev = R.order[i], R.order[i - 1]
+    if not (it and prev and prev.kind ~= 'stage' and prev.outT and it.outT == prev.outT) then return nil end
+  end
+  return rally.dueFor(R, i)
+end
+M._dueAt = function(i) return dueAt(i) end
+
+-- (interface 4) The road section being driven: { label, due, leftS, distM, late, penaltyS }, nil when none is timed.
+-- leftS: to the start of the due minute (negative once in it or past it); late: whole minutes past it.
+function M.transitDue()
+  if not timed() or prep or move or toStop or R.done or rally.over(R) then return nil end
+  local it, i = rally.current(R), R.pos
+  if not (it and it.kind == 'stage') or runLiveAny() then return nil end
+  local dueT = dueAt(i)
+  if not dueT then return nil end
+  local t = R.clock.t
+  local late = math.max(0, math.floor(t / 60) - math.floor(dueT / 60))
+  local ap = runner.approachInfo()
+  return { label = it.ss .. ' ' .. tostring(stageName(it)), due = wt.hm(dueT), dueT = dueT, leftS = dueT - t,
+    distM = ap and ap.distM or nil, late = late, penaltyS = late * (R.lateSPerMin or rally.LATE_S_PER_MIN) }
+end
+runner.transitDueSource = function() return M.transitDue() end
 
 ------------------------------------------------------------------------------------------ the save
 
@@ -129,6 +217,8 @@ local function saveLoop()
   if not (R and R.mode == 'realistic' and loop) then return end
   local t = M.readFile(R.eventId)
   t.loop = copy(loop)
+  -- (a timed rally: the road penalties and the clock since the save, so a leave mid-loop keeps them)
+  if timed() then t.loop.road, t.loop.clock, t.loop.lastOut = copy(R.road), R.clock.t, R.lastOut end
   writeFile(R.eventId, t)
 end
 
@@ -208,6 +298,8 @@ end
 ------------------------------------------------------------------------------------------ the rally
 
 function M.active() return R end
+-- (tests only: a rally put in place as it would be after a start or a continue)
+function M._setRally(r) R, wait, world = r, nil, nil end
 function M.inRun()
   local r = runner.current()
   return R ~= nil and r ~= nil and r.inRally == true
@@ -224,7 +316,7 @@ local function load(id)
 end
 
 local function stageOf(item) return item and select(2, menu.findStage(R and R.eventId or (ev and ev.id), item.stageId)) end
-local function stageName(item)
+stageName = function(item)
   local s = R and stageOf(item)
   return s and s.name or item.stageId
 end
@@ -279,12 +371,25 @@ function M.startInfo(id)
   end
   local nCrews = 0
   for _ in pairs(crews) do nCrews = nCrews + 1 end
+  -- (interface 7: false when BeamNG.Earth cannot show the rally's date -- the start screen's note; nil untimed)
+  local worldTime = nil
+  if r and r.timed then worldTime = earth.hasWorldTime() == true end
   return { id = id, name = e.name, canRun = r ~= nil, why = (not r) and 'This rally has no event file, so it ' ..
       'cannot be run as a full rally.' or nil,
     car = car, class = car and rally.guessClass(car.drivetrain) or 'L4WD', classes = rally.CLASSES,
     cancelled = rally.cancelledPasses(e), stages = stages, days = nd, services = svc, crews = nCrews,
     start = type(e.rallyStart) == 'table' and e.rallyStart.name or nil, toRecce = toRecce, heldOut = held,
-    saved = M.saved(id), inProgress = R and R.eventId or nil }
+    saved = M.saved(id), inProgress = R and R.eventId or nil,
+    -- (interface 7: a timed rally's real start, and whether BeamNG.Earth can show its date)
+    startsAt = M.startsAt(r), worldTime = worldTime }
+end
+
+-- A timed rally's start for the start screen: { text = 'Fri 6 Feb 2026, 18:00 local', light = 'night' | 'dusk' |
+-- 'day' | 'dawn' (the sun's height at the start's place, nil without one) }, nil untimed.
+function M.startsAt(r)
+  if not (r and r.timed and r.clock and r.clock.t) then return nil end
+  local pl = placeOf(r)
+  return { text = wt.startText(r.clock.t), light = pl and wt.light(r.clock.t, r.tz, pl.lat, pl.lon) or nil }
 end
 
 ------------------------------------------------------------------------------------------ getting the stages ready
@@ -638,7 +743,67 @@ function M.atControl(it, stage)
   local tc = { ss = it.ss, name = stage.name, km = stage.lengthM and math.floor(stage.lengthM / 100 + 0.5) / 10,
     day = it.day, rally = R.name, timeIn = r and runner.formatClock(runner.clock() or 0) or nil }
   log('I', logTag, 'rally: at the time control of ' .. tostring(it.ss) .. ', the stage loads behind its card')
+  -- (interface 3: a timed rally's check-in -- on time or late at once; early: wait for your minute, or check in
+  -- early at a cost when the setting says so: M.continueOk)
+  wait = nil
+  local dueT = timed() and R.order[R.pos] == it and dueAt(R.pos) or nil
+  if dueT then
+    tc.due = wt.hm(dueT)
+    if math.floor(R.clock.t / 60) < math.floor(dueT / 60) then
+      wait = { item = it, dueT = dueT, tc = tc }
+      tc.wait = { leftS = math.ceil(dueT - R.clock.t), due = tc.due }
+      log('I', logTag, string.format('rally: early at the time control of %s: due %s, the clock %s', tostring(it.ss),
+        tc.due, wt.hm(R.clock.t)))
+    else
+      M.checkIn(it, tc, R.clock.t, dueT)
+    end
+  end
   if M.ui.atControl then M.ui.atControl(tc, stage) end
+end
+
+-- The check-in at the time control: the result on the card and in the rally (rally.checkIn).
+function M.checkIn(it, tc, inT, dueT)
+  local res = rally.checkIn(R, it, inT, dueT, settings.get('earlyPenalty') == true)
+  if tc then
+    tc.result, tc.wait = res, nil
+    tc.timeIn = wt.hm(inT) .. ':' .. string.format('%02d', math.floor(inT) % 60)
+  end
+  log('I', logTag, string.format('rally: checked in at %s %s, due %s: %s%s', tostring(it.ss), wt.hm(inT), wt.hm(dueT),
+    res.kind, res.penaltyS > 0 and string.format(' (+%d s)', res.penaltyS) or ''))
+  return res
+end
+
+function M.waiting() return wait end
+
+-- (interface 3) The wait skipped: the clock on to the due minute, checked in on time. No-op (false) with no wait.
+function M.skipWait()
+  if not (wait and timed()) then return false end
+  local w = wait
+  wait = nil
+  if R.clock.t < w.dueT then R.clock.t = w.dueT end
+  M.checkIn(w.item, w.tc, R.clock.t, w.dueT)
+  setWorld()
+  return true
+end
+
+-- The time control card's Continue while you wait for your minute: with the early penalty on, the check-in now (early,
+-- at its cost) and on; off, not yet (the card counts down and checks you in itself, or the wait is skipped).
+function M.continueOk()
+  if not wait then return true end
+  if settings.get('earlyPenalty') == true then
+    local w = wait
+    wait = nil
+    M.checkIn(w.item, w.tc, R.clock.t, w.dueT)
+    return true
+  end
+  return false
+end
+
+-- The card gone with the wait still up (the page closed under it): the penalty on, an early check-in; off, the wait
+-- skipped -- the stage is under way, so a check-in there must be.
+function M.leftBoard()
+  if not wait then return end
+  if settings.get('earlyPenalty') == true then M.continueOk() else M.skipWait() end
 end
 
 -- (runner: the rally's stage loaded, by the transit's arrival or startHere)
@@ -649,6 +814,8 @@ function M.onStageLoaded()
   card = nil
   r.rally = { mode = R.mode }
   r.rallyKey = 'rally:' .. R.mode .. ':' .. tostring(r.ssLabel)
+  -- (the sky at the stage's start: the rally clock as the stage loads)
+  setWorld()
 end
 
 ------------------------------------------------------------------------------------------ start, continue, leave
@@ -660,6 +827,8 @@ finish = function()
   writeFile(R.eventId, t)
   M.block(false)
   gpsOff()
+  wait = nil
+  setWorld(true)
   runner.disarmApproach('the rally is over')
   toStop, move = nil, nil
   log('I', logTag, string.format('rally: %s finished, %.1f s%s', R.name, rally.totalS(R),
@@ -683,9 +852,11 @@ function M.start(id, opts)
   local t0 = M.readFile(id)
   if t0.current or t0.loop then t0.current, t0.loop = nil, nil writeFile(id, t0) end
   loop = { results = {} }
+  wait = nil
   M.block(true)
-  log('I', logTag, string.format('rally: %s started (%s, %s, cancelled stages %s)', R.name, R.mode, R.class,
-    R.cancelled))
+  log('I', logTag, string.format('rally: %s started (%s, %s, cancelled stages %s)%s', R.name, R.mode, R.class,
+    R.cancelled, R.timed and (', timed from ' .. wt.startText(R.clock.t)) or ''))
+  setWorld()
   -- (the page stays on the time card, which follows the stages being got ready: #34)
   getReady(function() goToStop() end)
   return true
@@ -708,11 +879,18 @@ function M.resume(id)
   if question then pcall(runner.askLayout, false) end
   R, card, recoveredAt, question, move, toStop = t.current, nil, nil, nil, nil, nil
   savedResults = t.current.results
+  wait = nil
   M.block(true)
   loop = { results = {} }
   if R.mode == 'realistic' and type(t.loop) == 'table' then
     local missedBefore = R.missed or 0
     rally.replayLoop(R, t.loop, board)
+    -- (a timed rally: the road penalties, the clock and the last time out as the loop left them)
+    if timed() then
+      if type(t.loop.road) == 'table' then R.road = t.loop.road end
+      if type(t.loop.clock) == 'number' then R.clock.t = t.loop.clock end
+      if t.loop.lastOut ~= nil then R.lastOut = t.loop.lastOut end
+    end
     log('I', logTag, string.format('rally: resumed mid-loop, %d stage(s) kept%s', #(t.loop.results or {}),
       t.loop.started and ', the stage left during scored under Super Rally' or ''))
     if rally.over(R) then
@@ -725,6 +903,7 @@ function M.resume(id)
     -- them again on top of themselves)
     save()
   end
+  setWorld()
   getReady(function()
     local it = rally.current(R)
     if it and it.kind ~= 'stage' then goToStop()
@@ -761,7 +940,8 @@ function M.quit()
   -- (the service's board and tent: taken away now, unless the rally ended there and the car stands by it)
   local s = props.site('service')
   if s and s.rally and not s.left then props.dropSite('service') end
-  R, card, recoveredAt, loop, move, toStop, prep = nil, nil, nil, nil, nil, nil, nil
+  setWorld(true)
+  R, card, recoveredAt, loop, move, toStop, prep, wait = nil, nil, nil, nil, nil, nil, nil, nil
   if question then question = nil pcall(runner.askLayout, false) end
   M.block(false)
   return true
@@ -831,6 +1011,7 @@ function M.goNext()
     local wasPlaced = it.place and it.place.lat
     leaveStopSite()
     rally.serviceOut(R)
+    setWorld()                 -- (a timed rally: out at the stop's scheduled time)
     recoveredAt = nil
     it = rally.current(R)
     if not it then return false, 'the rally is over' end
@@ -844,10 +1025,16 @@ end
 -- way on armed: the next stage's transit, or the service's.
 function M.onFinished(res)
   if not R then return end
+  -- (a timed rally: the stage's time out, where the road section on from it starts)
+  if timed() then
+    local cur = rally.current(R)
+    res.outT = cur and cur.kind == 'stage' and rally.timeOut(cur, res.startT, res.finishT) or nil
+  end
   local it, why = rally.stageDone(R, res)
   if not it then log('W', logTag, 'rally: ' .. tostring(why)) return end
   if loop and not rally.over(R) then
-    loop.results[#loop.results + 1] = { timeS = res.timeS, stageS = res.stageS, penaltyS = res.penaltyS }
+    loop.results[#loop.results + 1] = { timeS = res.timeS, stageS = res.stageS, penaltyS = res.penaltyS,
+      outT = res.outT }
     loop.started = false
     saveLoop()
   end
@@ -972,8 +1159,31 @@ runner.askKey = function() return question and question.key or nil end
 
 -- (main.onUpdate) a teleport to a stop settling, a service driven to, a stage started (Realistic: from then on
 -- leaving scores it under Super Rally).
-function M.update(dt)
+function M.update(dt, dtSim)
   dt = dt or 0
+  realT = realT + dt
+  if timed() and not R.done then
+    if wait then
+      -- (waiting for your minute at the board: the clock runs on real time under the card, and checks you in on it)
+      R.clock.t = R.clock.t + dt
+      wait.tc.wait = { leftS = math.max(0, math.ceil(wait.dueT - R.clock.t)), due = wait.tc.due }
+      if R.clock.t >= wait.dueT then
+        local w = wait
+        wait = nil
+        M.checkIn(w.item, w.tc, w.dueT, w.dueT)
+      end
+    else
+      local okP, paused = pcall(M.clockPaused)
+      paused = okP and paused == true
+      if not paused then R.clock.t = R.clock.t + (dtSim or dt) end
+      -- (BeamNG.Earth's sky runs on wall-clock time from where it was set and knows nothing of pauses: set again as a
+      -- loading screen or a menu goes)
+      if wasPaused and not paused and world then setWorld() end
+      wasPaused = paused
+    end
+    -- (and whenever the two have drifted apart all the same: a game pause of its own, slow motion)
+    if world and math.abs((world.t + (realT - world.real)) - R.clock.t) > M.WORLD_DRIFT_S then setWorld() end
+  end
   -- ("Load the stage?" whose approach went -- the rally moved on, a run started: nothing left to answer)
   if question and question.loadAsk then
     local a = runner.approaching()
@@ -1066,6 +1276,8 @@ function M.update(dt)
     end
   end
 end
+
+M.WORLD_DRIFT_S = 60
 
 -- The service being driven to, for the HUD's line and the game's Messages app: { name, distM, rally } or nil.
 local tInfo
@@ -1223,7 +1435,8 @@ end
 function M.debugLine()
   if not R then return nil end
   local it = rally.current(R)
-  return string.format('%s · %s · at %s%s%s%s', R.name, R.mode, tostring(itemLabel(it) or 'the end'),
+  return string.format('%s · %s · at %s%s%s%s%s', R.name, R.mode, tostring(itemLabel(it) or 'the end'),
+    timed() and (' · ' .. wt.dateText(R.clock.t) .. ' ' .. wt.hm(R.clock.t)) or '',
     prep and ' · getting ready' or '', move and ' · moving to the stop' or '',
     toStop and string.format(' · driving to %s (%.0f m)', toStop.item.label, toStop.distM or -1) or '')
 end
@@ -1244,6 +1457,16 @@ function M.uiCard()
     local row = { kind = it.kind, label = it.kind == 'stage' and it.ss or it.label, name = it.kind == 'stage'
       and stageName(it) or it.name, km = it.km, day = it.day or (it.kind == 'start' and firstDay or nil),
       next = i == R.pos or nil, done = i < R.pos or nil, final = it.final or nil }
+    if timed() then
+      -- (interface 2: a timed rally's controls)
+      local road = it.kind == 'stage' and type(R.road) == 'table' and R.road[it.ss] or nil
+      if road then
+        row.due, row.timeIn, row.roadPenaltyS = wt.hm(road.dueT), wt.hm(road.inT), road.penaltyS
+      elseif it.kind == 'stage' then
+        row.due = wt.hm(dueAt(i))
+      end
+      if it.kind ~= 'stage' and it.outT and not it.final then row.outAt = wt.hm(it.outT) end
+    end
     if it.kind == 'stage' then
       local res = R.results[it.ss]
       if res then
@@ -1288,6 +1511,8 @@ function M.uiCard()
   if phase == 'transit' and ap then transit = { name = ap.name, distM = ap.distM }
   elseif phase == 'toStop' and toStop then transit = { name = cur.label .. (cur.name and (' · ' .. cur.name) or ''),
     distM = toStop.distM } end
+  local td = transit and phase == 'transit' and M.transitDue() or nil
+  if td then transit.due, transit.leftS, transit.late, transit.penaltyS = td.due, td.leftS, td.late, td.penaltyS end
   return {
     id = R.eventId, name = R.name, mode = R.mode, class = R.class, car = R.car and R.car.name,
     cancelled = R.cancelled, rows = rows, pos = R.pos, phase = phase, transit = transit,
@@ -1297,6 +1522,12 @@ function M.uiCard()
     nextStage = nextStage, nextIndex = nxi, superRally = sr, overall = rally.standing(R, board),
     totalS = rally.totalS(R), done = rally.over(R) or nil, unclassified = R.unclassified or nil,
     heldOut = #held > 0 and held or nil, leave = M.leaveInfo(), hasBoard = board ~= nil or nil,
+    -- (interface 2: a timed rally only -- the card treats a rally as timed when clock is there)
+    clock = timed() and { date = wt.dateText(R.clock.t), time = wt.hm(R.clock.t) } or nil,
+    roadPenaltyS = timed() and rally.roadPenaltyS(R) or nil,
+    lateSPerMin = timed() and (R.lateSPerMin or rally.LATE_S_PER_MIN) or nil,
+    earlySPerMin = timed() and (R.earlySPerMin or rally.EARLY_S_PER_MIN) or nil,
+    earlyPenalty = timed() and settings.get('earlyPenalty') == true or nil,
   }
 end
 

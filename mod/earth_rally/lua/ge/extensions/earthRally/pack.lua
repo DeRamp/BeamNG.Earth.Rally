@@ -457,30 +457,89 @@ local function stopsOf(evFile, rows)
 end
 M._stopsOf = stopsOf
 
+-- (the rally-loop plan: timed road sections) The rows a time-control clock starts again from: the scheduled out times
+-- of a service, a regroup or a day's start. Only one standing where the full rally has a stop counts (rally.lua).
+local RESET = { MTC_OUT = true, SVC_OUT = true, RGC_OUT = true, PE_OUT = true }
+
+-- The itinerary's passes. With an event file, each pass also carries its schedule (nil where the file gives none):
+--   date, firstCar ('YYYY-MM-DD', 'HH:MM': the first car's start of the stage, printed), latenessMin (the stage's
+--   lateness time, "bogey"), targetMin (the target times of the rows from the pass before to this pass's time
+--   control, added up: the road section(s) driven to it), and when a row in that stretch is a scheduled out time
+--   (RESET), the last one: outDate, outAt and outTargetMin (the targets from it on). Before the first pass, the
+--   first timed row stands in when no out row does: the rally's start.
+-- Returns the passes, the stops (stopsOf), the start place, and the timing { timezone, start = { date, time } } (nil:
+-- an untimed rally, no target time anywhere).
 local function itineraryOf(evFile, stages, lineId, warn)
   local out, seen, rows = {}, {}, {}
   if evFile and type(evFile.itinerary) == 'table' then
+    -- (the stretch since the last pass: targets added up in all, and since its last out row)
+    local acc, accOut, hasT, reset, first, copy, timed = 0, 0, false, nil, nil, false, false
+    local function str0(v) return type(v) == 'string' and v ~= '' and v or nil end
+    -- (a row for other classes only -- a regional crew's own MTC IN beside the National regroup -- is not on our road)
+    local function forUs(row)
+      if type(row.classes) ~= 'table' or #row.classes == 0 then return true end
+      for _, c in ipairs(row.classes) do
+        if type(c) == 'string' and c:lower() == 'national' then return true end
+      end
+      return false
+    end
     for _, row in ipairs(evFile.itinerary) do
       if type(row) == 'table' and row.type == 'SS' and row.control then
         local new = not seen[row.control]
         seen[row.control] = true
         local sid = new and lineId[row.stage]
+        local lat = tonumber(row.lateness_min)
         if sid then
-          out[#out + 1] = { ss = tostring(row.control), stage = sid, run = tonumber(row.run) or 1,
-                            km = tonumber(row.ss_km), cancelled = false, day = tonumber(row.day),
-                            powerStage = row.power_stage == true or nil }
+          local p = { ss = tostring(row.control), stage = sid, run = tonumber(row.run) or 1,
+                      km = tonumber(row.ss_km), cancelled = false, day = tonumber(row.day),
+                      powerStage = row.power_stage == true or nil,
+                      date = str0(row.date), firstCar = str0(row.first_car), latenessMin = lat,
+                      targetMin = hasT and acc or nil }
+          -- (before the first pass, no out row: the first timed row is the start)
+          local o = reset or (#out == 0 and first) or nil
+          if o then
+            p.outDate, p.outAt, p.outTargetMin = o.date, o.time, o.acc
+            timed = timed or o.acc ~= nil
+          end
+          timed = timed or p.targetMin ~= nil
+          out[#out + 1] = p
+          acc, accOut, hasT, reset, first, copy = 0, 0, false, nil, nil, false
         elseif new then
           warn(string.format('itinerary %s "%s": no line of that name in the map', tostring(row.control),
             str(row.stage)))
+          -- (its time carried to the next pass's road section: the chain goes on through it)
+          acc = acc + (lat or 0)
+          copy = false
+        else
+          copy = true
         end
         rows[#rows + 1] = { kind = 'SS', new = new, n = #out, day = tonumber(row.day) }
       elseif type(row) == 'table' then
         rows[#rows + 1] = { kind = 'other', raw = row }
+        if not copy and forUs(row) then
+          local t = tonumber(row.target_min)
+          local fc, dt = str0(row.first_car), str0(row.date)
+          if t then acc, hasT = acc + t, true end
+          if reset and t then reset.acc = (reset.acc or 0) + t end
+          if first and t and first ~= reset then first.acc = (first.acc or 0) + t end
+          if fc and dt and RESET[row.type] then reset = { date = dt, time = fc } end
+          if fc and dt and not first and #out == 0 then first = { date = dt, time = fc } end
+        end
       end
     end
     if #out > 0 then
       local stops, start = stopsOf(evFile, rows)
-      return out, stops, start
+      -- (a stop's out time: the out row of the stretch after it, which the pass after it carries)
+      for _, st in ipairs(stops) do
+        local nx = out[st.after + 1]
+        if nx and nx.outAt then st.outDate, st.outAt = nx.outDate, nx.outAt end
+      end
+      local info = type(evFile.event) == 'table' and evFile.event or {}
+      local timing = nil
+      if timed and out[1].outAt then
+        timing = { timezone = str0(info.timezone), start = { date = out[1].outDate, time = out[1].outAt } }
+      end
+      return out, stops, start, timing
     end
   end
   for i, s in ipairs(stages) do
@@ -606,7 +665,8 @@ local function makeRally(src, spec, base, ctx, kind)
   local info = evFile and type(evFile.event) == 'table' and evFile.event or {}
   -- (rallyStops: the full rally's services and overnights, 1.7.0; nil without an event file: no full rally)
   -- (rallyStart, 1.7.0 service on the map: where the full rally starts, { name, lat, lon }, or nil)
-  event.itinerary, event.rallyStops, event.rallyStart = itineraryOf(evFile, event.stages, lineId, warn)
+  -- (timing, the rally-loop plan: the schedule's time zone and start, nil for an untimed rally)
+  event.itinerary, event.rallyStops, event.rallyStart, event.timing = itineraryOf(evFile, event.stages, lineId, warn)
   event.dates = type(spec.dates) == 'table' and spec.dates or type(info.dates) == 'table' and info.dates or nil
   local hq = type(info.hq) == 'table' and info.hq or {}
   local place = {}
@@ -875,7 +935,7 @@ end
 -- (1.7.0: the event file's services read too) a pack last imported by an older reader -- or by an older Earth Rally
 -- sharing the user folder -- is imported again, whatever its fingerprint. Kept per pack, and set only by an import
 -- that went through.
-M.READER = 3
+M.READER = 4      -- (4: the schedule read too, the rally-loop plan)
 local function importPack(p, index, force, gone)
   local entry = index.packs[p.name]
   if entry and entry.reader ~= M.READER then force = true end

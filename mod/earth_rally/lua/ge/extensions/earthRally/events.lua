@@ -571,6 +571,33 @@ end
 -- run: { finished, timeS, ..., line = 'recce' | 'matched', lineKey = M.lineKey of that line (a record only),
 -- lineM = start to flying finish on it as timed, lineStart / lineFinish = where those were on it ({ lat, lon }) }.
 -- Returns the best time (M.best).
+-- (the rally-loop plan, item 3) The splits to beat on a stage: the fastest finished run with splits, a single-stage run
+-- or a rally's pass (any mode): { timeS, splits = { s1, s2, s3 } }, or nil. Runs saved before splits have none.
+function M.bestSplits(eventId, stageId)
+  local r = M.results(eventId, stageId)
+  local best = nil
+  local function look(x, finished)
+    if type(x) == 'table' and finished and type(x.timeS) == 'number' and type(x.splits) == 'table'
+      and type(x.splits[1]) == 'number' and (not best or x.timeS < best.timeS) then
+      best = { timeS = x.timeS, splits = x.splits }
+    end
+  end
+  for _, x in ipairs(r.runs or {}) do look(x, x.finished) end
+  for _, x in ipairs(r.rallyPasses or {}) do look(x, true) end
+  return best
+end
+
+-- A full rally's pass kept for its splits only (run: { timeS, splits, date }): apart from the stage's runs, so it is
+-- not a single-stage time and never on the stage's boards (M.best and M.bestPlaceable read runs only).
+function M.addRallyPass(eventId, stageId, run)
+  local path = M.RESULTS_DIR .. key(eventId, stageId)
+  local r = M.results(eventId, stageId)
+  r.rallyPasses = r.rallyPasses or {}
+  r.rallyPasses[#r.rallyPasses + 1] = run
+  jsonWriteFile(path, r, true)
+  files[path] = { data = r }
+end
+
 function M.addResult(eventId, stageId, run)
   local path = M.RESULTS_DIR .. key(eventId, stageId)
   local r = M.results(eventId, stageId)

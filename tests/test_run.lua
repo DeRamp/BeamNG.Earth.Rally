@@ -3953,6 +3953,10 @@ do
   T.check(runner.state() == 'finished' and #finished == 1 and math.abs(finished[1].timeS - rr.finalTime) < 1e-9,
     'the finish handed to the rally (' .. runner.state() .. ')')
   T.check(#(events.results('test', 'hill').runs or {}) == nRuns, 'a rally time is not a single-stage run')
+  local passes = events.results('test', 'hill').rallyPasses or {}
+  T.check(#passes == 1 and #passes[1].splits == 3 and passes[1].splits[1] < passes[1].splits[3],
+    'a rally pass kept apart, with its three splits (the rally loop)')
+  T.check(finished[1].startT == nil and finished[1].finishT == nil, 'an untimed rally: no rally-clock times')
   frames(50)
   local _, oursR = runner.uiFrame()
   T.check(oursR.show.results and oursR.results.next == nil, 'the results card up, no Next stage of its own')
@@ -3967,6 +3971,163 @@ do
   runner.onFinished, runner.onRallyReset = nil, nil
   spawn = oldSpawn
   settings.reset()
+end
+
+------------------------------------------------------------------------------------------ the rally loop: splits
+-- Three splits at a quarter, half and three quarters of the timed span, crossed on run.along, against the best run's
+-- splits on the stage (a single run or a rally's pass); the card for 5 s; the finish card's list.
+do
+  local hud = require('earthRally/hudFrame')
+  files['/earthRally/results/sp__x.json'] = nil
+  T.check(events.bestSplits('sp', 'x') == nil, 'no run with splits: nothing to compare')
+  local fr = { event = { id = 'sp' }, stage = { id = 'x' }, state = 'running', startM = 100, finishM = 1100,
+    along = 300, clock = 30 }
+  runner._splitsTick(fr)
+  T.check(fr.splits and #fr.splits == 0 and fr.splitBest == false, 'before a quarter: no split')
+  fr.along, fr.clock = 360, 40
+  runner._splitsTick(fr)
+  T.check(#fr.splits == 1 and fr.splits[1] == 40 and fr.splitShow.n == 1 and fr.splitShow.gapS == nil,
+    'split 1 at a quarter: 40 s, no gap on a first run')
+  local c = hud.splitCard(fr)
+  T.check(c and c.n == 1 and c.timeS == 40, 'the split card up')
+  fr.clock = 46
+  T.check(hud.splitCard(fr) == nil, 'and gone 5 s on')
+  fr.along, fr.clock = 1000, 90
+  runner._splitsTick(fr)
+  T.check(#fr.splits == 3 and fr.splits[2] == 90 and fr.splits[3] == 90 and fr.splitShow.n == 3,
+    'two splits passed in one look: both kept')
+  fr.finalTime = 120
+  local rows = hud.splitRows(fr)
+  T.check(#rows == 4 and rows[4].n == 4 and rows[4].timeS == 120 and rows[4].gapS == nil, 'the finish card: 3 splits and the finish')
+  -- a rally's pass kept apart (not a single-stage run), and the best of both compared with
+  events.addResult('sp', 'x', { finished = true, timeS = 130, splits = { 41, 85, 100 } })
+  events.addRallyPass('sp', 'x', { timeS = 125, splits = { 39, 80, 99 } })
+  events.addResult('sp', 'x', { finished = true, timeS = 110 })      -- (faster, but saved before splits)
+  T.check(#events.results('sp', 'x').runs == 2 and events.best('sp', 'x') == 110, 'a rally\'s pass is not a run')
+  local b = events.bestSplits('sp', 'x')
+  T.check(b and b.timeS == 125 and b.splits[1] == 39, 'the best run with splits, a rally\'s pass too')
+  local fr2 = { event = { id = 'sp' }, stage = { id = 'x' }, state = 'running', startM = 0, finishM = 1000,
+    along = 260, clock = 37.5 }
+  runner._splitsTick(fr2)
+  T.check(math.abs(fr2.splitShow.gapS - (-1.5)) < 1e-9, 'ahead of the best: a negative gap')
+  fr2.finalTime = 127
+  rows = hud.splitRows(fr2)
+  T.check(#rows == 2 and math.abs(rows[2].gapS - 2) < 1e-9, 'the finish gap against that run\'s time')
+  local _, ours = hud.build(fr2, { now = 0 })
+  T.check(ours.split and ours.split.n == 1 and ours.show.split and ours.splitsAt[2] == 0.5,
+    'the stream: ours.split and the progress bar\'s ticks')
+end
+
+------------------------------------------------------------------------------------------ the rally loop: world time
+-- earthAdapter.setWorldTime: BeamNG.Earth's api.setWorldTime when it has it; else its real sky's server-clock hook
+-- (never the manual mode, which it would save); else the game's TimeOfDay, put back after.
+do
+  local api = beamngEarth_api
+  local had = { has = api.has, set = api.setWorldTime }
+  local calls = {}
+  api.has = function(n) return n == 'worldTime' or had.has(n) end
+  api.setWorldTime = function(e) calls[#calls + 1] = e or 'nil' return true end
+  T.check(earth.hasWorldTime() and earth.setWorldTime(1000) == 'api' and calls[1] == 1000, 'the API: the moment passed')
+  T.check(earth.setWorldTime(nil) == 'api' and calls[2] == 'nil', 'and given back')
+  api.has, api.setWorldTime = had.has, had.set
+  T.check(not earth.hasWorldTime(), 'an older BeamNG.Earth: no world time')
+  local clockSet, saved = {}, false
+  beamngEarth_sky = { getMode = function() return 'real' end, serverClock = function() return clockSet[#clockSet] end,
+    setServerClock = function(c) clockSet[#clockSet + 1] = c or false end }
+  local how = earth.setWorldTime(6 * 3600 + 18 * 3600, -6 * 3600)
+  T.check(how == 'serverClock' and clockSet[1].hours == 18 and clockSet[1].speed == 1,
+    'the real sky: its server clock at 18:00 local, its mode untouched')
+  T.check(earth.setWorldTime(nil) == 'serverClock' and clockSet[2] == false, 'and the real clock back')
+  clockSet = { { hours = 3 } }
+  T.check(earth.setWorldTime(100, 0) == false, 'a server clock not ours (BeamMP): left alone')
+  local env = core_environment
+  local tod = { time = 0.25, play = true }
+  core_environment = { getTimeOfDay = function() return { time = tod.time, play = tod.play } end,
+    setTimeOfDay = function(t) tod = t end }
+  beamngEarth_sky.getMode = function() return 'manual' end
+  T.check(earth.setWorldTime(12 * 3600, 0) == 'tod' and math.abs(tod.time) < 1e-9, 'the manual sky: noon set')
+  T.check(earth.setWorldTime(nil) == 'tod' and tod.time == 0.25, 'and the time it had put back')
+  beamngEarth_sky, core_environment = nil, env
+end
+
+------------------------------------------------------------------------------------------ the rally loop: the clock
+-- A timed rally's clock in rallyRun: the runner's clock is it, the wait at a time control for the due minute (and its
+-- skip), the check-in early or late, the time card's rows and the transit's due time.
+do
+  local rallyRun = require('earthRally/rallyRun')
+  local rally = require('earthRally/rally')
+  local wt = require('earthRally/worldTime')
+  local settings = require('earthRally/settings')
+  local t0 = wt.parse('2031-02-07', '08:00')
+  local r = { format = 3, eventId = 'test', name = 'Test Rally', mode = 'casual', class = 'L4WD', timed = true,
+    tz = 'America/Chicago', clock = { t = t0 }, road = {}, lateSPerMin = 10, earlySPerMin = 60, results = {},
+    serviced = { ['1'] = true }, pos = 2, missed = 0, heldOut = {},
+    order = { { kind = 'start', label = 'Start', outT = t0, place = { name = 'Park', lat = 45, lon = -90 } },
+      { kind = 'stage', ss = 'SS1', stageId = 'hill', outT = t0, outTargetMin = 20, latenessMin = 10 },
+      { kind = 'stage', ss = 'SS2', stageId = 'hill', targetMin = 15, latenessMin = 10 } } }
+  rallyRun._setRally(r)
+  T.check(runner.rallyClock.now() == t0, 'the runner reads the rally clock')
+  rallyRun.clockPaused = function() return false end
+  rallyRun.update(1, 60)
+  T.check(r.clock.t == t0 + 60, 'it runs with game time')
+  rallyRun.clockPaused = function() return true end
+  rallyRun.update(1, 60)
+  T.check(r.clock.t == t0 + 60, 'and stops under a loading screen or the menu')
+  rallyRun.clockPaused = function() return false end
+  T.check(rallyRun._dueAt(2) == t0 + 20 * 60 and rallyRun._dueAt(3) == nil,
+    'due at SS1\'s control from the start; SS2\'s not known until SS1 is done')
+  -- early at the board (08:01, due 08:20), the setting off: the wait, Continue held, the skip
+  settings.set('earlyPenalty', false)
+  local up = nil
+  rallyRun.ui.atControl = function(tc) up = tc end
+  rallyRun.atControl(r.order[2], { name = 'Hill', lengthM = 3000 })
+  T.check(up and up.due == '08:20' and up.wait and up.wait.leftS == 19 * 60 and up.result == nil,
+    'early: the card waits for 08:20 (' .. tostring(up and up.wait and up.wait.leftS) .. ' s)')
+  rallyRun.clockPaused = function() return true end
+  rallyRun.update(30, 0)
+  T.check(r.clock.t == t0 + 90 and up.wait.leftS == 19 * 60 - 30, 'the wait runs on real time under the card')
+  T.check(rallyRun.continueOk() == false and rallyRun.waiting(), 'Continue does not check in early with the setting off')
+  T.check(rallyRun.skipWait() and r.clock.t == t0 + 20 * 60 and up.result.kind == 'onTime' and up.wait == nil,
+    'the skip: the clock to 08:20, on time')
+  T.check(rallyRun.skipWait() == false, 'a second skip is a no-op')
+  -- the setting on: Continue checks in early, 1 min a minute
+  settings.set('earlyPenalty', true)
+  r.clock.t = t0 + 17 * 60
+  rallyRun.atControl(r.order[2], { name = 'Hill', lengthM = 3000 })
+  T.check(up.wait and rallyRun.continueOk() == true and up.result.kind == 'early' and up.result.penaltyS == 180,
+    'the setting on: Continue checks in 3 min early, +180 s')
+  -- late: checked in at once
+  r.clock.t = t0 + 22 * 60 + 5
+  rallyRun.atControl(r.order[2], { name = 'Hill', lengthM = 3000 })
+  T.check(up.wait == nil and up.result.kind == 'late' and up.result.min == 2 and up.result.penaltyS == 20
+    and r.road.SS1.penaltyS == 20, 'late by 2 min: +20 s at once')
+  settings.set('earlyPenalty', false)
+  -- the time card: its clock, the rows' due and in times, the total
+  local cardOk, card = pcall(rallyRun.uiCard)
+  T.check(cardOk and card and card.clock and card.clock.date == 'Fri 7 Feb' and card.clock.time == '08:22'
+    and card.roadPenaltyS == 20 and card.lateSPerMin == 10, 'the time card: the rally clock and the road total')
+  local row = cardOk and card.rows[2]
+  T.check(row and row.due == '08:20' and row.timeIn == '08:22' and row.roadPenaltyS == 20 and card.rows[1].outAt == '08:00',
+    'the time card: SS1 due 08:20, in 08:22, +20 s; the start out at 08:00')
+  -- the start screen's line
+  local sa = rallyRun.startsAt(r)
+  T.check(sa and sa.text == 'Fri 7 Feb 2031, 08:22 local' and sa.light == 'day', 'the start screen\'s start and light')
+  -- the transit: due time at SS2's control from SS1's time out
+  r.lastOut, r.pos = t0 + 40 * 60, 3
+  local td = rallyRun.transitDue()
+  T.check(td and td.due == '08:55' and td.late == 0 and td.leftS == 33 * 60 - 5, 'the transit: due 08:55, time left')
+  r.clock.t = t0 + 57 * 60 + 10
+  td = rallyRun.transitDue()
+  T.check(td.late == 2 and td.penaltyS == 20 and td.leftS < 0, 'late on the transit: 2 min, +20 s so far')
+  local hud = require('earthRally/hudFrame')
+  local _, ours = hud.build(nil, { rally = true, approach = { name = 'SS2 Hill', distM = 1200, rally = true },
+    rallyTransit = td })
+  T.check(ours.rally and ours.rally.transit and ours.rally.transit.late == 2 and ours.approach.sub:find('2 min late', 1, true),
+    'the HUD stream: ours.rally.transit, and the line says it: ' .. tostring(ours.approach.sub))
+  rallyRun._setRally(nil)
+  rallyRun.clockPaused = function() return false end
+  rallyRun.ui.atControl = nil
+  T.check(runner.rallyClock.now() == nil and rallyRun.transitDue() == nil, 'no rally: no clock')
 end
 
 T.done('test_run')

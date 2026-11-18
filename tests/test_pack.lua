@@ -812,6 +812,35 @@ else
     print(string.format('test_pack: full rally %s: %s', ev and ev.name or tostring(rounds[r]), table.concat(parts, ' ')))
   end
   T.check(allRun, 'ARA: every round runs as a full rally, with at least one service')
+  -- (the rally-loop plan) every round is timed, and driven exactly to the schedule -- each stage started at its first
+  -- car's printed start, through its lateness time -- every due time at a time control falls in the few minutes
+  -- before that stage's printed start (the time control's own minute; ARA: 3 min before the start)
+  local wt = require('earthRally/worldTime')
+  local timedAll, dues, off = true, 0, {}
+  for r = 1, 8 do
+    local ev = mem['/earthRally/events/' .. tostring(rounds[r]) .. '.json']
+    local rr = ev and R.new(ev, { cancelled = 'all' })
+    if not (rr and rr.timed) then timedAll = false
+    else
+      for i, it in ipairs(rr.order) do
+        if it.kind == 'stage' then
+          local st = wt.parse(it.date, it.firstCar)
+          local due = R.dueFor(rr, i)
+          if due and st then
+            dues = dues + 1
+            if not (st - due >= 0 and st - due <= 5 * 60) then
+              off[#off + 1] = string.format('%s %s (%+d min)', ev.name, it.ss, (st - due) / 60)
+            end
+          end
+          rr.lastOut = R.timeOut(it, st, nil)
+        end
+      end
+    end
+  end
+  T.check(timedAll, 'ARA: every round is timed')
+  print(string.format('test_pack: ARA due times worked out on the schedule: %d; off it: %s', dues,
+    #off > 0 and table.concat(off, '; ') or 'none'))
+  T.check(dues > 100, 'ARA: due times worked out (' .. dues .. ')')
   print('test_pack: stops with no place on the map: ' .. (#placesMissing > 0 and table.concat(placesMissing, '; ') or 'none'))
   T.check(#placesMissing == 0, 'ARA: every start, service and overnight has its place on the map')
 end

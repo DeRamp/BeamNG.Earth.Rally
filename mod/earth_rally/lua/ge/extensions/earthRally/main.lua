@@ -100,6 +100,8 @@ end
 -- (the full rally's time card is a view of the menu page: rallyRun opens it after a recovery and from Continue)
 rallyRun.ui.openCard = function() return M.openMenu('timecard') end
 rallyRun.ui.closeMenu = function() if menuOpen then pcall(menuPause.suspend) return M.closeMenu() end end
+-- (the rally-loop plan) a timed rally's clock stops under a loading screen and the menu, as the game does
+rallyRun.clockPaused = function() return menuOpen or loadScreen.active() ~= nil end
 
 ------------------------------------------------------------------------------------------ the loading screens (#49)
 -- Wherever the menu used to close and the world then loaded in view, the page stays up (or opens) on a loading screen
@@ -185,13 +187,16 @@ end
 -- the world to the stage (#63); the start time is given when Continue is pressed (runner.continueAtc), so the card
 -- says so (tc.startNote) and, once the run has checked in behind it, tc.checkedIn.
 rallyRun.ui.atControl = function(tc, stage)
-  local steps = { 'Checked in', 'Moving the world to the stage', 'Line, pacenotes, controls',
+  local steps = { tc.wait and 'Stopped at the board' or 'Checked in', 'Moving the world to the stage',
+    'Line, pacenotes, controls',
     'Junctions taped, stage dressed' }
   tc.startNote = 'given when you continue'
   loadScreen.begin({ kind = 'atc', kick = 'Time control · in', title = tostring(tc.ss) .. ' ' .. tostring(tc.name),
     sub = (tc.km and (tc.km .. ' km · ') or '') .. tostring(tc.rally) .. (tc.day and (' · day ' .. tc.day) or ''),
     steps = steps, card = tc, button = 'Continue', thenView = 'timecard',
     probe = function()
+      -- (interface 3: waiting at the board for the due minute, not checked in yet)
+      steps[1] = tc.wait and 'Stopped at the board' or 'Checked in'
       local r = runner.current()
       if not r then return 1, nil, nil, 'the stage was put away' end
       if r.state == 'failed' then return 1, nil, nil, tostring(r.error or 'the stage could not be got ready') end
@@ -206,6 +211,8 @@ rallyRun.ui.atControl = function(tc, stage)
       return i, (i - 1) / #steps, steps[math.min(i, #steps)]
     end,
     done = function(ok, why)
+      -- (a timed rally: still waiting for the due minute as the card goes -- checked in now, rallyRun.leftBoard)
+      pcall(rallyRun.leftBoard)
       -- (#64: the start time from now, and "Move up to the start line" said, not before)
       pcall(runner.continueAtc)
       if ok then if menuOpen then M.closeMenu() end
@@ -216,7 +223,19 @@ end
 
 -- The page's loading screen, nil with none (polled by EarthRallyLoading.vue).
 function M.uiLoading() return loadScreen.ui() end
-function M.uiLoadingContinue() return loadScreen.continue() end
+function M.uiLoadingContinue()
+  -- (a timed rally, early at a time control: Continue checks in early only when that costs -- the setting -- else the
+  -- card waits for the due minute or its skip)
+  local okW, ready = pcall(rallyRun.continueOk)
+  if okW and ready == false then return false end
+  return loadScreen.continue()
+end
+-- (interface 3) The wait for your minute at a time control skipped: the rally clock on to it, checked in on time.
+-- A no-op (false) once there is no wait (the page's key and the game's Interact can both send it).
+function M.uiLoadingSkipWait()
+  local ok, done = pcall(rallyRun.skipWait)
+  return ok and done == true
+end
 -- Ctrl+Alt+K
 function M.toggleMenu()
   if menuOpen then return M.closeMenu() end
@@ -1529,22 +1548,27 @@ local routeMsgKey, routeMsgT = nil, 0
 local routeAp, routeApKey = nil, nil
 local function routeMessage(gh, dt, on)
   local ap = on and not runner.uiHidden and (runner.approachInfo() or rallyRun.transitInfo()) or nil
+  -- (a timed road section: its due time and time left in the line too)
+  local okT, td = pcall(rallyRun.transitDue)
+  td = ap and okT and td or nil
   local units, key
   if ap and ap == routeAp then key = routeApKey
   elseif ap then units = settings.get('units'); key = hudFrame.approachKey(ap, units); routeAp, routeApKey = ap, key
   else routeAp, routeApKey = nil, nil end
+  if key and td then key = key .. '|' .. hudFrame.transitKey(td) end
   routeMsgT = routeMsgT + (dt or 0)
   if key == routeMsgKey and (not key or routeMsgT < M.ROUTE_MSG_S) then return end
   routeMsgKey, routeMsgT = key, 0
   if not gh.trigger then return end
   if ap then
-    pcall(gh.trigger, 'Message', { msg = hudFrame.approachText(ap, units or settings.get('units')), ttl = M.ROUTE_MSG_S * 2 + 1,
+    pcall(gh.trigger, 'Message', { msg = hudFrame.approachText(ap, units or settings.get('units'), td), ttl = M.ROUTE_MSG_S * 2 + 1,
       category = M.ROUTE_MSG_CATEGORY, icon = 'raceFlag' })
   else
     pcall(gh.trigger, 'Message', { msg = '', category = M.ROUTE_MSG_CATEGORY, clear = true })
   end
 end
 
+local transitSentKey = nil
 local function sendStreams(dt)
   local gh = rawget(_G, 'guihooks')
   if not (gh and gh.queueStream) then return end
@@ -1578,6 +1602,21 @@ local function sendStreams(dt)
     return
   end
   askSentKey = nil
+  -- (the rally-loop plan, interface 4: a timed road section with no stage on screen -- its due time and time left in
+  -- our stream, sent when they change and at the floor's pace)
+  local okT, td = pcall(rallyRun.transitDue)
+  if over and okT and td then
+    hudT = hudT + dt
+    local key = hudFrame.transitKey(td) .. '|' .. tostring(runner.uiHidden)
+    if key ~= transitSentKey or hudT >= M.STREAM_FLOOR_S then
+      transitSentKey, hudT = key, 0
+      local _, ours = runner.uiFrame()
+      gh.queueStream('earthRally', ours)
+    end
+    inactiveSent = false
+    return
+  end
+  transitSentKey = nil
   if over then
     -- (once: the stock apps blank, ours hides)
     if not inactiveSent then
@@ -1823,7 +1862,7 @@ logPausedSim = function(dtReal, dtSim)
 end
 
 function M.onUpdate(dtReal, dtSim)
-  pcall(rallyRun.update, dtReal)
+  pcall(rallyRun.update, dtReal, dtSim)
   local okP, errP = pcall(stepRallyPrep, dtReal or 0)
   if not okP then log('E', logTag, 'rally prep: ' .. tostring(errP)) end
   -- (1.7.3, item 3) a road-graph window waiting to be asked again after a timeout
@@ -1908,6 +1947,8 @@ end
 
 -- The game's Interact control (Shift+E; the modifier + Y on a pad): on the start line, skip to 6 s before the start.
 function M.onGameplayInteract()
+  -- (a timed rally's wait for your minute at a time control: the same key skips it, as at the start line)
+  if M.uiLoadingSkipWait() then return end
   pcall(runner.onGameplayInteract)
 end
 
