@@ -1,0 +1,126 @@
+// Offline test of the stats Worker: D1 stood in by Node's built-in SQLite (Node 22.5+), no install needed.
+//   node server/test_worker.mjs
+import assert from "node:assert/strict"
+import { makeDb } from "./d1shim.mjs"
+
+const here = new URL(".", import.meta.url)
+const { db, D1 } = makeDb()
+const env = { DB: D1, DASHBOARD_KEY: "k".repeat(32) }
+globalThis.caches = { default: { match: async () => null, put: async () => {} } }
+globalThis.fetch = async () => new Response(JSON.stringify([{ tag_name: "v1.6.2-alpha", assets: [{ download_count: 12 }] }]))
+const ctx = { waitUntil() {} }
+
+const worker = (await import(new URL("src/worker.js", here))).default
+const { clean } = await import(new URL("src/worker.js", here))
+const post = (path, body) => worker.fetch(new Request("http://x" + path, { method: "POST", body: JSON.stringify(body) }), env, ctx)
+
+const id = "0123456789abcdef0123456789abcdef"
+const day = new Date().toISOString().slice(0, 10)
+const base = { session: id, mod: "1.6.2-alpha+stats", game: "0.40.5.0", earth: "1.10", day }
+
+// clean: unknown events, bad ids and extra fields refused
+assert.equal(clean({ ...base, event: "nope" }), null)
+assert.equal(clean({ ...base, event: "session_start", session: "Bob" }), null)
+assert.equal(clean({ ...base, event: "stage_started", message: "hi" }).message, undefined)   // only on errors
+assert.equal(clean({ ...base, event: "error", code: "x", message: "m".repeat(300) }).message.length, 200)
+assert.equal(clean({ ...base, event: "error", code: "c".repeat(100) }).code.length, 80)
+assert.equal(clean({ ...base, event: "stage_finished", cls: "stock" }).cls, "stock")
+assert.equal(clean({ ...base, event: "stage_finished", cls: "open" }).cls, "open")
+assert.equal(clean({ ...base, event: "stage_finished", cls: "Stock" }).cls, undefined)
+assert.equal(clean({ ...base, event: "stage_finished", cls: "hacked" }).cls, undefined)
+assert.equal(clean({ ...base, event: "stage_started", cls: "stock" }).cls, undefined)
+assert.equal(clean({ ...base, event: "stage_finished", car: "x".repeat(100) }).car.length, 80)
+assert.equal(clean({ ...base, event: "session_start", day: "1999-01-01" }).day, day)
+assert.equal(clean({ ...base, event: "stage_finished", time_s: 412.4, resets: -3 }).time_s, 412)
+assert.equal(clean({ ...base, event: "stage_finished", resets: -3 }).resets, undefined)
+
+let r = await post("/v1/events", { events: [
+  { ...base, event: "session_start" },
+  { ...base, event: "stage_started", rally: "ARA 2026", stage: "SS1", pass: 1 },
+  { ...base, event: "stage_finished", rally: "ARA 2026", stage: "SS1", pass: 1, result: "finished", time_s: 400, resets: 1, car: "Hirochi Sunburst", cls: "stock" },
+  { ...base, event: "stage_started", rally: "ARA 2026", stage: "SS1", pass: 1 },
+  { ...base, event: "stage_finished", rally: "ARA 2026", stage: "SS1", pass: 1, result: "finished", time_s: 420, resets: 0, car: "Hirochi Sunburst", cls: "open" },
+  { ...base, event: "stage_finished", rally: "ARA 2026", stage: "SS2", pass: 1, result: "quit", car: "Ibishu Covet", cls: "bogus" },
+  { ...base, event: "error", code: "menu_action_drive", module: "main", message: "old text" },
+  { ...base, event: "error", code: "menu_action_drive", module: "main" },
+  { ...base, event: "error", code: "menu_action_drive", module: "main", message: "x".repeat(250) + "<b>" },
+] })
+assert.equal(r.status, 204)
+assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events").get().n, 9)
+assert.equal(db.prepare("SELECT car FROM events WHERE event = 'stage_finished' AND stage = 'SS2'").get().car, "Ibishu Covet")
+assert.equal(db.prepare("SELECT cls FROM events WHERE event = 'stage_finished' AND stage = 'SS2'").get().cls, null)
+assert.equal(db.prepare("SELECT MAX(length(message)) AS n FROM events").get().n, 200)
+assert.equal((await post("/v1/events", { events: new Array(51).fill({ ...base, event: "session_start" }) })).status, 400)
+assert.equal((await worker.fetch(new Request("http://x/v1/events", { method: "POST", body: "x".repeat(40000) }), env, ctx)).status, 400)
+
+// the dashboard: locked without the key
+assert.equal((await worker.fetch(new Request("http://x/api/summary"), env, ctx)).status, 401)
+r = await worker.fetch(new Request("http://x/api/summary?days=30", { headers: { authorization: "Bearer " + env.DASHBOARD_KEY } }), env, ctx)
+assert.equal(r.status, 200)
+const s = await r.json()
+assert.equal(s.totals.sessions, 1)
+assert.equal(s.totals.started, 2)
+assert.equal(s.totals.finished, 2)
+assert.equal(s.stages[0].runs, 2)
+assert.equal(s.stages[0].median_s, 410)
+assert.equal(s.errors[0].code, "menu_action_drive")
+assert.equal(s.errors[0].times, 3)
+assert.equal(s.errors[0].message, "x".repeat(200))            // the newest message, cut to 200 (the "<b>" cut off)
+assert.deepEqual(s.cars.top, [{ v: "Hirochi Sunburst", n: 2 }, { v: "Ibishu Covet", n: 1 }])
+assert.deepEqual(s.cars.cls.map(c => [c.v, c.n]).sort(), [["open", 1], ["stock", 1], [null, 1]].sort())
+assert.equal(s.downloads, undefined)          // (fetched by the owner's browser from GitHub)
+assert.equal(s.errors[0].first_ever, day)
+assert.equal(s.errors[0].first_code, day)
+assert.equal(s.totals.last_day, day)
+assert.equal(s.totals.sessions_ever, undefined)  // (a full scan nobody reads)
+
+// the dashboard page: served without the key (it asks for it), carries no data, https only off localhost
+r = await worker.fetch(new Request("http://localhost/dashboard"), env, ctx)
+assert.equal(r.status, 200)
+assert.match(r.headers.get("content-type"), /text\/html/)
+const csp = r.headers.get("content-security-policy")
+assert.match(csp, /frame-ancestors 'none'/)
+assert.match(csp, /script-src 'self';/)        // no inline script can run, so a player-made name can never be code
+const page = await r.text()
+assert.ok(!/<script>/.test(page) && page.includes('<script src="/dashboard.js"></script>'), "no inline script")
+assert.ok(!page.includes(env.DASHBOARD_KEY) && !page.includes("ARA 2026"), "no key, no data in the page")
+r = await worker.fetch(new Request("http://localhost/dashboard.js"), env, ctx)
+assert.match(r.headers.get("content-type"), /javascript/)
+const script = await r.text()
+assert.ok(script.includes("/api/summary") && script.includes("function esc("))
+assert.ok(script.includes("esc(e.message"), "message escaped like other player text")
+// the script parses (a stray backtick or dollar-brace in String.raw would break it)
+new Function(script)
+r = await worker.fetch(new Request("http://stats.example.workers.dev/dashboard"), env, ctx)
+assert.equal(r.status, 301)
+assert.equal(r.headers.get("location"), "https://stats.example.workers.dev/dashboard")
+r = await worker.fetch(new Request("http://localhost/dashboard", { method: "HEAD" }), env, ctx)
+assert.equal(r.status, 200)
+
+// first seen reads by the events_err index, not the whole table
+const plan = db.prepare("EXPLAIN QUERY PLAN SELECT code, module, mod, MIN(day) AS first FROM events WHERE event = 'error' GROUP BY code, module, mod").all()
+assert.ok(plan.some(p => /events_err/.test(p.detail)), JSON.stringify(plan))
+
+// no delete route any more (no install number to delete by)
+assert.equal((await post("/v1/delete", { session: id })).status, 404)
+
+// a message with two sessions (events waiting from an earlier game): both stored
+const id2 = "fedcba9876543210fedcba9876543210"
+assert.equal((await post("/v1/events", { events: [{ ...base, event: "session_start" }, { ...base, session: id2, event: "session_start" }] })).status, 204)
+assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events WHERE session = ?").get(id2).n, 1)
+
+// the per-session cap, counted over every day: a full session skipped, the other in the same message still stored
+const count = () => db.prepare("SELECT COUNT(*) AS n FROM events").get().n
+db.exec(`INSERT INTO events (day, event, session) SELECT '2026-01-01', 'session_start', '${id}' FROM (WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 1000) SELECT x FROM c)`)
+let n = count()
+assert.equal((await post("/v1/events", { events: [{ ...base, event: "session_start" }, { ...base, session: id2, event: "error", code: "y" }] })).status, 204)
+assert.equal(count(), n + 1)
+
+// prune: a year-old row archived
+db.exec("DELETE FROM events")
+db.exec(`INSERT INTO events (day, event, session) VALUES ('2020-01-05', 'session_start', '${id}')`)
+await worker.scheduled({}, env)
+assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events").get().n, 0)
+assert.equal(db.prepare("SELECT n FROM archive WHERE month = '2020-01'").get().n, 1)
+
+console.log("test_worker: all passed")

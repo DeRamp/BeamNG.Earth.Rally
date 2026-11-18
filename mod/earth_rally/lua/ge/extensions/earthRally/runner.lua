@@ -33,6 +33,7 @@ local events = require('earthRally/events')
 local menu = require('earthRally/menu')
 local settings = require('earthRally/settings')
 local hudFrame = require('earthRally/hudFrame')
+local stats = require('earthRally/stats')   -- anonymous stats, only with the player's yes (+stats)
 local dressing = require('earthRally/dressing')
 local junctions = require('earthRally/junctions')
 local online = require('earthRally/online')
@@ -186,6 +187,7 @@ function M.current() return run end
 local function fail(why)
   if not run then return end
   run.state, run.error = 'failed', why
+  pcall(stats.stageEnded, run, 'failed')
   say(why, 8, 'error', 'Earth Rally: run stopped')
 end
 
@@ -507,6 +509,7 @@ function M.start(event, stage, opts)
   -- says its name alone, never a made-up SS number), how many SS the rally has (the itinerary's counted passes, the
   -- map's stages with none) and the next stage (menu.nextStage: the itinerary's running order, else the map's)
   run.ssCount = menu.passCount(event) or #(event.stages or {})
+  run.rallyOrder = menu.runOrder(event)       -- (stats: a rally attempt follows the running order)
   run.ssLabel = (opts and opts.ssLabel) or menu.ssLabel(event, stage.id) or false
   for i, st in ipairs(event.stages or {}) do
     if st == stage or st.id == stage.id then run.ss = i break end
@@ -1704,6 +1707,7 @@ local function stepWaitStart(dt)
     -- marking it called froze the engine's step to the next note, which only moves on when it plays one itself.)
     run.clock = -left          -- (from the minute itself, not this frame)
     setState('running')
+    pcall(stats.stageStarted, run)     -- (a run, for the stats, from GO: driving to the start is not one)
   end
 end
 
@@ -1800,6 +1804,8 @@ local function stepRunning(dtSim)
       lineFinish = run.lineFinish,
       startAt = M.formatClock(run.startAt), date = os.date('!%Y-%m-%dT%H:%M:%SZ'), checks = checks }) end
     run.finalTime, run.best = time, best
+    pcall(M.noteCar)
+    pcall(stats.stageEnded, run, 'finished')
     run.sinceFinish = 0
     if run.online then
       local okO, errO = pcall(M.sendOnline, time)
@@ -1824,18 +1830,26 @@ local function stepRunning(dtSim)
   end
 end
 
--- The run to the online board (online.lua): its time, the car and which board (the game's own car as it comes and
--- the reset penalty on: stock; anything else: open), its last place at the flying finish.
-function M.sendOnline(time)
+-- The car at the finish: run.carName, and run.carClass 'stock' (one of the game's own presets, untouched) or 'open'
+-- (online.boardFor). The class is only about the car (the owner, 2026-11-18, #75): the reset penalty and a full
+-- rally's own recovery do not change it.
+function M.noteCar()
   local cv = rawget(_G, 'core_vehicles')
   local okD, d = false, nil
   if cv and cv.getCurrentVehicleDetails then okD, d = pcall(cv.getCurrentVehicleDetails) end
   d = okD and d or nil
+  local cls, why = online.boardFor(d)
+  run.carClass, run.carName = cls, online.carName(d)
+  log('I', logTag, 'car class ' .. tostring(cls) .. ' (' .. tostring(why) .. '): ' .. tostring(run.carName))
+end
+
+-- The run to the leaderboard (online.lua): its time, the car and which board (run.carClass), its last place at the
+-- flying finish.
+function M.sendOnline(time)
+  if not run.carClass then M.noteCar() end
   local pose = earth.pose()
-  -- (free resets -- the reset penalty off, or a rally's own recovery -- are not the Stock board's rules: Open)
-  local board = (run.inRally or settings.get('resetPenalty') == false) and 'open' or online.boardFor(d)
   online.runFinish(run.online, { timeS = time, penaltyS = run.penalty or 0, driveS = run.clock,
-    car = online.carName(d), board = board, lat = pose and pose.lat, lon = pose and pose.lon })
+    car = run.carName, board = run.carClass, lat = pose and pose.lat, lon = pose and pose.lon })
   run.online = nil
 end
 
@@ -2260,6 +2274,7 @@ function M.abort(quiet)
   if not run then return end
   tidy()
   if not quiet and run.state ~= 'finished' then say('Run stopped.', 4, 'info') end
+  pcall(stats.stageEnded, run, 'quit')
   run = nil
 end
 

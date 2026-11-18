@@ -112,6 +112,20 @@ def main():
         check(not r["ok"] and r["error"] == "bad stage length" and r["status"] == 400, "the server's error passed on")
         check(not b.handle({"op": "nope"})["ok"], "an unknown op answered")
         check(not c.Board("", tmp, opener=f).handle({"op": "board"})["ok"], "no server set: said so")
+
+        # stats (#76): to the stats server, never with the player's id; refused or not set: said so
+        sb = c.Board("https://board", tmp, opener=f, stats_server="https://stats")
+        sb.player = {"id": "p9", "secret": "s", "name": "Ann", "server": "https://board"}
+        f.calls.clear()
+        r = sb.handle({"op": "stats", "events": [{"event": "session_start"}]})
+        check(r["ok"] and f.calls[-1][0] == "/v1/events" and f.calls[-1][2] is None, "stats sent with no player id")
+        check(sb.handle({"op": "hello"})["stats"] is True, "hello says stats can go")
+        f.answers["/v1/events"] = (400, {"error": "bad"})
+        r = sb.handle({"op": "stats", "events": [{"event": "x"}]})
+        check(not r["ok"] and r["status"] == 400, "a refused batch: its status passed on")
+        check(not sb.handle({"op": "stats", "events": []})["ok"], "no events: refused")
+        r = c.Board("https://board", tmp, opener=f).handle({"op": "stats", "events": [{"event": "x"}]})
+        check(not r["ok"] and r.get("offline"), "no stats server: kept for later")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     print("test_online_companion: %s" % ("FAILED: " + ", ".join(fails) if fails else "all passed"))

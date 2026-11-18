@@ -1,4 +1,6 @@
-# The online board (prototype)
+# Leaderboards (prototype)
+
+Players see it as **Leaderboards** (#72); the code and add-on file keep the name `online`.
 
 A public leaderboard of players' own stage times, beside the **offline** board (a rally pack's real results, which
 never leave the player's computer). Design and research: [research-online-leaderboards.md](research-online-leaderboards.md).
@@ -20,10 +22,15 @@ The game's Lua can only reach this computer, so the companion makes the internet
 | Mod | `earthRally/online.lua`, hooks in `runner.lua` and `main.lua` | Off until **Settings > Online leaderboard** is on. A token at the run's start (before the drive to the start), then from GO the car's position every 0.5 s, its resets and recoveries, and any time the game's clock ran slow. The run is sent at the flying finish. |
 | UI | `EarthRallyOnline.vue`, the Offline / Online switch on the stage page | Shown only with the setting on. Add-on not running / no board address / pick a name / no line / the board, with Stock and Open tabs. |
 
-**Stock or Open:** a run goes on the Stock board when the car's model and its configuration are both the game's own
-(`Source = 'BeamNG - Official'`) and the reset penalty is on. Anything else goes on Open, including a tune saved in the
-garage, free resets and passes of a full rally (its recovery is free). The label names have not been checked on 0.40.5. Parts changed in the parts selector but not
-saved probably still read as official.
+**Stock or Open (#75, the owner, 2026-11-18):** the class is only about the car. Stock: one of the game's own
+presets, untouched (a `.pc` configuration, labelled `BeamNG - Official`, or with no such label loaded from the
+game's own files). Open: any other car, including a tune saved in the garage, parts changed and not saved, and mod
+cars. The reset penalty and full rallies do not change the class. The game log says why each run got its class.
+The leaderboard opens on the class of the car you are driving (#74).
+
+**Stats (#76):** a separate yes or no, asked when Leaderboards are turned on. With yes, `stats.lua` sends anonymous
+events and Earth Rally's errors (cleaned) through the companion's `stats` op to the stats server (`server/`), never
+with the player's id. See PRIVACY.md.
 
 **One stage:** players' lines count as the same stage when their start and finish are each within 30 m and their
 lengths within 1.5 %. The offline board's own rule is 25 m and 1 %. The first player to drive a stage names it.
@@ -53,7 +60,7 @@ Every time is marked unverified.
 1. Start the local server: `node online/worker/dev/server.mjs --port 8787 --db board.sqlite --admin mysecret`.
    This needs Node 22+.
 2. Start the companion: `python online/companion/earth_rally_online.py --server http://127.0.0.1:8787`.
-3. Install the mod. Then in game, turn on **Settings > Online leaderboard**, open a stage, pick **Online** and choose
+3. Install the mod. Then in game, turn on **Settings > Leaderboards**, open a stage, pick **Leaderboard** and choose
    a name.
 
 ## Putting it on Cloudflare (free plan)
@@ -71,8 +78,9 @@ The free plan refuses requests past its daily limits instead of billing.
 
 ## The companion in BeamNG.Earth
 
-On BeamNG.Earth's **Add-ons** page, add `earth_rally_online.py` as a local file. It becomes a program beside the game
-(kind `companion`). Start it, or tick **Start with BeamNG.Earth**. Its log is `run.log` beside it. For a registry
+BeamNG.Earth's **Add-ons** page only adds add-ons from GitHub. For a local copy, add an entry to
+`%LOCALAPPDATA%\beamng-earth\addons\local.json` (kind `companion`, a `local` file path to `earth_rally_online.py`,
+`run: { "port": 47820 }`) and restart BeamNG.Earth: it then shows on the Add-ons page as a program beside the game. Start it, or tick **Start with BeamNG.Earth**. Its log is `run.log` beside it. For a registry
 entry later: `kind: "companion"`, `run: { "port": 47820 }`.
 
 Not tried in game yet. To check:

@@ -4,7 +4,7 @@
        Said in one card, whatever the state: off, no add-on running, no name yet, no line, or the board. -->
   <div class="er-card er-lb er-on">
     <div class="er-top">
-      <h3>Online</h3>
+      <h3>Leaderboard</h3>
       <div v-if="ready" class="er-tabs">
         <span v-for="b in BOARDS" :key="b.id" tabindex="0" bng-nav-item :class="{ on: board === b.id }"
           @click="pick(b.id)" @keydown.enter="pick(b.id)">{{ b.label }}</span>
@@ -14,7 +14,7 @@
     <div v-if="!o" class="er-empty"><b>Loading…</b></div>
 
     <div v-else-if="!o.status.on" class="er-empty">
-      <b>The online board is off</b>
+      <b>Leaderboards are off</b>
       Compare your times with everyone running Earth Rally. Sent when on: your board name, the stage, the car, the time
       and where the car went.
       <div class="er-row"><BngButton :accent="ACCENTS.main" @click="setSetting('onlineBoard', true)">Turn on</BngButton></div>
@@ -22,17 +22,17 @@
 
     <div v-else-if="o.status.connected && !o.status.server" class="er-empty">
       <b>The add-on has no board address</b>
-      Earth Rally Online is running but does not know where the board is (its --server option).
+      Earth Rally Leaderboards is running but does not know where the leaderboard is (its --server option).
     </div>
 
     <div v-else-if="!o.status.connected" class="er-empty">
-      <b>Can't reach the online board</b>
-      Start <i>Earth Rally Online</i> on BeamNG.Earth's Add-ons page.
+      <b>Can't reach the leaderboard</b>
+      Start <i>Earth Rally Leaderboards</i> on BeamNG.Earth's Add-ons page.
       <div v-if="o.status.error" class="er-why">{{ o.status.error }}</div>
     </div>
 
     <div v-else-if="!o.status.player || renaming" class="er-name">
-      <b>{{ o.status.player ? "A new name" : "Pick a name for the online board" }}</b>
+      <b>{{ o.status.player ? "A new name" : "Pick a name for the leaderboard" }}</b>
       <span class="er-muted">2 to 24 letters or numbers. Everyone sees it.</span>
       <div class="er-row">
         <input v-model="nameText" class="er-input" type="text" maxlength="24" placeholder="Your name"
@@ -88,7 +88,7 @@ const BOARDS = [{ id: "stock", label: "Stock" }, { id: "open", label: "Open" }]
 const POLL_MS = 2000
 
 const o = ref(null)
-const board = ref("stock")
+const board = ref(null)       // (none picked yet: main.lua answers with the class of the car being driven, #74)
 const nameText = ref("")
 const naming = ref(false)
 const renaming = ref(false)
@@ -121,6 +121,7 @@ function refresh(force) {
   loadOnline(props.eventId, props.stageId, board.value, force, r => {
     if (!r) return
     o.value = r
+    if (!board.value && r.boardName) board.value = r.boardName
     if (naming.value && r.naming && !r.naming.asking) {
       naming.value = false
       // (the box goes once the name is saved: the game's keys back now, not on a blur that may never come)
@@ -128,7 +129,7 @@ function refresh(force) {
     }
   })
 }
-function pick(id) { board.value = id; refresh(false) }
+function pick(id) { board.value = id; refresh(true) }
 function saveName() {
   const n = nameText.value.trim()
   if (n.length < 2 || naming.value) return

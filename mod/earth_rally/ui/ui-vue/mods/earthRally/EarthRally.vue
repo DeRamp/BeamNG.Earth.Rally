@@ -348,12 +348,17 @@
       <!-- ===== Settings ===== -->
       <section v-else-if="view === 'settings'" class="er-settings-page">
         <div class="er-card"><EarthRallySettings /></div>
-        <p class="er-dim er-small">Earth Rally {{ st.version }}</p>
+        <div>
+          <div class="er-card"><EarthRallyPrivacy /></div>
+          <p class="er-dim er-small">Earth Rally {{ st.version }}</p>
+        </div>
       </section>
 
       <div v-else class="er-muted">Loading...</div>
     </div>
 
+    <!-- the stats question (#76): once, when the leaderboard is turned on; its own yes or no -->
+    <EarthRallyConsent v-if="onlineOn && st.stats && st.stats.consent === 'ask'" />
     <EarthRallyPrompts :top="view === 'home'" :results="view === 'pick' && !!(pickView && pickView.hasResults)" />
     </template>
   </div>
@@ -365,6 +370,8 @@ import { BngButton, ACCENTS } from "@/common/components/base"
 import { vBngOnUiNav, vBngUiNavScroll, vBngUiNavFocus } from "@/common/directives"
 import { useUINavScope } from "@/services/uiNav"
 import EarthRallySettings from "./EarthRallySettings.vue"
+import EarthRallyPrivacy from "./EarthRallyPrivacy.vue"
+import EarthRallyConsent from "./EarthRallyConsent.vue"
 import EarthRallyHome from "./EarthRallyHome.vue"
 import EarthRallyHomeMenu from "./EarthRallyHomeMenu.vue"
 import EarthRallyPick from "./EarthRallyPick.vue"
@@ -392,7 +399,7 @@ const ssn = computed(() => (season.value && !season.value.missing && season.valu
 const rly = computed(() => (rally.value && !rally.value.missing && rally.value.id === sel.value.eventId) ? rally.value : null)
 // (the rally as well as the stage: a stage's id is its line's name, and two rallies can both have a "Wildcat")
 // the stage page's leaderboard: the rally pack's real results (offline) or players' times (online)
-const LB_TABS = [{ id: "offline", label: "Offline" }, { id: "online", label: "Online" }]
+const LB_TABS = [{ id: "offline", label: "Rally results" }, { id: "online", label: "Leaderboard" }]
 const lbTab = ref("offline")
 const onlineOn = computed(() => !!(state.value.settings && state.value.settings.settings && state.value.settings.settings.onlineBoard))
 const stg = computed(() => (stage.value && !stage.value.missing && stage.value.id === sel.value.stageId &&

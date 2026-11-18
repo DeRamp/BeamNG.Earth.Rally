@@ -11,10 +11,21 @@ T.check(O.stageDesc('R', 'S', nil, { 1, 2 }, 100) == nil, 'no line: no descripti
 T.check(O.descKey(d, 'stock') ~= O.descKey(d, 'open'), 'a key per board')
 
 local official = { model = { Source = 'BeamNG - Official', Brand = 'Ibishu', Name = 'Covet' },
-  configs = { Source = 'BeamNG - Official', Name = 'Covet Rally' } }
+  configs = { Source = 'BeamNG - Official', Name = 'Covet Rally' }, current = { pc_file = 'vehicles/covet/rally.pc' } }
 T.check(O.boardFor(official) == 'stock', "the game's own car as it comes: stock")
-T.check(O.boardFor({ model = official.model, configs = { Source = 'Custom' } }) == 'open', 'a saved tune: open')
-T.check(O.boardFor({ model = { Source = 'Mod' }, configs = { Source = 'Mod' } }) == 'open', 'a mod car: open')
+T.check(O.boardFor({ model = official.model, configs = { Source = 'Custom' }, current = official.current }) == 'open', 'a saved tune: open')
+T.check(O.boardFor({ model = { Source = 'Mod' }, configs = { Source = 'Mod' }, current = official.current }) == 'open', 'a mod car: open')
+T.check(O.boardFor({ model = official.model, configs = official.configs, current = { pc_file = '{"parts":{}}' } }) == 'open',
+  'parts changed and not saved: open')
+-- (#75) labels that do not say official, but the preset loaded from the game's own files: stock
+local game = [[C:\Program Files (x86)\Steam\steamapps\common\BeamNG.drive\]]
+local fromGame = function() return 'c:/program files (x86)/steam/steamapps/common/beamng.drive/content/vehicles/covet.zip' end
+local fromUser = function() return 'C:/Users/x/AppData/Local/BeamNG/current/vehicles/covet/rally.pc' end
+local odd = { model = { Source = 'Custom' }, configs = { Source = 'Custom' }, current = official.current }
+T.check(O.boardFor(odd, fromGame, game) == 'open', 'labelled Custom: open')
+local unlabelled = { model = {}, configs = {}, current = official.current }
+T.check(O.boardFor(unlabelled, fromGame, game) == 'stock', "no labels, from the game's files: stock")
+T.check(O.boardFor(unlabelled, fromUser, game) == 'open', "no labels, from the user folder: open")
 T.check(O.boardFor(nil) == 'open', 'no details: open')
 T.check(O.carName(official) == 'Ibishu Covet Rally', 'the car named as rallyRun names it')
 

@@ -1,20 +1,25 @@
-"""Earth Rally online board: the companion beside the game (docs/research-online-leaderboards.md, section 1).
+"""Earth Rally Leaderboards: the companion beside the game (docs/research-online-leaderboards.md, section 1).
 
 BeamNG's Lua cannot reach the internet (its sockets only reach this computer and the LAN, and it has no HTTPS), so the
 mod talks to this program on 127.0.0.1 and this program talks to the board's server over HTTPS. One file, Python's
 standard library only, so BeamNG.Earth's add-ons page can run it with its own Python (add-on kind "companion").
 
-    python earth_rally_online.py [--port 47820] [--server https://earth-rally-board.example.workers.dev] [--data DIR]
+    python earth_rally_online.py [--port 47820] [--server URL] [--stats-server URL] [--data DIR]
 
 The mod's side is earthRally/online.lua. Each line it sends is one JSON request, {"id": n, "op": ..., ...}, and each
 line back is the answer, {"id": n, "ok": true | false, ...}, in whatever order they finish. Ops:
 
-    hello                               -> {version, server, player: {name} | null, queued}
+    hello                               -> {version, server, stats, player: {name} | null, queued}
     register {name}                     -> {player: {name}}         (a new player, or a new name for this one)
     start {stage}                       -> {token, stageId}
     submit {run}                        -> the server's answer; {queued: true} when the server cannot be reached
     board {stage, board, top, n}        -> the server's answer
     report {runId, why}                 -> {}
+    stats {events}                      -> {} once the stats server took them; {status} when it refused them
+
+Stats (#76) are the player's separate opt-in, decided in the game (earthRally/stats.lua, which keeps the queue and a
+word-for-word copy of what it sent). They go to their own server (--stats-server), with no player id or secret:
+the leaderboard's identity never travels with them.
 
 The player's id and secret are kept in DATA/player.json, and runs that could not be sent in DATA/queue.json (sent again
 every RETRY_S while this runs). DATA is ~/.earth_rally_online by default: not beside this file, which BeamNG.Earth
@@ -32,10 +37,13 @@ import time
 import urllib.error
 import urllib.request
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 DEFAULT_PORT = 47820
 # The board's address once it is deployed (online/worker); --server or EARTH_RALLY_BOARD overrides it.
 DEFAULT_SERVER = os.environ.get("EARTH_RALLY_BOARD", "https://earth-rally-board.station68.workers.dev")
+# The stats server (server/ in the repo); --stats-server or EARTH_RALLY_STATS overrides it, "" turns stats off here.
+DEFAULT_STATS = os.environ.get("EARTH_RALLY_STATS", "https://earth-rally-stats.station68.workers.dev")
+STATS_MAX = 50
 HTTP_TIMEOUT_S = 15
 RETRY_S = 60
 LINE_MAX = 4 << 20
@@ -47,8 +55,9 @@ log = logging.getLogger("earth_rally_online")
 class Board:
     """The server, the player's identity and the queue of runs not sent yet."""
 
-    def __init__(self, server, data_dir, opener=None, legacy_dir=None):
+    def __init__(self, server, data_dir, opener=None, legacy_dir=None, stats_server=""):
         self.server = server.rstrip("/")
+        self.stats_server = (stats_server or "").rstrip("/")
         self.data = data_dir
         self.lock = threading.RLock()
         self.open = opener or urllib.request.urlopen
@@ -88,15 +97,16 @@ class Board:
         os.replace(tmp, self._path(name))
 
     # ---- HTTP
-    def call(self, method, path, body=None, auth=True):
-        """(status, answer): status 0 when the server could not be reached."""
-        if not self.server:
+    def call(self, method, path, body=None, auth=True, base=None):
+        """(status, answer): status 0 when the server could not be reached. base: another server (stats)."""
+        base = self.server if base is None else base
+        if not base:
             return 0, {"error": "no board server is set (--server)"}
         headers = {"content-type": "application/json", "user-agent": "earth-rally-online/" + VERSION}
         if auth and self.player:
             headers["authorization"] = "Bearer %s:%s" % (self.player["id"], self.player["secret"])
         data = None if body is None else json.dumps(body).encode("utf-8")
-        req = urllib.request.Request(self.server + path, data=data, method=method, headers=headers)
+        req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
         try:
             with self.open(req, timeout=HTTP_TIMEOUT_S) as r:
                 return r.status, json.loads(r.read().decode("utf-8") or "{}")
@@ -107,11 +117,11 @@ class Board:
                 answer = {}
             return e.code, {"error": answer.get("error") or "server answered %d" % e.code}
         except (urllib.error.URLError, OSError, ValueError) as e:
-            return 0, {"error": "the board cannot be reached (%s)" % getattr(e, "reason", e)}
+            return 0, {"error": "the server cannot be reached (%s)" % getattr(e, "reason", e)}
 
     # ---- ops
     def hello(self, _req):
-        return {"ok": True, "version": VERSION, "server": self.server or None,
+        return {"ok": True, "version": VERSION, "server": self.server or None, "stats": bool(self.stats_server),
                 "player": {"name": self.player["name"]} if self.player else None, "queued": len(self.queue)}
 
     def register(self, req):
@@ -147,7 +157,7 @@ class Board:
         return False
 
     def _need_player(self):
-        return None if self.player else {"ok": False, "error": "pick a name for the online board first", "noPlayer": True}
+        return None if self.player else {"ok": False, "error": "pick a name for the leaderboard first", "noPlayer": True}
 
     def start(self, req):
         miss = self._need_player()
@@ -179,6 +189,18 @@ class Board:
     def report(self, req):
         return self._need_player() or self._answer(
             *self.call("POST", "/v1/reports", {"runId": req.get("runId"), "why": req.get("why")}))
+
+    def stats(self, req):
+        """The player's stats, as the game sends them: passed on to the stats server, never with the player's id."""
+        events = req.get("events")
+        if not isinstance(events, list) or not events or len(events) > STATS_MAX:
+            return {"ok": False, "error": "no events, or too many", "status": 400}
+        if not self.stats_server:
+            return {"ok": False, "error": "this companion has no stats server", "offline": True}
+        st, a = self.call("POST", "/v1/events", {"events": events}, auth=False, base=self.stats_server)
+        if 200 <= st < 300:
+            return {"ok": True}
+        return {"ok": False, "error": a.get("error"), "status": st or None, "offline": st == 0}
 
     @staticmethod
     def _answer(st, a):
@@ -219,7 +241,7 @@ class Board:
 
     MAX_TRIES = 10
 
-    OPS = ("hello", "register", "start", "submit", "board", "report")
+    OPS = ("hello", "register", "start", "submit", "board", "report", "stats")
 
     def handle(self, req):
         op = req.get("op") if isinstance(req, dict) else None
@@ -285,15 +307,17 @@ def serve(board, port):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Earth Rally's online board, beside the game")
+    ap = argparse.ArgumentParser(description="Earth Rally Leaderboards, beside the game")
     ap.add_argument("--port", type=int, default=DEFAULT_PORT)
     ap.add_argument("--server", default=DEFAULT_SERVER)
+    ap.add_argument("--stats-server", default=DEFAULT_STATS)
     ap.add_argument("--data", default=os.path.join(os.path.expanduser("~"), ".earth_rally_online"))
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    board = Board(a.server, a.data, legacy_dir=os.path.dirname(os.path.abspath(__file__)))
+    board = Board(a.server, a.data, legacy_dir=os.path.dirname(os.path.abspath(__file__)), stats_server=a.stats_server)
     srv = serve(board, a.port)
-    log.info("Earth Rally online %s on 127.0.0.1:%d, board %s, player %s", VERSION, a.port, board.server or "(none)",
+    log.info("Earth Rally Leaderboards %s on 127.0.0.1:%d, board %s, stats %s, player %s", VERSION, a.port,
+             board.server or "(none)", board.stats_server or "(none)",
              board.player["name"] if board.player else "(none yet)")
     try:
         srv.serve_forever()

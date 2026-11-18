@@ -17,7 +17,7 @@ M.HOST, M.PORT = '127.0.0.1', 47820
 M.RECONNECT_S = 5
 M.CONNECT_TIMEOUT_S = 2
 M.REQUEST_TIMEOUT_S = 20
-M.BOARD_FRESH_S = 30          -- a board is asked for again after this long
+M.BOARD_FRESH_S = 10          -- a board is asked for again after this long (and on every new look: #73)
 M.HELLO_EVERY_S = 10          -- the companion's state (its queue) asked for again this often
 M.TRACE_STEP_S = 0.5          -- a trace point every this much stage time
 M.TRACE_MAX = 19000           -- (the server takes 20000)
@@ -64,17 +64,48 @@ function M.stageKey(desc)
 end
 function M.descKey(desc, board) return M.stageKey(desc) .. ',' .. tostring(board) end
 
--- 'stock' when the car is one of the game's own as it comes (its model and its configuration both the game's
--- official ones), else 'open'. details: core_vehicles.getCurrentVehicleDetails(). A car tuned in the garage and
--- saved is a custom configuration, so it is open. (The game's labels: Source = 'BeamNG - Official' | 'Custom' |
--- 'Mod'; unconfirmed on 0.40.5 until checked in game.)
+-- The car's class (the owner, 2026-11-18, #75): 'stock' when it is one of the game's own presets, untouched; 'open'
+-- for any other car. Returns the class and why, for the log. details: core_vehicles.getCurrentVehicleDetails().
+--   A preset: the car's configuration is a .pc file (parts changed in the garage and not saved make it a table, not a
+--   file: open). The game's own: the game labels the model and the configuration 'BeamNG - Official' (else 'Custom'
+--   for the player's saved configurations, or a mod's name). The labels come from where each file was loaded, by
+--   comparing paths as they are written; when they do not say official, the configuration file's own place is
+--   checked again here with the paths' case and slashes evened out (originOf(path) -> the file's mount or archive
+--   path; FS:getFileOriginInfo in the game), so a preset loaded from the game's own content is stock either way.
 M.OFFICIAL = 'BeamNG - Official'
-function M.boardFor(details)
-  if type(details) ~= 'table' then return 'open' end
+local function normPath(p) return (tostring(p or ''):gsub('\\', '/'):gsub('/+', '/'):lower()) end
+function M.gameOrigin(path, originOf, gamePath)
+  local fs = rawget(_G, 'FS')
+  originOf = originOf or (fs and function(q)
+    local ok, o = pcall(fs.getFileOriginInfo, fs, q)
+    return ok and type(o) == 'table' and (o.mountPath or o.archivePath) or nil
+  end)
+  if not gamePath and fs and fs.getGamePath then
+    local ok, g = pcall(fs.getGamePath, fs)
+    gamePath = ok and g or nil
+  end
+  if not (originOf and gamePath and gamePath ~= '') then return false end
+  local o = originOf(path)
+  if not o then return false end
+  local g = normPath(gamePath)
+  if g:sub(-1) ~= '/' then g = g .. '/' end
+  return normPath(o):sub(1, #g) == g
+end
+function M.boardFor(details, originOf, gamePath)
+  if type(details) ~= 'table' then return 'open', 'no car' end
   local model = type(details.model) == 'table' and details.model or {}
   local cfg = type(details.configs) == 'table' and details.configs or {}
-  if model.Source == M.OFFICIAL and cfg.Source == M.OFFICIAL then return 'stock' end
-  return 'open'
+  local cur = type(details.current) == 'table' and details.current or {}
+  local pc = cur.pc_file
+  if type(pc) ~= 'string' or not pc:lower():match('%.pc$') then return 'open', 'not a saved preset' end
+  local labels = 'model ' .. tostring(model.Source) .. ', config ' .. tostring(cfg.Source) .. ', ' .. pc
+  if model.Source == M.OFFICIAL and cfg.Source == M.OFFICIAL then return 'stock', labels end
+  -- (a configuration from a mod or the player's own is never the game's: only a missing or official model label,
+  -- and a config labelled official or not at all, are checked by the file's place)
+  local okModel = model.Source == nil or model.Source == M.OFFICIAL
+  local okCfg = cfg.Source == nil or cfg.Source == M.OFFICIAL or cfg.Source == model.Source
+  if okModel and okCfg and M.gameOrigin(pc, originOf, gamePath) then return 'stock', labels .. " (from the game's files)" end
+  return 'open', labels
 end
 
 -- The car's name for a board row (as rallyRun.car names it).
@@ -260,19 +291,30 @@ function M.board(desc, board, force)
   local key = M.descKey(desc, board)
   local b = boards[key]
   if not b then b = {} boards[key] = b end
+  -- (asked while an answer is on its way: asked again once it is here, so a new look never shows an older list)
+  if force and b.asking then b.again = true end
   if not b.asking and (force or not b.at or clock - b.at > M.BOARD_FRESH_S) and state == 'connected' and hello then
-    b.asking = true
+    b.asking, b.again = true, false
     M.request('board', { stage = desc, board = board, top = 10, n = 2 }, function(r)
       b.asking, b.at = false, clock
       if r.ok then b.data, b.error = r, nil else b.error = r.error end
+      if b.again then b.at = nil end
     end)
   end
   return { data = b.data, error = b.error or ((not b.data and not b.asking) and M.status().error) or nil,
     asking = b.asking or nil }
 end
 
--- (the boards asked for again on the next look: a run was sent)
-function M.forgetBoards() boards = {} end
+-- (the boards asked for again on the next look: a run was sent, or the menu opened. What was shown stays until the
+-- new answer is in, so the list does not blink out)
+function M.forgetBoards() for _, b in pairs(boards) do b.at = nil end end
+
+-- Stats (#76): the player's events, to the companion, which passes them to the stats server. false when the
+-- companion is not connected (nothing asked); else cb(answer) once.
+function M.sendStats(events, cb)
+  if state ~= 'connected' or not hello then return false end
+  return M.request('stats', { events = events }, cb)
+end
 
 ------------------------------------------------------------------------------------------ runs
 
