@@ -352,9 +352,10 @@ function M.prepInfo()
   end
   return out
 end
--- main.lua: every stage on the list tried. The rally goes on.
+-- main.lua: every stage on the list tried (or Stop pressed: 1.7.2). The rally goes on. Returns the stages held out
+-- (a count) and whether that left none to drive and ended the rally, for Stop's message.
 function M.prepDone()
-  if not (R and prep) then return end
+  if not (R and prep) then return 0, false end
   local thenDo = prep.thenDo
   prep = nil
   local held = holdOutBad()
@@ -368,9 +369,10 @@ function M.prepDone()
       finish()
       if M.ui.openCard then M.ui.openCard() end
     else M.quit() end
-    return
+    return #held, true
   end
   if thenDo then thenDo() end
+  return #held, false
 end
 
 -- Get the stages ready, then thenDo(). With nothing to recce, at once.

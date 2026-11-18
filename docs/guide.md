@@ -140,6 +140,9 @@ smallest file that works is one line per stage, drawn in the driving direction.
 
 The rally's **Import report** in the menu lists each stage with its length and controls, and anything to fix.
 
+To build a whole rally or season with an itinerary, results and pictures, see
+[Making stages and rally packs](making-rally-packs.md).
+
 ## Developers
 
 `python tests/run_tests.py` runs the offline suite, `python tools/install.py` installs the mod from this folder,

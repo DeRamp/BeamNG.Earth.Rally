@@ -14,7 +14,8 @@ carries a whole season.
 * **Season standings**, from each rally's finishing order (25, 20, 16, 13, 11 ... points).
 
 A pack is a folder, or a `.zip` of one, in the import folder, with a `season.json`, `rally.json` or `stage.json` at
-its top. Everything in it is optional. Format: [`docs/rally-file.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/rally-file.md).
+its top. Everything in it is optional. How to make one: [Making stages and rally packs](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/making-rally-packs.md).
+Full format: [`docs/rally-file.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/rally-file.md).
 
 ## Where you place
 
