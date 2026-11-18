@@ -27,7 +27,8 @@
 
     <div v-else-if="!o.status.connected" class="er-empty">
       <b>Can't reach the leaderboard</b>
-      Start <i>Earth Rally Leaderboards</i> on BeamNG.Earth's Add-ons page.
+      In BeamNG.Earth: <strong>Add-ons</strong> &gt; <strong>Add from GitHub</strong>, paste <i>DeRamp/earth-rally-leaderboards</i>,
+      <strong>Install</strong>, then <strong>Start</strong> (tick <strong>Start with BeamNG.Earth</strong>).
       <div v-if="o.status.error" class="er-why">{{ o.status.error }}</div>
     </div>
 

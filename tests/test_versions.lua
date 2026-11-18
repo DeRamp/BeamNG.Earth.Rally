@@ -188,6 +188,43 @@ do
   T.check(type(n[1]) == 'string' and type(n[2]) == 'string', 'notes(): plain strings for the page')
 end
 
+------------------------------------------------------------------------------------------ two copies of the mod
+
+-- (1.8.0) An old release zip dragged into mods/ and the Add-ons page's beamng-earth-rally.zip both load.
+T.check(versions.isEarthRallyZip('earth_rally-1.7.3-alpha.zip') and versions.isEarthRallyZip('beamng-earth-rally.zip')
+  and versions.isEarthRallyZip('Earth_Rally-1.5.0-alpha (1).zip'), 'isEarthRallyZip: release, Add-ons and renamed zips')
+T.check(not versions.isEarthRallyZip('beamng-earth.zip') and not versions.isEarthRallyZip('earth_rally_notes.txt')
+  and not versions.isEarthRallyZip('rallyx.zip'), 'isEarthRallyZip: other mods are not')
+T.check(versions.copiesNote({ 'beamng-earth-rally.zip' }) == nil and versions.copiesNote({}) == nil
+  and versions.copiesNote(nil) == nil, 'copiesNote: one copy says nothing')
+T.check(versions.copiesNote({ 'beamng-earth-rally.zip', 'some_car.zip' }) == nil, 'copiesNote: other mods do not count')
+do
+  local n = versions.copiesNote({ 'beamng-earth-rally.zip', 'earth_rally-1.7.3-alpha.zip' })
+  T.check(n and n:find('earth_rally-1.7.3-alpha.zip', 1, true) and n:find('current\\mods\\', 1, true)
+    and select(2, n:gsub('beamng%-earth%-rally%.zip', '')) == 1,
+    'copiesNote: names the old zip to delete and where, keeps the Add-ons copy (' .. tostring(n) .. ')')
+  local m = versions.copiesNote({ 'earth_rally-1.7.2-alpha.zip', 'earth_rally-1.7.3-alpha.zip' })
+  T.check(m and m:find('2 times', 1, true) and m:find('keep one', 1, true), 'copiesNote: two old zips, keep one')
+  local base = { mod = '1.8.0-alpha', game = versions.GAME_BUILT .. '.0', modZips = { 'beamng-earth-rally.zip', 'earth_rally-1.7.3-alpha.zip' } }
+  T.check(find(versions.findings(base), 'twoCopies') ~= nil, 'findings: two copies is said on the page')
+  base.modZips = { 'beamng-earth-rally.zip' }
+  T.check(find(versions.findings(base), 'twoCopies') == nil, 'findings: one copy, nothing')
+end
+do
+  core_modmanager = { getMods = function() return {
+    ['beamng-earth-rally'] = { fullpath = '/mods/beamng-earth-rally.zip', active = true },
+    ['earth_rally-1.7.3-alpha'] = { fullpath = '/mods/repo/earth_rally-1.7.3-alpha.zip', active = true },
+    ['earth_rally-1.6.0-alpha'] = { fullpath = '/mods/earth_rally-1.6.0-alpha.zip', active = false },
+    ['some_car'] = { fullpath = '/mods/some_car.zip', active = true },
+    ['earth_rally_dev'] = { fullpath = '/mods/unpacked/earth_rally_dev/', active = true },
+  } end }
+  local z = versions.modZips()
+  T.check(#z == 2 and z[1] == 'beamng-earth-rally.zip' and z[2] == 'earth_rally-1.7.3-alpha.zip',
+    'modZips: the active Earth Rally zips from the mod manager (' .. table.concat(z, ',') .. ')')
+  core_modmanager = nil
+  T.check(#versions.modZips() == 0, 'modZips: no mod manager, nothing')
+end
+
 ------------------------------------------------------------------------------------------ env: what it asks, when
 
 -- The game caught this one within a second of starting, and it is worth a test of its own: looking at the game's

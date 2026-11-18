@@ -192,9 +192,19 @@ local function zipSource(path, name)
   }
 end
 
+-- (a pack's name for telling copies apart: 'ARA-Nationals-2026.zip' and 'ARA Nationals 2026' are one pack)
+local function packKey(name)
+  local k = (name:gsub('%.[zZ][iI][pP]$', '')):lower():gsub('[^%w]', '')
+  return k ~= '' and k or name
+end
+M._packKey = packKey
+
 -- Every pack in the import folder: { { name, kind = 'folder' | 'zip', path }... }. A sub-folder is looked at
 -- whatever is in it (one with no manifest is reported, once: someone put it there to be imported). Zips are
 -- found first, and a folder is only what FS:directoryExists says is one, so a .zip is never taken for a folder.
+-- The mod ships the ARA 2026 season as a folder in its zip (1.8.0); a player who also has that season's zip in
+-- their own import folder has one pack twice. Two packs of the same name (packKey) are one: the zip is kept (the
+-- player's own copy, which their times and ids are already under), the folder left out.
 function M.find(dir)
   dir = dir or importer.IMPORT_DIR
   local out, seen = {}, {}
@@ -215,7 +225,17 @@ function M.find(dir)
     end
   end
   table.sort(out, function(a, b) return a.name < b.name end)
-  return out
+  local keep = {}
+  for _, p in ipairs(out) do
+    local k = packKey(p.name)
+    if not keep[k] or (keep[k].kind == 'folder' and p.kind == 'zip') then keep[k] = p end
+  end
+  local one = {}
+  for _, p in ipairs(out) do
+    if keep[packKey(p.name)] == p then one[#one + 1] = p
+    else log('I', 'earthRally', 'import: ' .. p.name .. ' left out: the same pack as ' .. keep[packKey(p.name)].name) end
+  end
+  return one
 end
 
 ------------------------------------------------------------------------------------------ reading the manifest
