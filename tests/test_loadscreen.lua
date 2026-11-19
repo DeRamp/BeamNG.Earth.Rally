@@ -95,4 +95,17 @@ T.check(ls.ui().moving == nil, 'a moving check that throws: not moving')
 ls.cancel()
 ls.moving = function() return false end
 
+-- noWorld (a button pressed at the main menu: the BeamNG.Earth level loading): no world step, done with its steps
+-- even with the world round the car at nothing
+lp = 0
+local nwStep, nwEnd = 1, nil
+ls.begin({ title = 'Loading BeamNG.Earth', steps = { 'a', 'b' }, noWorld = true,
+  probe = function() return nwStep end, done = function(ok) nwEnd = ok end })
+local nwUi = ls.ui()
+T.check(nwUi.noWorld and #nwUi.steps == 2, 'noWorld: no world step on the page')
+nwStep = 3
+ls.update(0.1)
+T.check(nwEnd == true and not ls.active(), 'noWorld: done with its steps, the world not waited for')
+lp = nil
+
 T.done('test_loadscreen')

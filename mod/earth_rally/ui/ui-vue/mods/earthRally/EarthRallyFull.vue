@@ -20,7 +20,9 @@
           <h2>{{ s.name }}</h2>
           <div class="er-muted">{{ s.stages }} stages · {{ s.days }} {{ s.days === 1 ? "day" : "days" }} · {{ s.services }} {{ s.services === 1 ? "service" : "services" }}<template v-if="s.crews"> · real field: {{ s.crews }} National crews</template></div>
           <div class="er-lbl">Car</div>
-          <div class="er-box"><span>{{ s.car ? s.car.name : "Get in a car first" }}</span><span v-if="s.car && s.car.drivetrain" class="er-muted">{{ s.car.drivetrain }}</span></div>
+          <div class="er-box"><span>{{ s.car ? s.car.name : (s.canPick ? "Choose a car" : "Get in a car first") }}</span><span v-if="s.car && s.car.drivetrain" class="er-muted">{{ s.car.drivetrain }}{{ s.car.last ? " · your last car" : "" }}</span></div>
+          <!-- (at the main menu: the game's own vehicle picker, then back here) -->
+          <div v-if="s.canPick" class="er-box er-pickcar" tabindex="0" bng-nav-item @click="pickCar(props.id, 'start')" @keydown.enter="pickCar(props.id, 'start')"><span>Choose {{ s.car ? "another" : "a" }} car…</span><span class="er-muted">›</span></div>
           <div class="er-lbl">Class</div>
           <div class="er-seg er-wrap">
             <span v-for="c in arr(s.classes)" :key="c" tabindex="0" bng-nav-item :class="{ on: cls === c }" @click="cls = c" @keydown.enter="cls = c">{{ c }}</span>
@@ -58,7 +60,7 @@
         <div v-if="s.saved" class="er-warn">This replaces your saved rally (at {{ s.saved.at }}).</div>
         <div v-if="s.inProgress && s.inProgress !== s.id" class="er-warn">Another rally is under way: leave it from its time card first.</div>
         <BngButton ref="startBtn" v-bng-ui-nav-focus="1" class="er-huge" :accent="ACCENTS.main" :disabled="!s.car" @click="start">
-          <span class="er-hb">Start the rally<small v-if="!s.car">get in a car first</small><small v-else-if="s.start">first car away {{ s.start }}</small></span>
+          <span class="er-hb">Start the rally<small v-if="!s.car">{{ s.canPick ? "choose a car first" : "get in a car first" }}</small><small v-else-if="s.canPick">loads BeamNG.Earth with this car</small><small v-else-if="s.start">first car away {{ s.start }}</small></span>
         </BngButton>
       </div>
       </template>
@@ -67,7 +69,7 @@
     <!-- ===== time card ===== -->
     <template v-else>
       <div v-if="!c" class="er-muted">Loading...</div>
-      <div v-else-if="c.none" class="er-card er-pad">No rally is under way.</div>
+      <div v-else-if="c.none" class="er-card er-pad">No rally is under way.<div v-if="state.message" class="er-muted">{{ state.message }}</div></div>
       <!-- (#71) finished: the result, Full results, and the two ways on, New rally selected -->
       <template v-else-if="c.done">
         <div class="er-card er-fin">
@@ -205,7 +207,7 @@
 import { ref, computed, watch, nextTick } from "vue"
 import { BngButton, ACCENTS } from "@/common/components/base"
 import { vBngUiNavFocus } from "@/common/directives"
-import { action, mmss, rallyStart, rallyCard, rallyAction, busyMsg, closeMenu, focusButton, arr, len, time, longTime, ord } from "./store.js"
+import { pickCar, state, action, mmss, rallyStart, rallyCard, rallyAction, busyMsg, closeMenu, focusButton, arr, len, time, longTime, ord } from "./store.js"
 
 const props = defineProps({ kind: { type: String, default: "card" }, id: { type: String, default: null } })
 const emit = defineEmits(["view"])
@@ -356,6 +358,7 @@ h3 { margin: 0 0 10px; font-size: 20px; letter-spacing: 0.04em; }
 .er-muted { color: #b8bcc6; }
 .er-small { font-size: 15px; margin-top: 8px; line-height: 1.5; }
 .er-lbl { margin: 18px 0 6px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: #b8bcc6; }
+.er-pickcar { margin-top: 8px; cursor: pointer; }
 .er-box { display: flex; justify-content: space-between; padding: 10px 14px; border: 1px solid #555; border-radius: 0.25rem; background: rgba(255, 255, 255, 0.04); font-size: 18px; }
 .er-seg { display: flex; gap: 4px; background: rgba(0, 0, 0, 0.45); border-radius: 0.25rem; padding: 4px;
   span { flex: 1; text-align: center; padding: 8px 14px; border-radius: 3px; font-size: 18px; font-weight: 600; color: #b8bcc6; cursor: pointer; }

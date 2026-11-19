@@ -154,6 +154,15 @@ Add-ons page with the ARA 2026 season included. Design in docs/online-board.md a
 | ✔ | Opt-in stats and error reports through the same helper (#76) | built |
 | ✔ | Install and update both from BeamNG.Earth's Add-ons page; ARA 2026 in the mod (22) | built |
 
+## 1.9.1-alpha: play from the main menu
+
+The owner asked for it, 2026-11-18. Released 2026-11-19.
+
+| | Item | Size |
+|---|---|---|
+| ✔ | An Earth Rally tile on the game's Play > Rally page that opens the menu with no level loaded | built |
+| ✔ | BeamNG.Earth loads only when a stage is driven or a rally started, then the button runs | built |
+
 ## 1.9.0: make and share stages
 
 Players build their own stages and pass them around.
