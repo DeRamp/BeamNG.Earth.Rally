@@ -117,7 +117,12 @@
           </div>
         </div>
         <div v-if="curTab === 'results' && rly.rallyFinished" class="er-card er-yourfull">
-          <b>Your full rally</b> · {{ longTime(rly.rallyFinished.totalS) }}<template v-if="rly.rallyFinished.pos"> · P{{ rly.rallyFinished.pos }} of {{ rly.rallyFinished.of }} National · {{ rly.rallyFinished.class }} {{ ord(rly.rallyFinished.classPos) }} of {{ rly.rallyFinished.classOf }}</template><template v-if="rly.rallyFinished.unclassified"> · not classified</template> · {{ rly.rallyFinished.mode === "realistic" ? "Realistic" : "Casual" }}<template v-if="rly.rallyFinished.car"> · {{ rly.rallyFinished.car }}</template>
+          <b>Your full rally</b> · {{ longTime(rly.rallyFinished.totalS) }}<template v-if="rly.rallyFinished.roadPenaltyS != null"> · <template v-if="rly.rallyFinished.roadPenaltyS > 0">incl. road penalties <span class="er-rp">{{ roadText(rly.rallyFinished.roadPenaltyS) }}</span></template><span v-else class="er-rp0">no road penalties</span></template><template v-if="rly.rallyFinished.pos"> · P{{ rly.rallyFinished.pos }} of {{ rly.rallyFinished.of }} National · {{ rly.rallyFinished.class }} {{ ord(rly.rallyFinished.classPos) }} of {{ rly.rallyFinished.classOf }}</template><template v-if="rly.rallyFinished.unclassified"> · not classified</template> · {{ rly.rallyFinished.mode === "realistic" ? "Realistic" : "Casual" }}<template v-if="rly.rallyFinished.car"> · {{ rly.rallyFinished.car }}</template>
+          <!-- (additions A) a timed rally: each stage's time with the road penalty getting to it, and a stop only where
+               it cost something. Untimed, or finished before this: no passes from the Lua, no chips -->
+          <div v-if="fullChips.length" class="er-chips">
+            <span v-for="(c, i) in fullChips" :key="i" class="er-chip" :class="{ stop: c.stop, sr: c.sr }">{{ c.label }}<span v-if="c.timeS != null" class="er-mono">{{ time(c.timeS) }}</span><i v-if="c.penS > 0">{{ roadText(c.penS) }}</i></span>
+          </div>
         </div>
         <EarthRallyResults v-if="curTab === 'results'" :r="rly.results" />
         <div v-else-if="curTab === 'rules'" class="er-card er-rules">
@@ -327,11 +332,23 @@
         <div class="er-card er-runs">
           <h3>Your runs</h3>
           <div v-if="stg.best" class="er-best-box"><span class="er-t">{{ time(stg.best) }}</span><span class="er-badge">BEST</span></div>
-          <div v-for="(r, i) in runsShown" :key="i" class="er-run">
-            <span>{{ when(r.date) }} <span v-if="r.last" class="er-dim">· last</span></span>
-            <span class="er-mono">{{ time(r.timeS) }}</span>
-            <span :class="r.penaltyS > 0 ? 'er-pen' : 'er-clean'">{{ r.text }}</span>
+          <!-- (additions A) the splits the HUD compares with: one run's, on the line the stage runs on now -->
+          <div v-if="stg.bestSplits" class="er-bsplits">
+            <div class="er-bsh"><span>Best splits</span><span>{{ stg.bestSplits.rally ? "a full-rally pass" : "your run" }}{{ dayOf(stg.bestSplits.date) ? (stg.bestSplits.rally ? ", " : " of ") + dayOf(stg.bestSplits.date) : "" }}</span></div>
+            <div class="er-sg4">
+              <div v-for="(t, k) in bestSplitTimes" :key="k"><small>{{ SPLIT_LABELS[k] }}</small>{{ time(t) }}</div>
+            </div>
           </div>
+          <template v-for="(r, i) in runsShown" :key="i">
+            <div class="er-run">
+              <span>{{ when(r.date) }} <span v-if="r.last" class="er-dim">· last</span></span>
+              <span class="er-mono">{{ time(r.timeS) }}</span>
+              <span :class="r.penaltyS > 0 ? 'er-pen' : 'er-clean'">{{ r.text }}</span>
+            </div>
+            <div v-if="arr(r.splits).length === 4" class="er-sg4 er-rsp">
+              <div v-for="(x, k) in arr(r.splits)" :key="k">{{ time(x.timeS) }}<span v-if="r.bestSplits && k === 0" class="er-z">best</span><span v-else-if="x.gapS != null" :class="x.gapS < 0 ? 'er-a' : x.gapS > 0 ? 'er-b' : 'er-z'">{{ splitGap(x.gapS) }}</span></div>
+            </div>
+          </template>
           <div v-if="!arr(stg.runs).length" class="er-muted">No runs yet.</div>
           <div class="er-muted er-small">Times include penalties.</div>
         </div>
@@ -614,6 +631,43 @@ const ptsHelp = computed(() => {
 const runsShown = computed(() => {
   const runs = arr(stg.value && stg.value.runs)
   return stg.value && stg.value.board ? runs.slice(0, 2) : runs
+})
+
+// (additions A) Best splits: 1/4, 1/2, 3/4 and the finish of one run (menu.stageBase's bestSplits)
+const SPLIT_LABELS = ["1/4", "1/2", "3/4", "Finish"]
+const bestSplitTimes = computed(() => {
+  const b = stg.value && stg.value.bestSplits
+  if (!b) return []
+  return [...arr(b.splits).slice(0, 3), b.timeS]
+})
+// A split's gap to the best splits: "−0.3" ahead, "+0.6" slower, "0.0" level
+function splitGap(s) {
+  const a = Math.abs(Math.round(s * 10) / 10)
+  if (a === 0) return "0.0"
+  return (s < 0 ? "−" : "+") + (a < 60 ? a.toFixed(1) : longTime(a))
+}
+// The day a run was driven, "16 Nov" (where the best splits came from)
+function dayOf(iso) {
+  if (!iso) return ""
+  const d = new Date(iso)
+  return isNaN(d.getTime()) ? "" : d.toLocaleDateString([], { day: "numeric", month: "short" })
+}
+// A road penalty: "+20 s" under a minute, "+1:10" from one up
+function roadText(s) {
+  const t = Math.round(s || 0)
+  return t < 60 ? `+${t} s` : `+${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`
+}
+// The full rally's chips: its passes in order, each stop that cost something after the pass before it
+const fullChips = computed(() => {
+  const f = rly.value && rly.value.rallyFinished
+  if (!f) return []
+  const stops = arr(f.stops)
+  const out = []
+  for (const p of arr(f.passes)) {
+    out.push({ label: p.ss, timeS: p.timeS, penS: p.roadS, sr: !!p.superRally })
+    for (const s of stops) if (s.after === p.ss) out.push({ label: s.label, penS: s.penaltyS, stop: true })
+  }
+  return out
 })
 
 const banner = computed(() => {
@@ -1070,6 +1124,23 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 
 .er-fullbar { display: flex; align-items: center; gap: 16px; padding: 14px 20px; margin-bottom: 14px; border-left: 4px solid var(--er-orange);
   .er-fb-text { display: flex; flex-direction: column; gap: 2px; margin-right: auto; font-size: 17px; b { font-size: 19px; } } }
-.er-yourfull { padding: 14px 20px; margin-bottom: 14px; font-size: 18px; border-left: 4px solid var(--er-orange); }
+.er-yourfull { padding: 14px 20px; margin-bottom: 14px; font-size: 18px; border-left: 4px solid var(--er-orange);
+  .er-rp { color: #ffd36b; font-family: "Overpass Mono", monospace; font-weight: 700; } .er-rp0 { color: #6fd39a; } }
+.er-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.er-chip { font-size: 16px; padding: 5px 12px; border-radius: 999px; background: rgba(40, 140, 80, 0.4); color: #d9ffe6; white-space: nowrap;
+  .er-mono { margin-left: 6px; }
+  i { font-style: normal; font-family: "Overpass Mono", monospace; font-weight: 700; color: #ffd36b; margin-left: 8px; }
+  &.stop { background: rgba(255, 211, 107, 0.14); color: #ffe7ad; i { margin-left: 6px; } }
+  &.sr { background: rgba(229, 83, 61, 0.25); color: #ffd0c8; } }
+.er-bsplits { margin: 0 0 14px; padding: 10px 14px 12px; border-radius: 8px; background: rgba(255, 255, 255, 0.05);
+  .er-sg4 { margin-top: 6px; div { font: 700 22px "Overpass Mono", monospace; } }
+  small { display: block; font: 600 12px "Noto Sans", sans-serif; color: var(--er-dim); letter-spacing: 0.1em; } }
+.er-bsh { display: flex; justify-content: space-between; font-size: 14px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--er-muted); font-weight: 600;
+  span:last-child { text-transform: none; letter-spacing: 0; font-weight: 400; } }
+.er-sg4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.er-rsp { margin: 0 0 8px; font-size: 14px; color: var(--er-muted);
+  div { font-family: "Overpass Mono", monospace; white-space: nowrap; }
+  .er-a { color: #6fd39a; margin-left: 6px; } .er-b { color: #ffd36b; margin-left: 6px; }
+  .er-z { color: var(--er-dim); margin-left: 6px; font-family: "Noto Sans", sans-serif; } }
 .er-settings-page { display: grid; grid-template-columns: 1.6fr 1fr; gap: 28px; align-items: start; }
 </style>

@@ -101,10 +101,12 @@
               <div v-if="dayHead(i)" class="er-day">Day {{ r.day }}</div>
               <div class="er-tr" :class="rowCls(r)">
                 <span class="er-mono">{{ r.label }}</span>
-                <span v-if="timed" class="er-clip er-nm">{{ r.name || "" }}<small v-if="r.outAt">out {{ r.outAt }}</small></span>
+                <span v-if="timed" class="er-clip er-nm">{{ r.name || "" }}<small v-if="stopNote(r)">{{ stopNote(r) }}</small></span>
                 <span v-else class="er-clip">{{ r.name || "" }}</span>
                 <template v-if="timed">
-                  <span class="er-mono er-r" :class="{ 'er-dimc': !r.due }">{{ r.due || (r.done ? "" : "–") }}</span>
+                  <!-- (additions B) a row whose due isn't known yet: its road section's target, dim -->
+                  <span v-if="!r.due && r.targetMin != null && !r.done" class="er-r"><span class="er-tgt">target {{ r.targetMin }} min</span></span>
+                  <span v-else class="er-mono er-r" :class="{ 'er-dimc': !r.due }">{{ r.due || (r.done ? "" : "–") }}</span>
                   <span class="er-mono er-r">{{ r.timeIn || "" }}</span>
                   <span class="er-r" :class="road(r).cls">{{ road(r).text }}</span>
                 </template>
@@ -151,7 +153,16 @@
             </template>
             <template v-else-if="c.phase === 'stop'">
               <h3>{{ (c.at.label || "").toUpperCase() }}{{ c.at.name ? ` · ${c.at.name}` : "" }}</h3>
-              <div v-if="c.nextStage">Next: {{ c.nextStage.ss }} {{ c.nextStage.name }}<template v-if="c.nextStage.lengthM"> · {{ len(c.nextStage.lengthM) }}</template></div>
+              <!-- (additions B) driven in and checked in at its "in" control: time in, due, the result, the out time
+                   the clock jumps to -->
+              <div v-if="c.at.checkIn" class="er-cibox">
+                <div class="er-cikind">{{ IN_WORDS[c.at.checkIn.inType] || "Check-in" }}<span v-if="c.at.checkIn.free">early check-in allowed</span></div>
+                <div class="er-tcrow"><span>Time in</span><b>{{ c.at.checkIn.timeIn }}</b></div>
+                <div class="er-tcrow"><span>Due</span><b>{{ c.at.checkIn.due }}</b></div>
+                <div class="er-tcrow"><span>Result</span><b :class="ciResult(c.at.checkIn).cls">{{ ciResult(c.at.checkIn).text }}</b></div>
+                <div v-if="c.at.checkIn.outAt" class="er-tcrow"><span>Out</span><b>{{ c.at.checkIn.outAt }}</b></div>
+              </div>
+              <div v-if="c.nextStage" :class="{ 'er-cinext': c.at.checkIn }">Next: {{ c.nextStage.ss }} {{ c.nextStage.name }}<template v-if="c.nextStage.lengthM"> · {{ len(c.nextStage.lengthM) }}</template><template v-if="nextDue"> · due {{ nextDue }}</template></div>
             </template>
             <template v-else-if="c.phase === 'transit' || c.phase === 'toStop'">
               <h3>TRANSIT</h3>
@@ -246,9 +257,38 @@ function pen(v) {
 // A control's Road column: nothing until checked in there, "on time", or the cost in amber, late or early as Lua
 // checked it in (r.roadKind: "HH:MM" strings cannot tell over midnight)
 function road(r) {
+  // (additions B: early at a stop at no cost -- the event allows it there, or the early penalty is off)
+  if (!(r.roadPenaltyS > 0) && r.roadKind === "early") return { text: "early · free", cls: "er-dimc" }
   if (!(r.roadPenaltyS > 0)) return { text: r.timeIn ? "on time" : "", cls: "er-dimc" }
   return { text: `${pen(r.roadPenaltyS)} ${r.roadKind === "early" ? "early" : "late"}`, cls: "er-late" }
 }
+// (additions B) The control a stop is checked in at (rally.lua's inType), in words
+const IN_WORDS = { SVC_IN: "Service in", RGC_IN: "Regroup in", MTC_IN: "MTC in", PF_IN: "Parc fermé in" }
+// A stop row's small line: where it is checked in, and its out time ("service in · out 20:05"); the final service's
+// MTC in is the finish
+function stopNote(r) {
+  if (r.kind === "stage") return ""
+  const parts = []
+  if (r.final && r.inType === "MTC_IN") parts.push("finish (MTC in)")
+  else if (IN_WORDS[r.inType]) parts.push(IN_WORDS[r.inType].toLowerCase())
+  if (r.outAt) parts.push(`out ${r.outAt}`)
+  return parts.join(" · ")
+}
+// The stop card's Result: "On time", "2 min late · +20 s", "3 min early · no penalty"
+function ciResult(ci) {
+  if (ci.kind === "late") return { text: `${ci.min} min late · ${pen(ci.penaltyS)}`, cls: "er-late" }
+  if (ci.kind === "early") {
+    if (ci.penaltyS > 0) return { text: `${ci.min} min early · ${pen(ci.penaltyS)}`, cls: "er-late" }
+    return { text: `${ci.min} min early · no penalty`, cls: "er-ok" }
+  }
+  return { text: "On time", cls: "er-ok" }
+}
+// The next stage's due time where the schedule fixes it (out of a stop), for the stop card's Next line
+const nextDue = computed(() => {
+  const x = c.value
+  const row = x && x.nextIndex ? arr(x.rows)[x.nextIndex - 1] : null
+  return row && row.due ? row.due : ""
+})
 
 const mode = ref("realistic")
 const canc = ref("real")
@@ -432,7 +472,18 @@ h3 { margin: 0 0 10px; font-size: 20px; letter-spacing: 0.04em; }
 .er-prstop { margin-top: 14px; }
 /* (rally loop) the timed time card: the clock, Due / In / Road, the transit's due banner, the penalties */
 .er-clock { font: 700 22px "Overpass Mono", monospace; color: rgb(225, 123, 225); text-shadow: 0 0 10px rgba(225, 123, 225, 0.4); }
-.er-t2 .er-tr { grid-template-columns: 96px minmax(0, 1fr) 74px 74px 130px 100px 84px; }
+.er-t2 .er-tr { grid-template-columns: 96px minmax(0, 1fr) 112px 74px 130px 100px 84px; }
+/* (additions B) a road section's target where the due isn't known; the stop card's check-in */
+.er-tgt { font-size: 15px; color: #8a909a; white-space: nowrap; }
+.er-tr.next .er-tgt { color: #dfe6ff; }
+.er-ok { color: #3ccf7e; }
+.er-cibox { margin-top: 10px; padding: 6px 16px 4px; border-radius: 8px; background: rgba(255, 255, 255, 0.05); }
+.er-cikind { font-size: 15px; letter-spacing: 0.12em; text-transform: uppercase; color: #f26b1d; font-weight: 700; margin: 4px 0 6px;
+  span { color: #b8bcc6; letter-spacing: 0.04em; text-transform: none; font-weight: 500; margin-left: 8px; } }
+.er-tcrow { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 9px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.08); font-size: 18px;
+  span { color: #b8bcc6; white-space: nowrap; } b { font-family: "Overpass Mono", monospace; font-size: 22px; text-align: right; }
+  &:last-child { border-bottom: 0; } }
+.er-cinext { margin-top: 14px; font-size: 18px; }
 .er-thd { color: #b8bcc6; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; border-bottom-color: rgba(255, 255, 255, 0.14); padding-top: 4px; padding-bottom: 4px; }
 .er-nm small { display: block; font-size: 14px; font-weight: 600; color: #8a909a; }
 .er-dimc { color: #8a909a; }
