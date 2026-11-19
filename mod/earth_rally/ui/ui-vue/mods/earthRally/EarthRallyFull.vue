@@ -257,7 +257,7 @@
 import { ref, computed, watch, nextTick } from "vue"
 import { BngButton, ACCENTS } from "@/common/components/base"
 import { vBngUiNavFocus } from "@/common/directives"
-import { pickCar, state, action, mmss, rallyStart, rallyCard, rallyAction, busyMsg, closeMenu, focusButton, arr, len, time, longTime, ord } from "./store.js"
+import { pickCar, units, state, action, mmss, rallyStart, rallyCard, rallyAction, busyMsg, closeMenu, focusButton, arr, len, time, longTime, ord } from "./store.js"
 
 const props = defineProps({ kind: { type: String, default: "card" }, id: { type: String, default: null } })
 const emit = defineEmits(["view"])
@@ -418,7 +418,10 @@ function prepStopLabel() {
 function wxText(w) {
   const t = w.night && w.text === "clear" ? "clear night" : w.text
   if (w.tempC == null) return t
-  return `${t} · ${w.tempC < 0 ? "−" + -w.tempC : w.tempC} °C`
+  // (miles on the Units setting: °F, as a player who drives in miles reads temperatures)
+  const f = units() === "mi"
+  const v = Math.round(f ? w.tempC * 9 / 5 + 32 : w.tempC)
+  return `${t} · ${v < 0 ? "−" + -v : v} ${f ? "°F" : "°C"}`
 }
 const WX_CLOUD = '<path d="M6.5 15h11a4 4 0 0 0 .5-7.97A5.5 5.5 0 0 0 7.1 7.4 3.8 3.8 0 0 0 6.5 15z" fill="#aeb4be"/>'
 const WX_SVG = {

@@ -32,7 +32,7 @@
         <div class="er-card er-mpcard">
           <div class="er-mpkick"><svg viewBox="0 0 24 24"><g fill="none" stroke="#f26b1d" stroke-width="2"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><path d="M2 20c0-3.5 2.7-6 6-6s6 2.5 6 6M12 15.2c1.1-.8 2.5-1.2 4-1.2 3.3 0 6 2.5 6 6"/></g></svg>Multiplayer session</div>
           <h2>Earth Rally is off in multiplayer</h2>
-          <p>It moves the world and the car, which a shared server can't follow. Leave the server to drive rallies.</p>
+          <p>Leave the server to drive rallies.</p>
           <BngButton v-bng-ui-nav-focus="1" class="er-mpbtn" :accent="ACCENTS.main" @click="closeMenu">Close</BngButton>
         </div>
       </div>
