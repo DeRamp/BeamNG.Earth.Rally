@@ -35,15 +35,14 @@
             <div class="er-set-n">Voice</div>
             <div class="er-set-d">{{ cd.locked ? "Change it between runs" : "Who reads your notes" }}</div>
           </div>
-          <div class="er-seg" :class="{ locked: cd.locked }">
-            <span
-              v-for="o in arr(cd.voices)" :key="o.value"
-              :tabindex="cd.locked ? -1 : 0" :bng-nav-item="cd.locked ? null : ''"
-              :class="{ on: cd.voice === o.value }"
-              @click="!cd.locked && setCodriver('voice', o.value)"
-              @keydown.enter="!cd.locked && setCodriver('voice', o.value)"
-            >{{ o.label }}</span>
-          </div>
+          <!-- a drop-down, not buttons: players can add many voices -->
+          <select
+            class="er-drop" bng-nav-item :disabled="cd.locked"
+            :value="cd.voice"
+            @change="setCodriver('voice', $event.target.value)"
+          >
+            <option v-for="o in arr(cd.voices)" :key="o.value" :value="o.value">{{ o.label }}</option>
+          </select>
         </div>
         <div v-if="cd.style" class="er-set">
           <div class="er-set-text">
@@ -153,6 +152,13 @@ onUnmounted(stopPolling)
 .er-set-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(32em, 1fr)); gap: 0 3em; align-items: start; }
 .er-set-grp { font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.08em; color: #9aa3ad; padding: 0.3em 0.5em; }
 .er-seg span.off { color: #5d626c; cursor: default; }
+.er-drop {
+  flex-shrink: 0; min-width: 14em; font: inherit; color: #fff; background: #23272e; cursor: pointer;
+  border: 0; border-radius: 0.25rem; box-shadow: inset 0 0 0 1px #5a6070; padding: 0.45em 0.9em;
+  &:focus { outline: 1px solid rgba(255, 255, 255, 0.4); }
+  &:disabled { opacity: 0.45; cursor: default; }
+  option { background: #23272e; color: #fff; }
+}
 .er-seg.locked { opacity: 0.45; span { cursor: default; } }
 .er-slide {
   display: flex; align-items: center; gap: 0.8em; flex-shrink: 0;
