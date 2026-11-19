@@ -11,7 +11,8 @@ local M = {}
 local earth = require('earthRally/earthAdapter')
 local settings = require('earthRally/settings')
 
-M.PICKS = { 'current', 'rallyday', 'clear', 'cloudy', 'rain', 'storm', 'snow', 'fog' }
+-- (the picks and their order: settings.lua's stageWeather; the row's words: EarthRally.vue's WX_PICKS)
+M.PRESET_ORDER = { 'clear', 'cloudy', 'rain', 'storm', 'snow', 'fog' }
 M.PRESETS = { clear = true, cloudy = true, rain = true, storm = true, snow = true, fog = true }
 
 -- (the pass the stage page last showed, per stage: Rally day's weather is that pass's)
@@ -37,6 +38,16 @@ function M.pagePass(eventId, stageId, out)
   return ss
 end
 
+-- BeamNG.Earth's presets this BeamNG.Earth has (the row offers only these), in the row's order.
+function M.presets()
+  local wx = rawget(_G, 'beamngEarth_weather')
+  local out = {}
+  for _, p in ipairs(M.PRESET_ORDER) do
+    if type(wx) == 'table' and type(wx.PRESETS) == 'table' and type(wx.PRESETS[p]) == 'table' then out[#out + 1] = p end
+  end
+  return out
+end
+
 function M.pick()
   local p = settings.get('stageWeather')
   return (p == 'rallyday' or M.PRESETS[p]) and p or 'current'
@@ -46,7 +57,14 @@ end
 function M.msgFor(e, stage)
   local p = M.pick()
   if p == 'rallyday' then
-    return M.passWeather(e, shown[key(e and e.id, stage and stage.id)])
+    local k = key(e and e.id, stage and stage.id)
+    if shown[k] == nil and e and stage then
+      -- (a run started without the stage page open since the last Lua reload -- a results card's Next, a Route to
+      --  start: the pass the page would show, worked out the same way)
+      local okM, out = pcall(function() return require('earthRally/menu').stage(e.id, stage.id) end)
+      if okM and out then M.pagePass(e.id, stage.id, out) end
+    end
+    return M.passWeather(e, shown[k])
   elseif M.PRESETS[p] then
     local wx = rawget(_G, 'beamngEarth_weather')
     local m = type(wx) == 'table' and type(wx.PRESETS) == 'table' and wx.PRESETS[p] or nil
@@ -75,8 +93,10 @@ function M.giveBack()
   if not on then return false end
   on = false
   -- (a rally under way owns the clock and weather now: rallyRun.setWorld set its own, left alone)
+  -- (a finished rally kept until quit is not under way)
   local rr = package.loaded['earthRally/rallyRun']
-  if rr and rr.active and rr.active() then return false end
+  local R = rr and rr.active and rr.active()
+  if R and not require('earthRally/rally').over(R) then return false end
   pcall(earth.clearScene)
   return true
 end

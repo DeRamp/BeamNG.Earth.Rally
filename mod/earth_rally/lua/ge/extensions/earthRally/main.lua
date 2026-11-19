@@ -1784,17 +1784,18 @@ end
 
 -- pass: the leaderboard's pass ('SS4'), nil for the one you place best on
 function M.uiStage(eventId, stageId, pass)
-  local _, stage = menu.findStage(eventId, stageId)
+  local e, stage = menu.findStage(eventId, stageId)
   if not stage then return { missing = true, eventId = eventId, id = stageId } end   -- (ids: the page tells whose)
   local _, _, arrival = runner.arrivalPoint(stage)
   local out = menu.stage(eventId, stageId, arrival, earth.hasRoadGraph(), pass)
   for k, v in pairs(runSummary()) do out[k] = v end
   out.autoLine = autoLines[autoKey(eventId, stageId)]
   -- (plan G) the Weather row: Rally day's weather in a word (the shown pass's stored weather), nil with none
+  -- (only where it can show: the hooks there and BeamNG.Earth's weather following its real weather)
   local sw = require('earthRally/stageWeather')
-  local e = menu.findEvent(eventId)
   out.wxDay = rallyRun.weatherWord(sw.passWeather(e, sw.pagePass(eventId, stageId, out)))
-  out.wxCan = earth.hasSceneHooks() or nil
+  out.wxCan = (earth.hasSceneHooks() and earth.weatherLive()) or nil
+  out.wxPresets = out.wxCan and sw.presets() or nil
   return out
 end
 

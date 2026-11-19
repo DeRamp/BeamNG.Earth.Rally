@@ -556,6 +556,33 @@ function M.sceneSet()
   return okP and p == M.SCENE_PRESET
 end
 
+-- (BeamNG.Earth's setPreset(nil) keeps the preset's weather until its world server's next real weather message, up to
+-- 10 minutes away. So the real message it had when ours went on is kept in our entry, earthRallyReal -- the entry
+-- outlives a Lua reload of this mod -- and handed back through wx.onWeather once ours is off.)
+local function realOf(wx)
+  local okP, p = pcall(wx.preset)
+  local entry = type(wx.PRESETS) == 'table' and wx.PRESETS[M.SCENE_PRESET] or nil
+  if okP and p == M.SCENE_PRESET then return type(entry) == 'table' and entry.earthRallyReal or nil end
+  if okP and p == nil and type(wx.current) == 'function' then
+    local okC, m = pcall(wx.current)
+    if okC and type(m) == 'table' then return m end
+  end
+  return nil
+end
+local function weatherBack(wx, real)
+  pcall(wx.setPreset, nil)
+  if type(real) == 'table' and type(wx.onWeather) == 'function' then pcall(wx.onWeather, real) end
+end
+
+-- Is BeamNG.Earth's weather following its real weather (mode 'real')? Only then does a preset show; true when the
+-- mode cannot be read.
+function M.weatherLive()
+  local wx = weather()
+  if type(wx) ~= 'table' or type(wx.getMode) ~= 'function' then return true end
+  local ok, m = pcall(wx.getMode)
+  return not ok or m == nil or m == 'real'
+end
+
 -- scene = { hours (local, 0-24) }; msg = the stage's stored weather (BeamNG.Earth's weather message) or nil (the
 -- player's own weather). Returns true when set, else false and why. Leaves a clock or weather someone else set alone.
 function M.setScene(scene, msg)
@@ -570,14 +597,19 @@ function M.setScene(scene, msg)
     c.earthRally = true
   end
   if type(msg) == 'table' then
+    local real = realOf(wx)
     local p = {}
-    for k, v in pairs(msg) do p[k] = v end
+    for k, v in pairs(msg) do if k ~= 'earthRallyReal' then p[k] = v end end
+    p.earthRallyReal = real
     wx.PRESETS[M.SCENE_PRESET] = p
     local okP, set = pcall(wx.setPreset, M.SCENE_PRESET)
-    if not (okP and set) then return false, 'setPreset: ' .. tostring(set) end
+    if not (okP and set) then
+      if wx.preset() ~= M.SCENE_PRESET then wx.PRESETS[M.SCENE_PRESET] = nil end
+      return false, 'setPreset: ' .. tostring(set)
+    end
   elseif wx.preset() == M.SCENE_PRESET then
     -- (no stored weather for this stage: the player's own again)
-    pcall(wx.setPreset, nil)
+    weatherBack(wx, realOf(wx))
     wx.PRESETS[M.SCENE_PRESET] = nil
   end
   return true
@@ -595,7 +627,7 @@ function M.clearScene()
   end
   local okP, p = pcall(function() return wx and wx.preset and wx.preset() end)
   if okP and p == M.SCENE_PRESET then
-    pcall(wx.setPreset, nil)
+    weatherBack(wx, realOf(wx))
     had = true
   end
   if type(wx) == 'table' and type(wx.PRESETS) == 'table' and wx.PRESETS[M.SCENE_PRESET] ~= nil then

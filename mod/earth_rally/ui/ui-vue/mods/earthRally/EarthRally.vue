@@ -289,8 +289,7 @@
             <span class="er-wxl">Weather</span>
             <span class="er-cyc" v-bng-on-ui-nav:focus_l="() => wxNav(-1)" v-bng-on-ui-nav:focus_r="() => wxNav(1)">
               <span class="er-ar" @click="wxStep(-1)">‹</span>
-              <span ref="wxVal" class="er-val" tabindex="0" bng-nav-item @keydown.left.prevent="wxStep(-1)"
-                @keydown.right.prevent="wxStep(1)" @keydown.enter="wxStep(1)" @click="wxStep(1)">
+              <span ref="wxVal" class="er-val" tabindex="0" bng-nav-item @keydown.enter="wxStep(1)" @click="wxStep(1)">
                 <svg v-if="wxShown.icon" viewBox="0 0 24 24" v-html="wxIcon(wxShown)"></svg>{{ wxShown.label }}</span>
               <span class="er-ar" @click="wxStep(1)">›</span>
             </span>
@@ -950,14 +949,20 @@ function back() {
 const WX_PICKS = [["current", "Current"], ["rallyday", "Rally day"], ["clear", "Clear", "sun"], ["cloudy", "Cloudy", "cloud"],
   ["rain", "Rain", "rain"], ["storm", "Storm", "storm"], ["snow", "Snow", "snow"], ["fog", "Fog", "fog"]]
 const wxVal = ref(null)
-const wxPicks = computed(() => WX_PICKS.filter(p => p[0] !== "rallyday" || (stg.value && stg.value.wxDay)))
+// (Rally day only with stored weather for the shown pass; a preset only when this BeamNG.Earth has it)
+const wxPicks = computed(() => WX_PICKS.filter(p => p[0] === "current"
+  || (p[0] === "rallyday" ? !!(stg.value && stg.value.wxDay) : arr(stg.value && stg.value.wxPresets).includes(p[0]))))
 const wxPick = computed(() => {
   const v = st.value.settings && st.value.settings.settings && st.value.settings.settings.stageWeather
   return wxPicks.value.some(p => p[0] === v) ? v : "current"
 })
 const wxShown = computed(() => {
   const p = wxPicks.value.find(x => x[0] === wxPick.value) || WX_PICKS[0]
-  if (p[0] === "rallyday") return { ...stg.value.wxDay, label: "Rally day · " + (stg.value.wxDay.night && stg.value.wxDay.text === "clear" ? "clear night" : stg.value.wxDay.text) }
+  // (the weather only: a single stage keeps BeamNG.Earth's hour, so no "night" and no moon here)
+  if (p[0] === "rallyday") {
+    const w = stg.value.wxDay
+    return { icon: w.icon === "moon" ? "sun" : w.icon, label: "Rally day · " + w.text }
+  }
   return { icon: p[2], label: p[1] }
 })
 function wxStep(d) {
@@ -965,7 +970,7 @@ function wxStep(d) {
   const i = Math.max(0, ps.findIndex(p => p[0] === wxPick.value))
   setSetting("stageWeather", ps[(i + d + ps.length) % ps.length][0])
 }
-// (the D-pad / stick: only while the row has the focus)
+// (the D-pad / stick and the arrow keys, as BeamNG's UI nav sends them: only while the row has the focus)
 function wxNav(d) { if (wxVal.value && document.activeElement === wxVal.value) wxStep(d) }
 function action(what, eventId, stageId) {
   luaAction(what, eventId, stageId, () => {

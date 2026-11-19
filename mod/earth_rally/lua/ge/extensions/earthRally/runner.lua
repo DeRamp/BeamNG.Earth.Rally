@@ -214,6 +214,7 @@ function M.current() return run end
 local function fail(why)
   if not run then return end
   run.state, run.error = 'failed', why
+  pcall(stageWx.giveBack)   -- (plan G: a run that never got going keeps no weather pick on the world)
   pcall(stats.stageEnded, run, 'failed')
   say(why, 8, 'error', 'Earth Rally: run stopped')
 end
@@ -522,7 +523,8 @@ function M.start(event, stage, opts)
     if t and run.inRally then run.rcDay = math.floor(t / 86400) * 86400 end
   end
   -- (plan G) the stage page's weather pick, set as a single stage loads (a rally sets its own: rallyRun.setWorld)
-  if not run.inRally then pcall(stageWx.apply, event, stage) end
+  -- (not the self-test's scripted runs, opts.noOnline: those keep the world's weather, so they repeat)
+  if not run.inRally and not (opts and opts.noOnline) then pcall(stageWx.apply, event, stage) end
   -- the line it is timed on, kept with the time (events.addResult): its start and flying finish on it (a time is
   -- placed while the stage's line has those within a few metres: events.onLine), and its key as a record
   run.lineKey = events.lineKey(source, kind)
