@@ -1935,6 +1935,159 @@ do
   main.onUiChangedState('earthRally')
   main.toggleMenu()
   T.check(navs[1] == 'earthRally' and navs[2] == 'play', 'Ctrl+Alt+K opens the menu page and closes it')
+  -- stats: the menu opened by Ctrl+Alt+K (openMenu sets menuOpen before the UI event comes) still asks for a send,
+  -- and leaving it is still seen (found in game, 2026-11-16: neither happened)
+  do
+    local stats = require('earthRally/stats')
+    local hadFlush, hadStart, hadClosed = stats.flushSoon, stats.sessionStart, stats.menuClosed
+    local seen = {}
+    stats.flushSoon = function() seen.flush = (seen.flush or 0) + 1 end
+    stats.sessionStart = function() seen.start = (seen.start or 0) + 1 end
+    stats.menuClosed = function() seen.closed = (seen.closed or 0) + 1 end
+    main.onUiChangedState('play')
+    seen = {}                -- (the test above left the page up: that close counted; start again from play)
+    main.toggleMenu()
+    main.onUiChangedState('earthRally')
+    T.check(seen.flush == 1 and seen.start == 1, 'stats: menu opened by Ctrl+Alt+K: a send asked for')
+    main.toggleMenu()
+    main.onUiChangedState('play')
+    T.check(seen.closed == 1, 'stats: menu closed by Ctrl+Alt+K: seen (' .. tostring(seen.closed) .. ')')
+    stats.flushSoon, stats.sessionStart, stats.menuClosed = hadFlush, hadStart, hadClosed
+  end
+  -- (#77) the Leaderboards helper pop-up: the helper looked for on each menu open, Got it, the box, a new version
+  do
+    local online = require('earthRally/online')
+    local hadSock, hadR, hadW, hadV = online._socket, rawget(_G, 'jsonReadFile'), rawget(_G, 'jsonWriteFile'), main.VERSION
+    -- (Leaderboards on by default: the stats question, asked once, comes first; answered here so the pop-up's own rules
+    -- are what is tested)
+    local statsM = require('earthRally/stats')
+    local hadConsent = statsM.consent
+    statsM.consent = function() return 'no' end
+    local files = {}
+    jsonReadFile = function(p) return files[p] end
+    jsonWriteFile = function(p, t) files[p] = t return true end
+    local sk = { settimeout = function() end, close = function() end,
+      connect = function() return nil, 'connection refused' end }
+    online._reset()
+    online._socket = { tcp = function() return sk end }
+    online.update(16)          -- (past the first 15 s after the game started)
+    local function reopen() main.onUiChangedState('play') main.onUiChangedState('earthRally') end
+    main.onUiChangedState('play')
+    T.check(not main.uiState().helperPrompt, 'helper prompt: not with the menu closed')
+    reopen()
+    T.check(main.uiState().helperPrompt == true, 'helper prompt: no helper, the menu opened: shown')
+    main.uiHelperPrompt('close', false)
+    T.check(not main.uiState().helperPrompt, 'helper prompt: Got it hides it')
+    reopen()
+    T.check(main.uiState().helperPrompt == true, 'helper prompt: the next menu open shows it again')
+    main.uiHelperPrompt('close', true)
+    reopen()
+    T.check(not main.uiState().helperPrompt and files[online.PROMPT_FILE].dismissedFor == main.VERSION,
+      "helper prompt: Don't show this again, kept with the version")
+    main.VERSION = hadV .. '.next'
+    reopen()
+    T.check(main.uiState().helperPrompt == true, 'helper prompt: a new version shows it again')
+    main.VERSION = hadV
+    -- not while a recce runs
+    local hadRA = recce.active
+    recce.active = function() return true end
+    files = {}
+    online._reset()
+    online._socket = { tcp = function() return sk end }
+    online.update(16)
+    reopen()
+    T.check(not main.uiState().helperPrompt, 'helper prompt: not while a recce runs')
+    recce.active = hadRA
+    -- a stage picked, the car driving to or waiting at the start: shown; on the stage itself: held (found in test,
+    -- 2026-11-18: a run waiting at the start held it back for good)
+    local hadCur, hadSt = runner.current, runner.state
+    local fakeRun = { event = { id = 'e', name = 'E', stages = {} }, stage = { id = 's', name = 'S' } }
+    runner.current = function() return fakeRun end
+    for _, st in ipairs({ 'toAtc', 'toStart', 'waitStart', 'travel' }) do
+      runner.state = function() return st end fakeRun.state = st
+      online._reset() online._socket = { tcp = function() return sk end } online.update(16) reopen()
+      T.check(main.uiState().helperPrompt == true, 'helper prompt: shown with a run in ' .. st)
+    end
+    for _, st in ipairs({ 'countdown', 'running' }) do
+      runner.state = function() return st end fakeRun.state = st
+      online._reset() online._socket = { tcp = function() return sk end } online.update(16) reopen()
+      T.check(not main.uiState().helperPrompt, 'helper prompt: held on the stage (' .. st .. ')')
+    end
+    runner.current, runner.state = hadCur, hadSt
+    -- the stats question up (Leaderboards on, not answered yet): it comes first, the pop-up waits
+    statsM.consent = function() return 'ask' end
+    online._reset() online._socket = { tcp = function() return sk end } online.update(16) reopen()
+    T.check(settings.get('onlineBoard') ~= true or not main.uiState().helperPrompt, 'helper prompt: waits for the stats question')
+    statsM.consent = hadConsent
+    main.onUiChangedState('play')
+    online._reset()
+    online._socket, jsonReadFile, jsonWriteFile = hadSock, hadR, hadW
+  end
+  -- the leaderboard name pop-up: Leaderboards on, the helper connected, no player; the helper pop-up's run rules;
+  -- after the stats question and the helper pop-up; Later until the next menu open
+  do
+    local online = require('earthRally/online')
+    local statsM = require('earthRally/stats')
+    local hadStatus, hadConsent, hadGet, hadHelper = online.status, statsM.consent, settings.get, main.helperPromptWanted
+    local hadReg = online.lastRegister
+    local status = { on = true, connected = true }
+    local consent, boardOn, helperUp = 'no', true, false
+    online.status = function() return status end
+    statsM.consent = function() return consent end
+    settings.get = function(k) if k == 'onlineBoard' then return boardOn end return hadGet(k) end
+    main.helperPromptWanted = function() return helperUp end
+    local function reopen() main.onUiChangedState('play') main.onUiChangedState('earthRally') end
+    main.onUiChangedState('play')
+    T.check(not main.uiState().namePrompt, 'name prompt: not with the menu closed')
+    reopen()
+    T.check(main.uiState().namePrompt == true, 'name prompt: connected, no name: shown')
+    online.lastRegister = { ok = false, error = 'name taken' }
+    T.check(main.uiState().naming and main.uiState().naming.error == 'name taken', 'name prompt: the last Save answer with it')
+    online.lastRegister = hadReg
+    main.uiNamePrompt('later')
+    T.check(not main.uiState().namePrompt, 'name prompt: Later hides it')
+    reopen()
+    T.check(main.uiState().namePrompt == true, 'name prompt: the next menu open shows it again')
+    status.player = { name = 'Me' }
+    T.check(not main.uiState().namePrompt and not main.uiState().naming, 'name prompt: not with a name')
+    status.player = nil
+    status.connected = false
+    T.check(not main.uiState().namePrompt, 'name prompt: not with the helper not connected')
+    status.connected = true
+    boardOn = false
+    T.check(not main.uiState().namePrompt, 'name prompt: not with Leaderboards off')
+    boardOn = true
+    consent = 'ask'
+    T.check(not main.uiState().namePrompt, 'name prompt: waits for the stats question')
+    consent = 'no'
+    helperUp = true
+    local s = main.uiState()
+    T.check(s.helperPrompt and not s.namePrompt, 'name prompt: waits for the helper pop-up')
+    helperUp = false
+    local hadRA = recce.active
+    recce.active = function() return true end
+    T.check(not main.uiState().namePrompt, 'name prompt: not while a recce runs')
+    recce.active = hadRA
+    local rr = require('earthRally/rallyRun')
+    local hadRR = rr.active
+    rr.active = function() return { eventId = 'r' } end
+    T.check(not main.uiState().namePrompt, 'name prompt: not in a full rally')
+    rr.active = hadRR
+    local hadCur, hadSt = runner.current, runner.state
+    local fakeRun = { event = { id = 'e', name = 'E', stages = {} }, stage = { id = 's', name = 'S' } }
+    runner.current = function() return fakeRun end
+    for _, st in ipairs({ 'toAtc', 'waitStart' }) do
+      runner.state = function() return st end fakeRun.state = st
+      T.check(main.uiState().namePrompt == true, 'name prompt: shown with a run in ' .. st)
+    end
+    for _, st in ipairs({ 'countdown', 'launched', 'running' }) do
+      runner.state = function() return st end fakeRun.state = st
+      T.check(not main.uiState().namePrompt, 'name prompt: held on the stage (' .. st .. ')')
+    end
+    runner.current, runner.state = hadCur, hadSt
+    main.onUiChangedState('play')
+    online.status, statsM.consent, settings.get, main.helperPromptWanted = hadStatus, hadConsent, hadGet, hadHelper
+  end
   -- the Escape menu ('pause' in 0.40): our HUD hidden, and BeamNG.Earth's imgui strips told it is a menu (earthMenuFix)
   do
     local told = {}
@@ -2546,8 +2699,8 @@ do
   -- ---------------------------------------------------------------- started, polled, stopped
   resetGraph()
   local a = main.uiAction('autoRecce', 'test8', 'two')
-  T.check(a.ok and a.message and a.message:find('downloads nothing'),
-    'Auto recce starts, and says it downloads nothing (' .. tostring(a.message) .. ')')
+  T.check(a.ok and a.message and a.message:find('reads the roads'),
+    'Auto recce starts, and says it reads the roads (' .. tostring(a.message) .. ')')
   T.check(auto.active(), 'the auto recce is running')
   local prog = main.uiState().auto
   T.check(prog and prog.stageId == 'two' and prog.eventId == 'test8' and prog.ss == 2,

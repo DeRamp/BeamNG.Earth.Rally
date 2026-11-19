@@ -20,10 +20,13 @@ local preview = require('earthRally/preview')
 local hudFrame = require('earthRally/hudFrame')
 local versions = require('earthRally/versions')
 local earthMenuFix = require('earthRally/earthMenuFix') -- STOPGAP: remove with BeamNG.Earth's fix (the file says)
+local stats = require('earthRally/stats')             -- anonymous stats, opt-in (+stats)
+local report = require('earthRally/report')           -- Report a problem: a GitHub issue in the browser (+stats)
 local menuPause = require('earthRally/menuPause')     -- the game paused while the menu page is up (1.6.2, #13)
 local rally = require('earthRally/rally')             -- the full rally (1.7.0): its rules and numbers
 local rallyRun = require('earthRally/rallyRun')       -- ... and driving it in the game
 local loadScreen = require('earthRally/loadScreen')   -- the page's loading screen (1.7.0, #49)
+local online = require('earthRally/online')         -- the online leaderboard (prototype): via the companion
 local gameTile = require('earthRally/gameTile')       -- the tile on the game's own Rally page
 menuPause.holding = earth.holding                    -- (BeamNG.Earth's own holds: our request waits for them)
 -- (#63: the run moving the world's origin needs the physics on: the page's pause waits for it, the screen shows it.
@@ -36,7 +39,7 @@ loadScreen.moving = function() return runner.originMoving() or earth.rebasing() 
 local M = {}
 local logTag = 'earthRally'
 local logPausedSim         -- (below, by onUpdate)
-M.VERSION = '1.7.3-alpha'
+M.VERSION = '1.9.0-alpha'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_FLOOR_S = 1             -- the HUD's streams sent when what they show changes, and at least this often
 M.STREAM_GAP_S = 0.1              -- ... the stock stream at most this often outside waitStart / running
@@ -52,7 +55,10 @@ local message = nil
 local facing = nil       -- after Go to start: turn the car along the stage once BeamNG.Earth has set it down
 local scanIn = nil       -- seconds until the import folder is looked at (a file changed in it)
 local menuOpen = false   -- the menu page is the screen now (onUiChangedState)
+local statsMenuUp = false  -- the same, as stats last saw it (onUiChangedState only)
 local openAt = nil       -- the page to show when the menu opens next: { view, eventId, stageId }
+local helperDone = false -- (#77) the helper prompt was shown and closed in this menu open (or not wanted)
+local nameDone = false   -- the leaderboard name pop-up's Later was pressed in this menu open
 local earthSeen = false  -- the BeamNG.Earth level has been loaded at least once since the mod loaded. The version
                          -- check runs again then: that is where the game's rally engine can be looked at without
                          -- dragging it in at the main menu, which is a cost every start for an answer wanted
@@ -75,7 +81,13 @@ local playtest = nil     -- { event, stage, what, t, levelAsked, ready }
 -- The developer panel (the ImGui window): console toggle; the setting shows / hides it.
 function M.toggle() show[0] = not show[0] end
 function M.show() show[0] = true end
-settings.onChange('main', function(key, v) if key == 'devPanel' then show[0] = v == true end end)
+settings.onChange('main', function(key, v)
+  if key == 'devPanel' then show[0] = v == true end
+  if key == 'onlineBoard' then
+    online.enable(v == true)
+    if v == true then pcall(stats.sessionStart) pcall(stats.flushSoon) end
+  end
+end)
 
 -- Go to a UI screen (route): ui_router.navigate (BeamNG 0.40), else the old ChangeState (as BeamNG.Earth's settings).
 local function navigate(state)
@@ -302,6 +314,15 @@ function M.onUiChangedState(toState)
   menuOpen = toState == M.ROUTE
   -- (the page closed under a time control card that is ready: taken as its Continue, #40)
   if not menuOpen then pcall(loadScreen.pageClosed) end
+  -- stats: sent while the menu is up (the game is paused there); the menu left with the question still up is a No.
+  -- (their own flag, set only here: openMenu/closeMenu set menuOpen before this event comes, so a change of
+  -- menuOpen was never seen -- found in game, 2026-11-16)
+  local was = statsMenuUp
+  statsMenuUp = menuOpen
+  if menuOpen and not was then pcall(stats.sessionStart) pcall(stats.flushSoon) pcall(online.forgetBoards) end
+  -- (#77) the Leaderboards helper looked for once per menu open: the pop-up if it does not answer
+  if menuOpen and not was then helperDone = false nameDone = false pcall(online.probeStart) end
+  if was and not menuOpen then pcall(stats.menuClosed) end
   -- Our own full-screen page counts too: it is not called 'menu...' but it is just as much in the way. So does
   -- BeamNG.Earth's world map, a route of its own ('beamngEarthMap', its credits.lua MAP_ROUTE).
   -- 'pause' is the in-game Escape menu in 0.40 ('menu' is the main menu); this check missed it, as BeamNG.Earth's does.
@@ -931,6 +952,7 @@ local function autoDone(ok, matched, why, how)
   local a = autoRun
   autoRun = nil
   if not a then return end
+  pcall(stats.record, 'recce_done', { result = ok and 'ok' or 'failed' })
   local kind = (how and how.kind) or (ok and autoRecce.DONE or autoRecce.FAILED)
   -- A sequence still running is told how its match went, so it can add anything the download could not do -- the
   -- app refusing the area, or items nothing could fetch -- beside the stage's own reason. There is one match a
@@ -975,6 +997,7 @@ local function autoDone(ok, matched, why, how)
   log('I', logTag, string.format('auto recce of %s: %s (%s)', tostring(a.stageId), kind, tostring(why or 'written')))
 end
 M._autoDone = autoDone
+autoRecce.noHome = function() return rallyRun.preparing() end   -- (upstream-earth: no trip home between prep stages)
 
 -- Start the matching leg: the same call the 1.3.0 button made, with the banner and the row mark it sets.
 local function autoStartMatch(ev, stage, ss)
@@ -1418,7 +1441,9 @@ doAction = function(what, eventId, stageId, fromPanel, queued)
     local pr = autoRecce.progress() or {}
     return res(true, string.format('Auto recce of %s: %d windows. %s', stage.name, pr.windows or 0,
       earth.hasAreaRoute() and 'It reads the map data on your disk, and asks before downloading any it needs.'
-        or 'It reads only the map data already on your disk and downloads nothing.'))
+        or (earth.roadGraphMode() == 'walk'
+          and 'It takes the car along the stage to read the roads, then brings it back.'
+          or 'It reads the roads along the stage from the map.')))
   end
   if what == 'drive' then
     local ok, why = runner.start(ev, stage)
@@ -1487,7 +1512,10 @@ function M.uiAction(what, eventId, stageId)
     return { ok = okL, message = message }
   end
   local ok, r = pcall(doAction, what, eventId, stageId)
-  if not ok then log('E', logTag, 'menu action ' .. tostring(what) .. ': ' .. tostring(r)) return { ok = false, message = tostring(r) } end
+  if not ok then
+    log('E', logTag, 'menu action ' .. tostring(what) .. ': ' .. tostring(r))   -- (stats: recorded by stats.watchLog)
+    return { ok = false, message = tostring(r) }
+  end
   if r.message then message = r.message end
   return r
 end
@@ -1548,9 +1576,10 @@ local function runSummary()
   -- the auto recce: whether one can be run at all (the page shows no button where it cannot, rather than a
   -- disabled one on every row), and the one running, with the window it is on
   out.autoOk = earth.hasRoadGraph()
-  -- whether the one button can also fetch the ground: the page says "downloads nothing" without it, and offers the
+  -- whether the one button can also fetch the ground: the page says nothing of downloads without it, and offers the
   -- download with it, so this has to reach the UI rather than being decided in the Lua alone
   out.autoCanFetch = earth.hasRoadGraph() and earth.hasAreaRoute()
+  out.autoWalks = earth.roadGraphMode() == 'walk'     -- (upstream-earth: no fork; the car is taken along the stage)
   if autoRecce.active() and autoRun then
     local p = autoRecce.progress() or {}
     out.auto = { eventId = autoRun.eventId, stageId = autoRun.stageId, stageName = autoRun.stageName,
@@ -1611,6 +1640,7 @@ function M.uiState()
   -- what changed under the mod since it was built (versions.lua): nothing to show in the normal case
   s.versionNotes = versions.notes()
   s.settings = settings.uiState()
+  s.stats = stats.uiState()
   s.rallies = menu.rallies(importer.lastReports)
   -- the Rallies page: seasons, loose rallies and single stages (menu.home); `rallies` above stays for the pause
   -- menu's tab, which lists every rally flat
@@ -1620,7 +1650,71 @@ function M.uiState()
   s.message = message
   local a = rallyRun.active()
   s.rallyActive = a and { id = a.eventId, name = a.name, done = a.done or nil } or nil
+  s.helperPrompt = M.helperPromptWanted() or nil
+  s.namePrompt = (not s.helperPrompt and M.namePromptWanted()) or nil
+  -- (the name pop-up's last Save: { asking } or { ok, error }, as uiOnline's naming)
+  s.naming = s.namePrompt and online.lastRegister or nil
   return s
+end
+
+-- (#77) The pop-up asking the player to install the Leaderboards helper: it did not answer when the menu opened,
+-- "Don't show this again" was not ticked on this version, no stage, full rally or recce is running, and the stats question
+-- is not up (online.promptWanted).
+local helperWhy = nil
+function M.helperPromptWanted()
+  if not menuOpen or helperDone then return false end
+  local probe = online.probeResult()
+  if probe ~= 'no' then
+    -- (the helper answered, or the check is under way or too early after the game started: said once in the log)
+    if probe ~= nil and probe ~= helperWhy then helperWhy = probe log('I', logTag, 'helper pop-up held: probe ' .. tostring(probe)) end
+    return false
+  end
+  -- (on a stage: its countdown or timed section, not a run driving to or waiting at the start -- found in test,
+  -- 2026-11-18, #77: a stage picked earlier held it back for good)
+  local st = runner.current() and runner.state() or 'idle'
+  local onStage = st == 'countdown' or st == 'launched' or st == 'running'
+  local running = onStage or rallyRun.active() ~= nil or recce.active() or autoRecce.active()
+  local okC, consent = pcall(stats.consent)
+  local ok, want = pcall(online.promptWanted, { probe = online.probeResult(), version = M.VERSION,
+    dismissedFor = online.promptDismissedFor(), running = running, done = helperDone,
+    consent = settings.get('onlineBoard') == true and okC and consent == 'ask' })
+  -- (why it shows or not, once per menu open, for the log)
+  local why = string.format('probe %s, run %s, rally %s, recce %s, dismissed for %s', tostring(online.probeResult()), st,
+    tostring(rallyRun.active() ~= nil), tostring(recce.active() or autoRecce.active()), tostring(online.promptDismissedFor()))
+  if why ~= helperWhy then helperWhy = why log('I', logTag, 'helper pop-up ' .. ((ok and want) and 'shown' or 'held') .. ': ' .. why) end
+  return ok and want == true
+end
+
+-- The pop-up asking for a leaderboard name: Leaderboards on, the helper connected and said hello, no player yet;
+-- not on a stage's countdown or timed section, in a full rally or a recce (the helper pop-up's rules); after the
+-- stats question and the helper pop-up, one at a time. Later hides it until the next menu open.
+function M.namePromptWanted()
+  if not menuOpen or nameDone then return false end
+  if settings.get('onlineBoard') ~= true then return false end
+  local okS, st = pcall(online.status)
+  if not okS or type(st) ~= 'table' or not st.connected or st.player ~= nil then return false end
+  local rs = runner.current() and runner.state() or 'idle'
+  if rs == 'countdown' or rs == 'launched' or rs == 'running' then return false end
+  if rallyRun.active() ~= nil or recce.active() or autoRecce.active() then return false end
+  local okC, consent = pcall(stats.consent)
+  if okC and consent == 'ask' then return false end
+  if M.helperPromptWanted() then return false end
+  return true
+end
+
+-- The name pop-up's Later: hidden until the next menu open. (Its Save is uiOnlineName.)
+function M.uiNamePrompt(what)
+  if what == 'later' then nameDone = true end
+  return { ok = true }
+end
+
+-- The pop-up's Got it: hidden until the next menu open; with "Don't show this again" ticked, until another version.
+function M.uiHelperPrompt(what, dontShow)
+  if what == 'close' then
+    helperDone = true
+    if dontShow == true then online.promptDismiss(M.VERSION) end
+  end
+  return { ok = true }
 end
 
 -- The page to open at, once (the menu page asks as it opens): { view, eventId, stageId } or nil.
@@ -1674,6 +1768,51 @@ function M.uiStage(eventId, stageId, pass)
 end
 
 function M.uiSet(key, value) return settings.set(key, value) end
+
+------------------------------------------------------------------------------------------ the online board
+
+-- A stage as the online board knows it (online.stageDesc): where it starts and finishes on the line it is timed on.
+local function onlineDesc(eventId, stageId)
+  local e, stage = menu.findStage(eventId, stageId)
+  if not stage then return nil end
+  local info = events.stageLineInfo(eventId, stageId, stage)
+  if not info then return nil end
+  return online.stageDesc(e and e.name, stage.name, info.start, info.finish, info.lengthM)
+end
+
+-- The stage page's Online tab: { status, board = { data, error, asking }, last = the last run sent }.
+-- board: 'stock' | 'open'.
+function M.uiOnline(eventId, stageId, board, force)
+  -- (no board picked yet: the class of the car being driven, #74)
+  local b = board
+  if b ~= 'open' and b ~= 'stock' then
+    local cv = rawget(_G, 'core_vehicles')
+    local okD, d = false, nil
+    if cv and cv.getCurrentVehicleDetails then okD, d = pcall(cv.getCurrentVehicleDetails) end
+    local okB, cls = false, nil
+    if okD and type(d) == 'table' and type(d.current) == 'table' and d.current.key then okB, cls = pcall(online.boardFor, d) end
+    b = (okB and cls) or 'stock'    -- (no car: Stock)
+  end
+  local out = { status = online.status(), boardName = b, naming = online.lastRegister }
+  if out.status.on then
+    local desc = onlineDesc(eventId, stageId)
+    out.hasLine = desc ~= nil
+    out.board = desc and online.board(desc, b, force == true) or nil
+    -- (the last run sent, on its own stage's board only)
+    local last = online.lastResult
+    if desc and last and last.stageKey == online.stageKey(desc) then out.last = last end
+  end
+  return out
+end
+
+-- A name for the online board (the first one makes the player). Answered on the next uiOnline (naming).
+function M.uiOnlineName(name)
+  online.lastRegister = { asking = true }
+  online.register(tostring(name or ''), function(r)
+    online.lastRegister = { ok = r.ok, error = r.error }
+  end)
+  return { ok = true }
+end
 
 ------------------------------------------------------------------------------------------ the full rally (1.7.0)
 
@@ -1781,7 +1920,7 @@ function M.uiRallyAction(what, eventId, opts)
       local act = rallyRun.active()
       if rallyRun.preparing() and act and act.eventId == eventId then
         autoSeq, rallyQ = nil, nil
-        if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
+        if autoRecce.active() then autoRun = nil; pcall(earth._roadWalk.reset); pcall(autoRecce.cancel) end
       end
     end
     if what == 'endNew' or what == 'endDrive' then
@@ -1799,6 +1938,28 @@ function M.uiRallyAction(what, eventId, opts)
     return go(false, 'unknown rally action ' .. tostring(what))
   end)
   if not ok then log('E', logTag, 'rally action ' .. tostring(what) .. ': ' .. tostring(r)) return { ok = false, message = tostring(r) } end
+  return r
+end
+
+-- Settings > Privacy and the first-open question (EarthRallyPrivacy.vue, EarthRally.vue): 'yes' / 'no' (the
+-- answer, or the switch), 'shown' (the question came up), 'openFolder', 'report' (a = what the player wrote, b = save the log).
+function M.uiStats(what, a, b)
+  local ok, r = pcall(function()
+    if what == 'yes' or what == 'no' then stats.answer(what == 'yes') if what == 'yes' then stats.flushSoon() end
+    elseif what == 'shown' then stats.prompting()     -- (the question is on screen: leaving now is a No)
+    elseif what == 'hidden' then stats.unprompt()     -- (it went without an answer)
+    elseif what == 'openFolder' then stats.openFolder()
+    elseif what == 'report' then
+      local cur = runner.current()
+      local env = versions.env and versions.env(M.VERSION) or {}
+      return report.open(a, b == true, { mod = M.VERSION, game = rawget(_G, 'beamng_version'),
+        earth = env.earth and (tostring(env.earth.major) .. '.' .. tostring(env.earth.minor)) or nil,
+        stage = cur and cur.stage and ((cur.event and cur.event.name or '?') .. ' / ' .. tostring(cur.stage.name)) or nil })
+    end
+    return { ok = true }
+  end)
+  if not ok then log('E', logTag, 'stats ' .. tostring(what) .. ': ' .. tostring(r)) return { ok = false, message = tostring(r) } end
+  r.stats = stats.uiState()
   return r
 end
 
@@ -2172,6 +2333,7 @@ function M.onUpdate(dtReal, dtSim)
   -- (1.7.3, item 3) a road-graph window waiting to be asked again after a timeout
   local okU, errU = pcall(autoRecce.update)
   if not okU then log('E', logTag, 'auto recce: ' .. tostring(errU)) end
+  pcall(stats.update, dtReal)
   -- switched off a frame ago: stop running (see onModDeactivated)
   if unloadNext then
     unloadNext = false
@@ -2183,6 +2345,7 @@ function M.onUpdate(dtReal, dtSim)
     scanIn = scanIn - (dtReal or 0)
     if scanIn <= 0 then scanIn = nil M.scanImports(false) end
   end
+  pcall(online.update, dtReal or 0)
   pcall(earthMenuFix.update)   -- (ahead of earth.update, which is not pcall'd)
   pcall(menuPause.update)      -- (a pause request held back while BeamNG.Earth held the game)
   pcall(logPausedSim, dtReal or 0, dtSim or 0)
@@ -2320,7 +2483,7 @@ function M.onClientEndMission()
   -- autoSeq as well: a sequence between its legs has no window in flight, so cancelling the auto recce alone
   -- would leave it behind and the page busy for ever (the guard in doAction refuses everything while one runs)
   autoSeq, rallyQ = nil, nil
-  if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
+  if autoRecce.active() then autoRun = nil; pcall(earth._roadWalk.reset); pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
   pcall(rallyRun.release)
@@ -2352,7 +2515,7 @@ function M.onModDeactivated()
   -- autoSeq as well: a sequence between its legs has no window in flight, so cancelling the auto recce alone
   -- would leave it behind and the page busy for ever (the guard in doAction refuses everything while one runs)
   autoSeq, rallyQ = nil, nil
-  if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
+  if autoRecce.active() then autoRun = nil; pcall(earth._roadWalk.reset); pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
   pcall(rallyRun.release)
@@ -2369,6 +2532,9 @@ end
 -- all -- and BeamNG.Earth leaves its own imgui status bar and banner out while it believes an app holds them, so a
 -- hold left behind takes its "server not running" message with it on any layout without its apps.
 function M.onExtensionUnloaded()
+  pcall(online.enable, false)  -- (the companion's socket closed: nothing reads it once the module goes)
+  pcall(online.probeStop)      -- (#77: and the helper look's, if one is under way)
+  pcall(stats.unwatchLog)      -- (the game's log function given back)
   pcall(menuPause.releaseAll)   -- (the menu's pause request, if the module goes with the page up: a reload)
   if recce.active() then pcall(recce.stop, false) end
   -- An auto recce converts each window through the world's origin, so one still in flight when the level goes
@@ -2377,7 +2543,7 @@ function M.onExtensionUnloaded()
   -- autoSeq as well: a sequence between its legs has no window in flight, so cancelling the auto recce alone
   -- would leave it behind and the page busy for ever (the guard in doAction refuses everything while one runs)
   autoSeq, rallyQ = nil, nil
-  if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
+  if autoRecce.active() then autoRun = nil; pcall(earth._roadWalk.reset); pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
   pcall(rallyRun.release)
@@ -2396,6 +2562,15 @@ function M.onExtensionLoaded()
   if veh then pcall(runner._vehCtl, veh, 'off') end
   settings.load()
   show[0] = settings.get('devPanel') == true
+  online.VERSION = M.VERSION
+  online.enable(settings.get('onlineBoard') == true)
+  online.markLoaded()          -- (#77: a helper look in the next 15 s is not trusted, it may still be starting)
+  pcall(stats.init, M.VERSION)
+  -- stats (#76): through the leaderboard's companion, only while the leaderboard is on; Earth Rally's errors in the
+  -- log recorded as they happen (only with the player's yes)
+  stats.transport = online.sendStats
+  stats.active = online.enabled
+  pcall(stats.watchLog)
   -- (new maps in the import folder)
   scanIn = 0.5
   log('I', logTag, 'Earth Rally ' .. M.VERSION .. ' loaded (Ctrl+Alt+K opens its menu)')

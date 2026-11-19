@@ -1,0 +1,98 @@
+-- roadWalk (upstream-earth): the road graph on an official BeamNG.Earth, read by teleporting the car to each window and
+-- taking BeamNG.Earth's own traffic graph round it. Against a fake BeamNG.Earth: api, core._state and navgraph.
+local T = dofile(TESTS .. '/testlib.lua')
+function log() end
+
+local now = 0
+local st = { anchorId = 1 }
+local pose = { lat = -34.0, lon = 117.0, anchorLat = -34.0, anchorLon = 117.0 }
+local ready = true
+local teleports = {}
+local g = { anchor = 1, serial = 1, nodes = { a = { 0, 0, 0, 3 } }, edges = { { 'a', 'b' } } }
+package.loaded['beamngEarth/navgraph'] = { currentGraph = function() return g end }
+_G.beamngEarth_core = { _state = function() return st end }
+_G.beamngEarth_api = {
+  version = function() return 1, 8 end,
+  has = function(n) return n == 'transform' end,
+  ready = function() return ready end,
+  rebasing = function() return false end,
+  pose = function() return pose end,
+  teleport = function(lat, lon) teleports[#teleports + 1] = { lat, lon } ready = false return true end,
+  toGeo = function(x, y, z) return pose.anchorLat + y / 111000, pose.anchorLon + x / 92000, z end,
+}
+
+local walk = require('earthRally/roadWalk')
+local earth = require('earthRally/earthAdapter')
+-- (a fake clock: roadWalk reads os.clock through its local; replace it)
+os.clock = function() return now end
+
+T.check(earth.roadGraphMode() == 'walk' and earth.hasRoadGraph(), 'no api.roadGraph: the walk is the road graph')
+T.check(earth.roadGraphRadius() == walk.RADIUS_M, 'the walk plans smaller windows')
+
+-- a window far away: teleported, and not answered from the graph that was there before
+local got = nil
+local ok = earth.roadGraph(-34.05, 117.0, { radius = 800 }, function(r) got = r end)
+T.check(#teleports == 0, 'no teleport until the frame after, with the world ready')
+walk.update()
+T.check(ok and #teleports == 1, 'a far window: the car teleported there')
+ready = true
+walk.update(); now = now + 5; walk.update()
+T.check(got == nil, 'the old frame\'s graph is not taken')
+-- arrived: new anchor, new graph
+st.anchorId = 2
+pose = { lat = -34.05, lon = 117.0, anchorLat = -34.05, anchorLon = 117.0 }
+g = { anchor = 2, serial = 7, nodes = { b = { 10, 10, 0, 4 } }, edges = { { 'a', 'b' } } }
+walk.update()
+T.check(got == nil, 'held SETTLE_S on a fresh graph first')
+now = now + 2; walk.update()
+T.check(got and got.nodes.b and got.complete and got.anchorLat == -34.05, 'the fresh graph handed over, its frame named')
+
+-- the last window: the car goes home before it is answered, the nodes already lat / lon
+got = nil
+ok = earth.roadGraph(-34.1, 117.0, { radius = 800, home = true }, function(r) got = r end)
+walk.update()
+T.check(ok and #teleports == 2, 'the last window: teleported')
+ready = true; st.anchorId = 3
+pose = { lat = -34.1, lon = 117.0, anchorLat = -34.1, anchorLon = 117.0 }
+g = { anchor = 3, serial = 9, nodes = { c = { 0, 111, 0, 2 } }, edges = {} }
+walk.update(); now = now + 2; walk.update()
+T.check(#teleports == 3 and teleports[3][1] == -34.0, 'the car taken back to where the walk began')
+T.check(got == nil, 'not answered until the world is ready at home')
+now = now + 3; ready = true; walk.update()
+T.check(got and got.geoNodes and got.geoNodes.c and math.abs(got.geoNodes.c.lat - (-34.099)) < 1e-6,
+  'the last window answered in lat / lon, converted before the car left')
+T.check(not earth.roadGraphHome(), 'home already: nothing more to do')
+
+-- set down too far from the window: an error, which the auto recce asks again for
+got = nil
+pose = { lat = -34.1, lon = 117.0, anchorLat = -34.1, anchorLon = 117.0 }
+earth.roadGraph(-34.3, 117.0, {}, function(r) got = r end)
+walk.update()
+ready = true; st.anchorId = 4; g = { anchor = 4, serial = 11, nodes = {}, edges = {} }
+now = now + 25; walk.update()
+T.check(got and got.error and got.error:find('set down'), 'set down far off: an error, not a window')
+
+-- a stop mid-walk: home
+earth.roadGraph(-34.5, 117.0, {}, function() end)
+local before = #teleports
+T.check(earth.roadGraphHome() and #teleports == before + 1 and not walk.busy(), 'a stop takes the car back')
+
+-- timed out
+got = nil
+earth.roadGraph(-34.6, 117.0, {}, function(r) got = r end)
+ready = false
+now = now + walk.TIMEOUT_S + 1; walk.update()
+T.check(got and got.error == 'timed out', 'no graph in TIMEOUT_S: timed out (the auto recce waits and asks again)')
+
+-- a level teardown: forgotten, the car not moved
+earth.roadGraph(-34.7, 117.0, {}, function() end)
+walk.reset()
+before = #teleports
+T.check(not walk.busy() and not earth.roadGraphHome() and #teleports == before, 'reset: no teleport')
+
+-- the fork's call wins where it is there
+_G.beamngEarth_api.has = function(n) return n == 'transform' or n == 'roadGraph' end
+_G.beamngEarth_api.roadGraph = function() return true end
+T.check(earth.roadGraphMode() == 'api' and earth.roadGraphRadius() == nil, 'api.roadGraph there: the fork\'s path')
+
+T.done('test_roadwalk')

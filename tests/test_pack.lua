@@ -369,6 +369,32 @@ do
   for _, p in ipairs(pack.find()) do kinds[p.name] = p.kind end
   T.check(kinds['Brindle.zip'] == 'zip' and kinds['Loose.kml'] == nil and kinds['One Stage'] == 'folder',
     'find: the listing gives files too; only folders are folders, a .zip stays a zip')
+  -- (1.8.0: the mod ships ARA 2026 as a folder; a player's own ARA zip is the same pack and is the one kept)
+  local added = { IMP .. 'ARA-Nationals-2026.zip', IMP .. 'ARA Nationals 2026/season.json' }
+  for _, f in ipairs(added) do files[f] = '{}' end
+  local ara = {}
+  for _, p in ipairs(pack.find()) do if pack._packKey(p.name) == 'aranationals2026' then ara[#ara + 1] = p end end
+  T.check(#ara == 1 and ara[1].kind == 'zip' and ara[1].name == 'ARA-Nationals-2026.zip',
+    'find: the same pack as a zip and a folder is found once, the zip')
+  files[added[1]] = nil
+  local only = {}
+  for _, p in ipairs(pack.find()) do if pack._packKey(p.name) == 'aranationals2026' then only[#only + 1] = p end end
+  T.check(#only == 1 and only[1].kind == 'folder', 'find: the folder when there is no zip of it')
+  -- (a renamed copy: another name, the same season id in its manifest)
+  local SEASON = '{"format":1,"kind":"season","id":"ara-nationals-2026","name":"ARA Nationals 2026","rounds":[]}'
+  files[added[2]] = SEASON
+  local renamed = IMP .. 'ARA-Nationals-2026 (1).zip'
+  files[renamed], zips[renamed] = 'zip bytes', { ['ARA Nationals 2026/season.json'] = SEASON }
+  local got = {}
+  for _, p in ipairs(pack.find()) do if p.name:find('ARA', 1, true) then got[#got + 1] = p end end
+  T.check(#got == 1 and got[1].kind == 'zip' and got[1].name == 'ARA-Nationals-2026 (1).zip',
+    'find: a renamed zip with the same season id is the same pack, the zip kept (' .. #got .. ')')
+  zips[renamed] = { ['season.json'] = (SEASON:gsub('ara%-nationals%-2026', 'another-season')) }
+  files[renamed] = 'zip bytes, changed'
+  local both = 0
+  for _, p in ipairs(pack.find()) do if p.name:find('ARA', 1, true) then both = both + 1 end end
+  T.check(both == 2, 'find: a zip with another id is another pack (' .. both .. ')')
+  files[renamed], zips[renamed], files[added[2]] = nil, nil, nil
 end
 
 ------------------------------------------------------------------------------------------ ids that survive edits

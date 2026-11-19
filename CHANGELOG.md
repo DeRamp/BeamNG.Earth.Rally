@@ -3,6 +3,81 @@
 Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/writing-standard.md). Downloads:
 [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
 
+## 1.9.0-alpha: official BeamNG.Earth (2026-11-19)
+
+Works with BeamNG.drive 0.40.5 · [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+.
+
+Earth Rally now runs fully on the official BeamNG.Earth: no fork needed, auto recce included.
+
+### Changed
+* **Auto recce** works on official BeamNG.Earth. It takes the car along the stage to read the roads, then brings it back.
+* Install the [official BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases). The DeRamp fork still works, and its auto recce stays faster.
+
+### Known issues
+* **Auto recce** on official BeamNG.Earth is slower: about five minutes for a 30 km stage on ground already downloaded.
+* It needs BeamNG.Earth's traffic and roads on; with them off it says so and stops.
+* A full rally's prep reads each stage in turn; it no longer downloads the next while you drive.
+
+## 1.8.2-alpha: name prompt and stats update (2026-11-19)
+
+Works with BeamNG.drive 0.40.5 · BeamNG.Earth 1.10+ for **Add from GitHub**, e.g. the
+[DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases) (official 1.10+ works, without the auto recce).
+
+A pop-up to pick your leaderboard name, and opt-in stats that name your own stages and count players.
+
+### New
+* With **Leaderboards** on and no name picked, opening the menu asks for one. **Later** hides it until next time.
+
+### Changed
+* **Stats** now send the names of your own imported or home-made rallies and stages, not `custom`.
+* **Stats** keep a random player number on your computer, sent on its own to count players. **No** deletes it.
+* If you said yes to stats before, you are asked again. What is sent: [privacy](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/PRIVACY.md).
+
+## 1.8.1-alpha: the leaderboard helper prompt (2026-11-18)
+
+Works with BeamNG.drive 0.40.5 · BeamNG.Earth 1.10+ for **Add from GitHub**, e.g. the
+[DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases) (official 1.10+ works, without the auto recce).
+
+A reminder to add the leaderboard helper, and leaderboards on from the start.
+
+### Changed
+* **Leaderboards** are on by default. Nothing is sent until you pick a name.
+* If you saved your settings before, your own **Leaderboards** choice is kept.
+* The stats question comes up the first time the menu opens. Off unless you say yes.
+
+### New
+* When the **Earth Rally Leaderboards** helper is not running, opening the menu shows how to add it.
+* **Got it** hides it until next time; **Don't show again** hides it until the next update.
+
+## 1.8.0-alpha: leaderboards (2026-11-18)
+
+Works with BeamNG.drive 0.40.5 · BeamNG.Earth 1.10+ for **Add from GitHub**, e.g. the
+[DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases) (official 1.10+ works, without the auto recce).
+
+Online leaderboards, opt-in stats, and an install through BeamNG.Earth's Add-ons page with the ARA 2026 season included.
+
+### New
+
+#### Leaderboards
+* **Leaderboards** per stage: your times against other players, in **Stock** (the game's own cars) and **Open**.
+* Turn them on in **Settings > Leaderboards**, then pick a name. The stage page switches between **Rally results** and **Leaderboard**.
+* The leaderboard opens on your car's class, and loads fresh times each time you come back to it.
+* Runs go through the **Earth Rally Leaderboards** helper beside the game. A run it cannot send waits and is sent later.
+* [How the leaderboard works](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/online-board.md).
+
+#### Stats
+* **Opt-in stats** and error reports, asked as their own question when you turn on Leaderboards. Off unless you say yes.
+* Stats carry no name or id. What is sent: [privacy](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/PRIVACY.md).
+
+#### Install
+* Install and update the mod and the helper from BeamNG.Earth's **Add-ons** page: **Add from GitHub**.
+* No **Add from GitHub**? Put the zip from Releases in `mods`.
+* The **ARA 2026** season comes with the mod. A copy already in your import folder is used instead, so nothing doubles.
+* Two Earth Rally zips in `mods` are named on the Rallies page, with the one to delete.
+
+### Known issues
+* The leaderboard needs the helper running in BeamNG.Earth. Without it the stage page says how to start it.
+
 ## 1.7.3-alpha: a quicker, sturdier auto recce (2026-11-18)
 
 Works with BeamNG.drive 0.40.5 · [BeamNG.Earth, DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)
