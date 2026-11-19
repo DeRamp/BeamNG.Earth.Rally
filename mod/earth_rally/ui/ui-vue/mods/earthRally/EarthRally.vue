@@ -17,15 +17,26 @@
     <EarthRallyLoading @view="v => (v === 'timecard' ? openCard() : null)" @up="v => (loadingUp = v)" />
     <template v-if="!loadingUp">
     <div class="er-topbar">
-      <div class="er-back" tabindex="0" bng-nav-item @click="back" @keydown.enter="back"><span>‹</span> {{ view === "home" ? "Close" : "Back" }}</div>
+      <div class="er-back" tabindex="0" bng-nav-item @click="back" @keydown.enter="back"><span>‹</span> {{ view === "home" || mp ? "Close" : "Back" }}</div>
       <div class="er-title"><span class="er-accent">Earth</span> Rally</div>
       <div class="er-crumbs"><span v-for="(c, i) in crumbs" :key="i" :class="{ 'er-cgo': c.go }" @click="c.go && c.go()">{{ c.label }}</span></div>
       <div class="er-right">
-        <BngButton v-if="view !== 'settings' && view !== 'home'" :accent="ACCENTS.outlined" @click="go('settings')">Settings</BngButton>
+        <BngButton v-if="!mp && view !== 'settings' && view !== 'home'" :accent="ACCENTS.outlined" @click="go('settings')">Settings</BngButton>
       </div>
     </div>
 
     <div class="er-content" :class="{ 'er-content-fill': view === 'home' }" v-bng-ui-nav-scroll>
+      <!-- (plan F) in a BeamMP session the menu is this one card, whatever page it was on; Close (A or B) shuts it
+           (docs/mockups-rally-loop/weather.html, c) -->
+      <div v-if="mp" class="er-mp">
+        <div class="er-card er-mpcard">
+          <div class="er-mpkick"><svg viewBox="0 0 24 24"><g fill="none" stroke="#f26b1d" stroke-width="2"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><path d="M2 20c0-3.5 2.7-6 6-6s6 2.5 6 6M12 15.2c1.1-.8 2.5-1.2 4-1.2 3.3 0 6 2.5 6 6"/></g></svg>Multiplayer session</div>
+          <h2>Earth Rally is off in multiplayer</h2>
+          <p>It moves the world and the car, which a shared server can't follow. Leave the server to drive rallies.</p>
+          <BngButton v-bng-ui-nav-focus="1" class="er-mpbtn" :accent="ACCENTS.main" @click="closeMenu">Close</BngButton>
+        </div>
+      </div>
+      <template v-else>
       <!-- the run or the recce under way -->
       <div v-if="banner" class="er-banner">
         <span>{{ banner }}</span>
@@ -378,15 +389,18 @@
       </section>
 
       <div v-else class="er-muted">Loading...</div>
+      </template>
     </div>
 
     <!-- the stats question (#76): once, when the leaderboard is turned on; its own yes or no -->
+    <template v-if="!mp">
     <EarthRallyConsent v-if="onlineOn && st.stats && st.stats.consent === 'ask'" />
     <!-- the Leaderboards helper not answering (#77): how to install it; never over the stats question (main.lua) -->
     <EarthRallyHelperPrompt v-else-if="st.helperPrompt" :online-on="onlineOn" />
     <!-- no leaderboard name yet (main.lua namePromptWanted): after the two above, one at a time -->
     <EarthRallyNamePrompt v-else-if="st.namePrompt" :naming="st.naming" />
-    <EarthRallyPrompts :top="view === 'home'" :results="view === 'pick' && !!(pickView && pickView.hasResults)" />
+    </template>
+    <EarthRallyPrompts :top="view === 'home' || mp" :results="!mp && view === 'pick' && !!(pickView && pickView.hasResults)" />
     </template>
   </div>
 </template>
@@ -424,6 +438,8 @@ const view = ref("home")
 // pass: the stage leaderboard's pass the player picked (null: the one they place best on, chosen in Lua)
 const sel = ref({ seasonId: null, eventId: null, stageId: null, pass: null })
 const st = computed(() => state.value || {})
+// (plan F) a BeamMP session: the menu is one card (main.lua uiState().multiplayer)
+const mp = computed(() => !!st.value.multiplayer)
 const ssn = computed(() => (season.value && !season.value.missing && season.value.id === sel.value.seasonId) ? season.value : null)
 const rly = computed(() => (rally.value && !rally.value.missing && rally.value.id === sel.value.eventId) ? rally.value : null)
 // (the rally as well as the stage: a stage's id is its line's name, and two rallies can both have a "Wildcat")
@@ -531,7 +547,7 @@ function rowEnter(e, s) { if (e.target === e.currentTarget) openStage(rly.value.
 // back) on all but the last (#39). Home > Drive rally > X results (#55), Home > Time card > X results.
 const crumbs = computed(() => {
   const home = { label: "Home", go: () => openHome() }
-  if (view.value === "home") return [{ label: "Home" }]
+  if (view.value === "home" || mp.value) return [{ label: "Home" }]
   if (view.value === "pick") return [home, { label: "Drive rally" }]
   if (view.value === "rally" && resultsFrom.value) {
     const from = resultsFrom.value === "pick" ? { label: "Drive rally", go: () => openPick(true) } : { label: "Time card", go: () => openCard() }
@@ -590,8 +606,8 @@ function stepTab(d) {
   rallyTab.value = t[(i + d + t.length) % t.length].id
 }
 // (the helper pop-up up, #77: the page under it does not move)
-const tabPrev = () => { if (!st.value.helperPrompt && !st.value.namePrompt) stepTab(-1) }
-const tabNext = () => { if (!st.value.helperPrompt && !st.value.namePrompt) stepTab(1) }
+const tabPrev = () => { if (!mp.value && !st.value.helperPrompt && !st.value.namePrompt) stepTab(-1) }
+const tabNext = () => { if (!mp.value && !st.value.helperPrompt && !st.value.namePrompt) stepTab(1) }
 const legend = computed(() => !!(rly.value && (rly.value.anyCancelled || rly.value.hasBoard)))
 const cancelledSs = computed(() => {
   for (const s of arr(rly.value && rly.value.list)) {
@@ -843,7 +859,7 @@ function openPick(keep) {
 }
 // Y on Drive rally: the picked rally's Results, its page on the Results tab alone (#55)
 const pickView = ref(null)
-function contextPress() { if (st.value.helperPrompt || st.value.namePrompt) return; if (view.value === "pick" && pickView.value) pickView.value.results() }
+function contextPress() { if (mp.value || st.value.helperPrompt || st.value.namePrompt) return; if (view.value === "pick" && pickView.value) pickView.value.results() }
 function openResults(id, from) {
   if (from === "pick") pickSel.value = id
   openRally(id, false)
@@ -886,6 +902,7 @@ function fullView(v, id) {
 const loadingUp = ref(false)
 function back() {
   if (loadingUp.value) return
+  if (mp.value) return closeMenu()
   if (st.value.helperPrompt) return helperPromptClose(false)   // (B on the helper pop-up, #77: Got it)
   if (st.value.namePrompt) return namePromptLater()             // (B on the name pop-up: Later)
   if (view.value === "rallyStart") {
@@ -986,6 +1003,14 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .er-page :deep(span[bng-nav-item]:focus), .er-back:focus { outline: 2px solid var(--er-orange); outline-offset: 2px; }
 
 .er-card { background: rgba(0, 0, 0, 0.6); border-radius: 0.5rem; }
+/* (plan F) the multiplayer card, alone in the middle of the page */
+.er-mp { min-height: 100%; display: flex; align-items: center; justify-content: center; }
+.er-mpcard { width: 940px; max-width: 100%; padding: 48px 56px 44px; border-left: 6px solid var(--er-orange); border-radius: 0 0.5rem 0.5rem 0;
+  h2 { margin: 12px 0 18px; font-size: 48px; text-transform: uppercase; line-height: 1.1; }
+  p { margin: 0 0 34px; font-size: 22px; line-height: 1.5; color: #dfe2e8; max-width: 800px; }
+  .er-mpbtn { --bng-button-margin: 0; font-size: 26px; line-height: 32px; padding: 14px 40px; letter-spacing: 0.04em; } }
+.er-mpkick { display: flex; align-items: center; gap: 12px; font-size: 15px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--er-orange); font-weight: 700;
+  svg { width: 26px; height: 26px; } }
 .er-lbswitch { display: flex; gap: 4px; align-self: flex-start; margin-bottom: -10px; background: rgba(0, 0, 0, 0.6); border-radius: 0.25rem; padding: 4px;
   span { padding: 6px 18px; border-radius: 3px; font-size: 16px; font-weight: 600; color: var(--er-muted); cursor: pointer; }
   span.on { background: var(--er-orange-500); color: #fff; } }

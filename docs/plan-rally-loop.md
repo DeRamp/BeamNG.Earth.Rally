@@ -388,6 +388,7 @@ text), `docs/rally-file.md`, `docs/plan-rally-loop.md`. Tests: test_pack, test_r
 lower-cased), the start screen's two notes. The data for the time card's word is there (`rows[i].weather`,
 `transit.weather`); its UI waits for the mock-up. Known limit: BeamNG.Earth's `setPreset(nil)` keeps the rally's weather
 showing until its next real weather message (it refreshes every 10 min).
+The time card's word built 2026-11-19 (`EarthRallyFull.vue`: each stage row, the transit banner's second line).
 
 ## F. Earth Rally off in multiplayer (the owner, 2026-11-19)
 
@@ -404,4 +405,4 @@ Files: `main.lua` (a `multiplayer()` check gating start paths and the update), `
 (stop), `menu.lua`/`uiState` (`multiplayer = true`), the menu Vue (after the mock-up). Tests: test_run.
 
 **Built 2026-11-19** (Lua side): `main.mpCheck` / `main.multiplayer()`, `earthAdapter.inMultiplayer`, `uiState().multiplayer`.
-The menu's one card waits for the mock-up.
+The menu's one card built 2026-11-19 (`EarthRally.vue`: every page, Close or B shuts the menu).

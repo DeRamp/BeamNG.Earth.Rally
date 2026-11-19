@@ -114,7 +114,10 @@
               <div v-if="dayHead(i)" class="er-day">Day {{ r.day }}</div>
               <div class="er-tr" :class="rowCls(r)">
                 <span class="er-mono">{{ r.label }}</span>
-                <span v-if="timed" class="er-clip er-nm">{{ r.name || "" }}<small v-if="stopNote(r)">{{ stopNote(r) }}</small></span>
+                <!-- (plan E) a stage's stored weather in a word beside its name: dim once driven, none when not stored
+                     (docs/mockups-rally-loop/weather.html, a) -->
+                <span v-if="r.weather" class="er-sn"><span class="er-clip">{{ r.name || "" }}</span><span class="er-wx" :class="{ done: r.done }"><svg viewBox="0 0 24 24" v-html="wxIcon(r.weather)"></svg>{{ wxText(r.weather) }}</span></span>
+                <span v-else-if="timed" class="er-clip er-nm">{{ r.name || "" }}<small v-if="stopNote(r)">{{ stopNote(r) }}</small></span>
                 <span v-else class="er-clip">{{ r.name || "" }}</span>
                 <template v-if="timed">
                   <!-- (additions B) a row whose due isn't known yet: its road section's target, dim -->
@@ -186,8 +189,11 @@
                 <template v-if="c.transit.late > 0"><i>·</i><span>{{ c.transit.late }} min late<template v-if="c.transit.penaltyS > 0"> · {{ pen(c.transit.penaltyS) }}</template></span></template>
                 <template v-else-if="c.transit.leftS != null"><i>·</i><span class="er-mono">{{ mmss(c.transit.leftS) }}</span><span>left</span></template>
                 <template v-if="c.transit.distM != null"><i>·</i><span class="er-mono">{{ len(c.transit.distM) }}</span></template>
+                <!-- (plan E) the next stage's stored weather, its own line -->
+                <span v-if="c.transit.weather" class="er-bwx"><svg viewBox="0 0 24 24" v-html="wxIcon(c.transit.weather)"></svg>{{ wxText(c.transit.weather) }}</span>
               </div>
-              <div v-else-if="c.transit">To {{ c.transit.name }}<template v-if="c.transit.distM != null"> · {{ len(c.transit.distM) }}</template></div>
+              <div v-else-if="c.transit">To {{ c.transit.name }}<template v-if="c.transit.distM != null"> · {{ len(c.transit.distM) }}</template>
+                <span v-if="c.transit.weather" class="er-bwx"><svg viewBox="0 0 24 24" v-html="wxIcon(c.transit.weather)"></svg>{{ wxText(c.transit.weather) }}</span></div>
               <div class="er-muted er-small">Follow the arrows.<template v-if="c.transit && c.transit.due"> Late costs a road penalty for each minute.</template></div>
             </template>
             <template v-else-if="c.phase === 'toGo'">
@@ -408,6 +414,23 @@ function prepStopLabel() {
   const left = p ? p.of - Math.max(1, p.i) + 1 : 0
   return left > 1 ? `Stop all ${left}` : "Stop"
 }
+// (plan E) a stage's weather (rallyRun.weatherWord: { text, tempC, icon, night }): "overcast · 15 °C", "clear night · −2 °C"
+function wxText(w) {
+  const t = w.night && w.text === "clear" ? "clear night" : w.text
+  if (w.tempC == null) return t
+  return `${t} · ${w.tempC < 0 ? "−" + -w.tempC : w.tempC} °C`
+}
+const WX_CLOUD = '<path d="M6.5 15h11a4 4 0 0 0 .5-7.97A5.5 5.5 0 0 0 7.1 7.4 3.8 3.8 0 0 0 6.5 15z" fill="#aeb4be"/>'
+const WX_SVG = {
+  sun: '<circle cx="12" cy="12" r="5" fill="#ffd36b"/><g stroke="#ffd36b" stroke-width="2" stroke-linecap="round"><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></g>',
+  moon: '<path d="M15.5 3a8.5 8.5 0 1 0 5.6 14.9A7.2 7.2 0 0 1 15.5 3z" fill="#e8e4c8"/><circle cx="19" cy="6" r="1.1" fill="#e8e4c8"/>',
+  cloud: '<path d="M6.5 19h11a4.5 4.5 0 0 0 .6-8.96A6 6 0 0 0 6.6 10.6 4.2 4.2 0 0 0 6.5 19z" fill="#c9ced6"/>',
+  rain: WX_CLOUD + '<g stroke="#6fb0ff" stroke-width="2" stroke-linecap="round"><path d="M8 18l-1 3M12.5 18l-1 3M17 18l-1 3"/></g>',
+  snow: WX_CLOUD + '<g fill="#eef3ff"><circle cx="7.5" cy="19" r="1.3"/><circle cx="12" cy="21" r="1.3"/><circle cx="16.5" cy="19" r="1.3"/></g>',
+  storm: WX_CLOUD + '<path d="M12.5 14l-3 5h3l-1.5 4 4.5-6h-3l1.5-3z" fill="#ffd36b"/>',
+  fog: '<g stroke="#c9ced6" stroke-width="2.4" stroke-linecap="round"><path d="M3 8h18M5 12.5h14M3 17h18"/></g>',
+}
+const wxIcon = w => WX_SVG[w.icon] || WX_SVG.cloud
 const rowCls = r => ({ next: r.next && r.kind === "stage", svc: r.kind !== "stage", here: r.next && r.kind !== "stage", sr: r.superRally, dim: r.done && r.kind !== "stage" })
 // A day's header over its first row of any kind that carries a day (#57: the start carries the first stage's, so
 // Day 1 heads the list above Start). Rows with no day (an older rally's start) take none and break no day.
@@ -521,5 +544,13 @@ h3 { margin: 0 0 10px; font-size: 20px; letter-spacing: 0.04em; }
   &.dusk, &.dawn { background: linear-gradient(180deg, #ffb46b 50%, transparent 50%); }
   &.day { background: #ffd36b; } }
 .er-corner .er-nofork { max-width: 620px; text-align: right; line-height: 1.45; }
+/* (plan E) a stage's weather beside its name, and the transit banner's line for the next stage */
+.er-sn { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.er-wx { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; flex: none; font-size: 15px; font-weight: 500; color: #b8bcc6; white-space: nowrap;
+  svg { width: 19px; height: 19px; flex: none; }
+  &.done { color: #8a909a; } }
+.er-tr.next .er-wx { color: #fff; }
+.er-bwx { display: flex; align-items: center; gap: 8px; flex-basis: 100%; font-weight: 500; color: #dfe6ff;
+  svg { width: 22px; height: 22px; flex: none; } }
 .er-row2 { display: flex; justify-content: space-between; padding: 5px 0; font-size: 18px; }
 </style>
