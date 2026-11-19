@@ -28,7 +28,8 @@ BeamNG.drive 0.40.5 mod (Lua, `mod/earth_rally/`) that runs real rally stages on
 - **Landing work on `main`**, once it is done and `/handoff` is clean: `git fetch`, merge `origin/main` into your
   branch, fix any conflicts, rerun the touched tests, then merge your branch into `main` and push `main`. No PR
   needed. Merge, never rebase shared history. If the push is rejected, fetch and repeat.
-- Release = tag `vX.Y.Z-alpha` on `main` + GitHub pre-release with `dist/earth_rally-X.Y.Z-alpha.zip`, only when
+- Release = tag `vX.Y.Z-alpha` on `main` + GitHub **full** release (not pre-release: BeamNG.Earth's Add-ons page only sees full releases) with
+  `dist/earth_rally-X.Y.Z-alpha.zip` as the only asset (the ARA 2026 pack is inside it; never attach another zip), only when
   the owner asks: `/release` (`tools/release.py`).
 - **Feature builds carry no version number of their own.** One is named after the release it is built on, plus a
   short feature name: `1.6.2-alpha+stats` ("built on 1.6.2, the stats feature"). That goes in `M.VERSION`, the zip
