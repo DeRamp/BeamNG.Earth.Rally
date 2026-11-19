@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Rally · stats consent, privacy settings, report a problem</title>
+<!-- Proposal, not built. 1920x1080. Research and decisions behind it: docs/research-telemetry.md.
+     Open with #consent (first load, when the rally menu first opens), #settings (Settings > Privacy)
+     or #reportweb (Report a problem, through the browser to GitHub); add ?shot for a bare 1920x1080 screen.
+     The road and the stock apps are stand-ins; buttons are BngButton, roughly. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700;800&family=Overpass+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto Sans", system-ui, sans-serif; }
+.mock-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 16px; background: #1a1d22; border-bottom: 1px solid #2a2e35; position: sticky; top: 0; z-index: 10; }
+.mock-bar b { margin-right: 8px; font-weight: 600; }
+.mock-bar button { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 4px; border: 1px solid #3a3f48; background: #23272e; color: #ddd; cursor: pointer; }
+.mock-bar button.on { background: #c75b1e; border-color: #c75b1e; color: #fff; }
+.stage-wrap { padding: 16px; }
+.screen-box { position: relative; width: 100%; max-width: 1920px; margin: 0 auto; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 6px; box-shadow: 0 0 0 1px #2a2e35; }
+.screen { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-size: 16px; overflow: hidden;
+  background: linear-gradient(180deg, #7aa4c9 0%, #b9cfdf 38%, #6d7a52 39%, #4f5a3a 70%, #3d4530 100%); }
+.road { position: absolute; left: 50%; bottom: 0; width: 1500px; height: 660px; transform: translateX(-50%); clip-path: polygon(46% 0, 54% 0, 100% 100%, 0 100%); background: linear-gradient(#a08a6a, #8a7353); }
+.shot .mock-bar { display: none; } .shot .stage-wrap { padding: 0; }
+.shot .screen-box { width: 1920px; height: 1080px; aspect-ratio: auto; border-radius: 0; box-shadow: none; }
+.who { position: absolute; left: 330px; bottom: 14px; z-index: 7; width: 1260px; background: rgba(255,250,150,.96); color: #222; font: 500 17px/1.45 "Noto Sans", sans-serif; padding: 10px 16px; border-radius: 4px; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+.shot .who { display: none; }
+
+.dim { position: absolute; inset: 0; background: rgba(0,0,0,.55); }
+.card { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 860px; background: rgba(28,31,37,.97);
+  border-radius: .5rem; border-top: 6px solid #1f8fff; padding: 34px 44px 36px; box-shadow: 0 12px 40px rgba(0,0,0,.6); }
+.card h1 { margin: 0 0 10px; font-size: 36px; font-weight: 800; }
+.card p { margin: 0 0 18px; font-size: 21px; line-height: 1.45; color: #d9dce3; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 4px 0 22px; }
+.col { background: rgba(255,255,255,.05); border-radius: .4rem; padding: 16px 20px; }
+.col h2 { margin: 0 0 8px; font-size: 15px; letter-spacing: .08em; text-transform: uppercase; color: #b8bcc6; }
+.col ul { margin: 0; padding-left: 20px; font-size: 18px; line-height: 1.55; }
+.col.yes h2 { color: #7cc4ff; } .col.no h2 { color: #ffb48a; }
+.small { font-size: 17px !important; color: #aab !important; }
+.small a, .card a { color: #7cc4ff; }
+.btns { display: flex; gap: 16px; justify-content: flex-end; margin-top: 8px; }
+.bng-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 230px; font: 600 21px "Noto Sans", sans-serif; color: #fff; border-radius: .25rem; padding: 15px 26px; border: 0; }
+.bng-btn.main { background: oklch(61.95% 0.1801 43.40); }
+.bng-btn.secondary { background: rgba(110,115,128,.55); }
+.bng-btn.outlined { background: transparent; box-shadow: inset 0 0 0 2px rgba(255,255,255,.55); min-width: 0; }
+
+/* settings */
+.menu { position: absolute; left: 120px; top: 90px; width: 1100px; background: rgba(28,31,37,.97); border-radius: .5rem; padding: 34px 44px; }
+.menu .crumbs { font-size: 16px; color: #aab; letter-spacing: .06em; text-transform: uppercase; }
+.menu h1 { margin: 6px 0 26px; font-size: 38px; }
+.row { display: flex; align-items: center; gap: 24px; padding: 20px 0; border-top: 1px solid rgba(255,255,255,.1); }
+.row .t { flex: 1; } .row .t b { display: block; font-size: 22px; } .row .t span { font-size: 17px; color: #aab; }
+.tog { width: 74px; height: 38px; border-radius: 19px; background: #1f8fff; position: relative; flex: none; }
+.tog::after { content: ""; position: absolute; right: 4px; top: 4px; width: 30px; height: 30px; border-radius: 50%; background: #fff; }
+.mono { font-family: "Overpass Mono", monospace; }
+.code { background: #0e1014; border-radius: .3rem; padding: 14px 18px; font: 15px/1.6 "Overpass Mono", monospace; color: #cfd3da; white-space: pre; overflow: hidden; }
+.code .k { color: #7cc4ff; } .code .x { color: #ffb48a; }
+
+/* report */
+.field { background: #0e1014; border: 1px solid #3a3f48; border-radius: .3rem; padding: 14px 16px; font-size: 19px; color: #e6e6e6; min-height: 120px; margin-bottom: 18px; }
+.field.one { min-height: 0; color: #888; }
+.check { display: flex; gap: 12px; align-items: flex-start; font-size: 19px; margin: 6px 0 12px; }
+.box { width: 26px; height: 26px; border-radius: 4px; background: #1f8fff; flex: none; position: relative; margin-top: 1px; }
+.box::after { content: "✓"; position: absolute; inset: 0; text-align: center; font-weight: 800; line-height: 26px; }
+.label { font-size: 15px; letter-spacing: .08em; text-transform: uppercase; color: #b8bcc6; margin-bottom: 6px; }
+.big-id { font: 700 54px "Overpass Mono", monospace; text-align: center; margin: 8px 0 18px; letter-spacing: .06em; }
+.view { display: none; } .view.on { display: block; }
+</style>
+</head>
+<body>
+<div class="mock-bar"><b>Earth Rally · stats and reports (proposal)</b>
+  <button data-v="consent">First load: ask</button>
+  <button data-v="settings">Settings › Privacy</button>
+  <button data-v="reportweb">Report a problem</button>
+</div>
+<div class="stage-wrap"><div class="screen-box"><div class="screen" id="screen">
+  <div class="road"></div>
+
+  <!-- 1. first load -->
+  <div class="view" id="v-consent">
+    <div class="dim"></div>
+    <div class="card">
+      <h1>Help improve Earth Rally?</h1>
+      <p>Earth Rally can send a few anonymous counts, like which stages you run and whether you finish them. It shows which stages people drive and what needs fixing.</p>
+      <div class="cols">
+        <div class="col yes"><h2>What it sends</h2><ul>
+          <li>Mod and game version</li>
+          <li>Stages and rallies started and finished</li>
+          <li>Stage time, resets, retirements</li>
+          <li>A random install number</li></ul></div>
+        <div class="col no"><h2>Never sent</h2><ul>
+          <li>Your name, Steam or BeamNG account</li>
+          <li>Your IP address or location</li>
+          <li>Your other mods or your PC</li>
+          <li>Logs, unless you send a report</li></ul></div>
+      </div>
+      <p class="small">Change your mind any time in <b>Settings › Privacy</b>. Full details, from DeRamp: <a>github.com/DeRamp/BeamNG.Earth.Rally/PRIVACY.md</a></p>
+      <div class="btns"><span class="bng-btn secondary">No thanks</span><span class="bng-btn secondary">Yes, send stats</span></div>
+    </div>
+    <div class="who"><b>First time the rally menu opens</b>, once. Nothing is sent until the player answers; closing it counts as No. Both buttons look the same on purpose: "No" must be as easy as "Yes" (EU consent rules, and BeamNG's own prompt does the same). Controller: A/B move between them, nothing pre-selected.</div>
+  </div>
+
+  <!-- 2. settings -->
+  <div class="view" id="v-settings">
+    <div class="menu">
+      <div class="crumbs">Earth Rally › Settings</div>
+      <h1>Privacy</h1>
+      <div class="row"><div class="t"><b>Send anonymous stats</b><span>Stages and rallies run and finished. Nothing personal.</span></div><div class="tog"></div></div>
+      <div class="row"><div class="t"><b>See what was sent</b><span>Every message is also saved on your PC, word for word.</span></div><span class="bng-btn outlined">Open file</span></div>
+      <div class="row"><div class="t"><b>Delete my stats</b><span>Removes everything sent from this PC and starts a new install number.</span></div><span class="bng-btn outlined">Delete</span></div>
+      <div class="row"><div class="t"><b>Report a problem</b><span>Opens a bug report on GitHub. You choose whether to add your log.</span></div><span class="bng-btn outlined">Report</span></div>
+      <div class="label" style="margin-top:22px">Last message sent</div>
+      <div class="code">{ <span class="k">"event"</span>: "stage_finished", <span class="k">"install"</span>: "c41f…9a0e", <span class="k">"mod"</span>: "1.6.2-alpha+stats", <span class="k">"game"</span>: "0.40.5",
+  <span class="k">"stage"</span>: "ara2026-ss3", <span class="k">"result"</span>: "finished", <span class="k">"time_s"</span>: 412, <span class="k">"resets"</span>: 1, <span class="k">"day"</span>: "2026-11-16" }</div>
+    </div>
+    <div class="who"><b>Settings › Privacy.</b> The toggle shows the player's answer from the first prompt. "Open file" opens <span class="mono">earthRally/telemetry/sent.jsonl</span> in the userfolder. Only the date is sent, not the time of day.</div>
+  </div>
+
+  <!-- 3. report a problem: through the browser to GitHub -->
+  <div class="view" id="v-reportweb">
+    <div class="dim"></div>
+    <div class="card" style="width:940px">
+      <h1>Report a problem</h1>
+      <div class="label">What happened?</div>
+      <div class="field">The co-driver stopped calling notes halfway through SS3…</div>
+      <div class="check"><span class="box"></span><span>Save my game log for the report (personal details removed). <a>Preview</a></span></div>
+      <p class="small">Your browser opens a new issue on <b>github.com/DeRamp/BeamNG.Earth.Rally</b> with this filled in. Drag the log file into it; its folder opens alongside. Needs a free GitHub account.</p>
+      <div class="btns"><span class="bng-btn secondary">Cancel</span><span class="bng-btn main">Open GitHub</span></div>
+    </div>
+    <div class="who"><b>Report a problem</b>, from Settings, the Escape rally menu, and offered after a Lua error. Works with stats off. Nothing leaves the game by itself: the browser opens <span class="mono">/issues/new</span> with the title, text, mod and game versions and stage filled in, labelled <span class="mono">bug</span>; the player posts it. The cleaned log is saved to <span class="mono">earthRally/reports/</span>.</div>
+  </div>
+
+</div></div></div>
+<script>
+const views = ['consent','settings','reportweb'];
+if (location.search.includes('shot')) document.body.classList.add('shot');
+function show(v) {
+  if (!views.includes(v)) v = 'consent';
+  views.forEach(x => document.getElementById('v-' + x).classList.toggle('on', x === v));
+  document.querySelectorAll('.mock-bar button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+}
+document.querySelectorAll('.mock-bar button').forEach(b => b.onclick = () => { location.hash = b.dataset.v; });
+window.onhashchange = () => show(location.hash.slice(1));
+function fit() { const box = document.querySelector('.screen-box'); document.getElementById('screen').style.transform = 'scale(' + box.clientWidth / 1920 + ')'; }
+window.onresize = fit; fit(); show(location.hash.slice(1));
+</script>
+</body>
+</html>

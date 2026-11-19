@@ -323,7 +323,14 @@
         </div>
         <!-- the Leaderboard card above Your runs (the user, 2026-11-14), which then shows the last two -->
         <div class="er-rcol">
-        <EarthRallyBoard v-if="stg.board" :b="stg.board" :best="stg.best" @pass="choosePass" />
+        <!-- (prototype) Offline: the rally pack's real results; Online: players' own times (EarthRallyOnline), only
+             once the player has turned the online board on in Settings. The switch shows when there are both. -->
+        <div v-if="stg.board && onlineOn" class="er-lbswitch">
+          <span v-for="t in LB_TABS" :key="t.id" tabindex="0" bng-nav-item :class="{ on: lbTab === t.id }"
+            @click="lbTab = t.id" @keydown.enter="lbTab = t.id">{{ t.label }}</span>
+        </div>
+        <EarthRallyBoard v-if="stg.board && (lbTab === 'offline' || !onlineOn)" :b="stg.board" :best="stg.best" @pass="choosePass" />
+        <EarthRallyOnline v-else-if="onlineOn" :event-id="stg.eventId" :stage-id="stg.id" />
         <div class="er-card er-runs">
           <h3>Your runs</h3>
           <div v-if="stg.best" class="er-best-box"><span class="er-t">{{ time(stg.best) }}</span><span class="er-badge">BEST</span></div>
@@ -341,12 +348,17 @@
       <!-- ===== Settings ===== -->
       <section v-else-if="view === 'settings'" class="er-settings-page">
         <div class="er-card"><EarthRallySettings /></div>
-        <p class="er-dim er-small">Earth Rally {{ st.version }}</p>
+        <div>
+          <div class="er-card"><EarthRallyPrivacy /></div>
+          <p class="er-dim er-small">Earth Rally {{ st.version }}</p>
+        </div>
       </section>
 
       <div v-else class="er-muted">Loading...</div>
     </div>
 
+    <!-- the stats question (#76): once, when the leaderboard is turned on; its own yes or no -->
+    <EarthRallyConsent v-if="onlineOn && st.stats && st.stats.consent === 'ask'" />
     <EarthRallyPrompts :top="view === 'home'" :results="view === 'pick' && !!(pickView && pickView.hasResults)" />
     </template>
   </div>
@@ -358,6 +370,8 @@ import { BngButton, ACCENTS } from "@/common/components/base"
 import { vBngOnUiNav, vBngUiNavScroll, vBngUiNavFocus } from "@/common/directives"
 import { useUINavScope } from "@/services/uiNav"
 import EarthRallySettings from "./EarthRallySettings.vue"
+import EarthRallyPrivacy from "./EarthRallyPrivacy.vue"
+import EarthRallyConsent from "./EarthRallyConsent.vue"
 import EarthRallyHome from "./EarthRallyHome.vue"
 import EarthRallyHomeMenu from "./EarthRallyHomeMenu.vue"
 import EarthRallyPick from "./EarthRallyPick.vue"
@@ -365,6 +379,7 @@ import EarthRallyPrompts from "./EarthRallyPrompts.vue"
 import EarthRallySeason from "./EarthRallySeason.vue"
 import EarthRallyPic from "./EarthRallyPic.vue"
 import EarthRallyBoard from "./EarthRallyBoard.vue"
+import EarthRallyOnline from "./EarthRallyOnline.vue"
 import EarthRallyResults from "./EarthRallyResults.vue"
 import EarthRallyFull from "./EarthRallyFull.vue"
 import EarthRallyLoading from "./EarthRallyLoading.vue"
@@ -383,6 +398,10 @@ const st = computed(() => state.value || {})
 const ssn = computed(() => (season.value && !season.value.missing && season.value.id === sel.value.seasonId) ? season.value : null)
 const rly = computed(() => (rally.value && !rally.value.missing && rally.value.id === sel.value.eventId) ? rally.value : null)
 // (the rally as well as the stage: a stage's id is its line's name, and two rallies can both have a "Wildcat")
+// the stage page's leaderboard: the rally pack's real results (offline) or players' times (online)
+const LB_TABS = [{ id: "offline", label: "Rally results" }, { id: "online", label: "Leaderboard" }]
+const lbTab = ref("offline")
+const onlineOn = computed(() => !!(state.value.settings && state.value.settings.settings && state.value.settings.settings.onlineBoard))
 const stg = computed(() => (stage.value && !stage.value.missing && stage.value.id === sel.value.stageId &&
   stage.value.eventId === sel.value.eventId) ? stage.value : null)
 // An auto recce holds the page as a recce does: the Lua does one window at a time, so every other action is
@@ -894,6 +913,9 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .er-page :deep(span[bng-nav-item]:focus), .er-back:focus { outline: 2px solid var(--er-orange); outline-offset: 2px; }
 
 .er-card { background: rgba(0, 0, 0, 0.6); border-radius: 0.5rem; }
+.er-lbswitch { display: flex; gap: 4px; align-self: flex-start; margin-bottom: -10px; background: rgba(0, 0, 0, 0.6); border-radius: 0.25rem; padding: 4px;
+  span { padding: 6px 18px; border-radius: 3px; font-size: 16px; font-weight: 600; color: var(--er-muted); cursor: pointer; }
+  span.on { background: var(--er-orange-500); color: #fff; } }
 .er-muted { color: var(--er-muted); }
 .er-dim { color: var(--er-dim); font-size: 15px; }
 .er-small { font-size: 14px; margin-top: 12px; }

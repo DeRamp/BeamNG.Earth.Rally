@@ -2,6 +2,8 @@
 
 Drafted with the user, 2026-11-13; 1.3.1 and 1.3.2 released 2026-11-14. Each version has one theme; a
 version is done when it has been driven in game.
+Planned features carry no number: `+name`, built on the release named, and numbered (the next minor) only when
+the owner merges and releases them (CLAUDE.md, "Feature builds"). Older entries kept their numbers.
 Sizes are rough (S: a session, M: a few, L: a week or more of sessions). Numbers in brackets are the roadmap items
 from the planning list.
 
@@ -141,7 +143,18 @@ stages: road sections skipped, saved only at service. Plan in docs/plan-1.7.0.md
 | | Weather and time of day per stage (25) | M |
 | | Split times (15) | S |
 
-## 1.8.0: make and share stages
+## 1.8.0: leaderboards
+
+Online leaderboards and opt-in stats through the Earth Rally Leaderboards helper, and install through BeamNG.Earth's
+Add-ons page with the ARA 2026 season included. Design in docs/online-board.md and docs/research-online-leaderboards.md.
+
+| | Item | Size |
+|---|---|---|
+| ✔ | Leaderboards per stage and class (Stock / Open) through the helper beside the game (20; #72-#75) | built |
+| ✔ | Opt-in stats and error reports through the same helper (#76) | built |
+| ✔ | Install and update both from BeamNG.Earth's Add-ons page; ARA 2026 in the mod (22) | built |
+
+## 1.9.0: make and share stages
 
 Players build their own stages and pass them around.
 
@@ -158,12 +171,11 @@ Ready for players who have never heard of it.
 
 | Item | Size |
 |---|---|
-| Install and update from BeamNG.Earth's Add-ons page (22) | S (the listing comes with 1.3.0) |
 | A starter pack of stages (as Earth Rally files) and a tutorial (22) | M |
 | Championship / season mode with points (28) | M |
 | Pick your rally car and setup; a recce car (12, 13) | M |
 | A recovery vehicle (14) | M |
-| Online leaderboards: decide then (server, anti-cheat) (20) | L |
+| Online leaderboards: anti-cheat, past the helper's checks (20) | L |
 
 ## Out of scope for now
 
@@ -197,7 +209,7 @@ Decided against, with the reason, so they are not proposed again.
   late-start penalty moved to on the stage. So the 1.3 line is finished.
 - 1.4.0 (rally files) released ahead of on the stage (the user, 2026-11-14): it was built alongside it on a branch
   of its own and finished first. The menus and the leaderboards are the parts of the rally file a player sees, and
-  1.7.0's writing half builds on the same format.
+  `+share`'s writing half builds on the same format.
 - 1.5.0 (the co-driver) released ahead of on the stage (the user, 2026-11-14): built alongside it on a branch of
   its own and finished first, as the rally files were. Its height reading and sight crests are what on the stage's
   height profiles and sketches can draw on.
@@ -205,11 +217,12 @@ Decided against, with the reason, so they are not proposed again.
   junction signs stand on the junction data 1.3.0's auto recce already finds, so the heart of it needs nothing from
   later versions. It was first placed after the rally file because it was said to build on that too; in its new
   place, anything here that would have lived in the file (a ghost's run, most likely) has to be kept on this
-  machine per stage until 1.7.0 can carry it -- to settle when 1.6.0 is planned.
+  machine per stage until `+share` can carry it -- to settle when 1.6.0 is planned.
 - The co-driver was the pacenote overhaul on its own (split from 1.3.0, the user, 2026-11-13): large, and best
   tested on the matched lines 1.3.0 gives everyone, which 1.3.1 made reachable on ground nobody has driven.
 - The full rally (now 1.7.0) ahead of make and share stages (the owner, 2026-11-15): 1.4.0's rally pack already
   reads the itineraries and service areas it needs, so it no longer waits on the writing half.
-- 1.8.0's rally file is the base for the editor, setup mode and the starter pack, so it comes before them.
+- Leaderboards (1.8.0) ahead of make and share stages (the owner, 2026-11-18).
+- 1.9.0's rally file is the base for the editor, setup mode and the starter pack, so it comes before them.
 - On the stage before the full rally (the user, 2026-11-13), and now before everything after 1.3 (2026-11-14).
 - 2.0.0 gathers what a newcomer needs, once the content and tools exist to fill a starter pack.

@@ -3,7 +3,7 @@
 Drive real rally stages on the real roads of [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth), timed,
 with BeamNG.drive's own co-driver calling pacenotes worked out from the road.
 
-**Alpha · BeamNG.drive 0.40.5 · BeamNG.Earth modding API 1.6+ · auto recce: [DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)**
+**Alpha · BeamNG.drive 0.40.5 · BeamNG.Earth 1.10+ · auto recce: [DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)**
 [Download](https://github.com/DeRamp/BeamNG.Earth.Rally/releases) · [Wiki](https://github.com/DeRamp/BeamNG.Earth.Rally/wiki) ·
 [Changelog](CHANGELOG.md) · [Player guide](docs/guide.md) · [Report a bug](https://github.com/DeRamp/BeamNG.Earth.Rally/issues)
 
@@ -13,34 +13,36 @@ with BeamNG.drive's own co-driver calling pacenotes worked out from the road.
 
 * Turns a rally's published map (`.kml`, `.kmz`, `.gpx`) into timed stages with their controls.
 * **Auto recce** works out each stage's line from the roads, or drive a recce yourself.
-* Time controls, a start tree and countdown, penalties, a flying finish and a results card.
 * Pacenotes from the road: corners, hairpins, crests, jumps, junctions, cautions.
-* **Rally packs** carry a whole season: itinerary, real results, rules and pictures.
+* **Rally packs** carry a whole season. The ARA 2026 season comes with the mod.
 * **Drive a whole rally**: transits, time controls, service and Super Rally, Realistic or Casual.
-* Leaderboards against the real crews, rally totals and season standings.
-* Stages dressed like an event: course tape, direction boards, marshals, radio points and spectators.
+* Results against the real crews, rally totals and season standings.
+* **Leaderboards**: your times against other players, per stage and class.
+* Opt-in stats and error reports. See [privacy](PRIVACY.md).
 
 ## Install
 
-1. Install BeamNG.Earth from [the DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases), with its installer, as you
-   would the official one.
-2. Download `earth_rally-<version>.zip` from [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
-3. Put it, still zipped, in `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\mods\`.
+1. Install BeamNG.Earth 1.10 or newer, e.g. [the DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases), with its
+   installer.
+2. In BeamNG.Earth, open **Add-ons** > **Add from GitHub**, paste `DeRamp/BeamNG.Earth.Rally` and press **Install**.
+3. Paste `DeRamp/earth-rally-leaderboards` the same way, press **Install**, then **Start**. Tick
+   **Start with BeamNG.Earth**.
 4. In game: **Freeroam > BeamNG.Earth**, then **Ctrl + Alt + K** for the menu.
 
-The fork adds the modding API the **Auto recce** needs, until an official release has it. Official BeamNG.Earth
-1.6+ also works; you drive a recce instead. Report fork problems here, not to the BeamNG.Earth team.
-Details: [player guide](docs/guide.md#the-auto-recce-and-beamngearth).
+No **Add from GitHub**? Put the zip from Releases in `mods`.
+
+The fork adds the API **Auto recce** needs. Official BeamNG.Earth 1.10+ works without it: you drive a recce
+instead. Report fork problems here, not to the BeamNG.Earth team. Details: [player guide](docs/guide.md#the-auto-recce-and-beamngearth).
 
 ## Updating
 
-* Delete the old Earth Rally zip first. Two copies both load.
+* Updates come through BeamNG.Earth's **Add-ons** page, for the mod and the helper.
+* Used the old zip install? Delete `earth_rally-*.zip` from `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\mods\`. Two copies load.
 * Your rallies, lines and times are kept. They live in `…\current\earthRally\`, not in the zip.
-* Earth Rally is in alpha: expect bugs, and please report them.
 
 ## Quick start
 
-1. In the menu, **Open folder** and drop in a rally's map.
+1. In the menu, pick an ARA 2026 rally, or **Open folder** and drop in a rally's map.
 2. Pick a stage and press **Auto recce**, or **Recce** to drive it once.
 3. **Drive stage**.
 
@@ -66,6 +68,8 @@ Menu will not open? See [the player guide](docs/guide.md#the-menu-will-not-open)
 
 * [Wiki](https://github.com/DeRamp/BeamNG.Earth.Rally/wiki): screenshots and short how-tos
 * [Player guide](docs/guide.md): stages, controls, leaderboards, making your own map
+* [Leaderboards](docs/online-board.md): how the leaderboard and its helper work
+* [Privacy](PRIVACY.md): what the leaderboard and stats send
 * [Pacenotes](docs/pacenotes-1.5.0.md): every call and the figures behind it
 * [Making stages and rally packs](docs/making-rally-packs.md): stage maps, pack layout, every file
 * [Rally pack format](docs/rally-file.md): the full spec

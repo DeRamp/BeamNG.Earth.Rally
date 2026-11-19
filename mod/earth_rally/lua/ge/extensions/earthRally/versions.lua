@@ -130,6 +130,10 @@ function M.findings(env)
     end
   end
 
+  -- 5. Earth Rally loaded twice: an old earth_rally-*.zip dragged into mods/ and the Add-ons page's copy (1.8.0)
+  local twice = M.copiesNote(env.modZips)
+  if twice then add('error', 'twoCopies', twice) end
+
   table.sort(out, function(a, b)
     if (a.level == 'error') ~= (b.level == 'error') then return a.level == 'error' end
     return false      -- (a stable sort is not promised, so only the two kinds are ordered)
@@ -144,6 +148,59 @@ function M.summary(env)
   return string.format('versions: Earth Rally %s on BeamNG.drive %s (built for %s), BeamNG.Earth API %s',
     tostring(env.mod), tostring(env.game or '?'), M.GAME_BUILT,
     e and string.format('%s.%s', tostring(e.major), tostring(e.minor)) or 'not loaded')
+end
+
+------------------------------------------------------------------------------------------ two copies of the mod
+
+-- The file BeamNG.Earth's Add-ons page installs Earth Rally as (its id for DeRamp/BeamNG.Earth.Rally, .zip).
+M.ADDON_ZIP = 'beamng-earth-rally.zip'
+M.MODS_DIR = '%LOCALAPPDATA%\\BeamNG\\BeamNG.drive\\current\\mods\\'
+
+-- Whether a mod zip's file name is an Earth Rally copy: the release zips (earth_rally-1.7.3-alpha.zip, renamed
+-- ones like earth_rally (1).zip) and the Add-ons page's.
+function M.isEarthRallyZip(name)
+  local n = tostring(name or ''):lower()
+  if not n:match('%.zip$') then return false end
+  return n == M.ADDON_ZIP or n:match('^earth[_%- ]?rally') ~= nil
+end
+
+-- The player's message when more than one Earth Rally zip is loaded, or nil. zips: their file names. The Add-ons
+-- page's copy is the one to keep (it updates itself); without it, the player keeps one of their choice.
+function M.copiesNote(zips)
+  local ours = {}
+  for _, z in ipairs(zips or {}) do if M.isEarthRallyZip(z) then ours[#ours + 1] = z end end
+  if #ours < 2 then return nil end
+  table.sort(ours)
+  local others, addon = {}, false
+  for _, z in ipairs(ours) do
+    if z:lower() == M.ADDON_ZIP then addon = true else others[#others + 1] = z end
+  end
+  if addon then
+    return string.format('Earth Rally is installed twice. Close the game, delete %s from %s and start again. '
+      .. "BeamNG.Earth's Add-ons page keeps %s up to date.", table.concat(others, ', '), M.MODS_DIR, M.ADDON_ZIP)
+  end
+  return string.format('Earth Rally is installed %d times (%s). Close the game, keep one, delete the others from '
+    .. '%s and start again.', #ours, table.concat(ours, ', '), M.MODS_DIR)
+end
+
+-- The file names of the active mod zips Earth Rally could be in, from the game's mod manager (an inactive mod is not
+-- loaded, so it is not a second copy). {} when the mod manager cannot say.
+-- An unpacked copy (a developer's mods/unpacked/ folder) is not a zip and is not counted: accepted, players do not have one.
+function M.modZips()
+  local out = {}
+  local mm = rawget(_G, 'core_modmanager')
+  if not (mm and mm.getMods) then return out end
+  local ok, mods = pcall(mm.getMods)
+  if not ok or type(mods) ~= 'table' then return out end
+  for _, m in pairs(mods) do
+    local full = type(m) == 'table' and tostring(m.fullpath or '') or ''
+    if m.active ~= false and full:lower():match('%.zip$') then
+      local name = full:match('([^/\\]+)$')
+      if name and M.isEarthRallyZip(name) then out[#out + 1] = name end
+    end
+  end
+  table.sort(out)
+  return out
 end
 
 ------------------------------------------------------------------------------------------ the live machine
@@ -175,6 +232,7 @@ function M.env(modVersion)
     rally = rally,
     earth = major and { major = major, minor = minor } or nil,
     internals = earth.internals(),
+    modZips = M.modZips(),
     minMinor = earth.MIN_API_MINOR,
     knownMinor = earth.KNOWN_API_MINOR,
   }

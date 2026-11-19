@@ -30,6 +30,11 @@ BeamNG.drive 0.40.5 mod (Lua, `mod/earth_rally/`) that runs real rally stages on
   needed. Merge, never rebase shared history. If the push is rejected, fetch and repeat.
 - Release = tag `vX.Y.Z-alpha` on `main` + GitHub pre-release with `dist/earth_rally-X.Y.Z-alpha.zip`, only when
   the owner asks: `/release` (`tools/release.py`).
+- **Feature builds carry no version number of their own.** One is named after the release it is built on, plus a
+  short feature name: `1.6.2-alpha+stats` ("built on 1.6.2, the stats feature"). That goes in `M.VERSION`, the zip
+  name and the docs header (`Built on 1.6.2 · lands as the next minor`). The real number is given only when the
+  owner says to merge and release it: the next minor after whatever `main` holds then (on 1.6.2 → 1.7.0; if 1.7.0
+  shipped meanwhile → 1.8.0). Fix branches land as the next patch the same way. Branch: `feature/<name>`.
 - Rally data (events, recces, matched lines, times, `Rally Docs/`, KML) is organisers' material: never in git.
 
 ## Checking work

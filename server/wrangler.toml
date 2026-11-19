@@ -1,0 +1,22 @@
+name = "earth-rally-stats"
+main = "src/worker.js"
+compatibility_date = "2026-11-01"
+
+# Events come from the Python companion over HTTPS. Plain HTTP is still accepted (older builds posted from the
+# game's Lua, which has no TLS); a custom domain with "Always Use HTTPS" would redirect those.
+workers_dev = true
+# (no per-version preview addresses: one public address only)
+preview_urls = false
+
+# No request logs kept (they would hold IP addresses)
+[observability]
+enabled = false
+
+# Once a day: rows older than a year folded into monthly totals and deleted
+[triggers]
+crons = ["17 3 * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "earth-rally-stats"
+database_id = "8fdc1a11-967b-49d6-806a-12766fee787e"
