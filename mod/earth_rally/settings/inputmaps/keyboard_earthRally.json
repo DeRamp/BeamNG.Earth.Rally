@@ -18,10 +18,6 @@
       "action": "earthRally_cardOk"
     },
     {
-      "control": "escape",
-      "action": "earthRally_cardBack"
-    },
-    {
       "control": "left",
       "action": "earthRally_cardPrev"
     },

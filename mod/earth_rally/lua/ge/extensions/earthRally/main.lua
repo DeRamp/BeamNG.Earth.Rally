@@ -1921,7 +1921,7 @@ function M.onUpdate(dtReal, dtSim)
   end
   -- (the card up: the pad and the keys are its own, paused or not -- cardInput.lua)
   pcall(cardInput.update, dtReal or 0, { menuOpen = menuOpen, uiHidden = runner.uiHidden,
-    resPaused = menuPause.cardHeld('earthRally_results') })
+    resPaused = menuPause.cardHeld('earthRally_results'), askPaused = menuPause.cardHeld('earthRally_ask') })
   local okL, errL = pcall(loadScreen.update, dtReal or 0)
   if not okL then log('E', logTag, 'loading screen: ' .. tostring(errL)) loadScreen.cancel() end
   earth.update()

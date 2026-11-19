@@ -18,7 +18,7 @@ local function has(list, x) for _, v in ipairs(list or {}) do if v == x then ret
 local function lastLog() return logs[#logs] or '' end
 
 local loadFrame = { show = { loadAsk = true }, rally = { loadAsk = { ss = 1, name = 'Canal Road' } } }
-local CTX = { menuOpen = false, uiHidden = false, resPaused = false }
+local CTX = { menuOpen = false, uiHidden = false, resPaused = false, askPaused = true }
 
 -- which card a frame shows, as the card itself decides
 T.check(ci.cardOf(loadFrame) == 'load', 'the load question')
@@ -41,7 +41,7 @@ local info = ci.frame(loadFrame)
 T.check(info and info.pick == 'load', 'the card up: Load picked first (sent in the stream)')
 ci.update(0.1, CTX)
 T.check(ci.active() and pushed == 1 and has(filtered, 'menu_item_select') and has(filtered, 'shiftUp')
-  and has(filtered, 'toggleMenues') and has(filtered, 'earthRally_rallyRecover') and has(filtered, 'reset_physics'),
+  and not has(filtered, 'toggleMenues') and has(filtered, 'earthRally_rallyRecover') and has(filtered, 'reset_physics'),
   'the card up: our map pushed, the game\'s A / B / d-pad / menu / rally recovery filtered')
 ci.update(0.1, CTX)
 T.check(pushed == 1, 'pushed once, not every frame')
@@ -78,13 +78,17 @@ ci.update(0.1, CTX)
 T.check(pushed == 0 and filtered == nil, 'A up: the pad and the keys given back')
 -- (a button never released: given back after RELEASE_WAIT_S anyway)
 ci.frame(loadFrame) ci.update(0.1, CTX)
-ci.press('back', 'keyboard0')
-T.check(acted[#acted] == 'notYet', 'B / Escape on the load question: Not yet')
+ci.press('back', 'xinput0')
+T.check(acted[#acted] == 'notYet', 'B on the load question: Not yet')
 ci.frame({ show = {} }) ci.update(0.1, CTX)
-T.check(pushed == 1, '(Escape still down)')
+T.check(pushed == 1, '(B still down)')
 ci.update(ci.RELEASE_WAIT_S + 0.1, CTX)
 T.check(pushed == 0 and filtered == nil, 'a button never seen up: given back after a while')
 
+-- a question whose pause the game refused (BeamNG.Earth holding it): the car's buttons stay the car's
+ci.frame(loadFrame) ci.update(0.1, { askPaused = false })
+T.check(not ci.active() and pushed == 0, "a question not paused: mouse only, the pad stays the car's")
+ci.frame({ show = {} }) ci.update(0.1, CTX)
 -- B on each card
 ci.frame({ show = { recoverAsk = true }, rally = { ask = {} } }) ci.update(1.5, CTX)
 ci.press('back', 'xinput0')

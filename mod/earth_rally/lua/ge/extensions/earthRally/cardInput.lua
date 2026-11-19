@@ -11,8 +11,8 @@
 -- 2026-11-19, t = 262-267). A HUD app cannot take the pad through the UI; a Lua action map can.
 --
 -- So, while a card is up: our action map (core/input/actions/earthRally.json, actionMap "EarthRallyCard", bound in
--- settings/inputmaps: A / Enter = ok, B / Escape = back, the d-pad / arrows / left stick = move) is pushed first in the
--- stack, and the game's own actions on those buttons (its UI nav, the pause menu, the radial menu, the camera's look
+-- settings/inputmaps: A / Enter = ok, B = back, the d-pad / arrows / left stick = move) is pushed first in the
+-- stack, and the game's own actions on those buttons (its UI nav, the radial menu, the camera's look
 -- back, the car's shift up and parking brake, its interaction triggers, its reset and recovery) are filtered out
 -- (core/input/actionFilter.lua) until the card is gone and every button pressed on it is up again. The pick is ours
 -- and goes to the card in the stream (ours.card = { pick, pad }); the card's mouse clicks come through here too
@@ -25,8 +25,8 @@ M.FILTER = 'earthRallyCard'        -- (our group in the game's action filter)
 -- the game's actions on the card's buttons (its settings/inputmaps xidevice.json and keyboard.json), off while it is up
 M.BLOCKED = {
   'menu_item_select', 'menu_item_back', 'menu_item_up', 'menu_item_down', 'menu_item_left', 'menu_item_right',
-  'menu_item_focus_lr', 'menu_item_focus_ud', 'accept', 'decline', 'bigMapControllerSelect', 'toggleMenues',
-  'cui_camera', 'cui_logs', 'cui_details', 'toggleRadialMenuMulti', 'look_back', 'nodegrabberStrength',
+  'menu_item_focus_lr', 'menu_item_focus_ud', 'accept', 'decline', 'bigMapControllerSelect',
+  'toggleRadialMenuMulti', 'look_back', 'nodegrabberStrength',
   'shiftUp', 'parkingbrake', 'triggerAction0', 'reset_physics', 'recover_vehicle', 'earthRally_rallyRecover',
   'photomodeDecreaseFov', 'photomodeIncreaseFov', 'photomodeRollCameraLeft', 'photomodeRollCameraRight',
 }
@@ -129,12 +129,14 @@ local function take(on)
   end
 end
 
--- Every frame (main.onUpdate), paused or not. ctx: { menuOpen (our page), uiHidden (a menu over the HUD),
--- resPaused (the finish card's pause held: without it the car can still be rolling, and its buttons stay the car's) }
+-- Every frame (main.onUpdate), paused or not. ctx: { menuOpen (our page), uiHidden (a menu over the HUD: Escape and
+-- Start stay the game's, so a card can never shut the player out of the pause menu; opening it gives the buttons
+-- back), resPaused / askPaused (the finish card's / a question's pause held: without it the car can still be live,
+-- and its buttons stay the car's -- the card then takes the mouse only) }
 function M.update(dt, ctx)
   now = now + (dt or 0)
   ctx = ctx or {}
-  local want = card ~= nil and not ctx.menuOpen and not ctx.uiHidden and (card.up ~= 'res' or ctx.resPaused == true)
+  local want = card ~= nil and not ctx.menuOpen and not ctx.uiHidden and (card.up == 'res' and ctx.resPaused == true or card.up ~= 'res' and ctx.askPaused == true)
   if want ~= active then
     active = want
     if want then

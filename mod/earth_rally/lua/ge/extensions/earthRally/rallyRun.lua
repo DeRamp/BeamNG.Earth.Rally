@@ -346,8 +346,10 @@ local function trafficStart()
   if traffic.mode == 'on' then
     local okS, st = true, nil
     if g then okS, st = pcall(g.getState) end
-    if g and okS and st ~= 'on' and g.setupTraffic then
+    -- (only with none at all: 'loading' / 'spawning' is traffic on its way, and setupTraffic deletes it first)
+    if g and okS and st == 'off' and g.setupTraffic then
       local ok, err = pcall(g.setupTraffic, -1)
+      if ok and err == false then ok, err = false, 'it said no' end
       traffic.started = ok == true
       log(ok and 'I' or 'W', logTag, 'rally: traffic on road sections: the game\'s traffic ' ..
         (ok and 'set up for the rally' or ('could not be set up: ' .. tostring(err))))
@@ -1029,8 +1031,8 @@ function M.resume(id)
   savedResults = t.current.results
   wait = nil
   M.block(true)
-  -- (a rally left and continued: its own traffic choice again, the player's amount kept from now)
-  traffic = nil
+  -- (continued, even over itself still under way: the traffic as the player had it first, then the save's choice)
+  trafficEnd()
   trafficStart()
   loop = { results = {} }
   if R.mode == 'realistic' and type(t.loop) == 'table' then

@@ -3613,6 +3613,22 @@ do
       rallyRun.quit()
       rallyRun.abandon('test19r')
       T.check(deleted == 1 and tState == 'off', 'traffic On: left, the traffic set up for it taken away')
+      -- (on its way: traffic spawning is left to spawn, not deleted and set up again)
+      tState, setUp = 'loading', 0
+      T.check(rallyRun.start('test19r', { mode = 'casual', class = 'L4WD', traffic = 'on' }) and setUp == 0,
+        'traffic On, the game spawning its own: left to it')
+      rallyRun.quit()
+      rallyRun.abandon('test19r')
+      T.check(deleted == 1, 'traffic On: and not taken away after')
+      -- (continued over itself while still under way, Off: the player's amount still given back after)
+      tState, tAmt = 'on', 8
+      rallyRun.start('test19r', { mode = 'casual', class = 'L4WD' })
+      files['/earthRally/rallies/test19r.json'] = { format = rallyRun.FORMAT, finished = {},
+        current = rally.new(evR, { mode = 'casual', class = 'L4WD' }) }
+      T.check(tAmt == 0 and rallyRun.resume('test19r') and tAmt == 0, 'traffic Off: continued over itself, still held')
+      rallyRun.quit()
+      rallyRun.abandon('test19r')
+      T.check(tAmt == 8, 'traffic Off: continued over itself, the amount still given back after')
       -- (a save from before the choice: Off)
       tState, tAmt = 'on', 8
       local old = rally.new(evR, { mode = 'casual', class = 'L4WD' })
