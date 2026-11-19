@@ -35,14 +35,22 @@
             <div class="er-set-n">Voice</div>
             <div class="er-set-d">{{ cd.locked ? "Change it between runs" : "Who reads your notes" }}</div>
           </div>
-          <!-- a drop-down, not buttons: players can add many voices -->
-          <select
-            class="er-drop" bng-nav-item :disabled="cd.locked"
-            :value="cd.voice"
-            @change="setCodriver('voice', $event.target.value)"
-          >
-            <option v-for="o in arr(cd.voices)" :key="o.value" :value="o.value">{{ o.label }}</option>
-          </select>
+          <!-- a drop-down, not buttons: players can add many voices. Our own list, not a <select>: the game's UI browser
+               shows no <select> pop-up (docs/notes-codriver.md, 1) -->
+          <div class="er-drop" :class="{ locked: cd.locked }" @keydown.esc.stop="voiceOpen = false">
+            <span
+              class="er-drop-btn" :tabindex="cd.locked ? -1 : 0" :bng-nav-item="cd.locked ? null : ''"
+              @click="toggleVoices" @keydown.enter="toggleVoices"
+            >{{ voiceLabel }}<i>{{ voiceOpen ? "▲" : "▼" }}</i></span>
+            <div v-if="voiceOpen" class="er-drop-list">
+              <span
+                v-for="o in arr(cd.voices)" :key="o.value"
+                tabindex="0" bng-nav-item
+                :class="{ on: cd.voice === o.value }"
+                @click="pickVoice(o.value)" @keydown.enter="pickVoice(o.value)"
+              >{{ o.label }}</span>
+            </div>
+          </div>
         </div>
         <div v-if="cd.style" class="er-set">
           <div class="er-set-text">
@@ -125,6 +133,18 @@ const onOff = [{ value: true, label: "On" }, { value: false, label: "Off" }]
 // the slider's number while it is dragged; the game's value again whenever that changes
 const timing = ref(3)
 watch(() => cd.value && cd.value.timing, v => { if (typeof v === "number") timing.value = v }, { immediate: true })
+// the voice list: open from its button, shut by a pick, Escape, a click outside or a run starting
+const voiceOpen = ref(false)
+const voiceLabel = computed(() => {
+  const v = arr(cd.value && cd.value.voices).find(o => o.value === cd.value.voice)
+  return v ? v.label : "Choose"
+})
+function toggleVoices() { if (cd.value && !cd.value.locked) voiceOpen.value = !voiceOpen.value }
+function pickVoice(v) { voiceOpen.value = false; setCodriver("voice", v) }
+function outside(e) { if (voiceOpen.value && !(e.target.closest && e.target.closest(".er-drop"))) voiceOpen.value = false }
+watch(() => cd.value && cd.value.locked, l => { if (l) voiceOpen.value = false })
+onMounted(() => document.addEventListener("mousedown", outside))
+onUnmounted(() => document.removeEventListener("mousedown", outside))
 // (a save that failed or got no answer: the slider goes back to the game's value)
 function setTiming(v) {
   setCodriver("timing", v, () => { if (cd.value && typeof cd.value.timing === "number") timing.value = cd.value.timing })
@@ -153,11 +173,21 @@ onUnmounted(stopPolling)
 .er-set-grp { font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.08em; color: #9aa3ad; padding: 0.3em 0.5em; }
 .er-seg span.off { color: #5d626c; cursor: default; }
 .er-drop {
-  flex-shrink: 0; min-width: 14em; font: inherit; color: #fff; background: #23272e; cursor: pointer;
-  border: 0; border-radius: 0.25rem; box-shadow: inset 0 0 0 1px #5a6070; padding: 0.45em 0.9em;
-  &:focus { outline: 1px solid rgba(255, 255, 255, 0.4); }
-  &:disabled { opacity: 0.45; cursor: default; }
-  option { background: #23272e; color: #fff; }
+  position: relative; flex-shrink: 0; min-width: 14em;
+  &.locked { opacity: 0.45; .er-drop-btn { cursor: default; } }
+}
+.er-drop-btn {
+  display: flex; justify-content: space-between; gap: 1em; padding: 0.45em 0.9em; cursor: pointer; color: #fff;
+  border-radius: 0.25rem; box-shadow: inset 0 0 0 1px #5a6070;
+  i { font-style: normal; font-size: 0.7em; color: #b8bcc6; align-self: center; }
+  &:focus { background: rgba(255, 255, 255, 0.08); }
+}
+.er-drop-list {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 20; margin-top: 2px; max-height: 15em; overflow-y: auto;
+  background: #23272e; border-radius: 0.25rem; box-shadow: inset 0 0 0 1px #5a6070, 0 6px 18px rgba(0, 0, 0, 0.5);
+  span { display: block; padding: 0.45em 0.9em; cursor: pointer; color: #b8bcc6; white-space: nowrap; }
+  span:focus { background: rgba(255, 255, 255, 0.08); color: #fff; }
+  span.on { color: #fff; font-weight: 600; box-shadow: inset 3px 0 0 #c75b1e; }
 }
 .er-seg.locked { opacity: 0.45; span { cursor: default; } }
 .er-slide {
