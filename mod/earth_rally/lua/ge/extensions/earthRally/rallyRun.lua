@@ -303,6 +303,81 @@ function M.block(on)
 end
 function M.blocked() return blocked end
 
+------------------------------------------------------------------------------------------ traffic on road sections
+
+-- (the owner, 2026-11-19) The start screen's "Traffic on road sections": R.traffic = 'on' | 'off' (nil, a save from
+-- before: off). Off: the game's traffic held at an active amount of 0 for the whole rally, transits included (as the
+-- runner holds it for a stage: BeamNG.Earth's teleport hold and adaptive traffic both leave a 0 set by someone else
+-- alone), the player's amount given back when the rally ends or is left. On: traffic on the road sections and at the
+-- stops; each stage still clears it and puts it back as it ends (runner trafficOff / trafficOn). With the game's
+-- traffic not running (the world started without it), On sets the game's own traffic up for the rally and takes it
+-- away again after. Parked cars are not traffic: as before, cleared for each stage only.
+M.TRAFFIC_HOLD_S = 1
+local traffic = nil    -- the rally's traffic: { mode = 'on' | 'off', t, stash (the player's amount), started }
+
+local function trafficSys()
+  local g = rawget(_G, 'gameplay_traffic')
+  if type(g) == 'table' and g.getState and g.setActiveAmount and g.getTrafficVars then return g end
+  return nil
+end
+local function trafficAmount(g)
+  local ok, v = pcall(g.getTrafficVars)
+  return ok and type(v) == 'table' and v.activeAmount or nil
+end
+
+local function trafficHold()
+  local g = trafficSys()
+  if not (traffic and traffic.mode == 'off' and g) then return end
+  local okS, st = pcall(g.getState)
+  if not okS or st ~= 'on' then return end
+  local cur = trafficAmount(g)
+  if cur == nil or cur == 0 then return end
+  if pcall(g.setActiveAmount, 0) and traffic.stash == nil then
+    traffic.stash = cur
+    log('I', logTag, 'rally: traffic off for the rally (the player\'s amount ' .. tostring(cur) .. ' kept)')
+  end
+end
+
+local function trafficStart()
+  if not R then return end
+  if traffic then return end
+  traffic = { mode = R.traffic == 'on' and 'on' or 'off', t = 0 }
+  local g = trafficSys()
+  if traffic.mode == 'on' then
+    local okS, st = true, nil
+    if g then okS, st = pcall(g.getState) end
+    if g and okS and st ~= 'on' and g.setupTraffic then
+      local ok, err = pcall(g.setupTraffic, -1)
+      traffic.started = ok == true
+      log(ok and 'I' or 'W', logTag, 'rally: traffic on road sections: the game\'s traffic ' ..
+        (ok and 'set up for the rally' or ('could not be set up: ' .. tostring(err))))
+    else
+      log('I', logTag, 'rally: traffic on road sections ' .. (g and 'on (the game\'s own)' or 'on, but the game has no traffic here'))
+    end
+  else
+    log('I', logTag, 'rally: no traffic for the rally')
+    trafficHold()
+  end
+end
+
+-- The player's traffic as it was: the amount back (only where it is still our 0), or the traffic we set up taken away.
+local function trafficEnd()
+  local t = traffic
+  if not t then return end
+  traffic = nil
+  local g = trafficSys()
+  if not g then return end
+  if t.stash ~= nil and trafficAmount(g) == 0 then
+    pcall(g.setActiveAmount, t.stash)
+    log('I', logTag, 'rally: the player\'s traffic back (' .. tostring(t.stash) .. ')')
+  end
+  if t.started and g.deleteVehicles then
+    pcall(g.deleteVehicles)
+    log('I', logTag, 'rally: the traffic set up for the rally taken away')
+  end
+end
+function M.trafficState() return traffic end
+
 ------------------------------------------------------------------------------------------ the car
 
 -- The car the player is in: { name, drivetrain } (the game's vehicle details), or nil.
@@ -897,6 +972,7 @@ finish = function()
   t.finished[#t.finished + 1] = rally.finished(R, os.date('!%Y-%m-%dT%H:%M:%SZ'))
   writeFile(R.eventId, t)
   M.block(false)
+  trafficEnd()
   gpsOff()
   wait = nil
   setWorld(true)
@@ -914,7 +990,7 @@ function M.start(id, opts)
   local car = M.car()
   if not car then return false, 'get in a car first' end
   local r, why = rally.new(ev, { mode = opts and opts.mode, class = opts and opts.class,
-    cancelled = opts and opts.cancelled, car = car })
+    cancelled = opts and opts.cancelled, traffic = opts and opts.traffic, car = car })
   if not r then return false, why end
   if question then pcall(runner.askLayout, false) end
   R, card, recoveredAt, question, move, toStop = r, nil, nil, nil, nil, nil
@@ -925,6 +1001,7 @@ function M.start(id, opts)
   loop = { results = {} }
   wait = nil
   M.block(true)
+  trafficStart()
   log('I', logTag, string.format('rally: %s started (%s, %s, cancelled stages %s)%s', R.name, R.mode, R.class,
     R.cancelled, R.timed and (', timed from ' .. wt.startText(R.clock.t)) or ''))
   setWorld()
@@ -952,6 +1029,9 @@ function M.resume(id)
   savedResults = t.current.results
   wait = nil
   M.block(true)
+  -- (a rally left and continued: its own traffic choice again, the player's amount kept from now)
+  traffic = nil
+  trafficStart()
   loop = { results = {} }
   if R.mode == 'realistic' and type(t.loop) == 'table' then
     local missedBefore = R.missed or 0
@@ -1018,6 +1098,7 @@ function M.quit()
   R, card, recoveredAt, loop, move, toStop, prep, wait = nil, nil, nil, nil, nil, nil, nil, nil
   if question then question = nil pcall(runner.askLayout, false) end
   M.block(false)
+  trafficEnd()
   return true
 end
 
@@ -1237,6 +1318,11 @@ function M.update(dt, dtSim)
   dt = dt or 0
   realT = realT + dt
   frameN = frameN + 1
+  -- (traffic Off: held at 0 against BeamNG.Earth and the player putting it back, as the runner holds it for a stage)
+  if traffic and traffic.mode == 'off' then
+    traffic.t = traffic.t + dt
+    if traffic.t >= M.TRAFFIC_HOLD_S then traffic.t = 0 pcall(trafficHold) end
+  end
   if timed() and not R.done then
     if wait then
       -- (waiting for your minute at the board: the clock runs on real time under the card, and checks you in on it)
@@ -1627,6 +1713,7 @@ end
 -- (the level left, the mod switched off: the game's own recovery back whatever happens)
 function M.release()
   M.block(false)
+  pcall(trafficEnd)
   runner.keepDamage(false)
 end
 

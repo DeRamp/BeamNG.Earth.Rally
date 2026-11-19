@@ -3581,6 +3581,50 @@ do
       rallyRun.quit()
       rallyRun.abandon('test19r')
     end
+    -- (the owner, 2026-11-19) Traffic on road sections, the start screen's choice: Off (the default) holds the game's
+    -- traffic at 0 for the whole rally and gives the player's amount back; On leaves it running between stages, or
+    -- sets the game's traffic up for the rally when the world has none, and takes it away after
+    do
+      local tAmt, tState, setUp, deleted = 8, 'on', 0, 0
+      gameplay_traffic = { getState = function() return tState end,
+        getTrafficVars = function() return { activeAmount = tAmt } end, setActiveAmount = function(n) tAmt = n end,
+        setupTraffic = function() setUp = setUp + 1 tState = 'on' end,
+        deleteVehicles = function() deleted = deleted + 1 tState = 'off' end }
+      T.check(rallyRun.start('test19r', { mode = 'casual', class = 'L4WD' }), 'traffic: a rally started with no choice sent')
+      T.check(rallyRun.active().traffic == 'off' and tAmt == 0, "traffic: Off by default, the game's traffic held at 0 (" ..
+        tostring(tAmt) .. ')')
+      tAmt = 5                  -- (BeamNG.Earth putting its amount back after a teleport's hold)
+      rallyRun.update(1.1)
+      T.check(tAmt == 0, 'traffic Off: put back by someone else, held at 0 again')
+      rallyRun.quit()
+      T.check(tAmt == 8 and rallyRun.trafficState() == nil, "traffic Off: the rally left, the player's amount back (" ..
+        tostring(tAmt) .. ')')
+      rallyRun.abandon('test19r')
+      T.check(rallyRun.start('test19r', { mode = 'casual', class = 'L4WD', traffic = 'on' }), 'traffic On: started')
+      rallyRun.update(1.1)
+      T.check(rallyRun.active().traffic == 'on' and tAmt == 8 and setUp == 0,
+        "traffic On, the game's traffic running: left running on the road sections")
+      rallyRun.quit()
+      rallyRun.abandon('test19r')
+      T.check(tAmt == 8 and deleted == 0, "traffic On: left, the player's own traffic left alone")
+      tState = 'off'
+      T.check(rallyRun.start('test19r', { mode = 'casual', class = 'L4WD', traffic = 'on' }) and setUp == 1,
+        "traffic On, none in the world: the game's traffic set up for the rally")
+      rallyRun.quit()
+      rallyRun.abandon('test19r')
+      T.check(deleted == 1 and tState == 'off', 'traffic On: left, the traffic set up for it taken away')
+      -- (a save from before the choice: Off)
+      tState, tAmt = 'on', 8
+      local old = rally.new(evR, { mode = 'casual', class = 'L4WD' })
+      old.traffic = nil
+      files['/earthRally/rallies/test19r.json'] = { format = rallyRun.FORMAT, current = old, finished = {} }
+      T.check(rallyRun.resume('test19r') and rallyRun.trafficState() and rallyRun.trafficState().mode == 'off'
+        and tAmt == 0, 'traffic: an older save continued with no traffic')
+      rallyRun.quit()
+      rallyRun.abandon('test19r')
+      T.check(tAmt == 8, "traffic: and the player's amount back after it")
+      gameplay_traffic = nil
+    end
     core_input_actionFilter = nil
     teleports, moved = 0, false
   end
