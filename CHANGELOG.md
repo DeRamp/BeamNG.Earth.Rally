@@ -3,6 +3,16 @@
 Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/writing-standard.md). Downloads:
 [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
 
+## 1.9.4-alpha: missing road segments (2026-11-19)
+
+Works with BeamNG.drive 0.40.6 · [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+.
+
+A clearer name for stages with a gap in their road.
+
+### Changed
+* **Missing road segments** replaces **Recce recommended** on stages where part of the road isn't on the map.
+* **Recce stops short** replaces **Recce recommended** when your own recce ends before the finish.
+
 ## 1.9.3-alpha: co-driver settings (2026-11-19)
 
 Works with BeamNG.drive 0.40.6 · [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+.

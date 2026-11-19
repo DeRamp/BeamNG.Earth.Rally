@@ -182,8 +182,9 @@
           </div>
         </div>
         <div class="er-muted er-help">
-          <b>Ready</b>: notes from the stage's own roads or your recce. <b>Recce recommended</b>: part of the stage has
-          no road on the map (no notes there) until you drive its recce. <b>Recce needed</b>:
+          <b>Ready</b>: notes from the stage's own roads or your recce. <b>Missing road segments</b>: part of the stage has
+          no road on the map (no notes there) until you drive its recce. <b>Recce stops short</b>: your recce ends before
+          the finish; drive it again. <b>Recce needed</b>:
           {{ st.autoOk ? "run the auto recce, or drive its recce." : "drive its recce." }}
         </div>
         <details v-if="arr(rly.report).length" class="er-report er-report-full">
@@ -1005,7 +1006,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
   .er-in { font-size: 13px; font-weight: 700; letter-spacing: 0.06em; padding: 2px 8px; margin-left: 12px; border-radius: 3px; background: var(--er-blue); vertical-align: 3px; } }
 .er-stages { padding: 8px 0; }
 /* Seven tracks: the action column comes out of Name's 1fr, NOT out of Status -- Status already holds the longest
-   pill ("Recce recommended", about 177px) with its 30px padding, and below about 215px that pill overruns the
+   pill ("Missing road segments", about 183px) with its 30px padding, and below about 215px that pill overruns the
    column. 210px rather than 1.3.0's 160px, because the cell now holds TWO controls while a download waits on an
    answer: at the row's own button size (15px on a 20px line, no min-width, no margin) "Download" is about 92px
    and "Not now" about 83px, which with a 12px gap is 187px. Name goes from about 1066px to 856px at 1920, and the
