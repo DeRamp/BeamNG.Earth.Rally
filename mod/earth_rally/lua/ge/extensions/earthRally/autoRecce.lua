@@ -51,6 +51,8 @@ local R_EARTH = 6371008.8
 -- (tools/auto_recce.py's own, at the same values: a line matched here and one matched there should agree)
 M.WAYPOINT_M = 400.0        -- the organisers' line is followed through a point every this many metres
 M.SNAP_M = 60.0             -- a waypoint this close to a road is on it (else that stretch has no road on the map)
+M.WIDE_SNAP_M = 250.0       -- ... or this close, where the road there joins the matched road before and after it
+                            -- (an organisers' line drawn as a few long straights: the road bends up to ~260 m off)
 M.NEAR_M = 15.0             -- a road this far from the organisers' line costs double per metre (quadratic beyond)
 M.CORRIDOR_M = 300.0        -- roads further than this from the line are not used
 M.DETOUR_MAX = 1.4          -- a route between two waypoints longer than this times their distance along the line
@@ -404,7 +406,7 @@ end
 
 -- The road point nearest p within SNAP_M on an edge not across `direction` (more than ~60 degrees off):
 -- { a, b, t, x, y, z } or nil. tools/auto_recce.py's Roads.snap.
-function M.snap(g, p, direction)
+function M.snap(g, p, direction, maxM)
   if g.edges == 0 then return nil end
   local dl = sqrt(direction.x * direction.x + direction.y * direction.y)
   if dl < 1e-9 then dl = 1e-9 end
@@ -424,7 +426,7 @@ function M.snap(g, p, direction)
       if d < bd then bd, bi, bt = d, i, t end
     end
   end
-  if not bi or bd > M.SNAP_M then return nil end
+  if not bi or bd > (maxM or M.SNAP_M) then return nil end
   local a, b = g.xy[g.ea[bi]], g.xy[g.eb[bi]]
   return { a = g.ea[bi], b = g.eb[bi], t = bt,
            x = a.x + (b.x - a.x) * bt, y = a.y + (b.y - a.y) * bt,
@@ -718,6 +720,35 @@ function M.match(stage, graph, info)
   -- each waypoint on a road beside it, aligned with the line there
   local snaps = {}
   for i, p in ipairs(wps) do snaps[i] = M.snap(gr, p, tangent(along[i])) end
+
+  -- A waypoint with no road within SNAP_M looks again out to WIDE_SNAP_M: an organisers' line of long straights is
+  -- far off a winding road. The road found is taken only if it joins, within DETOUR_MAX, the road matched before it
+  -- (a waypoint already on a road, or one taken this way) and the next waypoint on a road within SNAP_M, where there
+  -- is one: a road that is not the stage's (a parallel one, the end of another) does not join both.
+  local function joins(s, t, span)
+    local pts, length = M.route(gr, s, t)
+    return pts ~= nil and length <= M.DETOUR_MAX * span + 100
+  end
+  local tight = {}
+  for i = 1, #wps do tight[i] = snaps[i] end
+  local prev = nil
+  for i = 1, #wps do
+    if snaps[i] ~= nil then
+      prev = i
+    else
+      local c = M.snap(gr, wps[i], tangent(along[i]), M.WIDE_SNAP_M)
+      if c then
+        local nxt = nil
+        for k = i + 1, #wps do if tight[k] ~= nil then nxt = k break end end
+        local okL = prev == nil or joins(snaps[prev], c, along[i] - along[prev])
+        local okR = nxt == nil or joins(c, tight[nxt], along[nxt] - along[i])
+        if (prev ~= nil or nxt ~= nil) and okL and okR then
+          snaps[i] = c
+          prev = i
+        end
+      end
+    end
+  end
 
   local out, gaps, gapIdx = {}, {}, {}
 

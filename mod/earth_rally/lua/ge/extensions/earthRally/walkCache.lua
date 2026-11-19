@@ -88,23 +88,31 @@ function M.store(nodes, edges, cLat, cLon, half)
   end
   if not near then return false end
   local t, k = tileFor(cLat, cLon, stamp)
-  -- what was kept inside this square before goes: this read is the map as it is now (a road removed or moved since
-  -- is not kept beside the new one)
+  -- what was kept inside this square before and is not in this read goes: this read is the map as it is now (a
+  -- road removed or moved since is not kept beside the new one). An old edge goes when one of its nodes went, or
+  -- when this read has both its nodes and not the edge. An edge with one node outside this read stays: the read
+  -- cannot have it (BeamNG.Earth's graph keeps only edges with both ends inside), so it is not evidence it is gone.
   local kl, ko = mLat(), mLon(cLat)
-  for _, ot in ipairs(M._tilesOver(cLat, cLon, half, stamp)) do
+  local newEdge = {}
+  for _, e in ipairs(edges or {}) do if e[1] ~= nil and e[2] ~= nil then newEdge[edgeId(e[1], e[2])] = true end end
+  for _, ot in ipairs(M._tilesOver(cLat, cLon, half + 200, stamp)) do
     local gone = {}
     for name, n in pairs(ot.nodes or {}) do
-      if math.abs((n[1] - cLat) * kl) <= half and math.abs((n[2] - cLon) * ko) <= half then
+      if nodes[name] == nil and math.abs((n[1] - cLat) * kl) <= half and math.abs((n[2] - cLon) * ko) <= half then
         ot.nodes[name] = nil
         gone[name] = true
       end
     end
-    if next(gone) then
-      local keep = {}
-      for _, e in ipairs(ot.edges or {}) do if not (gone[e[1]] or gone[e[2]]) then keep[#keep + 1] = e end end
-      ot.edges, ot.seen = keep, nil
+    local keep, changed = {}, false
+    for _, e in ipairs(ot.edges or {}) do
+      local a, b = e[1], e[2]
+      local drop = gone[a] or gone[b] or (nodes[a] ~= nil and nodes[b] ~= nil and not newEdge[edgeId(a, b)])
+      if drop then changed = true else keep[#keep + 1] = e end
     end
-    for kk, tt in pairs(tiles) do if tt == ot then dirty[kk] = true end end
+    if changed then ot.edges, ot.seen = keep, nil end
+    if changed or next(gone) then
+      for kk, tt in pairs(tiles) do if tt == ot then dirty[kk] = true end end
+    end
   end
   t.squares[#t.squares + 1] = { cLat, cLon, half, now() }
   dirty[k] = true

@@ -104,6 +104,35 @@ _G.beamngEarth_api.earthVersion = function() return '1.10.2-beta' end
 T.check(not walk._cache.covered(-34.05, 117.0, 1000), 'another BeamNG.Earth version: walked again')
 _G.beamngEarth_api.earthVersion = function() return '1.10.1-beta' end
 
+-- a later read overlapping an earlier one: an edge across the later read's edge (one node inside its square, the
+-- other past its graph) stays, since that read could not have it; an edge the read has both nodes of and not the
+-- edge is gone. (Bolster Hollow: a 44 m link of the stage's road lost this way, the road cut in two)
+do
+  local C = walk._cache
+  local K = 111320
+  local function at(n, e) return { lat = 10 + n / K, lon = 20 + e / (K * math.cos(math.rad(10))) } end
+  C.forget()
+  -- first read round (0, 0): a chain p - q - r along the north, at 900, 1050, 1200 m east; and s - t
+  local n1 = { p = at(0, 900), q = at(0, 1050), r = at(0, 1200), s = at(0, 0), t = at(10, 0) }
+  T.check(C.store(n1, { { 'p', 'q' }, { 'q', 'r' }, { 's', 't' } }, 10, 20, 1500), 'first read kept')
+  -- second read round 2150 m east (square 1075): q (1100 m west of it) is past its graph, r (950 m) inside it;
+  -- it has s? no. It has r, and a road u near the car. s - t untouched. Then a read that has p and q but no p - q.
+  local c2 = at(0, 2150)
+  T.check(C.store({ r = at(0, 1200), u = at(0, 2150) }, {}, c2.lat, c2.lon, 1075), 'second read kept')
+  local r = C.read(10, 20, 1500, 0)
+  local has = {}
+  for _, e in ipairs(r.edges) do has[e[1] .. e[2]] = true end
+  T.check(has.qr, 'an edge across the new read edge is kept (q - r)')
+  T.check(has.pq and has.st, 'edges away from it untouched')
+  local c3 = at(0, 975)
+  T.check(C.store({ p = at(0, 900), q = at(0, 1050), v = at(0, 975) }, {}, c3.lat, c3.lon, 1075), 'third read kept')
+  r = C.read(10, 20, 1500, 0)
+  has = {}
+  for _, e in ipairs(r.edges) do has[e[1] .. e[2]] = true end
+  T.check(not has.pq, 'a read with both nodes and not the edge: the edge is gone')
+  C.forget()
+end
+
 -- a level teardown: forgotten, the car not moved
 earth.roadGraph(-34.7, 117.0, {}, function() end)
 walk.reset()
