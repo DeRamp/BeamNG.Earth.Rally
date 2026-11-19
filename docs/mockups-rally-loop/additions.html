@@ -204,7 +204,7 @@ h5 { margin: 0 0 10px; font-size: 20px; letter-spacing: .04em; }
         <div class="rhead"><h2>Pine Ridge Rally</h2><div class="sub">6-7 Feb 2026 · Pine Ridge · 9 stages</div></div>
         <div class="rtabs"><span>Stages</span><span class="on">Results</span><span>Rules</span></div>
         <div class="yourfull">
-          <b>Your full rally</b> · <span class="mono">1:12:31.4</span><span data-m="res.prop"> · incl. road penalties <span class="rp">+1:10</span></span> · P16 of 38 National · O4WD 6th of 14 · Realistic · Rallye 2.0 Gravel
+          <b>Your full rally</b> · <span class="mono">1:12:31.4</span><span data-m="res.prop"> · incl. transit penalties <span class="rp">+1:10</span></span> · P16 of 38 National · O4WD 6th of 14 · Realistic · Rallye 2.0 Gravel
           <div class="chips chipsnew" data-m="res.prop">
             <span class="chip">SS1<span class="mono">6:48.2</span><i>+20 s</i></span>
             <span class="chip">SS2<span class="mono">8:31.7</span></span>
@@ -309,7 +309,7 @@ h5 { margin: 0 0 10px; font-size: 20px; letter-spacing: .04em; }
           <div class="tr dimr"><span class="mono">⋮</span><span>2 more</span><span></span><span></span><span></span><span></span><span></span></div>
           <div class="tr svc" data-m="tc.now"><span class="mono">Final service</span><span>Pine Ridge town hall</span><span class="mono r dim">–</span><span></span><span></span><span></span><span></span></div>
           <div class="tr svc" data-m="tc.prop"><span class="mono">Final service</span><span class="nm">Pine Ridge town hall<small class="dim">finish (MTC in)</small></span><span class="r newcell"><span class="tgt">target 6 min</span></span><span></span><span></span><span></span><span></span></div>
-          <div class="tsum"><span>Road penalties <b class="late" data-m="tc.now">+20 s</b><b class="late" data-m="tc.prop">+40 s</b></span></div>
+          <div class="tsum"><span>Transit penalties <b class="late" data-m="tc.now">+20 s</b><b class="late" data-m="tc.prop">+40 s</b></span></div>
         </div>
 
         <!-- d: at Service A (19:42) or at the overnight's regroup (21:24) -->
@@ -335,7 +335,7 @@ h5 { margin: 0 0 10px; font-size: 20px; letter-spacing: .04em; }
           <div class="day">Day 2</div>
           <div class="tr"><span class="mono">SS6</span><span>Long Gully</span><span class="mono r">08:42</span><span></span><span></span><span></span><span></span></div>
           <div class="tr dimr"><span class="mono">⋮</span><span>4 more</span><span></span><span></span><span></span><span></span><span></span></div>
-          <div class="tsum"><span>Road penalties <b class="late" data-m="ci.now">+20 s</b><b class="late" data-m="ci.svc ci.rgc">+40 s</b></span></div>
+          <div class="tsum"><span>Transit penalties <b class="late" data-m="ci.now">+20 s</b><b class="late" data-m="ci.svc ci.rgc">+40 s</b></span></div>
         </div>
 
         <div class="col">
@@ -343,7 +343,7 @@ h5 { margin: 0 0 10px; font-size: 20px; letter-spacing: .04em; }
           <div class="card cpad" data-m="tc.now tc.prop">
             <h5>TRANSIT</h5>
             <div class="banner"><span>To TC5</span><i>·</i><span>due <span class="mono">21:02</span></span><i>·</i><span class="mono">11:04</span><span>left</span><i>·</i><span class="mono">9.6 km</span></div>
-            <div class="muted small">Follow the arrows. Late costs a road penalty for each minute.</div>
+            <div class="muted small">Follow the arrows. Late costs a transit penalty for each minute.</div>
           </div>
           <!-- d: at the stop -->
           <div class="card cpad" data-m="ci.now">
@@ -375,7 +375,7 @@ h5 { margin: 0 0 10px; font-size: 20px; letter-spacing: .04em; }
           <div class="card cpad">
             <h5>OVERALL</h5>
             <div class="row2"><span>Position</span><b data-m="tc.now tc.prop ci.rgc">P14 / 38</b><b data-m="ci.now ci.svc">P15 / 38</b></div>
-            <div class="row2"><span>Road penalties</span><span class="mono late" data-m="tc.now ci.now">+20 s</span><span class="mono late" data-m="tc.prop ci.svc ci.rgc">+40 s</span></div>
+            <div class="row2"><span>Transit penalties</span><span class="mono late" data-m="tc.now ci.now">+20 s</span><span class="mono late" data-m="tc.prop ci.svc ci.rgc">+40 s</span></div>
             <div class="row2"><span>Your total</span><span class="mono" data-m="tc.now">28:33.1</span><span class="mono" data-m="tc.prop">28:53.1</span><span class="mono" data-m="ci.now">20:52.8</span><span class="mono" data-m="ci.svc">21:12.8</span><span class="mono" data-m="ci.rgc">35:48.1</span></div>
           </div>
           <div class="card cpad"><div class="btns"><div class="btn out">Save and quit</div><div class="btn out">Retire</div></div></div>
@@ -403,7 +403,7 @@ const SCREENS = {
   res: { crumbs: "Home<i>›</i>Drive rally<i>›</i><b>Pine Ridge Rally</b>", v: [["now", "Now", "n"], ["prop", "Proposed · finished, timed", "p"]],
     note: {
       now: "<b>Now.</b> A finished full rally is one line above the results: its total, place, mode and car. Nothing says what the road sections cost, though the total includes it.",
-      prop: "<b>The full rally, all of it.</b> The line says how much of the total is road penalties (amber; <i>no road penalties</i> in green when none). A row of chips follows: each stage's time, with the road penalty taken getting to its time control in amber, and a chip for a stop only where you were late at it. An untimed rally or one finished before this: as now. The \"Your rally\" card beside the top 10 is built from single-stage bests, so it stays as it is."
+      prop: "<b>The full rally, all of it.</b> The line says how much of the total is road penalties (amber; <i>no transit penalties</i> in green when none). A row of chips follows: each stage's time, with the road penalty taken getting to its time control in amber, and a chip for a stop only where you were late at it. An untimed rally or one finished before this: as now. The \"Your rally\" card beside the top 10 is built from single-stage bests, so it stays as it is."
     } },
   stage: { crumbs: "Home<i>›</i>Drive stage<i>›</i>Pine Ridge Rally<i>›</i><b>SS2 Hillside Rd</b>", v: [["now", "Now", "n"], ["prop", "Proposed", "p"]],
     note: {

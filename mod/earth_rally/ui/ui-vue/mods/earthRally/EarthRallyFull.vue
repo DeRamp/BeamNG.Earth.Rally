@@ -131,7 +131,7 @@
               </div>
             </template>
           </div>
-          <div v-if="timed && c.roadPenaltyS != null" class="er-tsum"><span>Road penalties <b :class="{ 'er-late': c.roadPenaltyS > 0 }">{{ c.roadPenaltyS > 0 ? pen(c.roadPenaltyS) : "none" }}</b></span></div>
+          <div v-if="timed && c.roadPenaltyS != null" class="er-tsum"><span>Transit penalties <b :class="{ 'er-late': c.roadPenaltyS > 0 }">{{ c.roadPenaltyS > 0 ? pen(c.roadPenaltyS) : "none" }}</b></span></div>
           <div v-if="arr(c.heldOut).length" class="er-muted er-small">Held out: {{ arr(c.heldOut).map(h => h.why ? `${h.ss} (${h.why})` : h.ss).join(", ") }}</div>
         </div>
         <div class="er-col er-gap">
@@ -194,7 +194,7 @@
               </div>
               <div v-else-if="c.transit">To {{ c.transit.name }}<template v-if="c.transit.distM != null"> · {{ len(c.transit.distM) }}</template>
                 <span v-if="c.transit.weather" class="er-bwx"><svg viewBox="0 0 24 24" v-html="wxIcon(c.transit.weather)"></svg>{{ wxText(c.transit.weather) }}</span></div>
-              <div class="er-muted er-small">Follow the arrows.<template v-if="c.transit && c.transit.due"> Late costs a road penalty for each minute.</template></div>
+              <div class="er-muted er-small">Follow the arrows.<template v-if="c.transit && c.transit.due"> Late costs a transit penalty for each minute.</template></div>
             </template>
             <template v-else-if="c.phase === 'toGo'">
               <h3>NEXT: {{ (c.at && c.at.label || "").toUpperCase() }}</h3>
@@ -211,7 +211,7 @@
               <div class="er-row2"><span>{{ c.class }}</span><b>{{ ord(c.overall.classPos) }} / {{ c.overall.classOf }}</b></div>
               <div class="er-row2"><span>Gap to leader</span><span class="er-mono">{{ c.overall.gapS > 0.05 ? "+" + longTime(c.overall.gapS) : "leading" }}</span></div>
             </template>
-            <div v-if="timed && c.roadPenaltyS > 0" class="er-row2"><span>Road penalties</span><span class="er-mono er-late">{{ pen(c.roadPenaltyS) }}</span></div>
+            <div v-if="timed && c.roadPenaltyS > 0" class="er-row2"><span>Transit penalties</span><span class="er-mono er-late">{{ pen(c.roadPenaltyS) }}</span></div>
             <div class="er-row2"><span>Your total</span><span class="er-mono">{{ longTime(c.totalS) }}</span></div>
           </div>
           <!-- leaving: continue later, or retire (#28) -->
