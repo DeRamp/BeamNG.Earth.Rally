@@ -4166,8 +4166,17 @@ do
     R.earlyFree = {}
     R.clock.t = t0 + 35 * 60 + 1
     td = rallyRun.transitDue()
-    T.check(td and td.early and hud.transitText(td) == 'due 08:40 · early: wait short of the board',
-      'stop check-in: early with the penalty on: ' .. tostring(td and hud.transitText(td)))
+    T.check(td and td.early == nil and td.leftS and hud.transitText(td):find('left', 1, true),
+      'stop check-in: early with the penalty on, far from the board: the time left, no wait note yet: '
+      .. tostring(td and hud.transitText(td)))
+    -- (near the board: the note, with the time left still there to wait by)
+    car.lat, car.lon, car.speed = parkLat - 0.001, parkLon, 10
+    rframes(2)
+    R.clock.t = t0 + 35 * 60 + 3
+    td = rallyRun.transitDue()
+    local txt = td and hud.transitText(td) or ''
+    T.check(td and td.early and txt:find('left · early: wait short of the board', 1, true),
+      'stop check-in: early with the penalty on, near the board: ' .. txt)
     settings.set('earlyPenalty', false)
     R.clock.t = t0 + 35 * 60 + 2
     T.check(rallyRun.transitDue().early == nil, 'stop check-in: the early penalty off: no wait note')

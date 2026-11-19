@@ -205,7 +205,7 @@ local function transitDueNow()
   -- (additions B, choice 3) driving to a stop that charges early, the car early: the line says to wait short of the
   -- board (no wait card at a stop)
   local early = toStop ~= nil and math.floor(t / 60) < math.floor(dueT / 60) and settings.get('earlyPenalty') == true
-    and not rally.earlyFree(R, it) or nil
+    and not rally.earlyFree(R, it) and type(toStop.distM) == 'number' and toStop.distM <= runner.STOP_HINT_M or nil
   local label, distM
   if toStop then
     label, distM = it.label .. (it.name and (' · ' .. it.name) or ''), toStop.distM
@@ -1123,6 +1123,8 @@ function M.resume(id)
     save()
   end
   setWorld()
+  -- (the clock as the save left it: a recce in getReady can run it on, and that is no road section's time)
+  local savedClock = R.clock and R.clock.t
   getReady(function()
     local it = rally.current(R)
     if it and it.kind ~= 'stage' then
@@ -1131,7 +1133,7 @@ function M.resume(id)
       local key = 'stop' .. R.pos
       local dueT = timed() and not (type(R.road) == 'table' and R.road[key]) and dueAt(R.pos) or nil
       if dueT then
-        M.checkIn(it, nil, math.max(R.clock.t, math.floor(dueT / 60) * 60), dueT, key)
+        M.checkIn(it, nil, math.max(savedClock or R.clock.t, math.floor(dueT / 60) * 60), dueT, key)
       end
       goToStop()
     elseif it then

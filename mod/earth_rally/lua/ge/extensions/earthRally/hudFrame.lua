@@ -203,10 +203,10 @@ function M.transitText(tr, units)
     if (tr.penaltyS or 0) > 0 then parts[#parts + 1] = string.format('+%d s', tr.penaltyS) end
   elseif tr.leftS and tr.leftS < 0 then
     parts[#parts + 1] = 'due now'      -- (inside the due minute: on time still, nothing left to count down)
-  elseif tr.early then
-    parts[#parts + 1] = 'early: wait short of the board'   -- (a stop that charges early: rallyRun transitDueNow)
-  elseif tr.leftS then
-    parts[#parts + 1] = M.diffText(tr.leftS) .. ' left'
+  else
+    if tr.leftS then parts[#parts + 1] = M.diffText(tr.leftS) .. ' left' end
+    -- (near a stop that charges early, the car early: rallyRun transitDueNow. The time left stays, to wait by)
+    if tr.early then parts[#parts + 1] = 'early: wait short of the board' end
   end
   if tr.distM then parts[#parts + 1] = M.lengthText(tr.distM, units) .. (units == 'mi' and ' mi' or ' km') end
   return table.concat(parts, ' · ')

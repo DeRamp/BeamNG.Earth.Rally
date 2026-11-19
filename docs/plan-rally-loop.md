@@ -326,3 +326,8 @@ On / Off**.
 - **Each stage** is closed to traffic either way, as before.
 - **Default:** the player's last pick; before any, the world's (On when its traffic is running). A save from before
   this leaves the world's traffic alone.
+
+**Known, from the last review:** the card takes the pad whenever it is up, even when the game refused its pause; then
+the parking brake, shift up, look back and reset are off while the card is up, and the arrows / left stick move the
+card's pick as well as steering. After a walk-mode recce in a rally's prep, a stop with no place on the map is run where
+the last recce window left the car (no ARA stop is like that).

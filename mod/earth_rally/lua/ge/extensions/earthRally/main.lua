@@ -1344,6 +1344,9 @@ doAction = function(what, eventId, stageId, fromPanel, queued)
     -- (1.7.3) the stage under way still downloading its own area: with the look-ahead's, two downloads go on
     local ownDl = autoSeq ~= nil and autoSeq.phase == M.DOWNLOADING
     autoSeq = nil
+    -- (a rally's prep stopped on an official BeamNG.Earth: the walk's trip home goes, as on quit -- prepDone takes the
+    -- car where the rally goes next, and two teleports in one frame race)
+    if rallyRun.preparing() then pcall(earth._roadWalk.reset) end
     -- (autoRecce.cancel does not call the done callback -- a stop is not an ending, and leaves no line behind)
     local stopped = autoRecce.cancel() or hadSeq
     -- (1.7.2) A full rally getting its stages ready runs one auto recce after another (stepRallyPrep), so stopping
