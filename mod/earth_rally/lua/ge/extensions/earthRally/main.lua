@@ -751,7 +751,8 @@ function M._worldWaitClear() worldWait = nil end   -- (tests)
 -- Every frame while the level loads: the time it has taken, how long BeamNG.Earth has been ready with a car, and the
 -- page put back up over the level once the game's own loading screen has let go ('play'). BeamNG.Earth says it is in
 -- its world before then (at onClientStartMission), so opening the page at that moment had it closed again under it.
--- Only on 'play': a player who opens the Escape menu meanwhile is not fought; the page comes back when they leave it.
+-- Reopened only on 'play': a player who opens the Escape menu meanwhile is not fought; the page comes back when they
+-- leave it. A page already up when the game's loading screen goes counts as shown (below).
 local function updateWorldWait(dt)
   local w = waiting()
   if not w then return end
