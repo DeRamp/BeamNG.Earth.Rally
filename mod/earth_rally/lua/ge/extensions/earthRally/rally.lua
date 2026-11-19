@@ -26,7 +26,8 @@
 --     stops' "in" controls keyed by their place in order, as serviced is), lateSPerMin, earlySPerMin, earlyFree =
 --     { [inType] = true } (the "in" controls where early is free: the event's early_checkin_allowed) }
 --   Order items of a timed rally carry: stages { date, firstCar, latenessMin, targetMin, outTargetMin, outT,
---   startGapMin (its time control's first car to its own: a pass left out carries it with its lateness) };
+--   startGapMin (its time control's first car to its own: a pass left out carries it with its lateness) }, and any
+--   rally's stages its stored weather (E: weather, BeamNG.Earth's weather message, nil when the pack has none);
 --   stops and the start { outT } (the scheduled out time, local); stops { inType, inTargetMin } (the control they are
 --   checked in at, and the road section's target to it from the stage before), where the event file gives them.
 --
@@ -94,6 +95,7 @@ local function orderOf(event, cancelled)
         cancelledReal = p.cancelled == true or nil }
       -- (the schedule: timed road sections)
       it.date, it.firstCar, it.latenessMin, it.startGapMin = p.date, p.firstCar, lat, tonumber(p.startGapMin)
+      it.weather = type(p.weather) == 'table' and p.weather or nil   -- (E: the stage's stored weather)
       it.targetMin = tonumber(p.targetMin) and (tonumber(p.targetMin) + carry) or nil
       it.outTargetMin, it.outT = tonumber(p.outTargetMin), outT
       if not it.outT and carryOut then

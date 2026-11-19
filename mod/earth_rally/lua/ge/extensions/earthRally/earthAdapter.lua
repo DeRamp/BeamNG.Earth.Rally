@@ -5,7 +5,7 @@
 local M = {}
 
 M.MIN_API_MINOR = 6        -- toGame / toGeo (BeamNG.Earth API 1.6)
-M.KNOWN_API_MINOR = 10     -- the newest minor Earth Rally has anything to ask of (roadGraph, areaRoute; worldTime)
+M.KNOWN_API_MINOR = 9      -- the newest minor Earth Rally has anything to ask of (roadGraph, areaRoute)
 
 local function api() return rawget(_G, 'beamngEarth_api') end
 local function core() return rawget(_G, 'beamngEarth_core') end
@@ -501,31 +501,108 @@ function M.setRebaseDistance(m)
   end
 end
 
------------------------------------------------------------------------------------------- world time (rally-loop plan)
--- A timed rally's sky at its own date and time (interface 8): BeamNG.Earth's api.setWorldTime(epoch) (modding API
--- 1.10, has('worldTime')): the sky at that UTC moment, running on in real time, and that hour's weather from the
--- archive, without touching the player's sky or weather setting; nil goes back to what the player had.
--- Without it the sky and the weather are left alone: anything else reaches into BeamNG.Earth's internals and shows
--- today's date anyway (the start screen says so).
-function M.hasWorldTime()
-  local a = api()
-  return a ~= nil and type(a.has) == 'function' and a.has('worldTime') == true and type(a.setWorldTime) == 'function'
+------------------------------------------------------------------------------------------ multiplayer (plan F)
+-- In a BeamMP session? BeamMP's own MPCoreNetwork.isMPSession(), as BeamNG.Earth's beammp.inSession reads it; false
+-- outside BeamMP.
+function M.inMultiplayer()
+  local mp = rawget(_G, 'MPCoreNetwork')
+  if type(mp) ~= 'table' or type(mp.isMPSession) ~= 'function' then return false end
+  local ok, v = pcall(mp.isMPSession)
+  return ok and v == true
 end
 
--- epoch: the UTC moment (os.time's), or nil to give the sky back. Returns 'api' when it was done, else false.
-function M.setWorldTime(epoch)
-  if not M.hasWorldTime() then return false end
-  -- (it answers true, or nil and why)
-  local okC, res = pcall(api().setWorldTime, epoch)
-  return (okC and res ~= nil and res ~= false) and 'api' or false
+------------------------------------------------------------------------------------------ the rally's sky (plan E)
+-- A timed rally's hour and its stage's stored weather, through the two hooks BeamNG.Earth keeps for a BeamMP server's
+-- clock and weather (mpsession.lua applyServerSky): beamngEarth_sky.setServerClock({ hours, speed, epoch }) and
+-- beamngEarth_weather.setPreset(name), with our own entry in its PRESETS table. Neither switches the player's sky or
+-- weather setting to Manual, saves anything or shows a toast; nil gives back the player's own. Not modding API: a
+-- BeamNG.Earth update can rename them, so each is checked, and without them the rally keeps the player's sky and
+-- weather (one log line). The clock sets the hour, not the date (the sun is today's at that hour).
+M.SCENE_PRESET = 'earthrally'   -- (weather.presetMsg looks names up lower-cased)
+
+local function sky() return rawget(_G, 'beamngEarth_sky') end
+local function weather() return rawget(_G, 'beamngEarth_weather') end
+-- (ours: the clock table BeamNG.Earth keeps, marked earthRally = true -- the mark survives a Lua reload of the mod)
+local function ours(c) return type(c) == 'table' and c.earthRally == true end
+
+-- Both hooks there? true, or false and what is missing.
+function M.hasSceneHooks()
+  local sk, wx = sky(), weather()
+  if not (type(sk) == 'table' and type(sk.setServerClock) == 'function' and type(sk.serverClock) == 'function') then
+    return false, 'beamngEarth_sky.setServerClock / serverClock missing'
+  end
+  if not (type(wx) == 'table' and type(wx.setPreset) == 'function' and type(wx.preset) == 'function'
+      and type(wx.PRESETS) == 'table') then
+    return false, 'beamngEarth_weather.setPreset / preset / PRESETS missing'
+  end
+  return true
 end
 
--- The world time BeamNG.Earth has set (the UTC epoch), or nil: none, or no API to ask.
-function M.worldTime()
-  local a = api()
-  if not (M.hasWorldTime() and type(a.worldTime) == 'function') then return nil end
-  local ok, t = pcall(a.worldTime)
-  return ok and type(t) == 'number' and t or nil
+-- A clock or weather someone else set (a BeamMP server's): true when there is one that is not ours.
+function M.sceneTaken()
+  local sk, wx = sky(), weather()
+  local okC, c = pcall(function() return sk and sk.serverClock and sk.serverClock() end)
+  if okC and c ~= nil and not ours(c) then return true end
+  local okP, p = pcall(function() return wx and wx.preset and wx.preset() end)
+  return okP and p ~= nil and p ~= M.SCENE_PRESET
+end
+
+-- Is ours set (the clock or the weather)?
+function M.sceneSet()
+  local sk, wx = sky(), weather()
+  local okC, c = pcall(function() return sk and sk.serverClock and sk.serverClock() end)
+  if okC and ours(c) then return true end
+  local okP, p = pcall(function() return wx and wx.preset and wx.preset() end)
+  return okP and p == M.SCENE_PRESET
+end
+
+-- scene = { hours (local, 0-24) }; msg = the stage's stored weather (BeamNG.Earth's weather message) or nil (the
+-- player's own weather). Returns true when set, else false and why. Leaves a clock or weather someone else set alone.
+function M.setScene(scene, msg)
+  local ok, why = M.hasSceneHooks()
+  if not ok then return false, why end
+  if M.sceneTaken() then return false, 'a server clock or weather is set' end
+  local sk, wx = sky(), weather()
+  local hours = type(scene) == 'table' and tonumber(scene.hours) or nil
+  if hours then
+    local okC, c = pcall(sk.setServerClock, { hours = hours % 24, speed = 1, epoch = os.time() })
+    if not (okC and type(c) == 'table') then return false, 'setServerClock: ' .. tostring(c) end
+    c.earthRally = true
+  end
+  if type(msg) == 'table' then
+    local p = {}
+    for k, v in pairs(msg) do p[k] = v end
+    wx.PRESETS[M.SCENE_PRESET] = p
+    local okP, set = pcall(wx.setPreset, M.SCENE_PRESET)
+    if not (okP and set) then return false, 'setPreset: ' .. tostring(set) end
+  elseif wx.preset() == M.SCENE_PRESET then
+    -- (no stored weather for this stage: the player's own again)
+    pcall(wx.setPreset, nil)
+    wx.PRESETS[M.SCENE_PRESET] = nil
+  end
+  return true
+end
+
+-- Ours given back (the clock nil, the preset nil, our entry removed); a clock or weather someone else set is left.
+-- Returns true when there was something of ours to give back.
+function M.clearScene()
+  local sk, wx = sky(), weather()
+  local had = false
+  local okC, c = pcall(function() return sk and sk.serverClock and sk.serverClock() end)
+  if okC and ours(c) then
+    pcall(sk.setServerClock, nil)
+    had = true
+  end
+  local okP, p = pcall(function() return wx and wx.preset and wx.preset() end)
+  if okP and p == M.SCENE_PRESET then
+    pcall(wx.setPreset, nil)
+    had = true
+  end
+  if type(wx) == 'table' and type(wx.PRESETS) == 'table' and wx.PRESETS[M.SCENE_PRESET] ~= nil then
+    wx.PRESETS[M.SCENE_PRESET] = nil
+    had = true
+  end
+  return had
 end
 
 return M

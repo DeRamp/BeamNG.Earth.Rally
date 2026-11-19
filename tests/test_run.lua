@@ -4667,29 +4667,78 @@ do
   T.check(events.bestSplits('sp', 'c', 'L').timeS == 50, 'and the best still there to beat')
 end
 
------------------------------------------------------------------------------------------- the rally loop: world time
--- earthAdapter.setWorldTime: BeamNG.Earth's api.setWorldTime when it has it; without it the sky and the weather are
--- left alone (no reaching into its sky's internals, no TimeOfDay set).
+------------------------------------------------------------------------------------------ the rally loop: the scene
+-- (plan E) A stand-in for the official BeamNG.Earth's two BeamMP hooks, as they behave there (sky.lua setServerClock /
+-- serverClock, weather.lua PRESETS / presetMsg's lower-cased lookup / setPreset / preset). answer = false: the clock
+-- refused.
+local function fakeScene()
+  local f = { clock = nil, preset = nil, sets = 0, answer = true }
+  beamngEarth_sky = {
+    setServerClock = function(c)
+      f.sets = f.sets + 1
+      if not f.answer then return nil end
+      if type(c) == 'table' and tonumber(c.hours) then
+        f.clock = { hours = tonumber(c.hours) % 24, speed = c.speed, epoch = c.epoch }
+      else
+        f.clock = nil
+      end
+      return f.clock
+    end,
+    serverClock = function() return f.clock end }
+  beamngEarth_weather = { PRESETS = { clear = { code = 0 } } }
+  beamngEarth_weather.setPreset = function(name)
+    local p = name and beamngEarth_weather.PRESETS[tostring(name):lower()]
+    f.preset = p and tostring(name):lower() or nil
+    return p ~= nil
+  end
+  beamngEarth_weather.preset = function() return f.preset end
+  return f
+end
+local function noScene() beamngEarth_sky, beamngEarth_weather = nil, nil end
+
+-- earthAdapter's scene: both hooks or nothing; ours set and given back; someone else's (a BeamMP server's) left alone
 do
-  local api = beamngEarth_api
-  local had = { has = api.has, set = api.setWorldTime, get = api.worldTime }
-  local calls, now = {}, nil
-  api.has = function(n) return n == 'worldTime' or had.has(n) end
-  api.setWorldTime = function(e) calls[#calls + 1] = e or 'nil' now = e return true end
-  api.worldTime = function() return now end
-  T.check(earth.hasWorldTime() and earth.setWorldTime(1000) == 'api' and calls[1] == 1000, 'the API: the moment passed')
-  T.check(earth.worldTime() == 1000, 'and read back')
-  T.check(earth.setWorldTime(nil) == 'api' and calls[2] == 'nil' and earth.worldTime() == nil, 'and given back')
-  api.has, api.setWorldTime, api.worldTime = had.has, had.set, had.get
-  T.check(not earth.hasWorldTime() and earth.worldTime() == nil, 'an older BeamNG.Earth: no world time')
-  local touched = false
-  beamngEarth_sky = { getMode = function() return 'real' end, serverClock = function() return nil end,
-    setServerClock = function() touched = true end }
-  local env = core_environment
-  core_environment = { getTimeOfDay = function() return { time = 0.25 } end, setTimeOfDay = function() touched = true end }
-  T.check(earth.setWorldTime(6 * 3600) == false and earth.setWorldTime(nil) == false and not touched,
-    'without the API: the sky and the time of day left alone')
-  beamngEarth_sky, core_environment = nil, env
+  noScene()
+  T.check(earth.hasSceneHooks() == false and earth.setScene({ hours = 9 }, { code = 3 }) == false,
+    'no hooks: nothing set')
+  T.check(earth.clearScene() == false, 'no hooks: nothing to give back')
+  local f = fakeScene()
+  T.check(earth.hasSceneHooks() == true, 'the hooks: there')
+  local ok = earth.setScene({ hours = 25.5 }, { code = 63, cover = { low = 100 }, rainMmH = 4 })
+  T.check(ok and f.clock.hours == 1.5 and f.clock.speed == 1, 'the clock: the hour, running on in real time')
+  T.check(f.preset == 'earthrally' and beamngEarth_weather.PRESETS.earthrally.rainMmH == 4,
+    'the weather: our entry in PRESETS, picked')
+  T.check(earth.sceneSet() and not earth.sceneTaken(), "ours, not someone else's")
+  earth.setScene({ hours = 10 }, nil)
+  T.check(f.preset == nil and beamngEarth_weather.PRESETS.earthrally == nil and f.clock.hours == 10,
+    "a stage with no stored weather: the player's own weather, the clock still set")
+  T.check(earth.clearScene() and f.clock == nil and f.preset == nil, 'given back')
+  -- a BeamMP server's clock: never touched
+  f.clock = { hours = 20, speed = 0, epoch = 0 }
+  local sets = f.sets
+  T.check(earth.sceneTaken() and earth.setScene({ hours = 9 }, { code = 0 }) == false and f.sets == sets
+    and f.clock.hours == 20 and f.preset == nil, 'a server clock someone else set: left alone')
+  earth.clearScene()
+  T.check(f.clock and f.clock.hours == 20, 'and not given back as ours')
+  f.clock, f.preset = nil, 'rain'
+  T.check(earth.setScene({ hours = 9 }, { code = 0 }) == false and f.preset == 'rain', 'a server weather: left alone')
+  f.preset = nil
+  noScene()
+  -- plan F: BeamMP's own session check
+  T.check(earth.inMultiplayer() == false, 'no BeamMP: not in a session')
+  MPCoreNetwork = { isMPSession = function() return true end }
+  T.check(earth.inMultiplayer() == true, 'a BeamMP session')
+  MPCoreNetwork = nil
+  -- the time card's word
+  local rallyRun = require('earthRally/rallyRun')
+  local w = rallyRun.weatherWord({ code = 3, tempC = 14.6, isDay = true })
+  T.check(w.text == 'overcast' and w.tempC == 15 and w.icon == 'cloud' and w.night == false, 'overcast, 15')
+  w = rallyRun.weatherWord({ code = 0, slTempC = -3.2, isDay = false })
+  T.check(w.icon == 'moon' and w.night and w.tempC == -3, 'clear at night: the moon')
+  T.check(rallyRun.weatherWord({ code = 63 }).icon == 'rain' and rallyRun.weatherWord({ code = 73 }).icon == 'snow'
+    and rallyRun.weatherWord({ code = 45 }).icon == 'fog' and rallyRun.weatherWord({ code = 95 }).icon == 'storm',
+    'rain, snow, fog, storm')
+  T.check(rallyRun.weatherWord(nil) == nil, 'none stored: no word')
 end
 
 ------------------------------------------------------------------------------------------ the rally loop: the clock
@@ -4790,65 +4839,94 @@ do
     rallyTransit = td })
   T.check(ours.rally and ours.rally.transit and ours.rally.transit.late == 2 and ours.approach.sub:find('2 min late', 1, true),
     'the HUD stream: ours.rally.transit, and the line says it: ' .. tostring(ours.approach.sub))
-  -- (I) the sky: set on a jump only while the clock runs, again on unpause; never while paused; a refusal not asked
-  -- again every minute
-  local api = beamngEarth_api
-  local had = { has = api.has, set = api.setWorldTime, get = api.worldTime }
-  local sets, answer, now = 0, true, nil
-  api.has = function(n) return n == 'worldTime' or had.has(n) end
-  api.setWorldTime = function(e) sets = sets + 1 if answer then now = e end return answer end
-  api.worldTime = function() return now end
+  -- (I) the clock on BeamNG.Earth: set on a jump only while the clock runs, again on unpause; never while paused; a
+  -- refusal not asked again every minute
+  local f = fakeScene()
   rallyRun._setRally(r)
   rallyRun.clockPaused = function() return true end
   rallyRun.update(0.1, 0)
   rallyRun._setWorld()
-  T.check(sets == 0, 'the sky: not set while the clock is paused')
+  T.check(f.sets == 0, 'the clock: not set while the rally clock is paused')
   for _ = 1, 20 do rallyRun.update(10, 0) end
-  T.check(sets == 0, 'the sky: no drift re-sync while paused')
+  T.check(f.sets == 0, 'the clock: no drift re-sync while paused')
   rallyRun.clockPaused = function() return false end
   rallyRun.update(0.1, 0.1)
-  T.check(sets == 1 and now ~= nil, 'the sky: set as the clock runs again')
+  T.check(f.sets == 1 and f.clock ~= nil, 'the clock: set as the rally clock runs again')
+  T.check(math.abs(f.clock.hours - ((r.clock.t % 86400) / 3600)) < 1e-6, "to the rally clock's local hour")
   rallyRun.update(0.1, 120)
-  T.check(sets == 2, 'the sky: set again on drift while running')
+  T.check(f.sets == 2, 'the clock: set again on drift while running')
   rallyRun.clockPaused = function() return true end
   for _ = 1, 20 do rallyRun.update(10, 0) end
-  T.check(sets == 2, 'the sky: paused, no re-sync however far it runs on')
+  T.check(f.sets == 2, 'the clock: paused, no re-sync however far it runs on')
   rallyRun.clockPaused = function() return false end
   rallyRun.update(0.1, 0.1)
-  T.check(sets == 3, 'the sky: re-synced as the clock runs again')
-  answer = false
+  T.check(f.sets == 3, 'the clock: re-synced as the rally clock runs again')
+  f.answer = false
   rallyRun.update(0.1, 120)
-  local after = sets
+  local after = f.sets
   for _ = 1, 5 do rallyRun.update(0.1, 120) end
-  T.check(sets == after, 'the sky: refused once, not asked again on every drift')
+  T.check(f.sets == after, 'the clock: refused once, not asked again on every drift')
   rallyRun._setWorld()
-  T.check(sets == after + 1, 'the sky: asked again at the next jump')
-  answer = true
+  T.check(f.sets == after + 1, 'the clock: asked again at the next jump')
+  f.answer = true
   rallyRun._setWorld()
-  -- the setting "Rally's real date and weather" off: given back as the menu closes, not set again; on: set again
+  -- the setting "Rally's real time and weather" off: given back as the menu closes, not set again; on: set again
   settings.set('realWorld', false)
   rallyRun.clockPaused = function() return true end
   rallyRun.update(0.1, 0)
   rallyRun.clockPaused = function() return false end
   rallyRun.update(0.1, 0.1)
-  T.check(now == nil, 'the setting off: the sky given back as the menu closes')
-  local offSets = sets
+  T.check(f.clock == nil, 'the setting off: the clock given back as the menu closes')
+  local offSets = f.sets
   rallyRun._setWorld()
   rallyRun.update(0.1, 120)
-  T.check(sets == offSets and now == nil, 'the setting off: never set')
+  T.check(f.sets == offSets and f.clock == nil, 'the setting off: never set')
   settings.set('realWorld', true)
   rallyRun.clockPaused = function() return true end
   rallyRun.update(0.1, 0)
   rallyRun.clockPaused = function() return false end
   rallyRun.update(0.1, 0.1)
-  T.check(now ~= nil, 'the setting on again: set as the menu closes')
-  -- (B) left: the sky given back; and a world time left set with no rally running given back at load
+  T.check(f.clock ~= nil, 'the setting on again: set as the menu closes')
+  -- (E) the stored weather: the road section before a stage has that stage's, a stop the next stage's
+  r.order[2].weather = { code = 63, rainMmH = 4, tempC = 9, isDay = true }
+  r.order[3].weather = { code = 0, tempC = 12, isDay = true }
+  local posWas = r.pos
+  r.pos = 2
+  rallyRun._setWorld()
+  T.check(f.preset == 'earthrally' and beamngEarth_weather.PRESETS.earthrally.code == 63,
+    "on the road section to SS1: SS1's weather")
+  local okC, card = pcall(rallyRun.uiCard)
+  T.check(okC and card.rows[2].weather and card.rows[2].weather.text == 'rain' and card.rows[2].weather.tempC == 9
+    and card.rows[3].weather.icon == 'sun' and card.rows[1].weather == nil,
+    "the time card rows: each stage's word " .. (okC and '' or tostring(card)))
+  r.pos = 3
+  rallyRun._setWorld()
+  T.check(beamngEarth_weather.PRESETS.earthrally.code == 0, "on to SS2: SS2's")
+  r.order[3].weather = nil
+  rallyRun._setWorld()
+  T.check(f.preset == nil and f.clock ~= nil, "a stage with none stored: the player's own weather, the clock set")
+  r.order[3].weather = { code = 0, tempC = 12, isDay = true }
+  rallyRun._setWorld()
+  -- plan F: in a BeamMP session the hooks are never touched
+  MPCoreNetwork = { isMPSession = function() return true end }
+  rallyRun._setWorld()
+  T.check(f.clock == nil and f.preset == nil, 'a BeamMP session: ours given back, nothing set')
+  local mpSets = f.sets
+  rallyRun._setWorld()
+  T.check(f.sets == mpSets and f.clock == nil, 'and not set again')
+  MPCoreNetwork = nil
+  rallyRun._setWorld()
+  r.pos = posWas
+  -- (B) left: given back; and ours left set with no rally running given back at load
   rallyRun.quit()
-  T.check(now == nil and rallyRun.active() == nil, 'quit: the sky given back')
-  now = 12345
-  T.check(rallyRun.clearStrayWorld() and now == nil, 'no rally running, a world time left set: given back')
+  T.check(f.clock == nil and f.preset == nil and beamngEarth_weather.PRESETS.earthrally == nil
+    and rallyRun.active() == nil, 'quit: the clock and the weather given back, our entry removed')
+  earth.setScene({ hours = 9 }, { code = 3 })
+  T.check(rallyRun.clearStrayWorld() and f.clock == nil and f.preset == nil, 'no rally running, ours left set: given back')
   T.check(rallyRun.clearStrayWorld() == false, 'nothing set: nothing done')
-  api.has, api.setWorldTime, api.worldTime = had.has, had.set, had.get
+  f.clock = { hours = 20, speed = 0, epoch = 0 }
+  T.check(rallyRun.clearStrayWorld() == false and f.clock.hours == 20, 'a server clock: not ours, left alone')
+  noScene()
   rallyRun._setRally(nil)
   rallyRun.clockPaused = function() return false end
   rallyRun.ui.atControl = nil
@@ -4902,6 +4980,33 @@ do
   T.check(ok and c.rows[3].due == nil and c.rows[3].targetMin == nil and c.at.checkIn == nil,
     'card: a stop done with no check-in: blank, as before')
   rallyRun._setRally(nil)
+end
+
+------------------------------------------------------------------------------------------ plan F: off in multiplayer
+do
+  local main = require('earthRally/main')
+  local rallyRun = require('earthRally/rallyRun')
+  T.check(main.mpCheck(0, true) == false and not main.multiplayer(), 'no BeamMP: on')
+  local quits = 0
+  local q = rallyRun.quit
+  rallyRun.quit = function() quits = quits + 1 return q() end
+  MPCoreNetwork = { isMPSession = function() return true end }
+  T.check(main.mpCheck(0.1) == false, 'read about once a second, not every frame')
+  T.check(main.mpCheck(1) == true and main.multiplayer() and quits == 1,
+    'a BeamMP session: off, a rally under way left as Save and quit leaves it')
+  local r = main.uiAction('drive', 'x', 'y')
+  T.check(r and r.ok == false and r.multiplayer and r.message == main.MP_MESSAGE, 'no stage starts')
+  r = main.uiRallyAction('start', 'x', {})
+  T.check(r and r.ok == false and r.multiplayer, 'no rally starts')
+  local okS, st = pcall(main.uiState)
+  T.check(okS and st.multiplayer == true, 'the menu state: multiplayer = true')
+  main.onUpdate(0.016, 0.016)
+  T.check(main.multiplayer(), 'the update: nothing but the check')
+  MPCoreNetwork = nil
+  T.check(main.mpCheck(0, true) == false and not main.multiplayer() and quits == 1, 'the session over: on again')
+  okS, st = pcall(main.uiState)
+  T.check(okS and st.multiplayer == nil, 'the menu state: no flag')
+  rallyRun.quit = q
 end
 
 T.done('test_run')

@@ -78,6 +78,7 @@ M.PLAYTEST_WAIT_S = 420         -- the world given this long to come up before g
 M.PLAYTEST_SETTLE_S = 12        -- ... and this long settled before the stage is asked for, so BeamNG.Earth has
                                 -- streamed the roads round the control before the run puts its boards down
 local playtest = nil     -- { event, stage, what, t, levelAsked, ready }
+local mpOn, mpT = false, 0 -- (plan F) in a BeamMP session: Earth Rally off (M.mpCheck)
 
 -- The developer panel (the ImGui window): console toggle; the setting shows / hides it.
 function M.toggle() show[0] = not show[0] end
@@ -1521,6 +1522,7 @@ end
 M._action = doAction
 
 function M.uiAction(what, eventId, stageId)
+  if mpOn then return { ok = false, message = M.MP_MESSAGE, multiplayer = true } end
   -- (no world, at the main menu: BeamNG.Earth loaded first, the button pressed again once it is up)
   if M.WORLD_ACTIONS[what] and M.needsWorld() then
     local ev, stage = menu.findStage(eventId, stageId)
@@ -1653,6 +1655,7 @@ function M.uiState()
   local ok, why = earth.check()
   s.version = M.VERSION
   s.earthOk, s.earthWhy = ok, (not ok) and why or nil
+  s.multiplayer = mpOn or nil   -- (plan F: the menu shows only "Earth Rally is off in multiplayer")
   -- (at the main menu, or on another map: not a fault, the level loads with the first button that needs it. Only that
   --  one reason: BeamNG.Earth missing or too old is still said, before a level load that could only fail)
   if not ok and why == earth.NOT_IN_WORLD then
@@ -1879,6 +1882,7 @@ end
 -- done with the rally, kept as finished; the page then opens Home, or the menu closes to plain free roam).
 -- Returns { ok, message, view }.
 function M.uiRallyAction(what, eventId, opts)
+  if mpOn then return { ok = false, message = M.MP_MESSAGE, multiplayer = true } end
   -- (no world, at the main menu: BeamNG.Earth loaded first, then Start or Continue pressed again. The page goes to
   --  the time card at once, as it does for an ok Start, and follows the rally from there once it is under way)
   if M.WORLD_RALLY_ACTIONS[what] and M.needsWorld() then
@@ -2393,7 +2397,63 @@ logPausedSim = function(dtReal, dtSim)
   pausedLog.real, pausedLog.sim = 0, 0
 end
 
+------------------------------------------------------------------------------------------ multiplayer (plan F)
+-- In a BeamMP session Earth Rally does nothing (the owner, 2026-11-19: "a very multiplayer unfriendly mod"): no stage
+-- or rally starts, a stage under way is stopped and a rally under way left as Save and quit leaves it, no HUD, no input
+-- map or action filter, BeamNG.Earth's clock and weather never touched, traffic given back. Checked as the mod loads,
+-- at each level start and about once a second.
+M.MP_CHECK_S = 1
+function M.multiplayer() return mpOn end
+M.MP_MESSAGE = 'Earth Rally is off in multiplayer.'
+
+-- Everything under way stopped (as the level going stops it), the rally's save kept.
+local function mpStop()
+  pcall(menuPause.releaseAll)
+  if recce.active() then pcall(recce.stop, false) end
+  autoSeq, rallyQ = nil, nil
+  if autoRecce.active() then autoRun = nil; pcall(earth._roadWalk.reset); pcall(autoRecce.cancel) end
+  if previewT then pcall(M.previewStop) end
+  pcall(endWorldWait)
+  facing, playtest = nil, nil
+  if selftest then pcall(selftest.stop, 'multiplayer session') end
+  pcall(rallyRun.quit)          -- (Save and quit: the save kept, BeamNG's own recovery back, traffic given back)
+  pcall(rallyRun.release)
+  pcall(cardInput.reset)        -- (the card's buttons given back to the game)
+  pcall(runner.abort, true)
+  pcall(earth.holdStrips, false)
+end
+
+-- The session read again (force: now, else about once a second). Returns whether Earth Rally is off.
+function M.mpCheck(dt, force)
+  mpT = mpT + (dt or 0)
+  if not force and mpT < M.MP_CHECK_S then return mpOn end
+  mpT = 0
+  local ok, on = pcall(earth.inMultiplayer)
+  on = ok and on == true
+  if on ~= mpOn then
+    mpOn = on
+    if on then
+      log('I', logTag, 'multiplayer session: Earth Rally off')
+      mpStop()
+    else
+      log('I', logTag, 'multiplayer session over: Earth Rally on again')
+    end
+  end
+  return mpOn
+end
+
+function M.onClientStartMission() M.mpCheck(0, true) end
+
 function M.onUpdate(dtReal, dtSim)
+  -- (plan F: off in a BeamMP session -- nothing below runs; switched off in the mod manager still unloads)
+  if M.mpCheck(dtReal or 0) then
+    if unloadNext then
+      unloadNext = false
+      local ext = rawget(_G, 'extensions')
+      if ext and ext.unload then pcall(ext.unload, 'earthRally_main') end
+    end
+    return
+  end
   pcall(rallyRun.update, dtReal, dtSim)
   local okP, errP = pcall(stepRallyPrep, dtReal or 0)
   if not okP then log('E', logTag, 'rally prep: ' .. tostring(errP)) end
@@ -2438,7 +2498,7 @@ function M.onUpdate(dtReal, dtSim)
   -- since the last time, so this is not a per-frame cost.
   if not earthSeen and earth.inWorld() then
     earthSeen = true
-    -- (the level up with no rally running: a world time a crash or a reload left set, given back)
+    -- (the level up with no rally running: a clock or weather of ours a crash or a reload left set, given back)
     pcall(rallyRun.clearStrayWorld)
     pcall(versions.check, M.VERSION)
   end
@@ -2489,6 +2549,7 @@ end
 
 -- The game's Interact control (Shift+E; the modifier + Y on a pad): on the start line, skip to 6 s before the start.
 function M.onGameplayInteract()
+  if mpOn then return end
   -- (a timed rally's wait for your minute at a time control: the same key skips it, as at the start line -- or does
   -- nothing, with the early penalty on. Just after a skip, the same press's second arrival (the page's key and this
   -- hook both see Shift+E) is swallowed: it must not skip the start line's countdown as well)
@@ -2502,6 +2563,7 @@ end
 -- (1.7.0) In a full rally's stage the key is the rally's recovery (rallyRun.recoverKey: free in Casual, the Recover?
 -- question in Realistic).
 function M.backOnRoad()
+  if mpOn then return false end
   local okR, mine = pcall(rallyRun.recoverKey)
   if okR and mine then return true end
   local ok, r = pcall(runner.backOnRoad) return ok and r end
@@ -2509,6 +2571,7 @@ function M.flipUpright() local ok, r = pcall(runner.flipUpright) return ok and r
 -- (1.7.0, #25) The pad's rally recovery (D-pad right): the rally's recovery key, and nothing outside a full rally --
 -- there the same button is the game's own reset, which a stage counts already.
 function M.rallyRecover()
+  if mpOn then return false end
   -- (a card up: the d-pad is the card's, cardInput)
   if cardInput.active() then return false end
   local r = rallyRun.active()
@@ -2539,6 +2602,7 @@ end
 -- stage run end to end by the game's AI, with checks, and a report in earthRally/selftest/. From the console, in the
 -- BeamNG.Earth level: earthRally_main.selfTest('otr24', 'maryhill-up'); earthRally_main.selfTestStop() stops it.
 function M.selfTest(eventId, stageId, opts)
+  if mpOn then log('W', logTag, 'self-test: ' .. M.MP_MESSAGE) return false end
   opts = opts or {}
   selftest = selftest or require('earthRally/selftest')
   local ok, why = selftest.start({ event = eventId, stage = stageId, token = opts.token, quit = opts.quit,
@@ -2648,7 +2712,9 @@ function M.onExtensionLoaded()
   pcall(earth.holdStrips, false)
   pcall(cardInput.clearStale)  -- (the card's map and filter group, which the game keeps across a reload)
   pcall(rallyRun.release)      -- (a full rally's block on the game's recovery, if a reload cut it short)
-  pcall(rallyRun.clearStrayWorld) -- (and its world time on BeamNG.Earth's sky)
+  pcall(rallyRun.clearStrayWorld) -- (and its clock and weather on BeamNG.Earth)
+  mpOn, mpT = false, 0
+  pcall(M.mpCheck, 0, true)     -- (plan F: a BeamMP session already)
   local veh = getPlayerVehicle and getPlayerVehicle(0)
   if veh then pcall(runner._vehCtl, veh, 'off') end
   settings.load()

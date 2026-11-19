@@ -383,6 +383,12 @@ text), `docs/rally-file.md`, `docs/plan-rally-loop.md`. Tests: test_pack, test_r
 **The owner's go on E (2026-11-19), with the optional time card weather** (mock-up first:
 `docs/mockups-rally-loop/weather.html`).
 
+**Built 2026-11-19** (feature/rally-loop): `tools/pack_weather.py`, the field in `docs/rally-file.md`, the Lua side
+(`earthAdapter.hasSceneHooks / setScene / clearScene`, PRESETS entry `earthrally`: BeamNG.Earth looks preset names up
+lower-cased), the start screen's two notes. The data for the time card's word is there (`rows[i].weather`,
+`transit.weather`); its UI waits for the mock-up. Known limit: BeamNG.Earth's `setPreset(nil)` keeps the rally's weather
+showing until its next real weather message (it refreshes every 10 min).
+
 ## F. Earth Rally off in multiplayer (the owner, 2026-11-19)
 
 "Earth Rally should disable when multiplayer is enabled anyway, as this is a very multiplayer unfriendly mod."
@@ -396,3 +402,6 @@ text), `docs/rally-file.md`, `docs/plan-rally-loop.md`. Tests: test_pack, test_r
 - One log line each way ("multiplayer session: Earth Rally off" / "on again").
 Files: `main.lua` (a `multiplayer()` check gating start paths and the update), `rallyRun.lua` (leave), `runner.lua`
 (stop), `menu.lua`/`uiState` (`multiplayer = true`), the menu Vue (after the mock-up). Tests: test_run.
+
+**Built 2026-11-19** (Lua side): `main.mpCheck` / `main.multiplayer()`, `earthAdapter.inMultiplayer`, `uiState().multiplayer`.
+The menu's one card waits for the mock-up.

@@ -961,6 +961,17 @@ do
   local o2, _, _, t2 = pack._itineraryOf(plain, {}, { ['Alder Way'] = 'alder', ['Birch Rd'] = 'birch' }, function() end)
   T.check(t2 == nil and o2[2].inType == 'SVC_IN' and o2[2].inTargetMin == nil,
     'check-ins: an untimed rally has no target to its stops')
+  -- (plan E) a row's stored weather carried on its pass; none, or an empty one: nil
+  local wx = { itinerary = {
+    { control = 'SS1', type = 'SS', stage = 'Alder Way', weather = { code = 63, rainMmH = 4, slTempC = 11 } },
+    { control = 'SS1', type = 'SS', stage = 'Alder Way', weather = { code = 0 } },
+    { control = 'SS2', type = 'SS', stage = 'Birch Rd', weather = {} },
+    { control = 'SS3', type = 'SS', stage = 'Alder Way' },
+  } }
+  local o3 = pack._itineraryOf(wx, {}, { ['Alder Way'] = 'alder', ['Birch Rd'] = 'birch' }, function() end)
+  T.check(o3[1].weather and o3[1].weather.code == 63 and o3[1].weather.rainMmH == 4,
+    'weather: the first row of a control carried on its pass')
+  T.check(o3[2].weather == nil and o3[3].weather == nil, 'weather: an empty one or none: nil')
 end
 
 T.done('test_pack')

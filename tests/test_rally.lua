@@ -45,6 +45,16 @@ end
 
 ------------------------------------------------------------------------------------------ the running order
 
+-- (plan E) each stage keeps its pass's stored weather
+do
+  local e = event()
+  e.itinerary[2].weather = { code = 3, slTempC = 9 }
+  local r = rally.new(e, {})
+  local got = {}
+  for _, it in ipairs(r.order) do if it.kind == 'stage' then got[it.ss] = it.weather end end
+  T.check(got.SS2 and got.SS2.code == 3 and got.SS1 == nil, 'the running order: the stored weather kept per stage')
+end
+
 do
   local r = rally.new(event(), { mode = 'realistic', class = 'L4WD' })
   local labels = {}

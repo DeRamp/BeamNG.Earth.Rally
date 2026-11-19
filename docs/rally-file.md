@@ -148,6 +148,34 @@ For the full rally (1.7.0, **Drive rally**), these are read too:
   `lateSPerMin` per minute (default 10 s), early `earlySPerMin` (default 60 s) only with the Early check-in penalty
   setting on; there is no maximum lateness. A zone not in worldTime.lua's list is put at its longitude's hour.
 
+**Weather** (plan E) is stored in the pack, never fetched by the game. `tools/pack_weather.py <pack folder>` writes it
+once, when the pack is made:
+
+```jsonc
+{ "weather_source": "Open-Meteo.com, archive, fetched 2026-11-19",   // where it came from (the tool writes it)
+  "itinerary": [
+    { "type": "SS", "control": "SS1", "stage": "A", "date": "2031-02-07", "first_car": "08:23",
+      "weather": { "code": 3, "isDay": true,                       // WMO weather code; daylight at that hour
+                   "cover": { "total": 90, "low": 80, "mid": 40, "high": 10 },   // cloud cover, %
+                   "wind": { "ms": 4.0, "gustMs": 9.0, "fromDeg": 250 },
+                   "visM": 20000,                                  // visibility, m (missing: BeamNG.Earth's default)
+                   "rainMmH": 0, "snowCmH": 0, "fog": false, "thunder": false,
+                   "tempC": 12.3, "slTempC": 13.6, "dewC": 8.1, "elevM": 200,
+                   "baseM": 950, "baseAglM": 750, "pressureHpa": 1004 } } ] }
+```
+
+- `weather` on an SS row: the hour of its start (`date` + `first_car`, the event's `timezone`) at the stage's start
+  (its start control in the map, else its line's first point), from Open-Meteo's historical archive (the historical
+  forecast for the last few days). It is BeamNG.Earth's own weather message (its `server/weather.py`), so any field
+  its weather reads can be given; a hand-made one needs only `code`, `cover`, `wind` and `slTempC`.
+- Read from the first row of each control, as the rest of the pass. A row with no `weather`: the player's own
+  weather on that stage. A rally still in the future gets none from the tool.
+- In Drive rally, with **Rally's real time and weather** on (default): BeamNG.Earth's clock shows the rally clock's
+  hour (not its date: the sun is where it is today at that hour) and its weather is the stage's: the road section
+  before a stage has that stage's weather, a stop the next stage's. Given back when the rally ends or is left. Not in
+  a BeamMP session.
+- The tool leaves rows that have `weather` alone (`--force` fetches them again).
+
 The itinerary is the running order. A row whose `stage` names no line in the map is an import warning and is left
 out. With no event file (or no SS row that matches), the stages run once each in map order, SS1, SS2..., each its
 line's length. A map line the itinerary never runs is a stage with no passes: the menu shows it as "Not run", with

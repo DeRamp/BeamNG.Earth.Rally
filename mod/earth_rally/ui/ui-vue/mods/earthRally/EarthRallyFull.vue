@@ -71,7 +71,8 @@
       <!-- (#56) Start out of the settings: the big way in at the lower right, selected as the page opens, its
            warnings just above it -->
       <div class="er-corner">
-        <div v-if="s.worldTime === false" class="er-warn er-nofork">Your BeamNG.Earth can't set the rally's date, time of day and weather. Install the Earth Rally fork of BeamNG.Earth to drive it on the real day.</div>
+        <div v-if="s.weather === 'none'" class="er-warn er-nofork">This rally has no stored weather: your own weather</div>
+        <div v-else-if="s.weather === 'noHooks'" class="er-warn er-nofork">Your BeamNG.Earth can't set the time and weather (log has why)</div>
         <div v-if="s.saved" class="er-warn">This replaces your saved rally (at {{ s.saved.at }}).</div>
         <div v-if="s.inProgress && s.inProgress !== s.id" class="er-warn">Another rally is under way: leave it from its time card first.</div>
         <BngButton ref="startBtn" v-bng-ui-nav-focus="1" class="er-huge" :accent="ACCENTS.main" :disabled="!s.car" @click="start">

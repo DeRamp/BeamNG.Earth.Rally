@@ -531,7 +531,8 @@ local CHECK_IN = { SVC_IN = true, RGC_IN = true, MTC_IN = true, PF_IN = true }
 --   first timed row stands in when no out row does: the rally's start. inType, inTargetMin: the first "in" row
 --   (CHECK_IN) in the stretch before it, and the targets from the pass before up to and including it: where a stop
 --   between the two is checked in, and when. startGapMin: the minutes from the time control's first car to the
---   stage's (ARA: 3), so a pass left out carries the whole of its time (rally.lua orderOf / holdOut).
+--   stage's (ARA: 3), so a pass left out carries the whole of its time (rally.lua orderOf / holdOut). weather: the
+--   row's stored weather (docs/rally-file.md; BeamNG.Earth's weather message), nil when the pack has none.
 -- Returns the passes, the stops (stopsOf, each with the inType / inTargetMin of the stretch it is in), the start place,
 -- and the timing { timezone, start = { date, time }, finish = { inType, inTargetMin } (the stretch after the last
 -- pass), earlyFree = { [inType] = true } (time_rules.early_checkin_allowed) } (nil: an untimed rally, no target time
@@ -582,7 +583,9 @@ local function itineraryOf(evFile, stages, lineId, warn)
                       powerStage = row.power_stage == true or nil,
                       date = str0(row.date), firstCar = str0(row.first_car), latenessMin = lat,
                       targetMin = hasT and acc or nil, inType = inRow and inRow.type or nil,
-                      inTargetMin = inRow and inRow.min or nil, startGapMin = gap }
+                      inTargetMin = inRow and inRow.min or nil, startGapMin = gap,
+                      -- (E: the hour's real weather at the stage's start, tools/pack_weather.py)
+                      weather = type(row.weather) == 'table' and next(row.weather) ~= nil and row.weather or nil }
           -- (before the first pass, no out row: the first timed row is the start)
           local o = reset or (#out == 0 and first) or nil
           if o then

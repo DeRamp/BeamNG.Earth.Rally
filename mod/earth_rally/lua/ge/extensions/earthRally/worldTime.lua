@@ -3,8 +3,8 @@
 -- offline (tests/test_rally.lua).
 --
 -- A "local time" here is seconds since 1970-01-01 00:00 as the wall clock of the rally's place reads it, as if that
--- clock were UTC: the itinerary's dates and HH:MM add up with plain arithmetic, and only the sky (setWorldTime) needs
--- the real instant, utc = local - offset.
+-- clock were UTC: the itinerary's dates and HH:MM add up with plain arithmetic, and only the sun's height needs the
+-- real instant, utc = local - offset.
 local M = {}
 
 local floor = math.floor

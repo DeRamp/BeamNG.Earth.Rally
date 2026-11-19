@@ -24,9 +24,10 @@
 --              (M.clockPaused), runs on real time while you wait at a time control for your minute, and jumps to a
 --              stop's scheduled out time (rally.serviceOut). The runner's clock is this one during a timed rally
 --              (runner.rallyClock). Due times at the time controls, late and early check-ins, road penalties: below.
---   the sky    (item 2) the game's sky follows the rally clock through earthAdapter.setWorldTime: at the start, out of
---              each stop, at each stage's load and after each jump of the clock; given back when the rally ends or
---              is left.
+--   the sky    (plan E) BeamNG.Earth's clock follows the rally clock's local hour and its weather the stage's stored
+--              weather (the road section before a stage: that stage's; a stop: the next stage's), through
+--              earthAdapter.setScene: at the start, out of each stop, at each stage's load and after each jump of
+--              the clock; given back when the rally ends or is left.
 local runner = require('earthRally/runner')
 local rally = require('earthRally/rally')
 local events = require('earthRally/events')
@@ -120,48 +121,111 @@ local function clockPausedNow()
   return ok and p == true
 end
 
--- The sky set to the rally clock (off: given back -- also one a Lua reload left set). resync: only to catch up with
--- drift or a pause, not a jump of the clock: not tried again once BeamNG.Earth has said no. Never while the clock is
--- paused (BeamNG.Earth's sky would run on from it under the menu): put off until it runs. Without BeamNG.Earth's
--- world time, the sky is left alone.
+-- (E) The stored weather a place in the rally has: the road section before a stage and the stage itself, that
+-- stage's; a stop, the next stage's. nil: none stored (the player's own weather), or the rally over.
+local function weatherItem(r)
+  if not r or rally.over(r) then return nil end
+  for i = r.pos or 1, #(r.order or {}) do
+    local it = r.order[i]
+    if it.kind == 'stage' then return it end
+  end
+  return nil
+end
+local function weatherOf(it)
+  if not it then return nil end
+  if type(it.weather) == 'table' then return it.weather end
+  -- (a rally saved before its pack had weather: the event's pass)
+  local e = ev or (R and menu.findEvent(R.eventId))
+  for _, p in ipairs(e and type(e.itinerary) == 'table' and e.itinerary or {}) do
+    if tostring(p.ss) == tostring(it.ss) and type(p.weather) == 'table' then return p.weather end
+  end
+  return nil
+end
+M._weatherOf = weatherOf
+
+-- (the time card's word for a stage's weather: { text, tempC, icon, night }, nil with none stored)
+local WX_TEXT = { [0] = 'clear', [1] = 'mainly clear', [2] = 'partly cloudy', [3] = 'overcast', [45] = 'fog',
+  [48] = 'fog' }
+function M.weatherWord(w)
+  if type(w) ~= 'table' then return nil end
+  local code = tonumber(w.code) or -1
+  local night = w.isDay == false
+  local text, icon = WX_TEXT[code], nil
+  if code >= 95 then text, icon = 'thunderstorm', 'storm'
+  elseif code >= 85 and code <= 86 then text, icon = 'snow showers', 'snow'
+  elseif code >= 80 and code <= 82 then text, icon = 'showers', 'rain'
+  elseif code >= 71 and code <= 77 then text, icon = 'snow', 'snow'
+  elseif code >= 61 and code <= 67 then text, icon = 'rain', 'rain'
+  elseif code >= 51 and code <= 57 then text, icon = 'drizzle', 'rain'
+  elseif code == 45 or code == 48 then icon = 'fog'
+  elseif code == 2 or code == 3 then icon = 'cloud'
+  elseif code == 0 or code == 1 then icon = night and 'moon' or 'sun' end
+  if w.fog == true and not icon then text, icon = 'fog', 'fog' end
+  if not text then return nil end
+  local t = tonumber(w.tempC) or tonumber(w.slTempC)
+  return { text = text, tempC = t and math.floor(t + 0.5) or nil, icon = icon or 'cloud', night = night }
+end
+
+-- BeamNG.Earth's clock and weather set for where the rally is (plan E, earthAdapter.setScene): the clock to the rally
+-- clock's local hour (a timed rally), the weather to the stage's stored weather (weatherOf). off: given back (also
+-- what a Lua reload left set). resync: only to catch up with drift or a pause, not a jump of the clock: not tried
+-- again once BeamNG.Earth has said no. Never while the clock is paused (BeamNG.Earth's clock would run on from it under
+-- the menu): put off until it runs. Without the hooks, or a clock or weather someone else set (a BeamMP server's), the
+-- player's own sky and weather are left alone.
 local function realWorldOn() return settings.get('realWorld') ~= false end
+local hooksSaid = false
+
+local function mpOff()
+  local ok, on = pcall(earth.inMultiplayer)
+  return ok and on == true
+end
 
 local function setWorld(off, resync)
-  if off or not timed() or not realWorldOn() then
-    local okW, cur = pcall(earth.worldTime)
-    -- (one we did not set is given back only on the way out, never on starting an untimed rally)
-    if world or (off and okW and cur ~= nil) then pcall(earth.setWorldTime, nil) end
+  local w = (not off and R and realWorldOn() and not mpOff()) and weatherOf(weatherItem(R)) or nil
+  if off or not R or not realWorldOn() or mpOff() or not (timed() or w) then
+    -- (ours given back: earthAdapter never touches a clock or weather it did not set)
+    if world or off then pcall(earth.clearScene) end
     world, worldDue, worldFailed = nil, false, false
     return
   end
-  if not earth.hasWorldTime() then return end
+  local okH, why = earth.hasSceneHooks()
+  if not okH then
+    if not hooksSaid then
+      hooksSaid = true
+      log('W', logTag, "rally: BeamNG.Earth's clock and weather hooks are not there (" .. tostring(why)
+        .. "): the player's own sky and weather")
+    end
+    return
+  end
   if resync and worldFailed then return end
-  if clockPausedNow() then worldDue = true return end
+  if timed() and clockPausedNow() then worldDue = true return end
   worldDue = false
-  local pl = placeOf(R)
-  local offS = wt.utcOffset(R.tz, R.clock.t, pl and pl.lon)
-  local ok, how = pcall(earth.setWorldTime, R.clock.t - offS)
-  world = { t = R.clock.t, real = realT }
-  if ok and how then
+  local hours = timed() and (R.clock.t % 86400) / 3600 or nil
+  local okC, set, no = pcall(earth.setScene, hours and { hours = hours } or nil, w)
+  world = { t = timed() and R.clock.t or nil, real = realT }
+  if okC and set then
     worldFailed = false
-    log('I', logTag, 'rally: the sky set to ' .. wt.startText(R.clock.t) .. ' (' .. tostring(how) .. ')')
+    local ww = M.weatherWord(w)
+    log('I', logTag, string.format("rally: BeamNG.Earth's clock %s, weather %s",
+      timed() and wt.hm(R.clock.t) or 'its own', ww and (ww.text .. (ww.tempC and (', ' .. ww.tempC .. ' C') or ''))
+      or "the player's own"))
   elseif not worldFailed then
     worldFailed = true
-    log('W', logTag, 'rally: BeamNG.Earth did not set the sky to ' .. wt.startText(R.clock.t)
-      .. '; tried again at the clock\'s next jump')
+    log('W', logTag, "rally: BeamNG.Earth's clock and weather not set (" .. tostring(okC and no or set)
+      .. "); tried again at the clock's next jump")
   end
 end
 M._setWorld = setWorld
 
--- (the mod loaded or the level started with no rally running: a world time left set -- a crash, a reload mid-rally --
--- given back to the player's own sky)
+-- (the mod loaded or the level started with no rally running: a clock or weather of ours left set -- a crash, a
+-- reload mid-rally -- given back to the player's own)
 function M.clearStrayWorld()
   if R then return false end
-  local ok, cur = pcall(earth.worldTime)
-  if not (ok and cur ~= nil) then return false end
-  pcall(earth.setWorldTime, nil)
+  local okS, set = pcall(earth.sceneSet)
+  if not (okS and set) then return false end
+  pcall(earth.clearScene)
   world, worldDue, worldFailed = nil, false, false
-  log('I', logTag, 'rally: a world time left set with no rally running: given back')
+  log('I', logTag, "rally: BeamNG.Earth's clock or weather left set with no rally running: given back")
   return true
 end
 
@@ -545,18 +609,25 @@ function M.startInfo(id)
   end
   local nCrews = 0
   for _ in pairs(crews) do nCrews = nCrews + 1 end
-  -- (interface 7: false when BeamNG.Earth cannot show the rally's date -- the start screen's note; nil untimed)
-  local worldTime = nil
-  -- (the setting off: no note asking for the fork)
-  if r and r.timed and settings.get('realWorld') ~= false then worldTime = earth.hasWorldTime() == true end
+  -- (plan E, the start screen's note: 'stored' (the stages' weather is in the pack), 'none' (no stored weather: the
+  -- player's own), 'noHooks' (this BeamNG.Earth cannot set the time and weather); nil: nothing to say -- the setting
+  -- off, or an untimed rally with no stored weather)
+  local weather = nil
+  local stored = false
+  for _, it in ipairs(r and r.order or {}) do
+    if it.kind == 'stage' and type(it.weather) == 'table' then stored = true break end
+  end
+  if r and settings.get('realWorld') ~= false and (r.timed or stored) then
+    if not earth.hasSceneHooks() then weather = 'noHooks' elseif stored then weather = 'stored' else weather = 'none' end
+  end
   return { id = id, name = e.name, canRun = r ~= nil, why = (not r) and 'This rally has no event file, so it ' ..
       'cannot be run as a full rally.' or nil,
     car = car, class = car and rally.guessClass(car.drivetrain) or 'L4WD', classes = rally.CLASSES,
     cancelled = rally.cancelledPasses(e), stages = stages, days = nd, services = svc, crews = nCrews,
     start = type(e.rallyStart) == 'table' and e.rallyStart.name or nil, toRecce = toRecce, heldOut = held,
     saved = M.saved(id), inProgress = R and R.eventId or nil,
-    -- (interface 7: a timed rally's real start, and whether BeamNG.Earth can show its date)
-    startsAt = M.startsAt(r), worldTime = worldTime,
+    -- (interface 7: a timed rally's real start; plan E: its weather note)
+    startsAt = M.startsAt(r), weather = weather,
     -- (Traffic on road sections: the pick to show, and whether the world has traffic -- On with none: a note)
     traffic = { pick = M.trafficChoice(), world = M.worldTraffic() } }
 end
@@ -1423,7 +1494,7 @@ function M.update(dt, dtSim)
       elseif wasPaused and not paused and (world or (realWorldOn() and timed())) then setWorld(false, true) end
       -- (and whenever the two have drifted apart all the same while the clock runs: a game pause of its own, slow
       -- motion. Never while it is paused: the sky would be set to a clock standing still)
-      if not paused and world and math.abs((world.t + (realT - world.real)) - R.clock.t) > M.WORLD_DRIFT_S then
+      if not paused and world and world.t and math.abs((world.t + (realT - world.real)) - R.clock.t) > M.WORLD_DRIFT_S then
         setWorld(false, true)
       end
       wasPaused = paused
@@ -1735,6 +1806,8 @@ function M.uiCard()
         if stp then row.pos, row.of = stp.pos, stp.of end
       end
       row.cancelledReal = it.cancelledReal
+      -- (plan E: the stage's stored weather in a word, for the time card)
+      row.weather = M.weatherWord(weatherOf(it))
     end
     rows[#rows + 1] = row
   end
@@ -1773,6 +1846,8 @@ function M.uiCard()
     distM = toStop.distM } end
   local td = transit and (phase == 'transit' or phase == 'toStop') and M.transitDue() or nil
   if td then transit.due, transit.leftS, transit.late, transit.penaltyS = td.due, td.leftS, td.late, td.penaltyS end
+  -- (plan E: the next stage's stored weather)
+  if transit then transit.weather = M.weatherWord(weatherOf(weatherItem(R))) end
   -- (additions B) at a stop checked in: its check-in for the stop card
   local checkIn = nil
   local ciRoad = timed() and cur and cur.kind ~= 'stage' and type(R.road) == 'table' and R.road['stop' .. R.pos] or nil

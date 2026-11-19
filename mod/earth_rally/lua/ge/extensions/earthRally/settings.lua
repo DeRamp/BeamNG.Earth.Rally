@@ -18,9 +18,9 @@ M.SCHEMA = {
     desc = "Checking in before your minute costs the rally's early penalty. Off: you wait for your minute.",
     options = { { true, 'On' }, { false, 'Off' } } },
   -- (the owner, 2026-11-18) a timed rally's sky and weather of its real day, or the player's own
-  realWorld = { default = true, label = "Rally's real date and weather",
-    desc = "A timed rally runs on its real day: the sky and the weather of its date and time. Off: your own sky "
-      .. 'and weather.', options = { { true, 'On' }, { false, 'Off' } } },
+  realWorld = { default = true, label = "Rally's real time and weather",
+    desc = "A rally runs at its real time of day, each stage in the weather it really had (stored in the rally's "
+      .. 'pack). Off: your own sky and weather.', options = { { true, 'On' }, { false, 'Off' } } },
   zoneBrake = { default = true, label = 'Control-zone brake',
     desc = "The brakes ease on in a control's zone, so you stop at its board", options = { { true, 'On' }, { false, 'Off' } } },
   clockView = { default = 'right', label = 'Start clock view',
