@@ -109,7 +109,7 @@
         <div class="er-card er-pad er-tc">
           <div class="er-tc-head"><h2>{{ c.name }}</h2><span v-if="timed" class="er-clock">{{ [c.clock.date, c.clock.time].filter(Boolean).join(" · ") }}</span><span class="er-mode">{{ c.mode === "realistic" ? "Realistic" : "Casual" }} · {{ c.class }}</span></div>
           <div class="er-tc-rows" :class="{ 'er-t2': timed }">
-            <div v-if="timed" class="er-tr er-thd"><span></span><span></span><span class="er-r">Due</span><span class="er-r">In</span><span class="er-r">Road</span><span class="er-r">Stage</span><span class="er-r">Pos</span></div>
+            <div v-if="timed" class="er-tr er-thd"><span></span><span></span><span class="er-r">Due</span><span class="er-r">In</span><span class="er-r">Transit</span><span class="er-r">Stage</span><span class="er-r">Pos</span></div>
             <template v-for="(r, i) in arr(c.rows)" :key="i">
               <div v-if="dayHead(i)" class="er-day">Day {{ r.day }}</div>
               <div class="er-tr" :class="rowCls(r)">
