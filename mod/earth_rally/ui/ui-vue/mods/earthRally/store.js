@@ -23,8 +23,12 @@ export function arr(x) {
   return []
 }
 
+let helperClosing = false   // (#77: a poll's answer from before the close must not bring the pop-up back)
+let nameLater = false       // (the name pop-up's Later: the same)
 export function refreshState(cb) {
   engineLua("earthRally_main and earthRally_main.uiState() or nil", s => {
+    if (s && helperClosing) s.helperPrompt = null
+    if (s && nameLater) s.namePrompt = null
     if (s) state.value = s
     if (cb) cb(s)
   })
@@ -120,6 +124,45 @@ export function setSetting(key, value) {
   })
 }
 
+// The game's vehicle picker for a rally at the main menu: purpose 'start' (a new rally's car) or 'resume' (a saved
+// rally's car found once). The menu comes back by itself.
+export function pickCar(eventId, purpose) {
+  engineLua(`earthRally_main and earthRally_main.uiPickCar(${q(eventId)}, ${q(purpose)}) or nil`, r => {
+    busyMsg.value = (r && !r.ok && r.message) || ""
+  })
+}
+
+// Stats and Report a problem (+stats; main.lua uiStats): what = yes / no / shown / openFolder / report.
+// a, b: for report, what the player wrote and whether to save the log. (Cut at 4000 without splitting an emoji.)
+const luaText = v => JSON.stringify(String(v || "").replace(/[\u0000-\u0009\u000b-\u001f]/g, " ").slice(0, 4000).replace(/[\ud800-\udbff]$/, ""))
+export function statsAction(what, a, b, cb) {
+  engineLua(`earthRally_main and earthRally_main.uiStats(${q(what)}, ${luaText(a)}, ${b ? "true" : "false"}) or nil`, r => {
+    if (r && r.stats) state.value = Object.assign({}, state.value, { stats: r.stats })
+    if (cb) cb(r)
+  })
+}
+
+// The Leaderboards helper pop-up (#77; main.lua uiHelperPrompt): Got it, with "Don't show this again" or not.
+export function helperPromptClose(dontShow) {
+  helperClosing = true
+  state.value = Object.assign({}, state.value, { helperPrompt: null })
+  engineLua(`earthRally_main and earthRally_main.uiHelperPrompt("close", ${dontShow ? "true" : "false"}) or nil`, () => {
+    helperClosing = false
+    refreshState()
+  })
+}
+
+// The leaderboard name pop-up (main.lua namePromptWanted / uiNamePrompt): Later hides it until the next menu open.
+// (Its Save is onlineName, below.)
+export function namePromptLater() {
+  nameLater = true
+  state.value = Object.assign({}, state.value, { namePrompt: null })
+  engineLua(`earthRally_main and earthRally_main.uiNamePrompt("later") or nil`, () => {
+    nameLater = false
+    refreshState()
+  })
+}
+
 // view: the page to open at; none opens where the menu was left (EarthRally.vue's lastPlace)
 export function openMenu(view, eventId) {
   engineLua(`if earthRally_main then earthRally_main.openMenu(${q(view)}, ${q(eventId)}) end`)
@@ -128,6 +171,8 @@ export function openMenu(view, eventId) {
 // Where the menu page was left: { view, sel, rallyTab }, kept here because the page itself is unmounted when the
 // menu closes (this module lives as long as the UI does; a UI reload starts on Rallies again).
 export const lastPlace = { at: null }
+// Where the rally start screen was opened from, kept across the game's vehicle picker (the page is unmounted under it)
+export const keep = { startFrom: null }
 export function closeMenu() { engineLua("if earthRally_main then earthRally_main.closeMenu() end") }
 
 // The poll while a page or card is open (a count: started / stopped by each)
@@ -274,3 +319,15 @@ export const RUN_WORDS = {
   waitStart: "on the start line", running: "on the stage", toStop: "on to the stop control",
   finished: "stage done", failed: "stopped",
 }
+
+// ---- the online board (prototype; main.lua uiOnline / uiOnlineName, online.lua). Players' times, never the rally
+// pack's real results (those are the offline board).
+export function loadOnline(eventId, stageId, board, force, cb) {
+  engineLua(`earthRally_main and earthRally_main.uiOnline(${q(eventId)}, ${q(stageId)}, ${q(board)}, ${force ? "true" : "false"}) or nil`,
+    r => { if (cb) cb(r) })
+}
+export function onlineName(name, cb) {
+  engineLua(`earthRally_main and earthRally_main.uiOnlineName(${q(name)}) or nil`, r => { if (cb) cb(r) })
+}
+// typing in a text box: the game's keys off meanwhile (as BeamNG.Earth's add-ons page does)
+export function typing(on) { engineLua(`if setCEFTyping then setCEFTyping(${on ? "true" : "false"}) end`) }

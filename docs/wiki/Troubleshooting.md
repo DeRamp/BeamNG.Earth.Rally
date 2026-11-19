@@ -9,10 +9,10 @@
      Rally on. The zip must be directly in `…\current\mods\`, still zipped, one copy only.
 3. **No styling** (plain text)? Type `reloadUI()` in the console.
 
-## "Recce needed" and Auto recce greyed out
+## Auto recce says traffic or roads are off
 
-Auto recce needs [the DeRamp fork of BeamNG.Earth](https://github.com/DeRamp/BeamNG.Earth/releases). The note under the
-button says so. On official BeamNG.Earth, press **Recce** and drive the stage once.
+Auto recce reads BeamNG.Earth's traffic roads. Turn BeamNG.Earth's traffic and roads on, or press **Recce** and
+drive the stage once.
 
 ## My time says "not placed"
 
@@ -26,5 +26,3 @@ stage and run **Auto recce**, or drive a **Recce** that follows the stage.
 * Earth Rally, BeamNG.drive and BeamNG.Earth versions.
 * What you did and what happened.
 * The lines mentioning `earthRally` from `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\beamng.log`.
-
-Report problems with the DeRamp fork here too, not to the BeamNG.Earth team.

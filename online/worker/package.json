@@ -1,0 +1,10 @@
+{
+  "name": "earth-rally-board",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test --no-warnings test/worker.test.mjs",
+    "dev": "node --no-warnings dev/server.mjs",
+    "deploy": "npx wrangler deploy"
+  }
+}

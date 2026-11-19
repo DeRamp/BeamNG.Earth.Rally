@@ -25,7 +25,7 @@
       </div>
     </div>
 
-    <div class="er-content" v-bng-ui-nav-scroll>
+    <div class="er-content" :class="{ 'er-content-fill': view === 'home' }" v-bng-ui-nav-scroll>
       <!-- the run or the recce under way -->
       <div v-if="banner" class="er-banner">
         <span>{{ banner }}</span>
@@ -46,6 +46,8 @@
         <BngButton :accent="ACCENTS.main" @click="openCard">Time card</BngButton>
       </div>
       <div v-if="st.earthWhy" class="er-warnline">{{ st.earthWhy }}</div>
+      <!-- (opened from the main menu: no world yet, and that is fine -- it loads with the first stage driven) -->
+      <div v-else-if="st.earthNote" class="er-noteline">{{ st.earthNote }}</div>
       <!-- Something changed under the mod since it was built (versions.lua): the game's version, BeamNG.Earth's
            modding API, or one of the internals it has no API for. Empty in the normal case, so nothing shows. -->
       <div v-for="(n, i) in arr(st.versionNotes)" :key="'vn' + i" class="er-warnline">{{ n }}</div>
@@ -102,7 +104,9 @@
             <BngButton :accent="ACCENTS.outlined" @click="retireAsk = null">Cancel</BngButton>
           </template>
           <template v-else>
-            <BngButton v-if="rly.rallySaved" :accent="ACCENTS.main" :disabled="busy" @click="resumeRally(rly.id)">Continue</BngButton>
+            <!-- (at the main menu, a rally saved before cars were remembered: its car found once in the game's picker) -->
+            <BngButton v-if="rly.rallySaved && rly.savedCar && !rly.savedCar.known" :accent="ACCENTS.main" :disabled="busy" @click="pickCar(rly.id, 'resume')">Find the {{ rly.savedCar.name }}…</BngButton>
+            <BngButton v-if="rly.rallySaved" :accent="ACCENTS.main" :disabled="busy || !!(rly.savedCar && !rly.savedCar.known)" @click="resumeRally(rly.id)">{{ rly.savedCar && rly.savedCar.known ? `Continue in the ${rly.savedCar.name}` : "Continue" }}</BngButton>
             <BngButton :accent="rly.rallySaved ? ACCENTS.outlined : ACCENTS.main" :disabled="busy" @click="openStart(rly.id)">{{ rly.rallySaved ? "Start again" : "Start the rally" }}</BngButton>
             <BngButton v-if="rly.rallySaved" :accent="ACCENTS.outlined" :disabled="busy" @click="retireAsk = rly.id">Retire</BngButton>
           </template>
@@ -319,16 +323,25 @@
             <b>Route to start</b>: the way there on the GPS, arrows on the road. No teleport.<br>
             <template v-if="stg.autoCan"><b>Auto recce</b>: {{ !st.autoOk
               ? "works the line out from the map's roads. Not available with this BeamNG.Earth."
+              : st.autoWalks
+                ? "works the line out from the map's roads. Takes the car along the stage to read them, then brings it back."
               : st.autoCanFetch
                 ? "takes you to the start, then works the line out from the map's roads. Where the map data is missing it tells you how much there is to download and asks first."
-                : "works the line out from the map's roads. Reads only the map data already on your disk; downloads nothing." }}<br></template>
+                : "works the line out from the map's roads." }}<br></template>
             <template v-if="stg.line"><b>Reset</b>: removes this stage's line, so you can make it again -- with the auto recce or by driving a recce. Your times are kept.<br></template>
             <b>Recce</b>: drive the stage once at your own pace; the line you drive gives the notes.
           </div>
         </div>
         <!-- the Leaderboard card above Your runs (the user, 2026-11-14), which then shows the last two -->
         <div class="er-rcol">
-        <EarthRallyBoard v-if="stg.board" :b="stg.board" :best="stg.best" @pass="choosePass" />
+        <!-- (prototype) Offline: the rally pack's real results; Online: players' own times (EarthRallyOnline), only
+             once the player has turned the online board on in Settings. The switch shows when there are both. -->
+        <div v-if="stg.board && onlineOn" class="er-lbswitch">
+          <span v-for="t in LB_TABS" :key="t.id" tabindex="0" bng-nav-item :class="{ on: lbTab === t.id }"
+            @click="lbTab = t.id" @keydown.enter="lbTab = t.id">{{ t.label }}</span>
+        </div>
+        <EarthRallyBoard v-if="stg.board && (lbTab === 'offline' || !onlineOn)" :b="stg.board" :best="stg.best" @pass="choosePass" />
+        <EarthRallyOnline v-else-if="onlineOn" :event-id="stg.eventId" :stage-id="stg.id" />
         <div class="er-card er-runs">
           <h3>Your runs</h3>
           <div v-if="stg.best" class="er-best-box"><span class="er-t">{{ time(stg.best) }}</span><span class="er-badge">BEST</span></div>
@@ -358,12 +371,21 @@
       <!-- ===== Settings ===== -->
       <section v-else-if="view === 'settings'" class="er-settings-page">
         <div class="er-card"><EarthRallySettings /></div>
-        <p class="er-dim er-small">Earth Rally {{ st.version }}</p>
+        <div>
+          <div class="er-card"><EarthRallyPrivacy /></div>
+          <p class="er-dim er-small">Earth Rally {{ st.version }}</p>
+        </div>
       </section>
 
       <div v-else class="er-muted">Loading...</div>
     </div>
 
+    <!-- the stats question (#76): once, when the leaderboard is turned on; its own yes or no -->
+    <EarthRallyConsent v-if="onlineOn && st.stats && st.stats.consent === 'ask'" />
+    <!-- the Leaderboards helper not answering (#77): how to install it; never over the stats question (main.lua) -->
+    <EarthRallyHelperPrompt v-else-if="st.helperPrompt" :online-on="onlineOn" />
+    <!-- no leaderboard name yet (main.lua namePromptWanted): after the two above, one at a time -->
+    <EarthRallyNamePrompt v-else-if="st.namePrompt" :naming="st.naming" />
     <EarthRallyPrompts :top="view === 'home'" :results="view === 'pick' && !!(pickView && pickView.hasResults)" />
     </template>
   </div>
@@ -375,6 +397,10 @@ import { BngButton, ACCENTS } from "@/common/components/base"
 import { vBngOnUiNav, vBngUiNavScroll, vBngUiNavFocus } from "@/common/directives"
 import { useUINavScope } from "@/services/uiNav"
 import EarthRallySettings from "./EarthRallySettings.vue"
+import EarthRallyPrivacy from "./EarthRallyPrivacy.vue"
+import EarthRallyConsent from "./EarthRallyConsent.vue"
+import EarthRallyHelperPrompt from "./EarthRallyHelperPrompt.vue"
+import EarthRallyNamePrompt from "./EarthRallyNamePrompt.vue"
 import EarthRallyHome from "./EarthRallyHome.vue"
 import EarthRallyHomeMenu from "./EarthRallyHomeMenu.vue"
 import EarthRallyPick from "./EarthRallyPick.vue"
@@ -382,12 +408,13 @@ import EarthRallyPrompts from "./EarthRallyPrompts.vue"
 import EarthRallySeason from "./EarthRallySeason.vue"
 import EarthRallyPic from "./EarthRallyPic.vue"
 import EarthRallyBoard from "./EarthRallyBoard.vue"
+import EarthRallyOnline from "./EarthRallyOnline.vue"
 import EarthRallyResults from "./EarthRallyResults.vue"
 import EarthRallyFull from "./EarthRallyFull.vue"
 import EarthRallyLoading from "./EarthRallyLoading.vue"
 import {
   state, season, rally, stage, busyMsg, action as luaAction, refreshState, takeOpenAt, loadSeason, loadRally, loadStage,
-  closeMenu, lastPlace, loadRallyStart, loadRallyCard, rallyAction, loadDrive, pointTo,
+  closeMenu, pickCar, keep, lastPlace, helperPromptClose, namePromptLater, loadRallyStart, loadRallyCard, rallyAction, loadDrive, pointTo,
   arr, mmss, units, len, lenNum, riseNum, riseUnit, time, longTime, when, ord, days, ssName, STATUS, AUTO_OUTCOME, RUN_WORDS,
 } from "./store.js"
 
@@ -400,6 +427,10 @@ const st = computed(() => state.value || {})
 const ssn = computed(() => (season.value && !season.value.missing && season.value.id === sel.value.seasonId) ? season.value : null)
 const rly = computed(() => (rally.value && !rally.value.missing && rally.value.id === sel.value.eventId) ? rally.value : null)
 // (the rally as well as the stage: a stage's id is its line's name, and two rallies can both have a "Wildcat")
+// the stage page's leaderboard: the rally pack's real results (offline) or players' times (online)
+const LB_TABS = [{ id: "offline", label: "Rally results" }, { id: "online", label: "Leaderboard" }]
+const lbTab = ref("offline")
+const onlineOn = computed(() => !!(state.value.settings && state.value.settings.settings && state.value.settings.settings.onlineBoard))
 const stg = computed(() => (stage.value && !stage.value.missing && stage.value.id === sel.value.stageId &&
   stage.value.eventId === sel.value.eventId) ? stage.value : null)
 // An auto recce holds the page as a recce does: the Lua does one window at a time, so every other action is
@@ -558,8 +589,9 @@ function stepTab(d) {
   const i = t.findIndex(x => x.id === curTab.value)
   rallyTab.value = t[(i + d + t.length) % t.length].id
 }
-const tabPrev = () => stepTab(-1)
-const tabNext = () => stepTab(1)
+// (the helper pop-up up, #77: the page under it does not move)
+const tabPrev = () => { if (!st.value.helperPrompt && !st.value.namePrompt) stepTab(-1) }
+const tabNext = () => { if (!st.value.helperPrompt && !st.value.namePrompt) stepTab(1) }
 const legend = computed(() => !!(rly.value && (rly.value.anyCancelled || rly.value.hasBoard)))
 const cancelledSs = computed(() => {
   for (const s of arr(rly.value && rly.value.list)) {
@@ -811,7 +843,7 @@ function openPick(keep) {
 }
 // Y on Drive rally: the picked rally's Results, its page on the Results tab alone (#55)
 const pickView = ref(null)
-function contextPress() { if (view.value === "pick" && pickView.value) pickView.value.results() }
+function contextPress() { if (st.value.helperPrompt || st.value.namePrompt) return; if (view.value === "pick" && pickView.value) pickView.value.results() }
 function openResults(id, from) {
   if (from === "pick") pickSel.value = id
   openRally(id, false)
@@ -822,6 +854,7 @@ function openResults(id, from) {
 const startFrom = ref(null)
 function openStart(id, from) {
   startFrom.value = from || null
+  keep.startFrom = startFrom.value
   if (from === "pick") pickSel.value = id
   sel.value = { ...sel.value, eventId: id }
   loadRallyStart(id)
@@ -853,6 +886,8 @@ function fullView(v, id) {
 const loadingUp = ref(false)
 function back() {
   if (loadingUp.value) return
+  if (st.value.helperPrompt) return helperPromptClose(false)   // (B on the helper pop-up, #77: Got it)
+  if (st.value.namePrompt) return namePromptLater()             // (B on the name pop-up: Later)
   if (view.value === "rallyStart") {
     if (startFrom.value === "pick") openPick(true)
     else openRally(sel.value.eventId, false)
@@ -907,6 +942,7 @@ onMounted(() => {
     if (at && at.view === "timecard") openCard()
     else if (at && at.view === "stage" && at.eventId && at.stageId) openStage(at.eventId, at.stageId)
     else if (at && at.view === "rally" && at.eventId) openRally(at.eventId)
+    else if (at && at.view === "rallyStart" && at.eventId) openStart(at.eventId, keep.startFrom)
     else if (at && at.view === "season" && at.eventId) openSeason(at.eventId)
     else if (at && at.view === "settings") go("settings")
     else if (at && at.view === "rallies") go("rallies")
@@ -943,11 +979,16 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
   .er-cgo:hover { color: #fff; text-decoration: underline; } }
 .er-right { margin-left: auto; display: flex; gap: 12px; }
 .er-content { flex: 1; padding: 28px 64px 24px; overflow-y: auto; }
+/* Home: a column, its lines at their height and the tiles in what is left (notes-1.7.4 #3) */
+.er-content-fill { display: flex; flex-direction: column; > * { flex-shrink: 0; } }
 /* (a controller's focus on the small things -- tabs, Back, a setting's choice, a leaderboard pass -- that have no
    :focus look of their own; the cards and rows keep theirs) */
 .er-page :deep(span[bng-nav-item]:focus), .er-back:focus { outline: 2px solid var(--er-orange); outline-offset: 2px; }
 
 .er-card { background: rgba(0, 0, 0, 0.6); border-radius: 0.5rem; }
+.er-lbswitch { display: flex; gap: 4px; align-self: flex-start; margin-bottom: -10px; background: rgba(0, 0, 0, 0.6); border-radius: 0.25rem; padding: 4px;
+  span { padding: 6px 18px; border-radius: 3px; font-size: 16px; font-weight: 600; color: var(--er-muted); cursor: pointer; }
+  span.on { background: var(--er-orange-500); color: #fff; } }
 .er-muted { color: var(--er-muted); }
 .er-dim { color: var(--er-dim); font-size: 15px; }
 .er-small { font-size: 14px; margin-top: 12px; }
@@ -955,6 +996,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .er-row { display: flex; gap: 12px; flex-wrap: wrap; }
 .er-banner { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; padding: 12px 18px; border-radius: 0.5rem; background: rgba(31, 143, 255, 0.25); border-left: 4px solid var(--er-blue); font-size: 18px; span { margin-right: auto; } }
 .er-warnline { margin-bottom: 14px; color: #ffd36b; }
+.er-noteline { margin-bottom: 14px; color: var(--er-muted); }
 .er-fb-warn { color: #ffd36b; align-self: center; }
 .er-msg { margin-top: 12px; color: #ffd36b; }
 .er-stat .er-v { font-family: "Overpass Mono", monospace; font-size: 32px; font-weight: 700; }

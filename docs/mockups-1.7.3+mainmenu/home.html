@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Earth Rally: Home, no scroll, in-game pictures</title>
+<!-- Mock-up for 1.7.3-alpha+mainmenu, notes-1.7.4 #3 and #4 (not built). 1920x1080. Home (EarthRallyHomeMenu.vue)
+     opened from the game's Rally page, so the main-menu note line is above it. -->
+<style>
+:root { --or: #f26b1d; --or5: #c75b1e; --mut: #b8bcc6; --dim: #8a909a; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto Sans", "Segoe UI", sans-serif; }
+.mock-bar { display: flex; gap: 6px; align-items: center; padding: 10px 16px; background: #1a1d22; border-bottom: 1px solid #2a2e35; position: sticky; top: 0; z-index: 10; }
+.mock-bar b { margin-right: 8px; }
+.mock-bar button { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 4px; border: 1px solid #3a3f48; background: #23272e; color: #ddd; cursor: pointer; }
+.mock-bar button.on { background: var(--or5); border-color: var(--or5); color: #fff; }
+.mock-bar .say { margin-left: 14px; color: var(--mut); font-size: 13px; }
+.wrap { padding: 16px; }
+.screen { position: relative; width: 1920px; height: 1080px; margin: 0 auto; overflow: hidden; transform-origin: top left;
+  background: url(../media/beauty-maryhill-front.jpg) center / cover; outline: 1px solid #333; }
+.page { position: absolute; inset: 0; background: rgba(10, 12, 16, 0.72); display: flex; flex-direction: column; }
+.topBar { height: 84px; flex-shrink: 0; display: flex; align-items: center; gap: 20px; padding: 0 64px; background: linear-gradient(180deg, rgba(0,0,0,.8), rgba(0,0,0,.35)); }
+.back { padding: 8px 16px 8px 10px; border-radius: 4px; background: rgba(0,0,0,.4); color: var(--mut); font-size: 18px; }
+.ttl { font-size: 30px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; } .ttl i { font-style: normal; color: var(--or); }
+.crumb { font-size: 18px; color: var(--mut); }
+.content { flex: 1; padding: 28px 64px 24px; overflow-y: auto; min-height: 0; }
+.note { margin-bottom: 14px; color: var(--mut); font-size: 16px; }
+.hm { display: grid; grid-template-columns: 1.55fr 1fr; gap: 28px; }
+.tile { position: relative; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 40px 44px; min-width: 0; }
+.tile > :not(.art):not(.shade) { position: relative; }
+.art { position: absolute; inset: 0; width: 100%; height: 100%; }
+img.art { object-fit: cover; }
+.shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 25%, rgba(0,0,0,.85) 100%); }
+.kick { font-size: 18px; letter-spacing: .18em; text-transform: uppercase; color: var(--or); font-weight: 700; }
+.tile h2 { margin: 6px 0 10px; font-size: 76px; line-height: 1; letter-spacing: .02em; text-transform: uppercase; font-weight: 800; }
+.tile p { margin: 0 0 22px; font-size: 21px; color: #dfe2e8; max-width: 760px; line-height: 1.4; }
+.tile ul { margin: 0 0 26px; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 10px; }
+.tile li { font-size: 16px; padding: 6px 12px; border-radius: 4px; background: rgba(255,255,255,.12); color: #eee; }
+.small h2 { font-size: 56px; }
+.btn { display: inline-block; font-size: 26px; padding: 14px 40px; border-radius: 4px; background: var(--or); font-weight: 600; letter-spacing: .04em; }
+.btn.mid { font-size: 20px; padding: 10px 30px; background: transparent; border: 2px solid #ddd; }
+.side { display: grid; grid-template-rows: 1fr auto; gap: 28px; min-width: 0; }
+.mini { display: flex; align-items: center; gap: 18px; padding: 22px 26px; font-size: 20px; background: rgba(0,0,0,.6); border-radius: 8px; }
+.mini small { display: block; color: var(--mut); font-size: 15px; }
+.ic { width: 46px; height: 46px; border-radius: 50%; border: 2px solid #6f7480; display: flex; align-items: center; justify-content: center; color: var(--mut); }
+.cap { position: absolute; top: 18px; right: 20px; font-size: 13px; color: rgba(255,255,255,.75); background: rgba(0,0,0,.45); padding: 3px 8px; border-radius: 3px; }
+
+/* now: the grid is 100% of the content box plus a 640px floor, so the note line above it pushes it past the bottom */
+.now .hm { height: 100%; min-height: 640px; }
+/* proposed: the content is a column; the grid takes what is left after the note line, never more */
+.prop .content { display: flex; flex-direction: column; overflow: hidden; }
+.prop .hm { flex: 1; min-height: 0; }
+.prop .tile { padding: 34px 40px; }
+.prop .big h2 { font-size: 68px; }
+.prop .small h2 { font-size: 50px; }
+.prop .big img.art { object-position: 70% 55%; }
+.prop .small img.art { object-position: 50% 45%; }
+.prop .shade { background: linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(0,0,0,.88) 100%); }
+.scrollbar { position: absolute; right: 6px; top: 130px; width: 8px; height: 820px; border-radius: 4px; background: rgba(255,255,255,.25); }
+.prop .scrollbar { display: none; }
+</style>
+</head>
+<body>
+<div class="mock-bar">
+  <b>Home</b>
+  <button id="bNow" onclick="show('now')">Now</button>
+  <button id="bProp" onclick="show('prop')">Proposed</button>
+  <span class="say" id="say"></span>
+</div>
+<div class="wrap"><div class="screen" id="screen">
+  <div class="page">
+    <div class="topBar"><span class="back">‹ Back</span><span class="ttl">Earth <i>Rally</i></span><span class="crumb">Home</span></div>
+    <div class="content">
+      <div class="note">BeamNG.Earth loads when you drive a stage or start a rally.</div>
+      <section class="hm">
+        <div class="tile big">
+          <svg class="art svgart" viewBox="0 0 1100 800" preserveAspectRatio="xMidYMid slice">
+            <defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3f6b86"/><stop offset=".5" stop-color="#6f8a5a"/><stop offset="1" stop-color="#2f3a28"/></linearGradient></defs>
+            <rect width="1100" height="800" fill="url(#g1)"/>
+            <path d="M0 380 C200 330 330 420 520 360 S860 280 1100 330 L1100 800 L0 800Z" fill="#2c3a24" opacity=".85"/>
+            <path d="M80 330 C240 240 300 280 420 200 S640 110 760 160 S960 240 1060 110" stroke="#e8d6b0" stroke-width="10" fill="none" stroke-linecap="round" opacity=".75"/>
+            <path d="M80 330 C240 240 300 280 420 200 S640 110 760 160 S960 240 1060 110" stroke="#f26b1d" stroke-width="3" stroke-dasharray="14 12" fill="none" opacity=".9"/>
+            <circle cx="420" cy="200" r="12" fill="#fff"/><circle cx="760" cy="160" r="12" fill="#fff"/>
+          </svg>
+          <img class="art photo" src="home-rally.jpg" alt="">
+          <div class="shade"></div>
+          <span class="cap photo">rally day: closed road, tape, dust (Weaver Bend)</span>
+          <div class="kick">A whole rally</div>
+          <h2>Drive rally</h2>
+          <p>Every stage in order, start to finish. Drive the transits, service between loops, and see your time against the real field.</p>
+          <ul><li>Time card</li><li>Transits &amp; service</li><li>Damage carries over</li><li>Realistic or Casual</li></ul>
+          <div><span class="btn">Choose a rally</span></div>
+        </div>
+        <div class="side">
+          <div class="tile small">
+            <svg class="art svgart" viewBox="0 0 700 600" preserveAspectRatio="xMidYMid slice">
+              <defs><linearGradient id="g2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8a6a45"/><stop offset=".6" stop-color="#b98c55"/><stop offset="1" stop-color="#4a3624"/></linearGradient></defs>
+              <rect width="700" height="600" fill="url(#g2)"/>
+              <path d="M60 300 C180 200 260 250 340 160 S520 60 650 80" stroke="#f3e2c0" stroke-width="9" fill="none" stroke-linecap="round" opacity=".8"/>
+            </svg>
+            <img class="art photo" src="home-stage.jpg" alt="">
+            <div class="shade"></div>
+            <span class="cap photo">one car, one stage road</span>
+            <div class="kick">One stage</div>
+            <h2>Drive stage</h2>
+            <p>Pick any stage of any rally. Practise it, recce it, beat your best time.</p>
+            <div><span class="btn mid">Choose a stage</span></div>
+          </div>
+          <div class="mini"><div class="ic">⚙</div><div>Settings<small>Units, co-driver, pacenotes, HUD</small></div></div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <div class="scrollbar"></div>
+</div></div>
+<script>
+const SAY = {
+  now: "Now: the tiles are the content's full height plus the note line above them, so the page scrolls. Placeholder drawings.",
+  prop: "Proposed: the tiles fill what is left under the note line, no scroll at any height. In-game shots of the car; headings a little smaller."
+}
+function show(k) {
+  const s = document.getElementById('screen')
+  s.className = 'screen ' + k
+  for (const el of document.querySelectorAll('.photo')) el.style.display = k === 'prop' ? '' : 'none'
+  for (const el of document.querySelectorAll('.svgart')) el.style.display = k === 'prop' ? 'none' : ''
+  document.getElementById('bNow').classList.toggle('on', k === 'now')
+  document.getElementById('bProp').classList.toggle('on', k === 'prop')
+  document.getElementById('say').textContent = SAY[k]
+}
+function fit() {
+  const s = document.getElementById('screen'), k = Math.min(1, (innerWidth - 32) / 1920)
+  s.style.transform = `scale(${k})`; s.parentElement.style.height = (1080 * k + 32) + 'px'
+}
+addEventListener('resize', fit); fit(); show('prop')
+</script>
+</body>
+</html>

@@ -7,17 +7,9 @@
   <section class="er-hm">
     <div class="er-hm-tile er-hm-big" tabindex="0" bng-nav-item v-bng-ui-nav-focus="cont ? undefined : 1"
       @click="emit('pick')" @keydown.enter.self="emit('pick')">
-      <svg class="er-hm-art" viewBox="0 0 1100 800" preserveAspectRatio="xMidYMid slice">
-        <defs>
-          <linearGradient id="er-hm-g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3f6b86"/><stop offset=".5" stop-color="#6f8a5a"/><stop offset="1" stop-color="#2f3a28"/></linearGradient>
-          <linearGradient id="er-hm-g2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8a6a45"/><stop offset=".6" stop-color="#b98c55"/><stop offset="1" stop-color="#4a3624"/></linearGradient>
-        </defs>
-        <rect width="1100" height="800" fill="url(#er-hm-g1)"/>
-        <path d="M0 380 C200 330 330 420 520 360 S860 280 1100 330 L1100 800 L0 800Z" fill="#2c3a24" opacity=".85"/>
-        <path d="M80 330 C240 240 300 280 420 200 S640 110 760 160 S960 240 1060 110" stroke="#e8d6b0" stroke-width="10" fill="none" stroke-linecap="round" opacity=".75"/>
-        <path d="M80 330 C240 240 300 280 420 200 S640 110 760 160 S960 240 1060 110" stroke="#f26b1d" stroke-width="3" stroke-dasharray="14 12" fill="none" opacity=".9"/>
-        <circle cx="420" cy="200" r="12" fill="#fff"/><circle cx="760" cy="160" r="12" fill="#fff"/>
-      </svg>
+      <!-- (in-game shots, notes-1.7.4 #4: rally day at Weaver Bend; one car on a stage road. Each car is in the top half
+           of its picture, above the words; not draggable, so a press that moves a little still opens the tile) -->
+      <img class="er-hm-art er-hm-big-art" src="/ui/modules/apps/earthRally/home-rally.jpg" alt="" draggable="false" />
       <div class="er-hm-shade"></div>
       <div class="er-hm-kicker">A whole rally</div>
       <h2>Drive rally</h2>
@@ -38,11 +30,7 @@
 
     <div class="er-hm-side">
       <div class="er-hm-tile er-hm-small" tabindex="0" bng-nav-item @click="emit('stages')" @keydown.enter.self="emit('stages')">
-        <svg class="er-hm-art" viewBox="0 0 700 600" preserveAspectRatio="xMidYMid slice">
-          <rect width="700" height="600" fill="url(#er-hm-g2)"/>
-          <path d="M60 300 C180 200 260 250 340 160 S520 60 650 80" stroke="#f3e2c0" stroke-width="9" fill="none" stroke-linecap="round" opacity=".8"/>
-          <rect x="50" y="288" width="22" height="22" fill="#fff"/><path d="M640 68 l14 0 l0 24 l-14 0z" fill="#111"/>
-        </svg>
+        <img class="er-hm-art er-hm-small-art" src="/ui/modules/apps/earthRally/home-stage.jpg" alt="" draggable="false" />
         <div class="er-hm-shade"></div>
         <div class="er-hm-kicker">One stage</div>
         <h2>Drive stage</h2>
@@ -85,20 +73,28 @@ const cont = computed(() => {
 
 <style lang="scss" scoped>
 .er-card { background: rgba(0, 0, 0, 0.6); border-radius: 0.5rem; }
-.er-hm { display: grid; grid-template-columns: 1.55fr 1fr; gap: 28px; height: 100%; min-height: 640px; }
+/* (notes-1.7.4 #3) the room left under the lines above it (EarthRally.vue .er-content-fill), not the whole page: no
+   scroll; the floor only for a very small window */
+.er-hm { display: grid; grid-template-columns: 1.55fr 1fr; gap: 28px; flex: 1 1 0; min-height: 420px; }
 .er-hm-tile { position: relative; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end;
-  padding: 40px 44px; cursor: pointer; min-width: 0; outline: none;
+  padding: 34px 40px; cursor: pointer; min-width: 0; outline: none;
   /* (#51) the focus only: the mouse moves the focus (store.js pointTo), so one tile is ever lit */
   &:focus { outline: 4px solid var(--er-orange); outline-offset: 0; }
   > :not(.er-hm-art):not(.er-hm-shade) { position: relative; }
-  h2 { margin: 6px 0 10px; font-size: 76px; line-height: 1; letter-spacing: 0.02em; text-transform: uppercase; font-weight: 800; }
+  h2 { margin: 6px 0 10px; font-size: 68px; line-height: 1; letter-spacing: 0.02em; text-transform: uppercase; font-weight: 800; }
   p { margin: 0 0 22px; font-size: 21px; color: #dfe2e8; max-width: 760px; line-height: 1.4; }
   ul { margin: 0 0 26px; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 10px; }
   li { font-size: 16px; padding: 6px 12px; border-radius: 4px; background: rgba(255, 255, 255, 0.12); color: #eee; }
 }
-.er-hm-small h2 { font-size: 56px; }
-.er-hm-art { position: absolute; inset: 0; width: 100%; height: 100%; }
-.er-hm-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0, 0, 0, 0) 25%, rgba(0, 0, 0, 0.85) 100%); }
+.er-hm-small h2 { font-size: 50px; }
+/* a small or narrow window: the tiles cut what does not fit from the top, so less goes in them (no chips, smaller
+   type) and the headings stay */
+@media (max-height: 820px), (max-width: 1400px) {
+  .er-hm-tile { padding: 26px 30px; h2 { font-size: 54px; } p { font-size: 18px; margin-bottom: 16px; } ul { display: none; } }
+  .er-hm-small h2 { font-size: 42px; }
+}
+.er-hm-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; pointer-events: none; }
+.er-hm-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0, 0, 0, 0) 30%, rgba(0, 0, 0, 0.88) 100%); }
 .er-hm-kicker { font-size: 18px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--er-orange); font-weight: 700; }
 /* the game's button, made the mock-up's big one: its own size rules beaten on specificity (.er-hm first), its margin
    and min-width through the hooks it reads (EarthRally.vue's .er-act does the same) */

@@ -1935,6 +1935,159 @@ do
   main.onUiChangedState('earthRally')
   main.toggleMenu()
   T.check(navs[1] == 'earthRally' and navs[2] == 'play', 'Ctrl+Alt+K opens the menu page and closes it')
+  -- stats: the menu opened by Ctrl+Alt+K (openMenu sets menuOpen before the UI event comes) still asks for a send,
+  -- and leaving it is still seen (found in game, 2026-11-16: neither happened)
+  do
+    local stats = require('earthRally/stats')
+    local hadFlush, hadStart, hadClosed = stats.flushSoon, stats.sessionStart, stats.menuClosed
+    local seen = {}
+    stats.flushSoon = function() seen.flush = (seen.flush or 0) + 1 end
+    stats.sessionStart = function() seen.start = (seen.start or 0) + 1 end
+    stats.menuClosed = function() seen.closed = (seen.closed or 0) + 1 end
+    main.onUiChangedState('play')
+    seen = {}                -- (the test above left the page up: that close counted; start again from play)
+    main.toggleMenu()
+    main.onUiChangedState('earthRally')
+    T.check(seen.flush == 1 and seen.start == 1, 'stats: menu opened by Ctrl+Alt+K: a send asked for')
+    main.toggleMenu()
+    main.onUiChangedState('play')
+    T.check(seen.closed == 1, 'stats: menu closed by Ctrl+Alt+K: seen (' .. tostring(seen.closed) .. ')')
+    stats.flushSoon, stats.sessionStart, stats.menuClosed = hadFlush, hadStart, hadClosed
+  end
+  -- (#77) the Leaderboards helper pop-up: the helper looked for on each menu open, Got it, the box, a new version
+  do
+    local online = require('earthRally/online')
+    local hadSock, hadR, hadW, hadV = online._socket, rawget(_G, 'jsonReadFile'), rawget(_G, 'jsonWriteFile'), main.VERSION
+    -- (Leaderboards on by default: the stats question, asked once, comes first; answered here so the pop-up's own rules
+    -- are what is tested)
+    local statsM = require('earthRally/stats')
+    local hadConsent = statsM.consent
+    statsM.consent = function() return 'no' end
+    local files = {}
+    jsonReadFile = function(p) return files[p] end
+    jsonWriteFile = function(p, t) files[p] = t return true end
+    local sk = { settimeout = function() end, close = function() end,
+      connect = function() return nil, 'connection refused' end }
+    online._reset()
+    online._socket = { tcp = function() return sk end }
+    online.update(16)          -- (past the first 15 s after the game started)
+    local function reopen() main.onUiChangedState('play') main.onUiChangedState('earthRally') end
+    main.onUiChangedState('play')
+    T.check(not main.uiState().helperPrompt, 'helper prompt: not with the menu closed')
+    reopen()
+    T.check(main.uiState().helperPrompt == true, 'helper prompt: no helper, the menu opened: shown')
+    main.uiHelperPrompt('close', false)
+    T.check(not main.uiState().helperPrompt, 'helper prompt: Got it hides it')
+    reopen()
+    T.check(main.uiState().helperPrompt == true, 'helper prompt: the next menu open shows it again')
+    main.uiHelperPrompt('close', true)
+    reopen()
+    T.check(not main.uiState().helperPrompt and files[online.PROMPT_FILE].dismissedFor == main.VERSION,
+      "helper prompt: Don't show this again, kept with the version")
+    main.VERSION = hadV .. '.next'
+    reopen()
+    T.check(main.uiState().helperPrompt == true, 'helper prompt: a new version shows it again')
+    main.VERSION = hadV
+    -- not while a recce runs
+    local hadRA = recce.active
+    recce.active = function() return true end
+    files = {}
+    online._reset()
+    online._socket = { tcp = function() return sk end }
+    online.update(16)
+    reopen()
+    T.check(not main.uiState().helperPrompt, 'helper prompt: not while a recce runs')
+    recce.active = hadRA
+    -- a stage picked, the car driving to or waiting at the start: shown; on the stage itself: held (found in test,
+    -- 2026-11-18: a run waiting at the start held it back for good)
+    local hadCur, hadSt = runner.current, runner.state
+    local fakeRun = { event = { id = 'e', name = 'E', stages = {} }, stage = { id = 's', name = 'S' } }
+    runner.current = function() return fakeRun end
+    for _, st in ipairs({ 'toAtc', 'toStart', 'waitStart', 'travel' }) do
+      runner.state = function() return st end fakeRun.state = st
+      online._reset() online._socket = { tcp = function() return sk end } online.update(16) reopen()
+      T.check(main.uiState().helperPrompt == true, 'helper prompt: shown with a run in ' .. st)
+    end
+    for _, st in ipairs({ 'countdown', 'running' }) do
+      runner.state = function() return st end fakeRun.state = st
+      online._reset() online._socket = { tcp = function() return sk end } online.update(16) reopen()
+      T.check(not main.uiState().helperPrompt, 'helper prompt: held on the stage (' .. st .. ')')
+    end
+    runner.current, runner.state = hadCur, hadSt
+    -- the stats question up (Leaderboards on, not answered yet): it comes first, the pop-up waits
+    statsM.consent = function() return 'ask' end
+    online._reset() online._socket = { tcp = function() return sk end } online.update(16) reopen()
+    T.check(settings.get('onlineBoard') ~= true or not main.uiState().helperPrompt, 'helper prompt: waits for the stats question')
+    statsM.consent = hadConsent
+    main.onUiChangedState('play')
+    online._reset()
+    online._socket, jsonReadFile, jsonWriteFile = hadSock, hadR, hadW
+  end
+  -- the leaderboard name pop-up: Leaderboards on, the helper connected, no player; the helper pop-up's run rules;
+  -- after the stats question and the helper pop-up; Later until the next menu open
+  do
+    local online = require('earthRally/online')
+    local statsM = require('earthRally/stats')
+    local hadStatus, hadConsent, hadGet, hadHelper = online.status, statsM.consent, settings.get, main.helperPromptWanted
+    local hadReg = online.lastRegister
+    local status = { on = true, connected = true }
+    local consent, boardOn, helperUp = 'no', true, false
+    online.status = function() return status end
+    statsM.consent = function() return consent end
+    settings.get = function(k) if k == 'onlineBoard' then return boardOn end return hadGet(k) end
+    main.helperPromptWanted = function() return helperUp end
+    local function reopen() main.onUiChangedState('play') main.onUiChangedState('earthRally') end
+    main.onUiChangedState('play')
+    T.check(not main.uiState().namePrompt, 'name prompt: not with the menu closed')
+    reopen()
+    T.check(main.uiState().namePrompt == true, 'name prompt: connected, no name: shown')
+    online.lastRegister = { ok = false, error = 'name taken' }
+    T.check(main.uiState().naming and main.uiState().naming.error == 'name taken', 'name prompt: the last Save answer with it')
+    online.lastRegister = hadReg
+    main.uiNamePrompt('later')
+    T.check(not main.uiState().namePrompt, 'name prompt: Later hides it')
+    reopen()
+    T.check(main.uiState().namePrompt == true, 'name prompt: the next menu open shows it again')
+    status.player = { name = 'Me' }
+    T.check(not main.uiState().namePrompt and not main.uiState().naming, 'name prompt: not with a name')
+    status.player = nil
+    status.connected = false
+    T.check(not main.uiState().namePrompt, 'name prompt: not with the helper not connected')
+    status.connected = true
+    boardOn = false
+    T.check(not main.uiState().namePrompt, 'name prompt: not with Leaderboards off')
+    boardOn = true
+    consent = 'ask'
+    T.check(not main.uiState().namePrompt, 'name prompt: waits for the stats question')
+    consent = 'no'
+    helperUp = true
+    local s = main.uiState()
+    T.check(s.helperPrompt and not s.namePrompt, 'name prompt: waits for the helper pop-up')
+    helperUp = false
+    local hadRA = recce.active
+    recce.active = function() return true end
+    T.check(not main.uiState().namePrompt, 'name prompt: not while a recce runs')
+    recce.active = hadRA
+    local rr = require('earthRally/rallyRun')
+    local hadRR = rr.active
+    rr.active = function() return { eventId = 'r' } end
+    T.check(not main.uiState().namePrompt, 'name prompt: not in a full rally')
+    rr.active = hadRR
+    local hadCur, hadSt = runner.current, runner.state
+    local fakeRun = { event = { id = 'e', name = 'E', stages = {} }, stage = { id = 's', name = 'S' } }
+    runner.current = function() return fakeRun end
+    for _, st in ipairs({ 'toAtc', 'waitStart' }) do
+      runner.state = function() return st end fakeRun.state = st
+      T.check(main.uiState().namePrompt == true, 'name prompt: shown with a run in ' .. st)
+    end
+    for _, st in ipairs({ 'countdown', 'launched', 'running' }) do
+      runner.state = function() return st end fakeRun.state = st
+      T.check(not main.uiState().namePrompt, 'name prompt: held on the stage (' .. st .. ')')
+    end
+    runner.current, runner.state = hadCur, hadSt
+    main.onUiChangedState('play')
+    online.status, statsM.consent, settings.get, main.helperPromptWanted = hadStatus, hadConsent, hadGet, hadHelper
+  end
   -- the Escape menu ('pause' in 0.40): our HUD hidden, and BeamNG.Earth's imgui strips told it is a menu (earthMenuFix)
   do
     local told = {}
@@ -2123,6 +2276,233 @@ do
   settings.set('devPanel', false)
   main.onUpdate(0.05, 0.05)
   T.check((imCalls.Begin or 0) == 0, 'and nothing is drawn once the setting goes off')
+  settings.reset()
+end
+
+------------------------------------------------------------------------------------------ from the main menu
+-- The game's Rally page (Play > Rally) has an Earth Rally tile that opens the menu with no level loaded; a button
+-- that needs the world loads BeamNG.Earth first and is pressed again once it is up (gameTile.lua, main.lua
+-- loadWorldThen). The game's level loading is stood in for: freeroam_freeroam, the world flag, the car.
+do
+  local main = require('earthRally/main')
+  local loadScreen = require('earthRally/loadScreen')
+  local rallyRun = require('earthRally/rallyRun')
+  local navs = {}
+  ui_router = { navigate = function(r) navs[#navs + 1] = r end }
+  local inWorld0, gpv = beamngEarth_api.inWorld, getPlayerVehicle
+  local world = false
+  beamngEarth_api.inWorld = function() return world end
+  getPlayerVehicle = function() return nil end      -- (the main menu: no car)
+  local asked = {}
+  freeroam_freeroam = { startFreeroamByName = function(n) asked[#asked + 1] = n return n == 'beamng_earth' end }
+  runner.abort(true)
+  settings.reset()
+  local function tick(n, dt) for _ = 1, (n or 1) do main.onUpdate(dt or 0.5, dt or 0.5) end end
+
+  -- the tile: on the game's gameplay selector, with the type its Rally page filters on
+  local items = {}
+  main.onGameplaySelectorGetTiles(items, { backendName = 'gameplaySelector' })
+  T.check(#items == 1 and items[1].name == 'Earth Rally' and items[1].type == 'bigMap.missionLabels.rallyStage'
+    and items[1].validBackends.gameplaySelector and items[1].showDetails.earthRally, 'the Rally page has an Earth Rally tile')
+  main.onGameplaySelectorGetTiles(items, { backendName = 'freeroamSelector' })
+  T.check(#items == 1, 'and the free roam selector has none')
+  -- its details: one button, which opens the menu (and is what a double click does)
+  local btns = {}
+  local bi = { addButton = function(fn, meta) btns[#btns + 1] = { fn = fn, meta = meta } return meta end }
+  local details = {}
+  main.onGameplaySelectorGetDetails({ missionId = 'x', key = 'mission_x' }, details, bi, {})
+  T.check(#details == 0 and #btns == 0, "another tile's details: left alone")
+  local recent
+  main.onGameplaySelectorGetDetails(items[1].showDetails, details, bi,
+    { trackRecent = function(k) recent = k end, isFavourite = function() return false end })
+  T.check(#details == 1 and #btns == 1 and btns[1].meta.isDoubleClickAction and btns[1].meta.primary
+    and details[1].buttonInfo[1].label == 'Open Earth Rally', 'its details: one button, Open Earth Rally')
+  navs = {}
+  btns[1].fn()
+  T.check(navs[1] == 'earthRally' and recent == 'earthRally', 'the button opens the menu page (and counts as recent)')
+  main.onUiChangedState('earthRally')
+
+  -- no world: a note, not a warning, and a car to start a rally in
+  local st = main.uiState()
+  T.check(st.earthWhy == nil and st.earthNote and st.earthNote:find('loads when you drive', 1, true),
+    'no world at the main menu: said as a note, not a fault (' .. tostring(st.earthWhy) .. ')')
+  local rs = main.uiRallyStart('test8')
+  T.check(rs.car == nil and rs.canPick, 'the rally start screen at the main menu: no car yet, one to choose')
+
+  -- Close goes back to the game's Rally page, through its own opener (its filter back on), else its route
+  local opened = 0
+  ui_gameplaySelector_general = { openRallySelector = function() opened = opened + 1 end }
+  navs = {}
+  main.closeMenu()
+  T.check(opened == 1 and #navs == 0, "Close: back to the game's Rally page")
+  ui_gameplaySelector_general = nil
+  main.openFromGame()
+  main.onUiChangedState('earthRally')
+  navs = {}
+  main.closeMenu()
+  T.check(navs[1] == 'menu.rallySelector', 'and by its route when the opener is not there (' .. tostring(navs[1]) .. ')')
+  main.openFromGame()
+  main.onUiChangedState('earthRally')
+
+  -- a button that needs no world works as it is
+  T.check(main.uiAction('rescan').ok and #asked == 0, 'Rescan at the main menu: no level loaded for it')
+  T.check(not main.uiAction('drive', 'test8', 'nope').ok and #asked == 0, 'a stage that is not there: refused, nothing loaded')
+
+  -- Drive: BeamNG.Earth loaded, behind a loading screen with no world bar
+  local a = main.uiAction('drive', 'test8', 'hill')
+  T.check(a.ok and asked[1] == 'beamng_earth' and loadScreen.active() and runner.current() == nil,
+    'Drive with no world: the BeamNG.Earth level asked for, nothing driven yet (' .. tostring(a.message) .. ')')
+  local L = main.uiLoading()
+  T.check(L and L.noWorld and #L.steps == 2 and L.title == 'Loading BeamNG.Earth' and L.kick:find('Drive stage', 1, true),
+    'its loading screen: two steps, no world bar')
+  T.check(not main.uiAction('drive', 'test8', 'hill').ok and #asked == 1, 'a second press: refused, the level asked for once')
+  T.check(main.uiState().earthNote == 'Loading BeamNG.Earth...', 'the page says it is loading')
+  main.onUiChangedState('loading')         -- (the game's own loading screen takes the UI)
+  tick(20)
+  T.check(loadScreen.active() and runner.current() == nil, 'still waiting while there is no world')
+  -- the world up with a car: the page back at once, the stage driven once BeamNG.Earth has been ready a moment
+  world, getPlayerVehicle = true, gpv
+  navs = {}
+  tick(1, 0.1)
+  tick(10)
+  T.check(#navs == 0 and runner.current() == nil,
+    "the world up under the game's own loading screen: the page not opened, the stage not run under it")
+  main.onUiChangedState('play')            -- (the game's loading screen lets go)
+  tick(1, 0.1)
+  T.check(navs[1] == 'earthRally' and runner.current() == nil, 'then the page back, the stage not yet asked for')
+  main.onUiChangedState('earthRally')
+  tick(10)
+  T.check(runner.current() ~= nil, 'then the stage is driven, as if Drive were pressed now')
+  T.check(main.uiState().earthNote == nil, 'and the note is gone')
+  runner.abort(true)
+  loadScreen.cancel()
+
+  -- (notes-1.7.4 #1) the page up the whole time -- the game's loading screen came and went over it, no 'play' -- the
+  -- stage still runs once the game's loading is over (it stalled until Escape)
+  world, getPlayerVehicle = false, function() return nil end
+  local gsLoading = true
+  local gs0 = core_gamestate
+  core_gamestate = setmetatable({ loading = function() return gsLoading end }, { __index = gs0 })
+  main.onUiChangedState('earthRally')
+  local nBefore = #asked
+  T.check(main.uiAction('drive', 'test8', 'hill').ok and #asked == nBefore + 1, 'Drive again, the page up')
+  world, getPlayerVehicle = true, gpv
+  tick(10)
+  T.check(runner.current() == nil, "the game's loading screen still up: the stage not run under it")
+  gsLoading = false
+  tick(10)
+  T.check(runner.current() ~= nil, "the game's loading over, the page never closed: the stage runs (no Escape needed)")
+  core_gamestate = gs0
+  runner.abort(true)
+  loadScreen.cancel()
+  table.remove(asked)                      -- (the counts below are as before this case)
+
+  -- the world never comes up (no launcher): given up on, said why
+  world = false
+  getPlayerVehicle = function() return nil end
+  main.openFromGame()
+  main.onUiChangedState('earthRally')
+  T.check(main.uiAction('goStart', 'test8', 'hill').ok and #asked == 2, 'Go to start: the level asked for again')
+  tick(30, 10)
+  T.check(not loadScreen.active() and runner.current() == nil, 'no world in 4 minutes: the loading screen ends')
+  T.check(main.uiState().message and main.uiState().message:find('Is its launcher running', 1, true),
+    'and says why (' .. tostring(main.uiState().message) .. ')')
+
+  -- the level left while BeamNG.Earth was still coming up: the wait ends with it, nothing run
+  T.check(main.uiAction('drive', 'test8', 'hill').ok and #asked == 3, 'Drive again: the level asked for')
+  world = true
+  tick(1, 0.1)
+  world = false
+  main.onClientEndMission()
+  tick(10)
+  T.check(not loadScreen.active() and runner.current() == nil and main.uiState().earthNote ~= 'Loading BeamNG.Earth...',
+    'the level left mid-load: the wait gone, nothing driven')
+  -- a loading screen put away without its end (cancelled after an error): the wait does not stick
+  T.check(main.uiAction('drive', 'test8', 'hill').ok and #asked == 4, 'Drive again')
+  loadScreen.cancel()
+  local again = main.uiAction('drive', 'test8', 'hill')
+  T.check(again.ok and #asked == 5, 'its screen cancelled: the next press is not refused (' .. tostring(again.message) .. ')')
+  loadScreen.cancel()
+  main._worldWaitClear()
+
+  -- on another map: not loaded from under the player, the old answer
+  getMissionFilename = function() return 'levels/west_coast_usa/main.level.json' end
+  local other = main.uiAction('recce', 'test8', 'hill')
+  T.check(#asked == 5 and not (main.uiLoading() and main.uiLoading().title == 'Loading BeamNG.Earth'),
+    'on another map: BeamNG.Earth not loaded unasked (' .. tostring(other.message) .. ')')
+  runner.abort(true)
+  recce.stop(false)
+  loadScreen.cancel()
+  getMissionFilename = nil
+
+  -- coming from another level: its end (onClientEndMission) mid-wait, before our world is up, keeps the wait
+  T.check(main.uiAction('drive', 'test8', 'hill').ok and #asked == 6, 'Drive again')
+  main.onClientEndMission()
+  T.check(loadScreen.active(), 'the old level ending: the wait goes on')
+  loadScreen.cancel()
+  main._worldWaitClear()
+
+  -- BeamNG.Earth's map not installed: said at once, no loading screen
+  freeroam_freeroam.startFreeroamByName = function() return false end
+  local r = main.uiAction('drive', 'test8', 'hill')
+  T.check(not r.ok and r.message:find('not installed', 1, true) and not loadScreen.active(),
+    'no BeamNG.Earth map: refused at once (' .. tostring(r.message) .. ')')
+
+  -- a full rally's Start: loaded first, then started in the car the game spawned
+  local spawnAsked
+  freeroam_freeroam.startFreeroamByName = function(n, _, _, spawn) asked[#asked + 1] = n spawnAsked = spawn return true end
+  local nr = main.uiRallyAction('start', 'test8', { mode = 'casual', class = 'L4WD' })
+  T.check(not nr.ok and nr.message == 'Choose a car first.' and #asked == 6, 'Start with no car chosen: refused, nothing loaded')
+  -- the game's vehicle picker: a car picked, the page back on the start screen with it
+  local pickerCb
+  ui_vehicleSelector_general = { openVehicleSelectorForChallenge = function(cb, route) pickerCb = cb pickerRoute = route end }
+  T.check(main.uiPickCar('test8', 'start').ok and pickerRoute == 'menu.vehiclesnew', "the game's vehicle picker opened")
+  navs = {}
+  pickerCb('sunburst', 'rally_a', {})
+  main.onVehicleSelectorClosed()            -- (the picker's unmount after it: nothing more)
+  T.check(#navs == 1 and navs[1] == 'earthRally' and main.uiOpenAt().view == 'rallyStart', 'picked: back on the start screen')
+  T.check(main.uiRallyStart('test8').car.name == 'sunburst', 'with the picked car on it')
+  main.onUiChangedState('earthRally')
+  -- Back in the picker (the game takes it to its main menu, and only says the picker closed): the menu put back
+  T.check(main.uiPickCar('test8', 'start').ok, 'the picker again')
+  navs = {}
+  main.onVehicleSelectorClosed()
+  T.check(navs[1] == 'earthRally' and main.uiOpenAt().view == 'rallyStart'
+    and main.uiRallyStart('test8').car.name == 'sunburst', 'Back in the picker: the start screen again, the car as it was')
+  main.onUiChangedState('earthRally')
+  ui_vehicleSelector_general = nil
+  local rr = main.uiRallyAction('start', 'test8', { mode = 'casual', class = 'L4WD' })
+  T.check(spawnAsked and spawnAsked[1] == 'sunburst' and spawnAsked[2].config == 'rally_a',
+    'BeamNG.Earth loaded with the picked car in it')
+  T.check(rr.ok and #asked == 7 and loadScreen.active() and not rallyRun.active(),
+    'Start rally with no world: the level asked for first, no rally yet')
+  T.check(main.uiLoading().thenView == 'timecard', 'and the page goes on to the time card')
+  world, getPlayerVehicle = true, gpv
+  main.onUiChangedState('play')
+  tick(10)
+  -- (test8 has no event file: rallyRun's own refusal coming back proves Start was pressed again, now with a world)
+  T.check(not loadScreen.active() and (main.uiState().message or ''):find('no event file', 1, true),
+    'the world up: Start pressed again, and its own answer said (' .. tostring(main.uiState().message) .. ')')
+  pcall(main.uiRallyAction, 'abandon', 'test8')
+  loadScreen.cancel()
+  runner.abort(true)
+
+  -- the same car: model and setup once a save has them, else the name
+  T.check(rallyRun.sameCar({ name = 'A', model = 'sunburst', config = 'rally_a' }, { name = 'B', model = 'sunburst', config = 'rally_a' }),
+    'same model and setup: the same car, whatever the (translated) name')
+  T.check(not rallyRun.sameCar({ name = 'A', model = 'sunburst', config = 'rally_a' }, { name = 'A', model = 'covet', config = 'x' }),
+    'another model: not the same car, even by the same name')
+  T.check(rallyRun.sameCar({ name = 'A' }, { name = 'A', model = 'm' }) and not rallyRun.sameCar({ name = 'A' }, { name = 'B' }),
+    'an older save: by name')
+  -- a last car from a mod since removed: not offered
+  core_vehicles = { getModel = function(m) return m == 'sunburst' and { model = {} } or {} end, getConfig = function(m, c) return m == 'sunburst' and c == 'rally_a' and {} or nil end }
+  T.check(main._carInstalled({ model = 'sunburst', config = 'rally_a' }) and not main._carInstalled({ model = 'gone', config = 'x' })
+    and not main._carInstalled({ model = 'sunburst', config = 'nope' }), 'a car from a removed mod: not installed')
+  core_vehicles = nil
+  beamngEarth_api.inWorld, getPlayerVehicle = inWorld0, gpv
+  freeroam_freeroam = nil
+  main.closeMenu()
+  main.onUiChangedState('play')          -- (the page down: the HUD shown again for the tests below)
   settings.reset()
 end
 
@@ -2319,8 +2699,8 @@ do
   -- ---------------------------------------------------------------- started, polled, stopped
   resetGraph()
   local a = main.uiAction('autoRecce', 'test8', 'two')
-  T.check(a.ok and a.message and a.message:find('downloads nothing'),
-    'Auto recce starts, and says it downloads nothing (' .. tostring(a.message) .. ')')
+  T.check(a.ok and a.message and a.message:find('reads the roads'),
+    'Auto recce starts, and says it reads the roads (' .. tostring(a.message) .. ')')
   T.check(auto.active(), 'the auto recce is running')
   local prog = main.uiState().auto
   T.check(prog and prog.stageId == 'two' and prog.eventId == 'test8' and prog.ss == 2,

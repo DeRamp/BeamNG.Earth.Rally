@@ -192,9 +192,38 @@ local function zipSource(path, name)
   }
 end
 
+-- (a pack's name for telling copies apart: 'ARA-Nationals-2026.zip' and 'ARA Nationals 2026' are one pack)
+local function packKey(name)
+  local k = (name:gsub('%.[zZ][iI][pP]$', '')):lower():gsub('[^%w]', '')
+  return k ~= '' and k or name
+end
+M._packKey = packKey
+
 -- Every pack in the import folder: { { name, kind = 'folder' | 'zip', path }... }. A sub-folder is looked at
 -- whatever is in it (one with no manifest is reported, once: someone put it there to be imported). Zips are
 -- found first, and a folder is only what FS:directoryExists says is one, so a .zip is never taken for a folder.
+-- The mod ships the ARA 2026 season as a folder in its zip (1.8.0); a player who also has that season's zip in
+-- their own import folder has one pack twice. Two packs of the same name (packKey), or a folder and a zip whose
+-- manifests have the same `id` (a renamed copy, 'ARA-Nationals-2026 (1).zip'), are one: the zip is kept (the
+-- player's own copy, which their times and ids are already under), the folder left out.
+local idCache = {}       -- (a zip's manifest id, by path and FS:stat: a zip is opened once until it changes)
+local function manifestId(p)
+  local key = p.kind == 'zip' and (p.path .. '@' .. tostring(statOf(p.path) or '')) or nil
+  if key and idCache[key] ~= nil then return idCache[key] or nil end
+  local id = false
+  local ok = pcall(function()
+    local src = p.kind == 'zip' and zipSource(p.path, p.name) or (p.kind == 'folder' and folderSource(p.path, p.name))
+    if not src then return end
+    local m = M.manifest(src)
+    src.close()
+    local v = m and type(m.data.id) == 'string' and importer.idFrom(m.data.id) or ''
+    if v ~= '' then id = v end
+  end)
+  if not ok then id = false end
+  if key then idCache[key] = id end
+  return id or nil
+end
+
 function M.find(dir)
   dir = dir or importer.IMPORT_DIR
   local out, seen = {}, {}
@@ -215,7 +244,38 @@ function M.find(dir)
     end
   end
   table.sort(out, function(a, b) return a.name < b.name end)
-  return out
+  local keep, sameAs = {}, {}           -- (sameAs[p]: the pack p is left out for)
+  for _, p in ipairs(out) do
+    local k = packKey(p.name)
+    if not keep[k] or (keep[k].kind == 'folder' and p.kind == 'zip') then keep[k] = p end
+  end
+  for _, p in ipairs(out) do
+    local k = keep[packKey(p.name)]
+    if k ~= p then sameAs[p] = k end
+  end
+  -- (then by manifest id, a folder against the zips: only when a folder has one, so a folder-less import folder
+  -- opens no zip here)
+  local folders = {}
+  for _, p in ipairs(out) do
+    if p.kind == 'folder' and not sameAs[p] then
+      local id = manifestId(p)
+      if id then folders[id] = p end
+    end
+  end
+  if next(folders) then
+    for _, p in ipairs(out) do
+      if p.kind == 'zip' and not sameAs[p] then
+        local f = folders[manifestId(p) or '']
+        if f and not sameAs[f] then sameAs[f] = p end
+      end
+    end
+  end
+  local one = {}
+  for _, p in ipairs(out) do
+    if not sameAs[p] then one[#one + 1] = p
+    else log('I', 'earthRally', 'import: ' .. p.name .. ' left out: the same pack as ' .. sameAs[p].name) end
+  end
+  return one
 end
 
 ------------------------------------------------------------------------------------------ reading the manifest

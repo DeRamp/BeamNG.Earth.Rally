@@ -24,6 +24,7 @@ end
 -- The two version failures are told apart on purpose. Before 1.3.2 a BeamNG.Earth whose major was not 1 was
 -- called "too old", which for a 2.x would be exactly backwards and would send the player looking for an update
 -- they already have. versions.lua says the same things at startup, before a stage, with what each one costs.
+M.NOT_IN_WORLD = 'Load the BeamNG.Earth level (Freeroam > BeamNG.Earth)'
 function M.check()
   local a = api()
   if not a then return false, 'BeamNG.Earth is not installed (or not loaded)' end
@@ -36,7 +37,7 @@ function M.check()
     return false, string.format('BeamNG.Earth is too old (its modding API is %s.%s; Earth Rally needs 1.%d)',
       tostring(major), tostring(minor), M.MIN_API_MINOR)
   end
-  if not a.inWorld() then return false, 'Load the BeamNG.Earth level (Freeroam > BeamNG.Earth)' end
+  if not a.inWorld() then return false, M.NOT_IN_WORLD end
   return true
 end
 
@@ -133,10 +134,27 @@ end
 -- BeamNG.Earth that has no such call the auto recce is simply unavailable and everything else behaves exactly as it
 -- did -- there is no fallback path that drives the corridor itself, because that is the recce 1.3.0 exists to
 -- remove (docs/plan-1.3.0.md, the spike's verdict).
-function M.hasRoadGraph()
+function M.hasNativeRoadGraph()
   local a = api()
   return (a ~= nil and type(a.has) == 'function' and a.has('roadGraph') == true and type(a.roadGraph) == 'function')
 end
+
+-- (upstream-earth) An official BeamNG.Earth (modding API 1.8) has no api.roadGraph, but the same graph is had by
+-- walking the car to each window and reading BeamNG.Earth's own traffic graph round it (roadWalk.lua): slower, and
+-- the car moves. The fork's call is used where it is there; the walk only where it is not.
+local roadWalk = require('earthRally/roadWalk')
+M._roadWalk = roadWalk
+function M.roadGraphMode()
+  if M.hasNativeRoadGraph() then return 'api' end
+  if roadWalk.available() then return 'walk' end
+  return nil
+end
+function M.hasRoadGraph() return M.roadGraphMode() ~= nil end
+-- The window size the auto recce plans with: nil for its own (the fork's), smaller for a walk.
+function M.roadGraphRadius() if M.roadGraphMode() == 'walk' then return roadWalk.RADIUS_M end return nil end
+function M.roadGraphUpdate() pcall(roadWalk.update) end
+-- The walk over (a stop, a failure): the car back where it was. Nothing to do on the fork.
+function M.roadGraphHome() return roadWalk.goHome() end
 
 -- One window of BeamNG.Earth's AI road graph round (lat, lon): true once asked, or false and why. The callback is
 -- given BeamNG.Earth's own answer table, which the auto recce reads:
@@ -151,7 +169,9 @@ end
 -- arrive and keeps nothing in game coordinates: a rebase stales every one of them.
 function M.roadGraph(lat, lon, opts, callback)
   local a = api()
-  if not M.hasRoadGraph() then return false, 'this BeamNG.Earth cannot hand out its road graph' end
+  local mode = M.roadGraphMode()
+  if not mode then return false, 'this BeamNG.Earth cannot hand out its road graph' end
+  if mode == 'walk' then return roadWalk.request(lat, lon, opts, callback) end
   local ok, res, why = pcall(a.roadGraph, lat, lon, opts, callback)
   if not ok then return false, tostring(res) end
   if res == false then return false, why or 'BeamNG.Earth refused the road graph request' end
