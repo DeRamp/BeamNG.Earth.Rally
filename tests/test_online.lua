@@ -197,8 +197,10 @@ function probeSock.settimeout() end
 function probeSock:connect() pconnects = pconnects + 1
   if pmode == 'refuses' then return nil, 'connection refused' end
   return nil, 'timeout' end
-function probeSock:getpeername() if pmode == 'answers' then return '127.0.0.1' end return nil end
-function probeSock:send() psent = psent + 1 return 0 end
+function probeSock:getpeername() return '127.0.0.1' end    -- (says yes either way, as on Windows)
+function probeSock:send(d) psent = psent + 1 if pmode == 'refuses' then return nil, 'closed' end return #d end
+function probeSock:receive() if pmode == 'answers' then return '{"id":0,"ok":true,"version":"0.2.0"}' end
+  return nil, 'timeout', '' end
 function probeSock:close() pclosed = pclosed + 1 end
 local boardSock = O._socket
 O._reset()
@@ -207,7 +209,8 @@ T.check(O.probeResult() == nil, 'probe: nothing looked at yet')
 O.probeStart()
 T.check(O.probeResult() == 'probing', 'probe: under way')
 O.update(0.1)
-T.check(O.probeResult() == 'yes' and pclosed == 1 and psent == 0 and not O.enabled(), 'probe: the helper answers, closed, nothing sent, board off')
+O.update(0.1)
+T.check(O.probeResult() == 'yes' and pclosed == 1 and psent == 1 and not O.enabled(), "probe: the helper answers its hello, closed, board off")
 O._reset()
 pmode, pclosed, pconnects = 'refuses', 0, 0
 O.markLoaded()

@@ -1958,6 +1958,11 @@ do
   do
     local online = require('earthRally/online')
     local hadSock, hadR, hadW, hadV = online._socket, rawget(_G, 'jsonReadFile'), rawget(_G, 'jsonWriteFile'), main.VERSION
+    -- (Leaderboards on by default: the stats question, asked once, comes first; answered here so the pop-up's own rules
+    -- are what is tested)
+    local statsM = require('earthRally/stats')
+    local hadConsent = statsM.consent
+    statsM.consent = function() return 'no' end
     local files = {}
     jsonReadFile = function(p) return files[p] end
     jsonWriteFile = function(p, t) files[p] = t return true end
@@ -2009,6 +2014,11 @@ do
       T.check(not main.uiState().helperPrompt, 'helper prompt: held on the stage (' .. st .. ')')
     end
     runner.current, runner.state = hadCur, hadSt
+    -- the stats question up (Leaderboards on, not answered yet): it comes first, the pop-up waits
+    statsM.consent = function() return 'ask' end
+    online._reset() online._socket = { tcp = function() return sk end } online.update(16) reopen()
+    T.check(settings.get('onlineBoard') ~= true or not main.uiState().helperPrompt, 'helper prompt: waits for the stats question')
+    statsM.consent = hadConsent
     main.onUiChangedState('play')
     online._reset()
     online._socket, jsonReadFile, jsonWriteFile = hadSock, hadR, hadW

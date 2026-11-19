@@ -296,6 +296,7 @@ M.PROBE_GRACE_S = 15          -- a look this soon after the game started is not 
 M.PROMPT_FILE = '/earthRally/helperPrompt.json'   -- { dismissedFor = the mod version "Don't show this again" was ticked on }
 
 local probeSock, probeT, probeAt, loadedAt = nil, 0, 0, 0
+local probeOut, probeIn = '', ''   -- (the hello still to send, the answer so far)
 local probeResult = nil       -- nil (never looked) | 'probing' | 'yes' | 'no' | 'unknown' (no socket library) |
                               -- 'early' (no answer, but within PROBE_GRACE_S of the game starting: looked at again
                               -- on the next menu open)
@@ -315,9 +316,10 @@ function M.probeStart()
   local okT, s = pcall(sk.tcp)
   if not okT or not s then probeResult = 'unknown' return false end
   probeSock, probeT, probeAt, probeResult = s, 0, clock, 'probing'
+  probeOut, probeIn = '{"id":0,"op":"hello"}\n', ''     -- (written out: nothing here can fail half way)
   pcall(s.settimeout, s, 0)
   local ok, err = s:connect(M.HOST, M.PORT)
-  if ok then probeEnd('yes')
+  if ok then return true             -- (connected at once: the hello is asked next)
   elseif not (err == 'timeout' or err == 'Operation already in progress') then probeEnd('no') end
   return true
 end
@@ -325,9 +327,27 @@ end
 probeStep = function(dt)
   if probeResult ~= 'probing' then return end
   if state == 'connected' then return probeEnd('yes') end
-  local okP, peer = pcall(probeSock.getpeername, probeSock)
-  if okP and peer then return probeEnd('yes') end
   probeT = probeT + (dt or 0)
+  -- Only a real answer counts: the helper's hello, asked once the connection seems up. (A socket's getpeername alone
+  -- said yes on Windows with nothing on the port -- found in test, 2026-11-18, #77.)
+  if probeOut ~= '' then
+    local okS, n, err, partial = pcall(probeSock.send, probeSock, probeOut)
+    if okS then
+      local sent = n or partial or 0
+      if sent > 0 then probeOut = probeOut:sub(sent + 1) end
+      if not n and err ~= 'timeout' then return probeEnd('no') end
+    end
+  else
+    local okR, line, err, part = pcall(probeSock.receive, probeSock, '*l')
+    if okR then
+      if line then
+        local a = dec(probeIn .. line)
+        return probeEnd((type(a) == 'table' and a.ok == true) and 'yes' or 'no')
+      end
+      if part and #part > 0 then probeIn = probeIn .. part end
+      if err ~= 'timeout' then return probeEnd('no') end
+    end
+  end
   if probeT >= M.PROBE_TIMEOUT_S then probeEnd('no') end
 end
 
