@@ -62,13 +62,45 @@ a.lnk { color: #86b6ef; }
 #lock input { width: 100%; font: inherit; padding: 9px 10px; margin: 8px 0 12px; color: var(--ink); background: #0d0d0d; border: 1px solid #3a3a37; border-radius: 4px; }
 #lock button { font: inherit; padding: 8px 16px; border-radius: 4px; border: 0; background: var(--accent); color: #fff; cursor: pointer; }
 #lock .err { color: #f08a8a; min-height: 1.4em; }
+/* sortable tables, the Leaderboards tab (docs/mockups-1.8.2/dashboard-leaderboards.html) */
+th.sort { cursor: pointer; white-space: nowrap; } th.sort::after { content: " \2195"; color: #55554f; }
+th.sort.on { color: var(--ink); } th.sort.on::after { content: " \25BE"; color: var(--accent); } th.sort.on.up::after { content: " \25B4"; }
+td.best { color: #e9c46a; }
+main.wide { max-width: none; }
+.pill { white-space: nowrap; }
+.pill.ok { color: #8fd6aa; border-color: #2f6e48; } .pill.mute { color: var(--muted); border-color: #3a3a37; }
+.btn { font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 4px; border: 1px solid #3a3a37; background: #232321; color: var(--ink2); cursor: pointer; white-space: nowrap; }
+.btn:hover { border-color: #5a5a55; color: var(--ink); } .btn:disabled { opacity: .5; cursor: default; }
+.btn.go { border-color: #2f6e48; color: #8fd6aa; } .btn.bad { border-color: #6e2f2f; color: #f08a8a; }
+.btn.solid-bad { background: var(--crit); border-color: var(--crit); color: #fff; }
+.acts { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
+.lb { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 14px; }
+.picker input { width: 100%; font: inherit; padding: 7px 10px; margin-bottom: 8px; color: var(--ink); background: #0d0d0d; border: 1px solid #3a3a37; border-radius: 4px; }
+.st { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 7px 10px; border-radius: 4px; cursor: pointer; border-left: 3px solid transparent; }
+.st:hover { background: #222220; } .st.on { background: #2a2a28; border-left-color: var(--accent); }
+.st .c { color: var(--ink2); font-variant-numeric: tabular-nums; font-size: 12.5px; }
+.grp { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; margin: 10px 10px 2px; }
+.boards { display: grid; grid-template-columns: 1fr; gap: 14px; }
+.board td, .board th { padding: 6px 4px; font-size: 12.5px; } .board .btn { padding: 1px 6px; font-size: 11.5px; } .board .acts { gap: 3px; } .card.board { padding: 14px 12px; }
+.board th { font-size: 12px; }
+.board td { white-space: nowrap; } .board td.stat { white-space: normal; max-width: 120px; line-height: 1.9; } .board td.car { max-width: 96px; overflow: hidden; text-overflow: ellipsis; }
+tr.dim td { color: #5f5f59; } tr.dim td .pill { opacity: .7; }
+tr.flag td { background: rgba(250,178,25,.05); }
+tr.confirm td { white-space: normal !important; background: #2a1a1a; border-bottom: 1px solid var(--crit); color: #f0c0c0; font-size: 12.5px; }
+tr.trace td { background: #141413; }
+.stagehead { display: flex; align-items: baseline; gap: 14px; margin-bottom: 12px; flex-wrap: wrap; }
+.stagehead h2 { margin: 0; font-size: 18px; } .stagehead .m { color: var(--muted); font-size: 12.5px; }
+.chips { margin-left: auto; display: flex; border: 1px solid #3a3a37; border-radius: 4px; overflow: hidden; font-size: 12.5px; }
+.chips span { padding: 3px 10px; color: var(--ink2); cursor: pointer; } .chips span.on { background: #3a3a37; color: var(--ink); }
+.count { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 9px; background: #4a3a10; color: var(--warn); }
+.lbErr { color: #f08a8a; margin-bottom: 10px; }
 @media (max-width: 1100px) { .tiles { grid-template-columns: repeat(3, 1fr); } .grid2, .grid3 { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
 <header>
   <h1><span>Earth</span> Rally stats</h1>
-  <nav><a data-v="overview">Overview</a><a data-v="stages">Stages &amp; rallies</a><a data-v="versions">Versions &amp; errors</a></nav>
+  <nav><a data-v="overview">Overview</a><a data-v="stages">Stages &amp; rallies</a><a data-v="versions">Versions &amp; errors</a><a data-v="boards">Leaderboards</a></nav>
   <div class="range" id="range"><span data-d="7">7 days</span><span data-d="30">30 days</span><span data-d="90">90 days</span><span data-d="365">12 months</span></div>
   <div class="who" id="who"></div>
 </header>
@@ -86,6 +118,10 @@ a.lnk { color: #86b6ef; }
 <div id="banner" style="display:none; margin-bottom:14px; padding:10px 14px; border:1px solid #8a6a1a; border-radius:6px; color:var(--warn)"></div>
 <section class="view" id="v-overview">
   <div class="tiles" id="tiles"></div>
+  <div class="card" style="margin-bottom:14px"><h2>Players</h2><div class="sub">Different installs that sent stats: each counts once
+      however often it plays. Counted from a number sent in a message of its own and kept in a table apart from sessions and stages, with nothing linking them; new after the player says No.</div>
+    <div class="tiles" id="players" style="grid-template-columns: repeat(3, 1fr); margin-bottom:12px"></div>
+    <div class="sub" id="playersSub"></div><div id="playersDaily"></div></div>
   <div class="grid2">
     <div class="card"><h2>Stages per day</h2><div class="sub" id="dailySub"></div>
       <div class="legend"><span><i style="background:var(--s1)"></i>Started</span><span><i style="background:var(--s2)"></i>Finished</span></div>
@@ -119,6 +155,30 @@ a.lnk { color: #86b6ef; }
   </div>
   <div class="card"><h2>Errors</h2><div class="sub">Error codes, with the newest short message (scrubbed by the companion before sending). Full logs come in through GitHub bug reports.</div>
     <table id="errors"></table></div>
+</section>
+
+<section class="view" id="v-boards">
+  <div class="lbErr" id="lbErr" style="display:none"></div>
+  <div class="card" style="margin-bottom:14px; border-color:#5a4512"><h2>Flagged <span class="count" id="flagCount"></span></h2>
+    <div class="sub">Runs the server held back (off the board until looked at) and runs other players reported. Approve puts it on the board and clears its reports; Hide takes it off (Restore undoes it). Every board, newest first.</div>
+    <table id="flagged"></table></div>
+  <div class="lb">
+    <div class="card picker"><h2>Stages</h2><div class="sub">Every stage with a time on the online board. Number = runs; badge = flagged or reported.</div>
+      <input id="stageFind" placeholder="Find a stage or rally">
+      <div id="stageList"></div></div>
+    <div>
+      <div class="card" style="margin-bottom:14px">
+        <div class="stagehead"><h2 id="stName">Choose a stage</h2><span class="m" id="stMeta"></span>
+          <div class="chips" id="chips"><span data-mode="best">Best per player</span><span data-mode="all">Every run</span></div></div>
+        <div class="sub" style="margin:0">Greyed: hidden, or a banned player (off the board, kept). Flagged rows show where they would place, with no position. Move: the run goes to the other board (both boards are worked out again).</div>
+      </div>
+      <div class="boards">
+        <div class="card board"><h2>Stock</h2><div class="sub" id="subStock"></div><table id="bStock"></table></div>
+        <div class="card board"><h2>Open</h2><div class="sub" id="subOpen"></div><table id="bOpen"></table></div>
+      </div>
+      <div class="foot">Changes go live on the board at once (the companion reads it the next time a stage ends). Ban takes every time of that player off every board; Unban puts them back. Reports: how many players reported the run; hover for their reasons.</div>
+    </div>
+  </div>
 </section>
 </main>
 <div class="tip" id="tip"></div>
@@ -237,7 +297,8 @@ function draw() {
   }).join("");
   $("dailySub").textContent = "Started and finished, last " + rw;
   $("topSub").textContent = rw + ". Full list under Stages & rallies.";
-  $("allSub").innerHTML = esc(rw) + ". Stages from packs; players' own imported maps count together as <b>Own stages</b> (their names are never sent).";
+  $("allSub").innerHTML = esc(rw) + ". Times from the stats (stage ends, finished only): anonymous, every car and both boards together, so they read as " +
+    "how fast people drive it, not a leaderboard. Click a column to sort. Players' own stages are sent by name from 1.8.2; rows from older versions, sent as <code>custom</code>, count together as <b>Own stages</b> (no names, so no times).";
   ["vSub1", "vSub2", "vSub3"].forEach(function (id) { $(id).textContent = "Share of sessions, " + rw; });
   $("newErrSub").textContent = days >= 365 ? "Not shown for 12 months: choose a shorter range." :
     (t.since && t.since > data.since ? "First seen in the last " + rw + ". Stats began on " + t.since + ", so every error is new for now." :
@@ -249,7 +310,7 @@ function draw() {
   hbars("dl", (downloads || []).slice(0, 8).map(function (r) { return [r.release, r.downloads]; }), null,
     downloads === undefined ? "Loading from GitHub…" : downloads ? "No releases yet." : "GitHub could not be reached.");
   stageTable("topStages", 5, false);
-  stageTable("allStages", 200, true);
+  allStages();
   rallies();
   var total = function (rows) { return rows.reduce(function (a, r) { return a + r.n; }, 0); };
   ["mod", "game", "earth"].forEach(function (k, i) {
@@ -264,8 +325,20 @@ function draw() {
   hbars("cls", (cars.cls || []).map(function (r) { return [r.v == null ? "unknown" : r.v, fin ? Math.round(r.n / fin * 100) : 0]; }),
     function (v) { return v + "%"; });
   hbars("cars", (cars.top || []).map(function (r) { return [r.v, r.n]; }));
+  players();
   errors();
   show(view);
+}
+
+function players() {
+  var p = data.players || {}, rw = rangeWords();
+  $("players").innerHTML = [["All time", p.all_time, "The 12 months kept"], ["Last 7 days", p.last7, "Different players"],
+    ["Last " + rw, p.in_range, "Different players"]].map(function (x) {
+    return "<div class='tile'><div class='k'>" + esc(x[0]) + "</div><div class='v'>" + esc(num(x[1])) + "</div><div class='d'>" + esc(x[2]) + "</div></div>";
+  }).join("");
+  $("playersSub").textContent = "Per day, newest first (up to 14 days)";
+  hbars("playersDaily", (p.daily || []).slice(-14).reverse().map(function (d) { return [d.day, d.players]; }), null,
+    "No players counted yet.");
 }
 
 function hbars(id, rows, fmt, emptyText) {
@@ -295,6 +368,57 @@ function stageTable(id, n, full) {
   });
   $(id).innerHTML = h;
 }
+
+// ---- the full Stages table: sortable (click a heading; again to turn it round)
+var sortBy = "runs", sortUp = false;
+var STAGE_COLS = [
+  ["Rally", "rally", false], ["Stage", "stage", false], ["Starts", "runs", false], ["Finishes", "finished", true],
+  ["Finish rate", "rate", true], ["Best time", "best_s", true], ["Median time", "median_s", true],
+  ["Resets / run", "resets", true], ["Retired", "failed", true], ["Quit", "quit", true], ["No ending", "noend", true],
+];
+function stageVal(s, k) {
+  var own = s.rally === "custom";
+  if (k === "rally") return rallyName(s.rally).toLowerCase();
+  if (k === "stage") return own ? "" : String(s.stage || "").toLowerCase();
+  if (k === "rate") return s.runs ? s.finished / s.runs : null;
+  if (k === "noend") return Math.max(0, s.runs - s.finished - s.failed - s.quit);
+  if ((k === "best_s" || k === "median_s") && own) return null;
+  return s[k] == null ? null : Number(s[k]);
+}
+function allStages() {
+  var rows = (data.stages || []).slice();
+  if (!rows.length) { $("allStages").innerHTML = "<tr><td class='empty'>No stages run yet.</td></tr>"; return; }
+  rows.sort(function (a, b) {
+    var x = stageVal(a, sortBy), y = stageVal(b, sortBy);
+    if (x == null && y == null) return 0;
+    if (x == null) return 1;
+    if (y == null) return -1;
+    var c = x < y ? -1 : x > y ? 1 : 0;
+    return sortUp ? c : -c;
+  });
+  var max = Math.max.apply(null, rows.map(function (s) { return s.runs; })) || 1;
+  var h = "<tr>" + STAGE_COLS.map(function (c) {
+    return "<th class='sort" + (c[2] ? " n" : "") + (c[1] === sortBy ? " on" + (sortUp ? " up" : "") : "") + "' data-sort='" + c[1] + "'" +
+      (c[1] === "noend" ? " title='Started, never ended: the game closed or crashed'" : "") + ">" + esc(c[0]) + "</th>";
+  }).join("") + "</tr>";
+  rows.forEach(function (s) {
+    var own = s.rally === "custom";
+    h += "<tr><td>" + esc(rallyName(s.rally)) + "</td><td>" + esc(own ? "–" : s.stage) + "</td>" +
+      "<td><span class='bar' style='width:" + (s.runs / max * 120) + "px'></span>" + num(s.runs) + "</td><td class='n'>" + num(s.finished) +
+      "</td><td class='n'>" + pct(s.finished, s.runs) + "</td><td class='n best'>" + (own ? "–" : mmss(s.best_s)) +
+      "</td><td class='n'>" + (own ? "–" : mmss(s.median_s)) + "</td><td class='n'>" + (s.resets == null ? "–" : Number(s.resets).toFixed(1)) +
+      "</td><td class='n'>" + num(s.failed) + "</td><td class='n'>" + num(s.quit) +
+      "</td><td class='n'>" + num(stageVal(s, "noend")) + "</td></tr>";
+  });
+  $("allStages").innerHTML = h;
+}
+$("allStages").addEventListener("click", function (e) {
+  var th = e.target.closest("th[data-sort]");
+  if (!th) return;
+  var k = th.getAttribute("data-sort");
+  if (k === sortBy) sortUp = !sortUp; else { sortBy = k; sortUp = k === "rally" || k === "stage"; }
+  allStages();
+});
 
 function rallies() {
   var rows = data.rallies || [];
@@ -395,13 +519,195 @@ function daily() {
   hit.onmouseleave = function () { tip.style.display = "none"; svg.querySelectorAll("#xh,#m1,#m2").forEach(function (el) { el.setAttribute("visibility", "hidden"); }); };
 }
 
+// ---- Leaderboards: the online board's moderation, through this Worker's /api/board/... (the Worker holds the board's
+// admin token; this page holds only the dashboard key). After each action everything shown is read again.
+var lb = { loaded: false, stages: [], flagged: [], stage: null, runs: [], sel: null, mode: "best", find: "", confirm: null, trace: null, busy: false };
+function api(method, path) {
+  return fetch("/api/board/" + path, { method: method, headers: { authorization: "Bearer " + key() }, cache: "no-store" })
+    .then(function (r) {
+      if (r.status === 401) { localStorage.removeItem(KEY_NAME); lock("That key did not work."); throw new Error("locked"); }
+      return r.json().catch(function () { return {}; }).then(function (b) {
+        if (!r.ok) throw new Error(b.error || "the server answered " + r.status);
+        return b;
+      });
+    });
+}
+function lbError(msg) { $("lbErr").textContent = msg; $("lbErr").style.display = msg ? "block" : "none"; }
+function loadBoards() {
+  lb.loaded = true;
+  var sel = lb.sel;
+  return Promise.all([api("GET", "flagged"), api("GET", "stages"),
+    sel ? api("GET", "stages/" + sel + "/runs").catch(function () { return null; }) : null])
+    .then(function (x) {
+      lb.flagged = x[0].runs || []; lb.stages = x[1].stages || [];
+      if (sel && sel === lb.sel) {
+        if (x[2]) { lb.stage = x[2].stage; lb.runs = x[2].runs || []; } else { lb.sel = null; lb.stage = null; lb.runs = []; }
+      }
+      lbError(""); drawBoards();
+    })
+    .catch(function (e) { if (e.message !== "locked") { lbError("Could not load the online board: " + e.message); drawBoards(); } });
+}
+function openStage(id) {
+  lb.sel = id; lb.confirm = null; lb.trace = null;
+  drawBoards();
+  return api("GET", "stages/" + id + "/runs").then(function (b) {
+    if (lb.sel !== id) return;
+    lb.stage = b.stage; lb.runs = b.runs || []; lbError(""); drawBoards();
+  }).catch(function (e) { if (e.message !== "locked") lbError("Could not load the stage: " + e.message); });
+}
+function ms(t) {
+  if (t == null) return "–";
+  var d = Math.round(t / 100), m = Math.floor(d / 600), x = d - m * 600;
+  return m + ":" + String(Math.floor(x / 10)).padStart(2, "0") + "." + (x % 10);
+}
+function pen(t) { return t ? mmss(t / 1000) : ""; }
+function two(n) { return String(n).padStart(2, "0"); }
+function shortDay(at) { var d = new Date(at); return two(d.getDate()) + "/" + two(d.getMonth() + 1); }
+function when(at) {
+  var d = new Date(at);
+  return d.getDate() + " " + ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getMonth()] + " " + two(d.getHours()) + ":" + two(d.getMinutes());
+}
+function flagPills(f, mute) {
+  return String(f || "").split(",").filter(Boolean).map(function (x) {
+    return "<span class='pill " + (mute ? "mute" : /^(clock|resets|jump|speed)$/.test(x) ? "crit" : "warn") + "'>" + esc(x) + "</span>";
+  }).join(" ");
+}
+function btn(a, r, label, cls) {
+  return "<button class='btn" + (cls ? " " + cls : "") + "' data-act='" + a + "' data-run='" + esc(r.id) + "' data-player='" + esc(r.playerId) + "'" +
+    (lb.busy ? " disabled" : "") + ">" + label + "</button>";
+}
+function drawBoards() {
+  $("flagCount").textContent = lb.flagged.length;
+  $("flagCount").style.display = lb.flagged.length ? "" : "none";
+  // flagged and reported, every board
+  var h = lb.flagged.length ? "<tr><th>When</th><th>Stage</th><th>Board</th><th>Player</th><th class='n'>Time</th><th>Car</th><th>Flags</th>" +
+    "<th class='n' title='Server clock from token to submission, over the stage time'>Clock ratio</th><th class='n'>Reports</th><th></th></tr>" : "";
+  lb.flagged.forEach(function (r) {
+    h += "<tr class='flag'><td>" + esc(when(r.at)) + "</td><td><a class='lnk' href='#boards' data-stage='" + esc(r.stageId) + "'>" + esc(r.stage) + "</a></td><td>" +
+      esc(r.board === "open" ? "Open" : "Stock") + "</td><td>" + esc(r.player) + "</td><td class='n'>" + esc(ms(r.timeMs)) + "</td><td>" + esc(r.car || "–") +
+      "</td><td>" + (r.flags ? flagPills(r.flags) : "<span style='color:var(--muted)'>–</span>") + "</td><td class='n'>" + (r.wallRatio == null ? "–" : esc(Number(r.wallRatio).toFixed(2))) +
+      "</td><td class='n'>" + num(r.reports) + "</td><td><div class='acts'>" + btn("trace", r, "View trace") + btn("approve", r, "Approve", "go") + btn("hide", r, "Hide", "bad") + "</div></td></tr>";
+    if (lb.trace && lb.trace.id === r.id) h += traceRow(10);
+  });
+  $("flagged").innerHTML = h || "<tr><td class='empty'>Nothing flagged or reported.</td></tr>";
+  // the stage list, by rally
+  var q = lb.find.toLowerCase(), groups = {}, order = [];
+  lb.stages.forEach(function (s) {
+    if (q && (String(s.name) + " " + String(s.rally || "")).toLowerCase().indexOf(q) < 0) return;
+    var g = s.rally || "No rally (own stages)";
+    if (!groups[g]) { groups[g] = []; order.push(g); }
+    groups[g].push(s);
+  });
+  $("stageList").innerHTML = order.length ? order.map(function (g) {
+    return "<div class='grp'>" + esc(g) + "</div>" + groups[g].map(function (s) {
+      var bad = (s.flagged || 0) + (s.reported || 0);
+      return "<div class='st" + (s.id === lb.sel ? " on" : "") + "' data-stage='" + esc(s.id) + "'><span>" + esc(s.name) + "</span><span class='c'>" + num(s.runs) + "</span>" +
+        (bad ? "<span class='count' data-tip='" + esc(num(s.flagged) + " flagged, " + num(s.reported) + " reported") + "'>" + bad + "</span>" : "<span></span>") + "</div>";
+    }).join("");
+  }).join("") : "<div class='empty'>" + (lb.stages.length ? "No stage matches." : lb.loaded ? "No stages on the online board yet." : "Loading…") + "</div>";
+  // the chosen stage
+  document.querySelectorAll("#chips span").forEach(function (c) { c.classList.toggle("on", c.getAttribute("data-mode") === lb.mode); });
+  var st = lb.sel ? lb.stage : null;
+  $("stName").textContent = st ? st.name : lb.sel ? "Loading…" : "Choose a stage";
+  $("stMeta").textContent = st ? [st.rally || "No rally", st.lengthM ? (st.lengthM / 1000).toFixed(1) + " km" : null,
+    st.createdAt ? "first run " + new Date(st.createdAt).toISOString().slice(0, 10) : null, "stage id " + st.id].filter(Boolean).join(" · ") : "";
+  boardTable("stock", st); boardTable("open", st);
+}
+function traceRow(span) {
+  var t = lb.trace;
+  if (!t.points) return "<tr class='trace'><td colspan='" + span + "'>" + esc(t.error || "Loading the trace…") + "</td></tr>";
+  var p = t.points.filter(function (x) { return Array.isArray(x) && isFinite(x[1]) && isFinite(x[2]); }), W = 900, H = 260;
+  if (p.length < 2) return "<tr class='trace'><td colspan='" + span + "'>No trace.</td></tr>";
+  var la = p.map(function (x) { return x[1]; }), lo = p.map(function (x) { return x[2]; });
+  var la0 = Math.min.apply(null, la), la1 = Math.max.apply(null, la), lo0 = Math.min.apply(null, lo), lo1 = Math.max.apply(null, lo);
+  var k = Math.cos((la0 + la1) / 2 * Math.PI / 180), sc = Math.min((W - 20) / ((lo1 - lo0) * k || 1e-9), (H - 20) / ((la1 - la0) || 1e-9));
+  var xy = p.map(function (x) { return [(10 + (x[2] - lo0) * k * sc).toFixed(1), (H - 10 - (x[1] - la0) * sc).toFixed(1)]; });
+  var resets = (t.resets || []).length;
+  return "<tr class='trace'><td colspan='" + span + "'><svg width='" + W + "' height='" + H + "' style='max-width:100%'>" +
+    "<polyline fill='none' stroke='var(--s1)' stroke-width='2' points='" + xy.map(function (q) { return q.join(","); }).join(" ") + "'/>" +
+    "<circle r='5' fill='#4fb87a' cx='" + xy[0][0] + "' cy='" + xy[0][1] + "'/></svg>" +
+    "<div class='sub'>" + esc(p.length + " points over " + ms(p[p.length - 1][0]) + (resets ? ", " + resets + " resets" : "") +
+      (t.slow_ms ? ", slow motion " + ms(t.slow_ms) : "") + ". Green: the start.") + "</div></td></tr>";
+}
+function boardTable(board, st) {
+  var id = board === "stock" ? "bStock" : "bOpen", other = board === "stock" ? "Open" : "Stock";
+  var all = st ? lb.runs.filter(function (r) { return r.board === board; }) : [];
+  var on = all.filter(function (r) { return r.isBest && r.status === "ok" && !r.banned; }).length;
+  $(board === "stock" ? "subStock" : "subOpen").textContent = (board === "stock" ? "The game's own cars as they come" : "Anything") +
+    (st ? " · " + on + " on the board · " + all.length + (all.length === 1 ? " run" : " runs") : "");
+  if (!st) { $(id).innerHTML = ""; return; }
+  var rows = lb.mode === "all" ? all.slice() : all.filter(function (r) { return r.isBest || r.status !== "ok"; });
+  rows.sort(function (a, b) { return a.timeMs - b.timeMs || a.id - b.id; });
+  if (!rows.length) { $(id).innerHTML = "<tr><td class='empty'>No runs on this board.</td></tr>"; return; }
+  var h = "<tr><th class='n'>Pos</th><th>Player</th><th class='n'>Time</th><th class='n'>Pen.</th><th>Car</th><th>Date</th><th>Mod</th><th>Status, flags</th><th class='n' title='Reports'>Rep.</th><th></th></tr>";
+  var placed = 0, pos = 0, lastT = null;
+  rows.forEach(function (r) {
+    var s = r.banned ? "banned" : r.status, dim = s === "hidden" || s === "banned", p = "–";
+    if (r.isBest && r.status === "ok" && !r.banned) { placed++; if (r.timeMs !== lastT) { pos = placed; lastT = r.timeMs; } p = pos; }
+    var acts = s === "banned" ? btn("unban", r, "Unban", "go") :
+      s === "hidden" ? btn("restore", r, "Restore", "go") :
+      s === "flagged" ? btn("approve", r, "Approve", "go") + btn("hide", r, "Hide", "bad") :
+      (r.reports ? btn("approve", r, "Approve", "go") : "") + btn("hide", r, "Hide");
+    acts += btn("move", r, "&#8594; " + other);
+    if (s !== "banned") acts += btn("ban", r, "Ban", "bad");
+    var stp = s === "ok" ? "<span class='pill ok'>ok</span>" : s === "flagged" ? "<span class='pill warn'>flagged</span>" : "<span class='pill mute'>" + esc(s) + "</span>";
+    h += "<tr class='" + (dim ? "dim" : s === "flagged" ? "flag" : "") + "'><td class='n'>" + p + "</td><td>" + esc(r.player) + "</td><td class='n'" + (p === 1 ? " style='color:#e9c46a'" : "") + ">" +
+      esc(ms(r.timeMs)) + "</td><td class='n'>" + esc(pen(r.penaltyMs)) + "</td><td class='car' title='" + esc(r.car || "") + "'>" + esc(r.car || "–") + "</td><td>" + esc(shortDay(r.at)) +
+      "</td><td>" + esc(r.modVersion || "–") + "</td><td class='stat'>" + stp + (r.flags ? " " + flagPills(r.flags, dim) : "") +
+      "</td><td class='n'" + (r.reasons ? " data-tip='" + esc(r.reasons) + "'" : "") + ">" + (r.reports ? num(r.reports) : "") + "</td><td><div class='acts'>" + acts + "</div></td></tr>";
+    var c = lb.confirm;
+    if (c && c.id === r.id) {
+      var say = c.act === "ban"
+        ? "Ban <b>" + esc(r.player) + "</b>? Every time of theirs leaves every board, and the game refuses their new runs. Unban undoes it."
+        : "Move this run of <b>" + esc(r.player) + "</b> (" + esc(ms(r.timeMs)) + ") to the " + other + " board? Both boards are worked out again.";
+      h += "<tr class='confirm'><td></td><td colspan='8'>" + say + "</td><td><div class='acts'>" +
+        btn("do-" + c.act, r, c.act === "ban" ? "Ban" : "Move", "solid-bad") + "<button class='btn' data-act='cancel'>Cancel</button></div></td></tr>";
+    }
+  });
+  $(id).innerHTML = h;
+}
+function act(a, run, player) {
+  if (a === "cancel") { lb.confirm = null; drawBoards(); return; }
+  if (a === "ban" || a === "move") { lb.confirm = { id: Number(run), act: a }; drawBoards(); return; }
+  if (a === "trace") {
+    if (lb.trace && lb.trace.id === Number(run)) { lb.trace = null; drawBoards(); return; }
+    var t = lb.trace = { id: Number(run) };
+    drawBoards();
+    api("GET", "runs/" + run).then(function (b) { t.points = b.trace || []; t.resets = b.resets; t.slow_ms = b.slow_ms; })
+      .catch(function (e) { t.error = "Could not load the trace: " + e.message; })
+      .then(function () { if (lb.trace === t) drawBoards(); });
+    return;
+  }
+  var path = a === "do-ban" ? "players/" + player + "/ban" : a === "unban" ? "players/" + player + "/unban" :
+    a === "do-move" ? "runs/" + run + "/move" : "runs/" + run + "/" + a;
+  lb.busy = true; lb.confirm = null; drawBoards();
+  api("POST", path).then(function () { lbError(""); return true; })
+    .catch(function (e) { if (e.message !== "locked") lbError("That did not work: " + e.message); return false; })
+    .then(function (ok) {
+      lb.busy = false;
+      if (!ok) { drawBoards(); return; }
+      return loadBoards();
+    });
+}
+$("v-boards").addEventListener("click", function (e) {
+  var b = e.target.closest("button[data-act]");
+  if (b) { if (!b.disabled) act(b.getAttribute("data-act"), b.getAttribute("data-run"), b.getAttribute("data-player")); return; }
+  var s = e.target.closest("[data-stage]");
+  if (s) { e.preventDefault(); openStage(s.getAttribute("data-stage")); return; }
+  var c = e.target.closest("#chips span");
+  if (c) { lb.mode = c.getAttribute("data-mode"); lb.confirm = null; drawBoards(); }
+});
+$("stageFind").addEventListener("input", function () { lb.find = this.value; drawBoards(); });
+
 // ---- views and range
 function show(v) {
-  if (["overview", "stages", "versions"].indexOf(v) < 0) v = "overview";
+  if (["overview", "stages", "versions", "boards"].indexOf(v) < 0) v = "overview";
   view = v;
   document.querySelectorAll(".view").forEach(function (x) { x.classList.toggle("on", x.id === "v-" + v); });
   document.querySelectorAll("nav [data-v]").forEach(function (b) { b.classList.toggle("on", b.dataset.v === v); });
   if (v === "overview" && data) daily();
+  $("main").classList.toggle("wide", v === "boards");
+  if (v === "boards" && data && !lb.loaded) loadBoards();
 }
 document.querySelectorAll("nav [data-v]").forEach(function (b) { b.onclick = function () { location.hash = b.dataset.v; }; });
 window.onhashchange = function () { show(location.hash.slice(1)); };

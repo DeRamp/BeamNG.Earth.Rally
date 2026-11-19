@@ -30,6 +30,42 @@ The live D1 was made before these columns. Run once from this folder, then deplo
 `npx wrangler d1 execute earth-rally-stats --remote --file=migrate-2026-11-18.sql`. A second run fails with
 "duplicate column name", which is harmless. New databases get them from `schema.sql`.
 
+## Update the live database (2026-11-18b: players)
+
+Run once from this folder, after the one above, then deploy:
+`npx wrangler d1 execute earth-rally-stats --remote --file=migrate-2026-11-18b.sql`, then `npx wrangler deploy`.
+It adds the install number (`install_seen` events only), which the dashboard counts as players. Since
+`migrate-2026-11-19.sql` that column is unused: install_seen goes to its own table, `installs`.
+
+## Update the live database (2026-11-19: players in a table of their own)
+
+Run from this folder, after 2026-11-18b, then deploy, then run it once more (it is safe to repeat; the second run
+sweeps up any install_seen the old Worker stored in between):
+`npx wrangler d1 execute earth-rally-stats --remote --file=migrate-2026-11-19.sql`, `npx wrangler deploy`, and the
+first command again. It makes `installs`, moves any install_seen rows out of `events` into it, and deletes them
+from `events`. Deploying first would fail every post with install_seen in it until the table exists (the mod keeps
+those and sends them later).
+
+## Update: stage times and the Leaderboards tab (1.8.2)
+
+The **Stages** table gains best times and sorting; a **Leaderboards** tab moderates the online board (`../online/worker`):
+flagged and reported runs, every stage's runs on both boards, Approve, Hide, Restore, Move, Ban, Unban. Your
+browser only ever sends the dashboard key; this Worker adds the board's admin token itself, over a service binding to
+`earth-rally-board` (`wrangler.toml`), or the board's public address if the binding is missing.
+
+Deploy in this order:
+
+1. **The board Worker first** (it has the new admin calls, version 0.2.0): from `online/worker`, `npx wrangler deploy`.
+   Check `https://earth-rally-board.station68.workers.dev/v1/health` says `"version":"0.2.0"`.
+2. **Give this Worker the board's admin token:** from this `server` folder, `npx wrangler secret put BOARD_ADMIN_TOKEN`,
+   then paste the board's `ADMIN_TOKEN` (the one you saved when the board was set up). It is never in git or the page.
+3. **This Worker:** from this `server` folder, `npx wrangler deploy`. It needs step 1 done: the binding names
+   `earth-rally-board`, which must already exist.
+4. Open the dashboard, **Leaderboards**. "The board refused BOARD_ADMIN_TOKEN" means step 2's value is wrong: run it
+   again. "BOARD_ADMIN_TOKEN is not set" means step 2 was skipped.
+
+No database change for either Worker.
+
 ## Your dashboard
 
 Open `https://earth-rally-stats.<your-subdomain>.workers.dev/dashboard` and type the DASHBOARD_KEY from step 5. The
@@ -37,7 +73,8 @@ browser remembers it; **forget key** at the top right clears it. Bookmark the pa
 stats.
 
 **See it before setting anything up:** `node preview.mjs`, then open http://localhost:8787/dashboard. It runs the
-same page on made-up data, nothing deployed. Ctrl+C stops it.
+same page on made-up data, nothing deployed, with a made-up online board on the Leaderboards tab (the board's own
+Worker runs inside it). Ctrl+C stops it.
 
 ## Optional: a rate limit
 

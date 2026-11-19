@@ -232,6 +232,12 @@ test("moderation", async () => {
     assert.equal((await t.call("POST", `/v1/admin/runs/${b.body.runId}`, { status: "hidden" }, "admin:letmein")).status, 200)
     let board = await t.call("POST", "/v1/boards", { stage: STAGE, board: "stock" })
     assert.deepEqual(board.body.rows.map(r => r.name), ["Ann"])
+    // and dealt with: off the Flagged list and out of the stage's flagged and reported counts, its report kept
+    assert.equal((await t.call("GET", "/v1/admin/flagged", undefined, "admin:letmein")).body.runs.length, 0)
+    const hs = (await t.call("GET", "/v1/admin/stages", undefined, "admin:letmein")).body.stages[0]
+    assert.deepEqual([hs.runs, hs.flagged, hs.reported], [2, 0, 0])
+    const hr = (await t.call("GET", `/v1/admin/stages/${hs.id}/runs`, undefined, "admin:letmein")).body.runs
+    assert.deepEqual(hr.filter(r => r.status === "hidden").map(r => r.reports), [1])
     // banned: off every board
     const pid = ann.split(":")[0]
     await t.call("POST", `/v1/admin/players/${pid}`, { banned: true }, "admin:letmein")
@@ -239,6 +245,71 @@ test("moderation", async () => {
     assert.equal(board.body.of, 0)
     assert.equal((await t.call("POST", "/v1/runs/start", { stage: STAGE }, ann)).status, 403)
     assert.ok(a.body.runId)
+  } finally { t.done() }
+})
+
+test("admin: stages, runs, move, approve, ban", async () => {
+  const t = setup()
+  const A = "admin:letmein"
+  try {
+    const ann = await t.register("Ann")
+    const bob = await t.register("Bob")
+    const a1 = await t.drive(ann, 360000)
+    t.tick(61000)
+    const a2 = await t.drive(ann, 355000, { board: "open" })
+    const b1 = await t.drive(bob, 350000)
+    await t.call("POST", "/v1/reports", { runId: b1.body.runId, why: "too quick" }, ann)
+    assert.equal((await t.call("GET", "/v1/admin/stages", undefined, "admin:wrong")).status, 401)
+    const st = await t.call("GET", "/v1/admin/stages", undefined, A)
+    assert.equal(st.body.stages.length, 1)
+    assert.deepEqual([st.body.stages[0].runs, st.body.stages[0].flagged, st.body.stages[0].reported], [3, 0, 1])
+    const sid = st.body.stages[0].id
+    let runs = (await t.call("GET", `/v1/admin/stages/${sid}/runs`, undefined, A)).body
+    assert.equal(runs.stage.name, "Test Road")
+    assert.equal(runs.runs.length, 3)
+    const bob1 = runs.runs.find(r => r.id === b1.body.runId)
+    assert.deepEqual([bob1.player, bob1.board, bob1.reports, bob1.reasons, bob1.isBest, bob1.banned, bob1.modVersion],
+      ["Bob", "stock", 1, "too quick", true, false, "test"])
+    assert.equal((await t.call("GET", "/v1/admin/stages/ffff/runs", undefined, A)).status, 404)
+
+    // move Ann's stock run to open: stock loses her, open keeps her faster run as best
+    let m = await t.call("POST", `/v1/admin/runs/${a1.body.runId}/move`, undefined, A)
+    assert.deepEqual([m.status, m.body.board], [200, "open"])
+    let stock = await t.call("POST", "/v1/boards", { stage: STAGE, board: "stock" })
+    assert.deepEqual(stock.body.rows.map(r => r.name), ["Bob"])
+    let open = await t.call("POST", "/v1/boards", { stage: STAGE, board: "open" })
+    assert.deepEqual(open.body.rows.map(r => [r.name, r.runId]), [["Ann", a2.body.runId]])
+    // and the open run back to stock: both boards worked out again
+    await t.call("POST", `/v1/admin/runs/${a2.body.runId}/move`, undefined, A)
+    stock = await t.call("POST", "/v1/boards", { stage: STAGE, board: "stock" })
+    assert.deepEqual(stock.body.rows.map(r => [r.name, r.timeMs]), [["Bob", 350000], ["Ann", 355000]])
+    open = await t.call("POST", "/v1/boards", { stage: STAGE, board: "open" })
+    assert.deepEqual(open.body.rows.map(r => [r.name, r.runId]), [["Ann", a1.body.runId]])
+
+    // approve a reported run: still ok, its reports gone
+    await t.call("POST", `/v1/admin/runs/${b1.body.runId}`, { status: "flagged" }, A)
+    stock = await t.call("POST", "/v1/boards", { stage: STAGE, board: "stock" })
+    assert.deepEqual(stock.body.rows.map(r => r.name), ["Ann"])
+    assert.equal((await t.call("POST", `/v1/admin/runs/${b1.body.runId}/approve`, undefined, A)).status, 200)
+    stock = await t.call("POST", "/v1/boards", { stage: STAGE, board: "stock" })
+    assert.deepEqual(stock.body.rows.map(r => r.name), ["Bob", "Ann"])
+    assert.equal((await t.call("GET", "/v1/admin/flagged", undefined, A)).body.runs.length, 0)
+    runs = (await t.call("GET", `/v1/admin/stages/${sid}/runs`, undefined, A)).body
+    assert.equal(runs.runs.find(r => r.id === b1.body.runId).reports, 0)
+    assert.equal((await t.call("POST", "/v1/admin/runs/99999/approve", undefined, A)).status, 404)
+    assert.equal((await t.call("POST", `/v1/admin/runs/${b1.body.runId}/move`, undefined, "admin:wrong")).status, 401)
+
+    // ban and unban: off every board, then back with the best intact
+    const bid = bob.split(":")[0]
+    await t.call("POST", `/v1/admin/players/${bid}`, { banned: true }, A)
+    stock = await t.call("POST", "/v1/boards", { stage: STAGE, board: "stock" })
+    assert.deepEqual(stock.body.rows.map(r => r.name), ["Ann"])
+    runs = (await t.call("GET", `/v1/admin/stages/${sid}/runs`, undefined, A)).body
+    assert.equal(runs.runs.find(r => r.id === b1.body.runId).banned, true)
+    await t.call("POST", `/v1/admin/players/${bid}`, { banned: false }, A)
+    stock = await t.call("POST", "/v1/boards", { stage: STAGE, board: "stock" })
+    assert.deepEqual(stock.body.rows.map(r => r.name), ["Bob", "Ann"])
+    assert.equal((await t.call("GET", "/v1/health")).body.version, "0.2.0")
   } finally { t.done() }
 })
 

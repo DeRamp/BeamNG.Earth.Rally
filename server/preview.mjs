@@ -1,12 +1,13 @@
 // See the real dashboard on made-up data, with nothing deployed:  node server/preview.mjs  then open
 // http://localhost:8787/dashboard  (key: preview). The Worker runs as is; D1 is Node's SQLite (d1shim.mjs) filled
-// with 90 days of fake sessions. Downloads are the real ones: the page reads them from GitHub itself.
+// with 90 days of fake sessions. Downloads are the real ones: the page reads them from GitHub itself. The Leaderboards
+// tab talks to the online board's own Worker (online/worker), run here too over a made-up board.
 import { createServer } from "node:http"
 import { makeDb } from "./d1shim.mjs"
 
 const PORT = Number(process.env.PORT) || 8787
 const { db, D1 } = makeDb()
-const env = { DB: D1, DASHBOARD_KEY: "preview" }
+const env = { DB: D1, DASHBOARD_KEY: "preview", BOARD_ADMIN_TOKEN: "preview" }
 globalThis.caches = { default: { match: async () => null, put: async () => {} } }
 globalThis.fetch = async () => new Response(JSON.stringify([
   ["v1.6.2-alpha", 412], ["v1.6.1-alpha", 288], ["v1.6.0-alpha", 251], ["ara-2026-pack", 199], ["v1.5.0-alpha", 134],
@@ -39,6 +40,9 @@ for (let d = 89; d >= 0; d--) {
     const c = { day, session: hex(), mod: d > 40 ? pick(["1.6.1-alpha", "1.6.2-alpha"]) : pick(["1.6.2-alpha", "1.6.2-alpha", "1.7.0-alpha"]),
       game: rnd() < 0.9 ? "0.40.5.0" : "0.40.4.0", earth: rnd() < 0.8 ? "1.10" : "1.9" }
     add({ ...c, event: "session_start" })
+    // (one of a pool of players: the install number, in installs, once a day)
+    const who = "1".repeat(24) + String(Math.floor(rnd() * Math.min(400, 40 + (90 - d) * 4))).padStart(8, "0")
+    db.prepare("INSERT OR IGNORE INTO installs (install, day, mod, game, earth) VALUES (?, ?, ?, ?, ?)").run(who, day, c.mod, c.game, c.earth)
     const own = rnd() < 0.2
     const r = own ? null : pick(rallies)
     const full = !own && rnd() < 0.3
@@ -61,6 +65,47 @@ for (let d = 89; d >= 0; d--) {
   }
 }
 
+// ---- the online board: its real Worker over its own SQLite stand-in, as the service binding BOARD
+const { makeD1 } = await import("../online/worker/dev/d1.mjs")
+const boardWorker = (await import("../online/worker/src/index.js")).default
+const BD = makeD1()
+const benv = { DB: BD, ADMIN_TOKEN: "preview" }
+env.BOARD = { fetch: req => boardWorker.fetch(req, benv) }
+{
+  const run = (sql, ...a) => BD.prepare(sql).bind(...a).run()
+  const names = ["ReRamp", "Maja R", "gravel_gus", "Kiwi Flyer", "TarmacTom", "Ole_P", "nina.drives", "Brakeless",
+    "x_cheater_x", "DustDevil", "Speedy_K", "Sigrid <b>V</b>"]
+  for (let i = 0; i < names.length; i++) {
+    await run("INSERT INTO players (id, secret_hash, name, created_at, banned) VALUES (?, 'x', ?, ?, ?)",
+      "f" + String(i).padStart(3, "0"), names[i], Date.now(), names[i] === "x_cheater_x" ? 1 : 0)
+  }
+  const bcars = ["Sunburst 2.0 Rally", "Covet Rally", "Scintilla Rally", "Pessima GTZ", "Bolide Rally (mod)"]
+  const now = Date.now()
+  let sn = 0
+  for (const r of rallies) for (let si = 0; si < r.stages.length; si++) {
+    const id = (0xa000 + sn++).toString(16).padStart(16, "0")
+    await run("INSERT INTO stages (id, name, rally, start_lat, start_lon, finish_lat, finish_lon, length_m, created_at) VALUES (?, ?, ?, 45, -120, 45.1, -120, ?, ?)",
+      id, r.stages[si], r.rally, r.mins[si] * 1800, now - 3 * 86400000)
+    const n = Math.floor(4 + rnd() * 10)
+    for (let k = 0; k < n; k++) {
+      const pid = "f" + String(Math.floor(rnd() * names.length)).padStart(3, "0")
+      const board = rnd() < 0.6 ? "stock" : "open"
+      const x = rnd(), status = x < 0.08 ? "flagged" : x < 0.14 ? "hidden" : "ok"
+      const flags = status === "ok" ? null : pick(["record", "clock", "jump", "short,finish", "resets"])
+      const ms = Math.round((r.mins[si] + rnd() * 2) * 60000)
+      const tr = JSON.stringify(Array.from({ length: 40 }, (_, j) => [j * ms / 39, 45 + j * 0.1 / 39 + Math.sin(j / 4) * 0.004, -120 + Math.cos(j / 5) * 0.01]))
+      await run("INSERT INTO runs (stage_id, board, player_id, car, time_ms, penalty_ms, trace, mod_version, submitted_at, wall_ratio, status, flags, resets) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]')", id, board, pid, pick(bcars), ms, rnd() < 0.2 ? 10000 : 0, tr,
+        pick(["1.8.0-alpha", "1.8.1-alpha"]), now - Math.floor(rnd() * 3 * 86400000), 1 + rnd() * 0.05, status, flags)
+    }
+    // each player's best per board, as the Worker keeps it
+    await run("INSERT OR REPLACE INTO best (stage_id, board, player_id, run_id, time_ms) SELECT stage_id, board, player_id, id, MIN(time_ms) " +
+      "FROM runs WHERE stage_id = ? AND status = 'ok' GROUP BY stage_id, board, player_id", id)
+  }
+  const some = await BD.prepare("SELECT id FROM runs WHERE status = 'ok' ORDER BY id LIMIT 2").bind().all()
+  for (const r of some.results) await run("INSERT INTO reports (run_id, player_id, why, at) VALUES (?, 'f001', 'too quick for that car', ?)", r.id, now)
+}
+
 // ---- serve: the Worker as is, plus the key filled in on the preview's dashboard only
 createServer(async (req, res) => {
   const chunks = []
@@ -69,7 +114,12 @@ createServer(async (req, res) => {
   const r = await worker.fetch(new Request("http://localhost:" + PORT + req.url, { method: req.method, headers: req.headers, body }), env, { waitUntil() {} })
   let out = Buffer.from(await r.arrayBuffer())
   if (req.url.startsWith("/dashboard.js")) {
-    out = Buffer.from("localStorage.setItem('earthRallyDashboardKey', 'preview');\n" + out.toString())
+    out = Buffer.from("localStorage.setItem('earthRallyDashboardKey', 'preview');\n" + out.toString() +
+      // (?pick: the first stage on the Leaderboards tab opened, a Ban asked, and the page's widths put in its title,
+      // for a check in a headless browser)
+      "\nif (/pick/.test(location.search)) setTimeout(function () { var s = document.querySelector('#stageList .st'); if (s) s.click();" +
+      " setTimeout(function () { var b = document.querySelector('#bStock [data-act=ban]'); if (b) b.click();" +
+      " document.title = 'W=' + document.documentElement.scrollWidth + ' C=' + document.documentElement.clientWidth; }, 800); }, 1500);\n")
   }
   res.writeHead(r.status, Object.fromEntries(r.headers))
   res.end(out)

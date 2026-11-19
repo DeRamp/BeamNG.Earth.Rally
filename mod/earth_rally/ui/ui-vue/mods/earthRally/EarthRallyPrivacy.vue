@@ -4,8 +4,9 @@
   <div class="er-privacy">
     <div class="er-pv-title">Privacy</div>
     <div class="er-pv-row">
-      <div class="er-pv-t"><b>Send anonymous stats</b><span>Stages and rallies run and finished, and Earth Rally's errors. A new random number each session, so nothing
-        links back to you. Sent through the Leaderboards add-on, only while Leaderboards are on.</span></div>
+      <div class="er-pv-t"><b>Send anonymous stats</b><span>Stages and rallies run and finished, and Earth Rally's errors. A new random number each session, and, sent on
+        its own once a session, a random number kept on your PC to count players (Off deletes it). Sent through the
+        Leaderboards add-on, only while Leaderboards are on.</span></div>
       <div class="er-seg">
         <span tabindex="0" bng-nav-item :class="{ on: s.consent === 'yes' }" @click="statsAction('yes')" @keydown.enter="statsAction('yes')">On</span>
         <span tabindex="0" bng-nav-item :class="{ on: s.consent !== 'yes' }" @click="statsAction('no')" @keydown.enter="statsAction('no')">Off</span>

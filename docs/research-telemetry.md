@@ -65,7 +65,7 @@ and when the menu opens, never mid-stage.
 | `error` | error code, mod module, mod version (no log text) |
 
 Stage IDs: only for stages from packs we ship. A player's own imported stage is sent as `custom` (its name may
-be a private place or event).
+be a private place or event). (Superseded 2026-11-18: the owner chose to send own stages by name too; see PRIVACY.md.)
 
 Not collected: positions, driving traces, vehicle setups, other mods, hardware, free text, per-minute pings.
 
@@ -123,7 +123,7 @@ mod list, timezone. Before saving or sending:
 ## Decisions (the owner, 2026-11-16)
 
 1. **Stats over plain HTTP: yes, as long as they are fully anonymous.** So: no IP stored, no account, no hardware,
-   no free text, imported stage names sent as `custom`. The random install number stays (without it installs
+   no free text, imported stage names sent as `custom` (since 2026-11-18: by name, PRIVACY.md). The random install number stays (without it installs
    can't be counted); it is made on the player's PC, tied to nothing, and replaced by "Delete my stats".
 2. **Bug reports go through the browser** to a pre-filled new issue on
    `https://github.com/DeRamp/BeamNG.Earth.Rally/issues/new`, so they land in GitHub issues. No direct send, no

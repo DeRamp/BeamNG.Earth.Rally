@@ -24,9 +24,11 @@ export function arr(x) {
 }
 
 let helperClosing = false   // (#77: a poll's answer from before the close must not bring the pop-up back)
+let nameLater = false       // (the name pop-up's Later: the same)
 export function refreshState(cb) {
   engineLua("earthRally_main and earthRally_main.uiState() or nil", s => {
     if (s && helperClosing) s.helperPrompt = null
+    if (s && nameLater) s.namePrompt = null
     if (s) state.value = s
     if (cb) cb(s)
   })
@@ -138,6 +140,17 @@ export function helperPromptClose(dontShow) {
   state.value = Object.assign({}, state.value, { helperPrompt: null })
   engineLua(`earthRally_main and earthRally_main.uiHelperPrompt("close", ${dontShow ? "true" : "false"}) or nil`, () => {
     helperClosing = false
+    refreshState()
+  })
+}
+
+// The leaderboard name pop-up (main.lua namePromptWanted / uiNamePrompt): Later hides it until the next menu open.
+// (Its Save is onlineName, below.)
+export function namePromptLater() {
+  nameLater = true
+  state.value = Object.assign({}, state.value, { namePrompt: null })
+  engineLua(`earthRally_main and earthRally_main.uiNamePrompt("later") or nil`, () => {
+    nameLater = false
     refreshState()
   })
 }

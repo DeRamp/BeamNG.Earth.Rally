@@ -11,10 +11,11 @@
       <div class="er-cs-cols">
         <div class="er-cs-col yes"><h2>What it sends</h2><ul>
           <li>Mod and game version</li>
-          <li>Stages and rallies started and finished</li>
+          <li>Stages and rallies started and finished, by name (your own too)</li>
           <li>Stage time, resets, retirements, the car</li>
           <li>Earth Rally's errors, personal details removed</li>
-          <li>A random number, new every session</li></ul></div>
+          <li>A random number, new every session</li>
+          <li>Once a session, on its own: a random number kept on your PC, to count players</li></ul></div>
         <div class="er-cs-col no"><h2>Never sent</h2><ul>
           <li>Your leaderboard name, Steam or BeamNG account</li>
           <li>Your location (your IP address reaches the server but is never stored)</li>

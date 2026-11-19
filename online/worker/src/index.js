@@ -13,6 +13,10 @@
 //   POST /v1/admin/players/:id     { banned: true | false }      (Bearer admin:<ADMIN_TOKEN>)
 //   GET  /v1/admin/flagged                                       -> { runs }
 //   GET  /v1/admin/runs/:id                                      -> the run, its trace and its stage
+//   GET  /v1/admin/stages                                        -> { stages } with run, flagged and reported counts
+//   GET  /v1/admin/stages/:id/runs                               -> { stage, runs }: every run, both boards, any status
+//   POST /v1/admin/runs/:id/move                                 the run to the other board (both boards worked out)
+//   POST /v1/admin/runs/:id/approve                              status ok and its reports deleted
 //   GET  /v1/health                                              -> { ok, version }
 // A stage is described, never named by a key: { name, rally, start: [lat, lon], finish: [lat, lon], lengthM }.
 // The server finds the stage within a tolerance (checks.stageDistance), so players whose lines differ by a few
@@ -20,7 +24,7 @@
 
 import { LIMITS, cleanName, cleanStage, stageDistance, startBox, checkRun, hardFlags } from "./checks.js"
 
-const VERSION = "0.1.0"         // (not exported: workerd takes every export of the main module as a handler)
+const VERSION = "0.2.0"         // (not exported: workerd takes every export of the main module as a handler)
 const BOARDS = new Set(["stock", "open"])
 const RATE = { any: 60, submit: 6, register: 5 }          // per minute (register: per address)
 const BODY_MAX = 1024 * 1024        // (a trace at its longest, 19000 points: about 700 KB)
@@ -129,6 +133,13 @@ async function makeStage(db, st, now) {
     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
   ).bind(id, st.name, st.rally, st.start[0], st.start[1], st.finish[0], st.finish[1], st.lengthM, now).run()
   return db.prepare("SELECT * FROM stages WHERE id = ?").bind(id).first()
+}
+
+// Every best of a player worked out again (after a ban or unban: the board reads only players not banned, but the
+// rows are kept right either way).
+async function rebestPlayer(db, playerId) {
+  const { results } = await db.prepare("SELECT DISTINCT stage_id, board FROM runs WHERE player_id = ?").bind(playerId).all()
+  for (const r of results || []) await rebest(db, r.stage_id, r.board, playerId)
 }
 
 const stageOut = s => s && ({ id: s.id, name: s.name, rally: s.rally, lengthM: s.length_m })
@@ -333,7 +344,51 @@ async function route(req, env) {
     const banned = (await body(req)).banned === true ? 1 : 0
     const r = await db.prepare("UPDATE players SET banned = ? WHERE id = ?").bind(banned, m[1]).run()
     if (r.meta && r.meta.changes === 0) fail(404, "no such player")
+    await rebestPlayer(db, m[1])
     return json({ ok: true, banned: banned === 1 })
+  }
+  if (req.method === "POST" && (m = /^\/v1\/admin\/runs\/(\d+)\/(move|approve)$/.exec(path))) {
+    admin(env, req)
+    const r = await db.prepare("SELECT * FROM runs WHERE id = ?").bind(Number(m[1])).first()
+    if (!r) fail(404, "no such run")
+    if (m[2] === "move") {
+      const to = r.board === "stock" ? "open" : "stock"
+      await db.prepare("UPDATE runs SET board = ? WHERE id = ?").bind(to, r.id).run()
+      await rebest(db, r.stage_id, r.board, r.player_id)
+      await rebest(db, r.stage_id, to, r.player_id)
+      return json({ ok: true, runId: r.id, board: to })
+    }
+    await db.prepare("UPDATE runs SET status = 'ok' WHERE id = ?").bind(r.id).run()
+    await db.prepare("DELETE FROM reports WHERE run_id = ?").bind(r.id).run()
+    await rebest(db, r.stage_id, r.board, r.player_id)
+    return json({ ok: true, runId: r.id, status: "ok" })
+  }
+  if (req.method === "GET" && path === "/v1/admin/stages") {
+    admin(env, req)
+    const { results } = await db.prepare(
+      "SELECT s.id, s.name, s.rally, s.length_m AS lengthM, s.created_at AS createdAt, " +
+      "COUNT(r.id) AS runs, COALESCE(SUM(r.status = 'flagged'), 0) AS flagged, " +
+      "COALESCE(SUM(r.status = 'ok' AND EXISTS (SELECT 1 FROM reports x WHERE x.run_id = r.id)), 0) AS reported " +
+      "FROM stages s LEFT JOIN runs r ON r.stage_id = s.id GROUP BY s.id ORDER BY s.rally, s.name LIMIT 2000",
+    ).all()
+    return json({ stages: results || [] })
+  }
+  if (req.method === "GET" && (m = /^\/v1\/admin\/stages\/([0-9a-f]+)\/runs$/.exec(path))) {
+    admin(env, req)
+    const st = await db.prepare("SELECT * FROM stages WHERE id = ?").bind(m[1]).first()
+    if (!st) fail(404, "no such stage")
+    const { results } = await db.prepare(
+      "SELECT r.id, r.board, r.player_id AS playerId, p.name AS player, p.banned, r.car, r.time_ms AS timeMs, " +
+      "r.penalty_ms AS penaltyMs, r.submitted_at AS at, r.mod_version AS modVersion, r.status, r.flags, " +
+      "r.wall_ratio AS wallRatio, (b.run_id IS NOT NULL) AS isBest, " +
+      "(SELECT COUNT(*) FROM reports x WHERE x.run_id = r.id) AS reports, " +
+      "(SELECT group_concat(x.why, ' | ') FROM reports x WHERE x.run_id = r.id) AS reasons " +
+      "FROM runs r JOIN players p ON p.id = r.player_id " +
+      "LEFT JOIN best b ON b.run_id = r.id AND b.stage_id = r.stage_id AND b.board = r.board AND b.player_id = r.player_id " +
+      "WHERE r.stage_id = ? ORDER BY r.board, r.time_ms, r.id LIMIT 5000",
+    ).bind(st.id).all()
+    return json({ stage: { ...stageOut(st), createdAt: st.created_at }, runs: (results || []).map(r => ({
+      ...r, banned: !!r.banned, isBest: !!r.isBest })) })
   }
   if (req.method === "GET" && (m = /^\/v1\/admin\/runs\/(\d+)$/.exec(path))) {
     admin(env, req)
@@ -351,7 +406,9 @@ async function route(req, env) {
       "r.car, r.time_ms AS timeMs, r.flags, r.wall_ratio AS wallRatio, r.submitted_at AS at, " +
       "(SELECT COUNT(*) FROM reports x WHERE x.run_id = r.id) AS reports " +
       "FROM runs r JOIN players p ON p.id = r.player_id JOIN stages s ON s.id = r.stage_id " +
-      "WHERE r.status = 'flagged' OR r.id IN (SELECT run_id FROM reports) ORDER BY r.submitted_at DESC LIMIT 200",
+      // (a hidden run keeps its reports, but is dealt with: off the list)
+      "WHERE r.status != 'hidden' AND (r.status = 'flagged' OR r.id IN (SELECT run_id FROM reports)) " +
+      "ORDER BY r.submitted_at DESC LIMIT 200",
     ).all()
     return json({ runs: results || [] })
   }

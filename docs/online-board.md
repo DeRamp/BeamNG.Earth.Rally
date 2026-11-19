@@ -103,11 +103,20 @@ Every call carries `Authorization: Bearer admin:<ADMIN_TOKEN>`.
   reports come only from the API for now.
 - `GET /v1/admin/runs/<id>`: one run, with its trace and resets.
 - `POST /v1/admin/runs/<id> {"status": "ok" | "hidden"}`: clear or remove a run.
-- `POST /v1/admin/players/<id> {"banned": true}`: removes the player from every board.
+- `POST /v1/admin/players/<id> {"banned": true}`: removes the player from every board (`false` puts them back).
+- `GET /v1/admin/stages`: every stage, with its run, flagged and reported counts.
+- `GET /v1/admin/stages/<id>/runs`: every run on a stage, both boards, any status, with the player, ban, reports and
+  whether it is the player's best.
+- `POST /v1/admin/runs/<id>/move`: the run to the other board; the player's best is worked out on both.
+- `POST /v1/admin/runs/<id>/approve`: status ok, and the run's reports deleted.
+
+The owner does all of this from the stats dashboard's **Leaderboards** tab, which calls these through the stats
+Worker (it keeps the token as `BOARD_ADMIN_TOKEN`). Deploy order: this Worker, then that secret, then the stats Worker:
+`server/README.md`, "Update: stage times and the Leaderboards tab".
 
 ## Tests
 
-- `cd online/worker && npm test`: the server, 8 tests.
+- `cd online/worker && npm test`: the server, 9 tests.
 - `python tests/run_tests.py test_online`: the mod's client, against a fake companion.
 - `python tests/test_online_companion.py`: the companion's identity and queue, against a fake server.
 - `python tests/test_online_e2e.py`: the mod's client, then the companion, then the local server, about 15 s. Set
