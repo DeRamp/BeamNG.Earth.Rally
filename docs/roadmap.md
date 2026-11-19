@@ -154,9 +154,9 @@ Add-ons page with the ARA 2026 season included. Design in docs/online-board.md a
 | ✔ | Opt-in stats and error reports through the same helper (#76) | built |
 | ✔ | Install and update both from BeamNG.Earth's Add-ons page; ARA 2026 in the mod (22) | built |
 
-## 1.7.3-alpha+mainmenu: play from the main menu (built, not merged)
+## 1.9.1-alpha: play from the main menu
 
-The owner asked for it, 2026-11-18. Its number is given at merge.
+The owner asked for it, 2026-11-18. Released 2026-11-19.
 
 | | Item | Size |
 |---|---|---|
