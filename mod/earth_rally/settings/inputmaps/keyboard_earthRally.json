@@ -12,6 +12,26 @@
     {
       "control": "shift backspace",
       "action": "earthRally_flipUpright"
+    },
+    {
+      "control": "enter",
+      "action": "earthRally_cardOk"
+    },
+    {
+      "control": "left",
+      "action": "earthRally_cardPrev"
+    },
+    {
+      "control": "up",
+      "action": "earthRally_cardPrev"
+    },
+    {
+      "control": "right",
+      "action": "earthRally_cardNext"
+    },
+    {
+      "control": "down",
+      "action": "earthRally_cardNext"
     }
   ]
 }

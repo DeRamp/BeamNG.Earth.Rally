@@ -50,6 +50,14 @@
             </div>
             <div class="er-muted er-small">{{ arr(s.cancelled).join(", ") }} {{ arr(s.cancelled).length === 1 ? "was" : "were" }} cancelled on the day.</div>
           </template>
+          <!-- (the owner, 2026-11-19) traffic on the road sections between stages, as in a real rally; each stage is
+               cleared of it either way (rallyRun trafficStart) -->
+          <div class="er-lbl">Traffic on road sections</div>
+          <div class="er-seg">
+            <span tabindex="0" bng-nav-item :class="{ on: traffic === 'on' }" @click="traffic = 'on'" @keydown.enter="traffic = 'on'">On</span>
+            <span tabindex="0" bng-nav-item :class="{ on: traffic === 'off' }" @click="traffic = 'off'" @keydown.enter="traffic = 'off'">Off</span>
+          </div>
+          <div class="er-muted er-small">{{ traffic === "on" ? "Traffic on the roads between stages. Each stage is closed to it." : "No traffic for the whole rally." }}</div>
           <div class="er-foot">
             <div v-if="s.toRecce" class="er-muted er-small">{{ s.toRecce }} {{ s.toRecce === 1 ? "stage gets its" : "stages get their" }} line first: the auto recce takes you to each.</div>
             <div v-if="arr(s.heldOut).length" class="er-warn er-small">Held out: {{ arr(s.heldOut).map(h => h.why ? `${h.name} (${h.why})` : h.name).join(", ") }}</div>
@@ -292,11 +300,12 @@ const nextDue = computed(() => {
 
 const mode = ref("realistic")
 const canc = ref("real")
+const traffic = ref("off")
 const cls = ref("L4WD")
 watch(s, (x, was) => { if (x && (!was || was.id !== x.id)) cls.value = x.class || "L4WD" }, { immediate: true })
 
 function start() {
-  rallyAction("start", props.id, { mode: mode.value, class: cls.value, cancelled: canc.value }, r => {
+  rallyAction("start", props.id, { mode: mode.value, class: cls.value, cancelled: canc.value, traffic: traffic.value }, r => {
     if (r.ok) emit("view", r.view || "timecard")
   })
 }

@@ -10,7 +10,7 @@
        (rally loop) In a timed rally the card adds Due and, once checked in, Result; arrived early with the early
        penalty off it waits for your minute (card.wait) and Y skips the wait, as A presses Continue; with it on, Continue
        checks in now at its cost (card.wait.earlyCostS) and there is no skip. -->
-  <div v-if="L" class="er-load-wrap" v-bng-on-ui-nav:ok="okPress" v-bng-on-ui-nav:context="skipWait">
+  <div v-if="L" class="er-load-wrap" v-bng-on-ui-nav:ok="() => { navLog('ok'); okPress() }" v-bng-on-ui-nav:context="() => { navLog('Y (context)'); skipWait() }">
     <div class="er-load-top"><span class="er-accent">Earth</span> Rally</div>
     <div class="er-load-mid">
       <!-- the time control card -->
@@ -108,6 +108,11 @@ function cont() {
 }
 // A on the screen: Continue once ready, else nothing (nothing under a loading screen is to be pressed; nor while
 // waiting for your minute: the card checks you in on it)
+// (2026-11-19) the pad's A and Y logged as they arrive: the HUD's cards got none (cardInput.lua); this screen is a
+// menu page, outside the apps overlay, so it should -- the owner's next log says
+function navLog(n) {
+  engineLua(`log('I', 'earthRally', ${JSON.stringify(`loading screen got ${n} from the pad (ready ${!!(L.value && L.value.ready)})`)})`)
+}
 function okPress() { if (L.value && L.value.kind === "atc" && L.value.ready && (!wait.value || earlyCost.value)) cont() }
 
 // ---- the rally loop, timed: nil on an untimed rally, so its card is as before

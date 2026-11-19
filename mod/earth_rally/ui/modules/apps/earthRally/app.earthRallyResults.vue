@@ -6,7 +6,9 @@
        ActivityStart.vue; the drag-race dial, dragDialControl): the card says the game a popup is up while
        it shows, which is what lets a controller's menu buttons through on the driving screen at all, and a
        no-nav scope of its own takes them -- the first button picked as it opens, the d-pad moves along them, A presses
-       the picked one, B closes. (1.7.0 rev 4) The game is paused under every card now, so the stick picks too. -->
+       the picked one, B closes. (1.7.0 rev 4) The game is paused under every card now, so the stick picks too.
+       (2026-11-19) None of that reached the card in 0.40.6 (a HUD app gets no UI nav): the pad and the keys are taken
+       in Lua while the card is up (lua earthRally/cardInput.lua), which sends the pick here (ours.card). -->
   <!-- (1.7.0) A pass of a full rally: the card is the rally's (mock-up 3: your stage and class place against the
        real National field, the crews round you; Continue to the time card, Restart in Casual only, Close), and in
        Realistic mode the Recover? question (mock-up 4) comes up in it from the recovery key during the stage, or
@@ -15,10 +17,10 @@
   <div v-if="res || ask || load" ref="cardEl" class="er-results" tabindex="0"
     v-bng-scoped-nav="{ scopeId: 'earthRallyResults', type: 'nonav', activateOnMount: true, trapPolicy: 'always',
       bubbleWhitelistEvents: ['menu'] }"
-    v-bng-on-ui-nav:ok="onOk" v-bng-on-ui-nav:back="onBack"
-    v-bng-on-ui-nav:focus_l="() => navPick('focus_l', -1)" v-bng-on-ui-nav:focus_u="() => navPick('focus_u', -1)"
-    v-bng-on-ui-nav:focus_r="() => navPick('focus_r', 1)" v-bng-on-ui-nav:focus_d="() => navPick('focus_d', 1)"
-    v-bng-on-ui-nav:focus_lr="e => stick('lr', e)" v-bng-on-ui-nav:focus_ud="e => stick('ud', e)">
+    v-bng-on-ui-nav:ok="() => forward('ok')" v-bng-on-ui-nav:back="() => forward('back')"
+    v-bng-on-ui-nav:focus_l="() => forward('prev')" v-bng-on-ui-nav:focus_u="() => forward('prev')"
+    v-bng-on-ui-nav:focus_r="() => forward('next')" v-bng-on-ui-nav:focus_d="() => forward('next')"
+    v-bng-on-ui-nav:focus_lr="e => stick('x', e)" v-bng-on-ui-nav:focus_ud="e => stick('y', e)">
     <!-- (#59) a question over a paused game: A / D-pad / stick work its two buttons, B is the second one -->
     <template v-if="ask">
       <div class="er-qtop er-ask-top"><div class="er-kick">{{ askKick }}</div><div class="er-name">Recover?</div></div>
@@ -184,58 +186,37 @@ const order = computed(() => {
   if (rc.value) return rc.value.canRestart ? ["continue", "restart", "close"] : ["continue", "close"]
   return next.value ? ["next", "retry", "menu", "close"] : ["retry", "menu", "close"]
 })
-const picked = ref(null)
+// (2026-11-19) The pad and the keys are Lua's while the card is up (lua earthRally/cardInput.lua: in 0.40.6 a HUD
+// app gets no UI nav at all -- the apps overlay hosts every app with prevent-uinav, so the game never turns ok / back
+// / the d-pad on for it). Lua owns the pick and sends it in the stream (ours.card = { pick, pad }); the card draws
+// it. Any nav the game does send the card goes to the same place (src "ui"), where a press is acted on once.
+const cardInfo = computed(() => (f.value && f.value.card && typeof f.value.card === "object" ? f.value.card : null))
+const picked = computed(() => {
+  const p = cardInfo.value && cardInfo.value.pick
+  return order.value.includes(p) ? p : order.value[0]
+})
 // (the pick drawn only with a controller in use, as the game's own focus ring is: a mouse player sees no ring)
 const controls = useControls()
-const padOn = computed(() => !!(controls && controls.focusIfController))
+const padOn = computed(() => !!(controls && controls.focusIfController) || !!(cardInfo.value && cardInfo.value.pad))
 // (#59) a question's pick is always drawn: its buttons are the one selection, mouse or pad
 const ring = what => (padOn.value || up.value === "ask" || up.value === "load") && picked.value === what
-function pick(d) {
-  const o = order.value
-  const i = o.indexOf(picked.value)
-  // (a pick not on the card starts at its first button)
-  picked.value = o[Math.max(0, Math.min(o.length - 1, (i < 0 ? 0 : i + d)))]
+function luaCall(cmd) {
+  if (f.value && f.value.preview) return
+  if (window.bngApi && window.bngApi.engineLua) window.bngApi.engineLua(`if earthRally_main then ${cmd} end`)
 }
-// (A on a pick that is not on the card picks the first button and shows it, rather than pressing nothing: #41)
-function pressPicked() {
-  if (order.value.includes(picked.value)) act(picked.value)
-  else picked.value = order.value[0]
+function forward(kind) {
+  gameLog(`results card got ${kind} from the UI (${up.value}), focus ${describe(document.activeElement)}`)
+  luaCall(`earthRally_main.cardPress(${JSON.stringify(kind)}, 'ui')`)
 }
-
-// (#62) Where the game's nav sends a button (ui-vue services/uiNav, eventProcessor + uiNavService): A ("ok") goes
-// to whatever element has the real focus, and only with nothing focused to the active scope's element (this card).
-// The d-pad and stick are different: with the focus outside the active scope they go to the scope anyway. So the
-// d-pad always reached the card, while A went to whatever kept the focus elsewhere on screen. The card itself takes
-// the focus as it comes up and as its buttons change -- the card, not a button: with a button focused the scope's
-// own ok handler would click it as well as ours pressing the pick (BngScopedNav okHandler), two presses.
+function stick(axis, e) {
+  const v = Number(e && e.detail && e.detail.value) || 0
+  luaCall(`earthRally_main.cardStick(${JSON.stringify(axis)}, ${v}, 'ui')`)
+}
+// (the card keeps the real focus, so no button of it is clicked by the game's own nav as well)
 function focusCard() {
   const el = cardEl.value
   if (!el || (f.value && f.value.preview) || document.activeElement === el) return
-  try { el.focus({ preventScroll: true }) } catch (e) { /* (no focus to take: mouse only, as before) */ }
-}
-function onOk() {
-  gameLog(`results card got ok (${up.value}): press ${picked.value}, focus ${describe(document.activeElement)}`)
-  focusCard()
-  pressPicked()
-}
-function onBack() {
-  gameLog(`results card got back (${up.value})`)
-  act(up.value === "ask" ? "keep" : up.value === "load" ? "notYet" : "close")
-}
-function navPick(name, d) {
-  focusCard()
-  pick(d)
-  gameLog(`results card got ${name} (${up.value}): pick ${picked.value}`)
-}
-// The stick sends a value, not a press (focus_lr / focus_ud, up positive): one pick per push past half way, the next
-// once it is back under the game's own release point (crossfire.js NAV_TRIGGER / NAV_RELEASE_THRESHOLD).
-const stickHeld = { lr: false, ud: false }
-function stick(axis, e) {
-  const v = Number(e && e.detail && e.detail.value) || 0
-  if (Math.abs(v) < 0.35) { stickHeld[axis] = false; return }
-  if (stickHeld[axis] || Math.abs(v) < 0.5) return
-  stickHeld[axis] = true
-  navPick(`stick ${axis} ${v.toFixed(2)}`, axis === "lr" ? (v > 0 ? 1 : -1) : (v > 0 ? -1 : 1))
+  try { el.focus({ preventScroll: true }) } catch (e) { /* (no focus to take: mouse only) */ }
 }
 
 // While the card is up the game is told a popup is open (the name has the shape its popup service reports,
@@ -262,8 +243,6 @@ function setReported(on) {
 watch(popupState, () => { if (reported) setReported(true) })
 const up = computed(() => (ask.value ? "ask" : load.value ? "load" : res.value ? "res" : null))
 watch(up, (r, was) => {
-  if (r && r !== was) picked.value = order.value[0]
-  if (!r) picked.value = null
   setReported(!!r && !(f.value && f.value.preview))
   listenNav(!!r && !(f.value && f.value.preview))
   if (r && r !== was) {
@@ -276,7 +255,6 @@ watch(up, (r, was) => {
 // (by the names, not the array: the stream sends a new frame, and so a new array, many times a second)
 watch(() => order.value.join(","), (o, was) => {
   if (up.value && o !== was) {
-    picked.value = order.value[0]
     nextTick(focusCard)
     gameLog(`results card buttons now ${o.replace(/,/g, " ")}: pick ${picked.value}`)
   }
@@ -335,11 +313,9 @@ onUnmounted(() => {
   listenNav(false)
 })
 
+// (a click: through cardInput, so a click and a key on the same card act once)
 function act(what) {
-  if (f.value && f.value.preview) return
-  if (window.bngApi && window.bngApi.engineLua) {
-    window.bngApi.engineLua(`if earthRally_main then earthRally_main.uiResults(${JSON.stringify(what)}) end`)
-  }
+  luaCall(`earthRally_main.cardClick(${JSON.stringify(what)})`)
 }
 </script>
 
