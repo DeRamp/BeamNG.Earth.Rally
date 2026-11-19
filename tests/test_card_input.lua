@@ -85,10 +85,30 @@ T.check(pushed == 1, '(B still down)')
 ci.update(ci.RELEASE_WAIT_S + 0.1, CTX)
 T.check(pushed == 0 and filtered == nil, 'a button never seen up: given back after a while')
 
--- a question whose pause the game refused (BeamNG.Earth holding it): the car's buttons stay the car's
+-- a question whose pause the game refused (BeamNG.Earth holding it): the card takes the pad all the same
 ci.frame(loadFrame) ci.update(0.1, { askPaused = false })
-T.check(not ci.active() and pushed == 0, "a question not paused: mouse only, the pad stays the car's")
-ci.frame({ show = {} }) ci.update(0.1, CTX)
+T.check(ci.active() and pushed == 1, 'a question not paused: the card still takes the pad')
+ci.frame({ show = {} }) ci.update(ci.RELEASE_WAIT_S + 0.1, CTX)
+-- a press that did nothing (the game said no): no hold, the next press acts at once
+do
+  local act0 = ci.act
+  ci.act = function(what) acted[#acted + 1] = what return { ok = false, message = 'no' } end
+  ci.frame(loadFrame) ci.update(0.1, CTX)
+  ci.press('ok', 'xinput0') ci.release('ok')
+  ci.update(0.3, CTX)
+  local n = #acted
+  T.check(ci.press('ok', 'xinput0') and #acted == n + 1, 'A after a press that did nothing: acted on at once')
+  ci.release('ok')
+  T.check(lastLog():find('did nothing', 1, true) ~= nil, 'a press that did nothing logged: ' .. lastLog())
+  ci.act = act0
+  ci.update(0.3, CTX)
+  ci.press('ok', 'xinput0') ci.release('ok')
+  ci.update(0.3, CTX)
+  n = #acted
+  T.check(ci.press('ok', 'xinput0') == false and #acted == n, 'a press that acted: the card held on its answer')
+  ci.release('ok')
+  ci.frame({ show = {} }) ci.update(ci.RELEASE_WAIT_S + 0.1, CTX)
+end
 -- B on each card
 ci.frame({ show = { recoverAsk = true }, rally = { ask = {} } }) ci.update(1.5, CTX)
 ci.press('back', 'xinput0')
@@ -97,16 +117,17 @@ ci.release('back')
 -- the finish card: only while its pause is held (a flying finish rolling on keeps the car's buttons)
 local resFrame = { show = { results = true }, results = { finish = {} }, rally = { card = {} } }
 ci.frame(resFrame)
-ci.update(1.5, CTX)
-T.check(not ci.active(), 'the finish card without its pause: the car\'s buttons stay the car\'s')
-ci.update(0.1, { resPaused = true })
-T.check(ci.active() and ci.pick() == 'continue', 'the finish card, paused: taken, Continue picked')
+ci.update(1.5, {})
+T.check(ci.active() and ci.pick() == 'continue', 'the finish card, its pause held or not: taken, Continue picked')
 ci.press('back', 'xinput0')
 T.check(acted[#acted] == 'close', 'B on the finish card: Close')
 ci.release('back')
 -- a menu over the HUD (the pause menu, our page): given back while it is up
 ci.update(1.5, { resPaused = true, uiHidden = true })
 T.check(not ci.active() and pushed == 0, 'the pause menu over the card: the pad is the menu\'s')
+T.check(lastLog():find('is up but the pad is not taken: a menu is over the HUD', 1, true) ~= nil or
+  table.concat(logs, '\n'):find('is up but the pad is not taken: a menu is over the HUD', 1, true) ~= nil,
+  'a card up with the pad not taken: logged, with why')
 ci.update(0.1, { resPaused = true })
 T.check(ci.active() and pushed == 1, 'the menu closed: the card takes it again')
 -- the buttons changed under the card (a rally's part arriving): the first one picked again
@@ -118,5 +139,19 @@ ci.update(1.5, { resPaused = true })
 T.check(ci.click('restart') and acted[#acted] == 'restart', 'a click on the card acts')
 ci.reset()
 T.check(pushed == 0 and filtered == nil and not ci.active(), 'reset: everything given back')
+
+-- a Lua reload with a card's map pushed and its group blocked (the game keeps both): the fresh module gives them back
+do
+  local popped, group = {}, {}
+  popActionMap = function(name) popped[#popped + 1] = name end
+  core_input_actionFilter = { setGroup = function(g, list) group.name, group.list = g, list end,
+    addAction = function(_, g, on) group[g] = on end }
+  package.loaded['earthRally/cardInput'] = nil
+  local fresh = require('earthRally/cardInput')
+  fresh.clearStale()
+  T.check(popped[1] == 'EarthRallyCard' and group.name == 'earthRallyCard' and group.earthRallyCard == false,
+    'after a reload: the card map popped and the filter group unblocked')
+  popActionMap, core_input_actionFilter = nil, nil
+end
 
 T.done('test_card_input')

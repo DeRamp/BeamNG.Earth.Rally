@@ -204,6 +204,10 @@ function luaCall(cmd) {
   if (f.value && f.value.preview) return
   if (window.bngApi && window.bngApi.engineLua) window.bngApi.engineLua(`if earthRally_main then ${cmd} end`)
 }
+// The UI's own nav forwarded to Lua (src 'ui'; cardInput's SAME_PRESS_S acts on one press once if it also came
+// through our map). Kept, though 0.40.6 never sends it: the game hosts HUD apps with no UI nav (its AppHost.vue sets
+// bng-no-child-nav), so A reaches the card only through cardInput's map. It stays beside the mouse's clicks (act())
+// for a future BeamNG that gives HUD apps UI nav.
 function forward(kind) {
   gameLog(`results card got ${kind} from the UI (${up.value}), focus ${describe(document.activeElement)}`)
   luaCall(`earthRally_main.cardPress(${JSON.stringify(kind)}, 'ui')`)

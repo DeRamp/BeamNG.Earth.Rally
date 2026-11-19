@@ -31,7 +31,10 @@ M.BLOCKED = {
   'photomodeDecreaseFov', 'photomodeIncreaseFov', 'photomodeRollCameraLeft', 'photomodeRollCameraRight',
 }
 M.RELEASE_WAIT_S = 1.5   -- the card gone: its buttons kept from the game until they are up, at most this long
-M.SAME_PRESS_S = 0.25    -- the same press arriving twice (the UI and the map, a click and a key): acted on once
+-- the same press arriving twice (the UI and the map): acted on once. (The UI's forwarding, src 'ui':
+-- app.earthRallyResults.vue forward(). Kept beside the mouse's clicks (M.click) for a BeamNG that one day gives HUD
+-- apps the UI nav: 0.40.6 hosts them with none -- its AppHost.vue sets bng-no-child-nav -- so today A never gets there.)
+M.SAME_PRESS_S = 0.25
 M.ACTED_HOLD_S = 1.0     -- after a press acts, the same card takes no other until the HUD shows what it did
 M.STICK_ON, M.STICK_OFF = 0.5, 0.35
 
@@ -70,6 +73,7 @@ local held = {}        -- buttons down through our map
 local last = nil       -- the last press acted on: { kind, src, t }
 local acted = nil      -- { key, t }: the card a press acted on
 local stickHeld = { x = false, y = false }
+local notTaken = nil   -- (the card up but the pad not taken: why, logged once each time it changes)
 
 -- Pure: which card a frame of our stream shows, and its buttons in their order on the card (as the card's own
 -- `up` and `order`: app.earthRallyResults.vue). nil with none, or in the HUD preview.
@@ -129,14 +133,28 @@ local function take(on)
   end
 end
 
+-- (a Lua reload: the game keeps an action map pushed and an action-filter group blocked across it, and this module's
+-- `taken` starts false, so nothing would ever give them back: main.onExtensionLoaded calls this first)
+function M.clearStale()
+  pcall(M.sys.pop, M.MAP)
+  pcall(M.sys.filter, M.FILTER, M.BLOCKED, false)
+  say('loaded: the card map and the filter a reload may have left given back')
+end
+
 -- Every frame (main.onUpdate), paused or not. ctx: { menuOpen (our page), uiHidden (a menu over the HUD: Escape and
 -- Start stay the game's, so a card can never shut the player out of the pause menu; opening it gives the buttons
--- back), resPaused / askPaused (the finish card's / a question's pause held: without it the car can still be live,
--- and its buttons stay the car's -- the card then takes the mouse only) }
+-- back) }. The card takes the pad whenever it is up and showing, its pause held or not (the owner's log,
+-- 2026-11-19: a card left with no pad while the game refused the pause).
 function M.update(dt, ctx)
   now = now + (dt or 0)
   ctx = ctx or {}
-  local want = card ~= nil and not ctx.menuOpen and not ctx.uiHidden and (card.up == 'res' and ctx.resPaused == true or card.up ~= 'res' and ctx.askPaused == true)
+  local why = card == nil and nil or ctx.menuOpen and 'our menu page is open' or ctx.uiHidden and 'a menu is over the HUD'
+    or nil
+  if why ~= notTaken then
+    notTaken = why
+    if why then say(string.format('the card (%s) is up but the pad is not taken: %s', card.up, why)) end
+  end
+  local want = card ~= nil and not why
   if want ~= active then
     active = want
     if want then
@@ -168,12 +186,24 @@ local function ignored(kind, src)
   return nil
 end
 
+-- (M.act's answer: did it do anything? An error, false or { ok = false }: no)
+local function didAct(ok, res)
+  if not ok then log('E', logTag, 'card input: ' .. tostring(res)) return false end
+  return res ~= false and not (type(res) == 'table' and res.ok == false)
+end
+
+-- (a press that did nothing: no hold, the card takes the next press at once)
+local function actedOn(what, ok, res)
+  if didAct(ok, res) then return end
+  acted = nil
+  say(string.format('%s did nothing: the card takes the next press', tostring(what)))
+end
+
 local function press(what, kind, src)
   acted = { key = card.key, t = now }
   last = { kind = kind, src = src, t = now }
   say(string.format('%s (%s) on %s: pressed %s', kind, tostring(src), card.up, what))
-  local ok, err = pcall(M.act, what)
-  if not ok then log('E', logTag, 'card input: ' .. tostring(err)) end
+  actedOn(what, pcall(M.act, what))
 end
 
 -- A button (our map's actions, or the card's own UI forwarding: src 'ui'): 'ok', 'back', 'prev', 'next'.
@@ -233,14 +263,13 @@ function M.click(what)
     acted = { key = card.key, t = now }
     say(string.format('click on %s: pressed %s', card.up, tostring(what)))
   end
-  local ok, err = pcall(M.act, what)
-  if not ok then log('E', logTag, 'card input: ' .. tostring(err)) end
+  actedOn(what, pcall(M.act, what))
   return true
 end
 
 -- Everything given back (the level going, the mod off or reloaded).
 function M.reset()
-  active, card, pick, pad, acted, last, held = false, nil, nil, false, nil, nil, {}
+  active, card, pick, pad, acted, last, held, notTaken = false, nil, nil, false, nil, nil, {}, nil
   stickHeld.x, stickHeld.y = false, false
   if taken then take(false) end
 end
