@@ -25,7 +25,8 @@
 --     'onTime' | 'late' | 'early', min, penaltyS, inType } } (the check-ins at the stages' time controls, and at the
 --     stops' "in" controls keyed by their place in order, as serviced is), lateSPerMin, earlySPerMin, earlyFree =
 --     { [inType] = true } (the "in" controls where early is free: the event's early_checkin_allowed) }
---   Order items of a timed rally carry: stages { date, firstCar, latenessMin, targetMin, outTargetMin, outT };
+--   Order items of a timed rally carry: stages { date, firstCar, latenessMin, targetMin, outTargetMin, outT,
+--   startGapMin (its time control's first car to its own: a pass left out carries it with its lateness) };
 --   stops and the start { outT } (the scheduled out time, local); stops { inType, inTargetMin } (the control they are
 --   checked in at, and the road section's target to it from the stage before), where the event file gives them.
 --
@@ -92,7 +93,7 @@ local function orderOf(event, cancelled)
       local it = { kind = 'stage', ss = tostring(p.ss), stageId = p.stage, run = p.run, km = p.km, day = p.day,
         cancelledReal = p.cancelled == true or nil }
       -- (the schedule: timed road sections)
-      it.date, it.firstCar, it.latenessMin = p.date, p.firstCar, lat
+      it.date, it.firstCar, it.latenessMin, it.startGapMin = p.date, p.firstCar, lat, tonumber(p.startGapMin)
       it.targetMin = tonumber(p.targetMin) and (tonumber(p.targetMin) + carry) or nil
       it.outTargetMin, it.outT = tonumber(p.outTargetMin), outT
       if not it.outT and carryOut then
@@ -102,11 +103,13 @@ local function orderOf(event, cancelled)
       carry, carryOut = 0, nil
       out[#out + 1] = it
     else
-      carry = carry + (tonumber(p.targetMin) or 0) + (lat or 0)
+      -- (its lateness and the gap from its time control to its start: the whole of its time in the schedule)
+      local held = (lat or 0) + (tonumber(p.startGapMin) or 0)
+      carry = carry + (tonumber(p.targetMin) or 0) + held
       if outT then
-        carryOut = { t = outT, min = tonumber(p.outTargetMin) and (tonumber(p.outTargetMin) + (lat or 0)) or nil }
+        carryOut = { t = outT, min = tonumber(p.outTargetMin) and (tonumber(p.outTargetMin) + held) or nil }
       elseif carryOut then
-        carryOut.min = carryOut.min and tonumber(p.targetMin) and (carryOut.min + tonumber(p.targetMin) + (lat or 0))
+        carryOut.min = carryOut.min and tonumber(p.targetMin) and (carryOut.min + tonumber(p.targetMin) + held)
           or nil
       end
     end
@@ -330,12 +333,13 @@ function M.holdOut(r, stageId, why)
       table.remove(r.order, i)
       -- (a timed rally: its lateness and road section go to the stage after it, so that one's due time still adds up)
       local nx, pv = r.order[i], r.order[i - 1]
-      -- (a stop right after it is checked in at the end of its road section now: that and its lateness added)
+      -- (its lateness and the gap from its time control to its start: the whole of its time in the schedule)
+      local add = (it.latenessMin or 0) + (tonumber(it.startGapMin) or 0)
+      -- (a stop right after it is checked in at the end of its road section now: that and its time added)
       if nx and nx.kind ~= 'stage' and nx.inTargetMin then
-        nx.inTargetMin = it.targetMin and (nx.inTargetMin + it.targetMin + (it.latenessMin or 0)) or nil
+        nx.inTargetMin = it.targetMin and (nx.inTargetMin + it.targetMin + add) or nil
       end
       if nx and nx.kind == 'stage' then
-        local add = (it.latenessMin or 0)
         if it.outT and pv and pv.kind ~= 'stage' then
           nx.outT = it.outT
           nx.outTargetMin = it.outTargetMin and (it.outTargetMin + add + (nx.targetMin or 0)) or nil

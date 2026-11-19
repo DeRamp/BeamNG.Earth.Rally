@@ -588,7 +588,8 @@ end
 
 ------------------------------------------------------------------------------------------ review fixes (rally-loop)
 do
-  -- (C) a cancelled first stage: the next one is timed from the rally's start (08:00 + 20 + SS1's 10 + 15 = 08:45)
+  -- (C) a cancelled first stage: the next one is timed from the rally's start (08:00 + 20 + SS1's 3 + 10 + 15 = 08:48,
+  -- its time control's printed time)
   local it, stops, start, timing = pack._itineraryOf(timedEvent(), {}, { A = 'a', B = 'b' }, function() end)
   it[1].cancelled = true
   local r = rally.new({ id = 'tm', name = 'Timed Rally', itinerary = it, rallyStops = stops, rallyStart = start,
@@ -596,10 +597,10 @@ do
   T.check(r.order[2].ss == 'SS2', 'cancelled SS1 left out')
   rally.serviced(r)
   rally.serviceOut(r)
-  T.check(wt.hm(rally.dueFor(r, r.pos) or 0) == '08:45', 'cancelled first stage: the opening section still timed: '
+  T.check(wt.hm(rally.dueFor(r, r.pos) or 0) == '08:48', 'cancelled first stage: the opening section still timed: '
     .. tostring(rally.dueFor(r, r.pos) and wt.hm(rally.dueFor(r, r.pos))))
-  -- (C) a cancelled pass after a service: the next pass starts from the service's out time (09:40 + 18 + SS3's 10
-  -- + 30 = 10:38), not from the stage before the service. The overnight taken away so SS4 follows straight on.
+  -- (C) a cancelled pass after a service: the next pass starts from the service's out time (09:40 + 18 + SS3's 3 + 10
+  -- + 30 = 10:41), not from the stage before the service. The overnight taken away so SS4 follows straight on.
   it, stops, start, timing = pack._itineraryOf(timedEvent(), {}, { A = 'a', B = 'b' }, function() end)
   it[3].cancelled = true
   it[4].outDate, it[4].outAt, it[4].outTargetMin = nil, nil, nil
@@ -615,7 +616,7 @@ do
     'cancelled pass after the service: the service keeps its out time')
   rally.serviced(r)
   rally.serviceOut(r)
-  T.check(rally.current(r).ss == 'SS4' and wt.hm(rally.dueFor(r, r.pos) or 0) == '10:38',
+  T.check(rally.current(r).ss == 'SS4' and wt.hm(rally.dueFor(r, r.pos) or 0) == '10:41',
     'cancelled pass after the service: due from the service\'s out time: '
     .. tostring(rally.dueFor(r, r.pos) and wt.hm(rally.dueFor(r, r.pos))))
 end
@@ -729,24 +730,25 @@ do
 end
 
 do
-  -- a cancelled pass before a stop: its road section and lateness counted into the stop's in (12 + 15 + 8)
+  -- a cancelled pass before a stop: its road section, start gap and lateness counted into the stop's in (12 + 15 + 3
+  -- + 8: from SS1's time out 08:33, 09:11 as printed)
   local r = stopsRally(true)
-  T.check(r.order[3].kind == 'service' and r.order[3].inTargetMin == 35,
+  T.check(r.order[3].kind == 'service' and r.order[3].inTargetMin == 38,
     'orderOf: a cancelled pass before a stop (' .. tostring(r.order[3].inTargetMin) .. ')')
   rally.serviced(r)
   rally.serviceOut(r)
   rally.stageDone(r, { timeS = 1, outT = at('08:35') })
-  T.check(wt.hm(rally.dueFor(r, r.pos) or 0) == '09:10', 'due at the stop: from SS1 through SS2 left out')
+  T.check(wt.hm(rally.dueFor(r, r.pos) or 0) == '09:13', 'due at the stop: from SS1 through SS2 left out')
   -- held out right before a stop: the same; two stops merged keep the first one's in
   local h = stopsRally()
   rally.serviced(h)
   rally.serviceOut(h)
   rally.holdOut(h, 'b', 'test')
   T.check(kindsOf(h) == 'start SS1 service SS3 overnight SS5 service', 'holdOut b: SS2 and SS4 out (' .. kindsOf(h) .. ')')
-  T.check(h.order[3].inTargetMin == 35 and h.order[5].inType == 'MTC_IN' and h.order[5].inTargetMin == 20
+  T.check(h.order[3].inTargetMin == 38 and h.order[5].inType == 'MTC_IN' and h.order[5].inTargetMin == 20
     and h.order[7].inTargetMin == 15, 'holdOut before a stop: its target added; the merged stop keeps the first\'s in')
   rally.stageDone(h, { timeS = 1, outT = at('08:35') })
-  T.check(wt.hm(rally.dueFor(h, h.pos) or 0) == '09:10', 'holdOut: due at the stop from SS1')
+  T.check(wt.hm(rally.dueFor(h, h.pos) or 0) == '09:13', 'holdOut: due at the stop from SS1')
   -- the last stage held out: the stop left at the end goes, and the final service is checked in at its control
   local c = stopsRally()
   rally.serviced(c)
@@ -756,6 +758,70 @@ do
   T.check(kindsOf(c) == 'start SS1 SS2 service SS3 overnight SS4 service' and fin.final and fin.inType == 'SVC_IN'
     and fin.inTargetMin == 8, 'holdOut of the last stage: the final takes the dropped service\'s in ('
     .. kindsOf(c) .. ', ' .. tostring(fin.inType) .. ' ' .. tostring(fin.inTargetMin) .. ')')
+end
+
+do
+  -- (review 2026-11-19, 9) a pass left out carries the gap from its time control to its start (3 min) with its
+  -- lateness and target, so the due time after it is the schedule's: a made-up day, TCs 3 min before each start
+  local function row(c, ty, fc, extra)
+    local x = { control = c, type = ty, date = '2031-02-07', first_car = fc, day = 1 }
+    for k, v in pairs(extra or {}) do x[k] = v end
+    return x
+  end
+  local ev = { event = { timezone = 'UTC' }, itinerary = {
+    row('0', 'MTC_OUT', '08:00'),
+    row('1', 'TC', '08:10', { target_min = 10 }), row('SS1', 'SS', '08:13', { stage = 'A', lateness_min = 15 }),
+    row('2', 'TC', '08:38', { target_min = 10 }), row('SS2', 'SS', '08:41', { stage = 'B', lateness_min = 15 }),
+    row('2A', 'SVC_IN', '09:06', { target_min = 10 }), row('2B', 'SVC_OUT', '09:36', { target_min = 30 }),
+    row('3', 'TC', '09:46', { target_min = 10 }), row('SS3', 'SS', '09:49', { stage = 'C', lateness_min = 15 }),
+    row('4', 'TC', '10:14', { target_min = 10 }), row('SS4', 'SS', '10:17', { stage = 'D', lateness_min = 15 }),
+  } }
+  local function gapRally(cancel)
+    local it, stops, start, timing = pack._itineraryOf(ev, {}, { A = 'a', B = 'b', C = 'c', D = 'd' }, function() end)
+    if cancel then for _, p in ipairs(it) do if p.ss == cancel then p.cancelled = true end end end
+    stops = { { after = 2, kind = 'service', label = 'Service A', inType = 'SVC_IN', inTargetMin = it[3].inTargetMin } }
+    return rally.new({ id = 'gap', name = 'Gap Rally', itinerary = it, rallyStops = stops, rallyStart = start,
+      timing = timing }, { mode = 'realistic', cancelled = 'real' }), it
+  end
+  local r, it = gapRally()
+  T.check(it[1].startGapMin == 3 and it[2].startGapMin == 3 and it[4].startGapMin == 3,
+    'pack: each pass\'s gap from its time control to its start (' .. tostring(it[1].startGapMin) .. ')')
+  local function idx(rr, ss) for i, x in ipairs(rr.order) do if x.ss == ss then return i end end end
+  local function svcIdx(rr) for i, x in ipairs(rr.order) do if x.kind == 'service' and not x.final then return i end end end
+  -- held out right before the service: due there from SS1's time out (08:28) at 09:06, as printed
+  local h = gapRally()
+  rally.serviced(h)
+  rally.serviceOut(h)
+  rally.holdOut(h, 'b', 'test')
+  rally.stageDone(h, { timeS = 1, outT = at('08:28') })
+  T.check(wt.hm(rally.dueFor(h, h.pos) or 0) == '09:06', 'holdOut before a stop: the start gap carried, due 09:06 ('
+    .. wt.hm(rally.dueFor(h, h.pos) or 0) .. ')')
+  -- cancelled before the service: the same
+  local c = gapRally('SS2')
+  rally.serviced(c)
+  rally.serviceOut(c)
+  rally.stageDone(c, { timeS = 1, outT = at('08:28') })
+  T.check(wt.hm(rally.dueFor(c, c.pos) or 0) == '09:06', 'cancelled before a stop: due 09:06 ('
+    .. wt.hm(rally.dueFor(c, c.pos) or 0) .. ')')
+  -- held out after the service, before a stage: SS4's TC due 10:14 from the service's out time (09:36)
+  local h2 = gapRally()
+  rally.holdOut(h2, 'c', 'test')
+  local i4 = idx(h2, 'SS4')
+  T.check(svcIdx(h2) == i4 - 1 and wt.hm(rally.dueFor(h2, i4) or 0) == '10:14',
+    'holdOut after a stop, before a stage: due 10:14 (' .. wt.hm(rally.dueFor(h2, i4) or 0) .. ')')
+  -- no first car on the time control in the file: no gap, nothing added (as before)
+  local ev0 = ev
+  ev = { event = ev0.event, itinerary = {} }
+  for k, x in ipairs(ev0.itinerary) do
+    local y = {}
+    for a, b in pairs(x) do y[a] = b end
+    if y.type == 'TC' then y.first_car = nil end
+    ev.itinerary[k] = y
+  end
+  local _, it0 = gapRally()
+  T.check(it0[2].startGapMin == nil, 'pack: no first car on the time control, no gap')
+  ev = ev0
+  T.check(r.order[idx(r, 'SS1')].startGapMin == 3, 'orderOf: a stage keeps its gap')
 end
 
 do
