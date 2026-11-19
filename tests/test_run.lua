@@ -2224,6 +2224,26 @@ do
   runner.abort(true)
   loadScreen.cancel()
 
+  -- (notes-1.7.4 #1) the page up the whole time -- the game's loading screen came and went over it, no 'play' -- the
+  -- stage still runs once the game's loading is over (it stalled until Escape)
+  world, getPlayerVehicle = false, function() return nil end
+  local gsLoading = true
+  local gs0 = core_gamestate
+  core_gamestate = setmetatable({ loading = function() return gsLoading end }, { __index = gs0 })
+  main.onUiChangedState('earthRally')
+  local nBefore = #asked
+  T.check(main.uiAction('drive', 'test8', 'hill').ok and #asked == nBefore + 1, 'Drive again, the page up')
+  world, getPlayerVehicle = true, gpv
+  tick(10)
+  T.check(runner.current() == nil, "the game's loading screen still up: the stage not run under it")
+  gsLoading = false
+  tick(10)
+  T.check(runner.current() ~= nil, "the game's loading over, the page never closed: the stage runs (no Escape needed)")
+  core_gamestate = gs0
+  runner.abort(true)
+  loadScreen.cancel()
+  table.remove(asked)                      -- (the counts below are as before this case)
+
   -- the world never comes up (no launcher): given up on, said why
   world = false
   getPlayerVehicle = function() return nil end

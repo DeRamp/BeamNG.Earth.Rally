@@ -33,3 +33,12 @@ and the game's loading screen has gone. Two candidate checks:
 
 Keep the reopen on `play` for when the page was closed. Test: the page up throughout (no `play` change), and the
 stage runs.
+
+**Fixed** (the owner's go, 2026-11-18): once BeamNG.Earth is in its world and the game's loading screen has gone
+(`core_gamestate.loading()` false), the wait counts the page as shown if it is already up. If the game left the UI
+on `play`, the page is put back. Test: `test_run`, "the page up the whole time".
+
+### 2. The Rally page tile's picture
+
+The owner wanted it "more obviously Earth Rally". It is now the GitHub social preview (the jump shot with the
+EARTH RALLY wordmark), cut to 16:9 at 960x540. Source: `Earth Rally marketing/social/github-social-preview.jpg`.

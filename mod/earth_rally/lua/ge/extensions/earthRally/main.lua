@@ -760,10 +760,21 @@ local function updateWorldWait(dt)
   if inWorld then w.up = true w.upT = (w.upT or 0) + (dt or 0) end
   local car = getPlayerVehicle and getPlayerVehicle(0)
   if inWorld and w.shown and earth.ready() and car then w.ready = w.ready + (dt or 0) else w.ready = 0 end
-  -- (once: a player who closes the page after that is not fought)
-  if inWorld and not w.shown and not menuOpen and lastUi == 'play' then
-    w.shown = true
-    M.openMenu(w.view and w.view[1], w.view and w.view[2], w.view and w.view[3])
+  -- The page over the level, once the game's own loading screen has gone (core_gamestate.loading): already up (it
+  -- was opened as the button was pressed and the game's loading screen went from over it -- the page never closed, so
+  -- waiting for it to come back stalled the stage until the player pressed Escape: docs/notes-1.7.4.md #1), or put
+  -- back when the game left it on 'play'. Once: a player who closes the page after that is not fought.
+  if inWorld and not w.shown then
+    local gs = rawget(_G, 'core_gamestate')
+    local okL, busy = pcall(function() return gs and gs.loading and gs.loading() end)
+    if not (okL and busy == true) then
+      if menuOpen then
+        w.shown = true
+      elseif lastUi == 'play' then
+        w.shown = true
+        M.openMenu(w.view and w.view[1], w.view and w.view[2], w.view and w.view[3])
+      end
+    end
   end
 end
 
