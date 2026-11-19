@@ -86,6 +86,10 @@ a.lnk { color: #86b6ef; }
 <div id="banner" style="display:none; margin-bottom:14px; padding:10px 14px; border:1px solid #8a6a1a; border-radius:6px; color:var(--warn)"></div>
 <section class="view" id="v-overview">
   <div class="tiles" id="tiles"></div>
+  <div class="card" style="margin-bottom:14px"><h2>Players</h2><div class="sub">Different installs that sent stats: each counts once
+      however often it plays. Counted from a number sent on its own, never with stages, and new after the player says No.</div>
+    <div class="tiles" id="players" style="grid-template-columns: repeat(3, 1fr); margin-bottom:12px"></div>
+    <div class="sub" id="playersSub"></div><div id="playersDaily"></div></div>
   <div class="grid2">
     <div class="card"><h2>Stages per day</h2><div class="sub" id="dailySub"></div>
       <div class="legend"><span><i style="background:var(--s1)"></i>Started</span><span><i style="background:var(--s2)"></i>Finished</span></div>
@@ -264,8 +268,20 @@ function draw() {
   hbars("cls", (cars.cls || []).map(function (r) { return [r.v == null ? "unknown" : r.v, fin ? Math.round(r.n / fin * 100) : 0]; }),
     function (v) { return v + "%"; });
   hbars("cars", (cars.top || []).map(function (r) { return [r.v, r.n]; }));
+  players();
   errors();
   show(view);
+}
+
+function players() {
+  var p = data.players || {}, rw = rangeWords();
+  $("players").innerHTML = [["All time", p.all_time, "The 12 months kept"], ["Last 7 days", p.last7, "Different players"],
+    ["Last " + rw, p.in_range, "Different players"]].map(function (x) {
+    return "<div class='tile'><div class='k'>" + esc(x[0]) + "</div><div class='v'>" + esc(num(x[1])) + "</div><div class='d'>" + esc(x[2]) + "</div></div>";
+  }).join("");
+  $("playersSub").textContent = "Per day, newest first (up to 14 days)";
+  hbars("playersDaily", (p.daily || []).slice(-14).reverse().map(function (d) { return [d.day, d.players]; }), null,
+    "No players counted yet.");
 }
 
 function hbars(id, rows, fmt, emptyText) {

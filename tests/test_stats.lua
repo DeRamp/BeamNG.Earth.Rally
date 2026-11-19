@@ -1,5 +1,5 @@
 -- stats (#76): nothing recorded before Yes or with the leaderboard off, only allowed fields, a new random number
--- each session (never saved), rallies and stages by name (own ones too), one start and one end per run, rally attempts; sent through a
+-- each session (never saved), an install number (saved, sent alone in install_seen, deleted by No), rallies and stages by name (own ones too), one start and one end per run, rally attempts; sent through a
 -- stand-in companion: sent events taken off by identity, refused batches dropped, No dropping a send under way;
 -- errors cleaned and capped, the game's log watched and given back.
 local T = dofile(TESTS .. '/testlib.lua')
@@ -44,13 +44,20 @@ stats.answer(true)
 local session = stats._session()
 T.check(type(session) == 'string' and #session == 32 and session:match('^%x+$'), 'a 32-hex session number')
 T.check(not files[stats.STATE_FILE]:find(session, 1, true), 'the session number is not saved')
-T.check(not files[stats.STATE_FILE]:find('install', 1, true), 'no install number saved')
+local install = stats._install()
+T.check(type(install) == 'string' and #install == 32 and install:match('^%x+$') and install ~= session, 'a 32-hex install number')
+T.check(files[stats.STATE_FILE]:find(install, 1, true) ~= nil, 'the install number saved')
 local q = stats._queue()
-T.check(#q == 1 and q[1].event == 'session_start', 'Yes: session_start queued')
+T.check(#q == 2 and q[1].event == 'session_start' and q[2].event == 'install_seen', 'Yes: session_start and install_seen queued')
 T.check(q[1].day and q[1].day:match('^%d%d%d%d%-%d%d%-%d%d$') and q[1].mod == '1.6.2-alpha+stats', 'day and mod set')
 for k in pairs(q[1]) do
   T.check(({ event = 1, session = 1, mod = 1, game = 1, earth = 1, day = 1 })[k], 'only the common fields: ' .. k)
 end
+T.check(q[2].install == install and q[2].session == nil and q[2].day == q[1].day, 'install_seen: the install number, no session')
+for k in pairs(q[2]) do T.check(stats.INSTALL_FIELDS[k], 'install_seen: only its fields: ' .. k) end
+T.check(stats.record('install_seen') == false, 'install_seen never through record (no session number on it)')
+stats.sessionStart()
+T.check(#q == 2, 'install_seen once a session')
 T.check(stats.record('made_up') == false, 'unknown events refused')
 stats.record('error', { code = 'x', module = 'main', message = 'C:/Users/Someone/secret' })
 T.check(q[#q].code == 'x' and q[#q].message ~= nil, 'an error keeps its text')
@@ -85,6 +92,26 @@ stats.stageEnded(run, 'finished') stats.stageEnded(run, 'quit')
 T.check(#q == n0 + 3 and q[n0 + 3].result == 'finished' and q[n0 + 3].time_s == 412 and q[n0 + 3].resets == 2, 'one end, whole seconds')
 stats.stageEnded(runOf(2), 'quit')
 T.check(#q == n0 + 3, 'no end without a start (left before GO)')
+for _, e in ipairs(q) do
+  if e.event ~= 'install_seen' then T.check(e.install == nil, 'no install number on ' .. e.event) end
+end
+
+-- the install number: kept across sessions (init again), deleted by No, a new one after a later Yes
+stats._reset() stats.init('x')
+T.check(stats._install() == install, 'the install number read back on a later session')
+stats.sessionStart()
+local seen = stats._queue()[#stats._queue()]
+T.check(seen.event == 'install_seen' and seen.install == install, 'a later session: the same install number sent')
+stats.answer(false)
+T.check(stats._install() == nil and not files[stats.STATE_FILE]:find(install, 1, true), 'No: the install number deleted')
+stats._reset() stats.init('x')
+T.check(stats._install() == nil, 'No: nothing read back')
+stats.answer(true)
+T.check(stats._install() and stats._install() ~= install, 'Yes after No: a new install number')
+-- (a saved No with an install number left in the file: not read back)
+files[stats.STATE_FILE] = T.jsonEncode({ consent = 'no', install = install })
+stats._reset() stats.init('x')
+T.check(stats._install() == nil, 'a No on file: its install number ignored')
 
 -- rally attempts: restarting stage 1 before finishing it is the same attempt; every stage finished in the attempt
 -- (any order) finishes the rally, once
@@ -161,7 +188,8 @@ T.check(#stats._queue() == 0 and stats.uiState().last == last, 'No: nothing more
 
 -- No then Yes: the session's start recorded again (No threw it away)
 stats._reset() files = {} stats.init('x') stats.answer(true) stats.answer(false) stats.answer(true)
-T.check(#stats._queue() == 1 and stats._queue()[1].event == 'session_start', 'No then Yes: session_start again')
+T.check(#stats._queue() == 2 and stats._queue()[1].event == 'session_start' and stats._queue()[2].event == 'install_seen',
+  'No then Yes: session_start and install_seen again')
 
 -- the leaderboard off: nothing recorded
 stats.answer(true)

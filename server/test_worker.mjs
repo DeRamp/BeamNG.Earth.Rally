@@ -33,6 +33,13 @@ assert.equal(clean({ ...base, event: "stage_finished", car: "x".repeat(100) }).c
 assert.equal(clean({ ...base, event: "session_start", day: "1999-01-01" }).day, day)
 assert.equal(clean({ ...base, event: "stage_finished", time_s: 412.4, resets: -3 }).time_s, 412)
 assert.equal(clean({ ...base, event: "stage_finished", resets: -3 }).resets, undefined)
+// install_seen: the install number, never a session; nothing else carries an install number
+const inst = "abcdefabcdefabcdefabcdefabcdef01"
+const seen = { event: "install_seen", install: inst, mod: "1.8.1-alpha", game: "0.40.5.0", earth: "1.10", day }
+assert.deepEqual(clean({ ...seen, session: id, rally: "ARA 2026" }), { day, event: "install_seen", session: "", install: inst, mod: "1.8.1-alpha", game: "0.40.5.0", earth: "1.10" })
+assert.equal(clean({ ...seen, install: "Bob" }), null)
+assert.equal(clean({ ...seen, install: undefined }), null)
+assert.equal(clean({ ...base, event: "stage_finished", install: inst }).install, undefined)
 
 let r = await post("/v1/events", { events: [
   { ...base, event: "session_start" },
@@ -73,6 +80,22 @@ assert.equal(s.errors[0].first_ever, day)
 assert.equal(s.errors[0].first_code, day)
 assert.equal(s.totals.last_day, day)
 assert.equal(s.totals.sessions_ever, undefined)  // (a full scan nobody reads)
+assert.deepEqual([s.players.all_time, s.players.last7, s.players.in_range, s.players.daily.length], [0, 0, 0, 0])
+
+// players: install_seen stored once per install and day, with an empty session; counted apart from sessions
+const inst2 = "0000000000000000000000000000beef", old = new Date(Date.now() - 10 * 86400000).toISOString().slice(0, 10)
+assert.equal((await post("/v1/events", { events: [seen, seen, { ...seen, install: inst2 }, { ...base, event: "session_start" }] })).status, 204)
+assert.equal((await post("/v1/events", { events: [seen] })).status, 204)
+assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events WHERE event = 'install_seen'").get().n, 2)
+assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events WHERE install IS NOT NULL AND (session != '' OR event != 'install_seen')").get().n, 0)
+db.exec(`INSERT INTO events (day, event, session, install) VALUES ('${old}', 'install_seen', '', '${inst}'), ('${old}', 'install_seen', '', '${"9".repeat(32)}')`)
+r = await worker.fetch(new Request("http://x/api/summary?days=30", { headers: { authorization: "Bearer " + env.DASHBOARD_KEY } }), env, ctx)
+const p = (await r.json())
+assert.deepEqual([p.players.all_time, p.players.last7, p.players.in_range], [3, 2, 3])
+assert.deepEqual(p.players.daily, [{ day: old, players: 2 }, { day, players: 2 }])
+assert.equal(p.totals.sessions, 1)                         // (the empty session of install_seen not counted)
+assert.equal(p.versions.mod.reduce((a, v) => a + v.n, 0), 1)
+db.exec("DELETE FROM events WHERE event = 'install_seen'")
 
 // the dashboard page: served without the key (it asks for it), carries no data, https only off localhost
 r = await worker.fetch(new Request("http://localhost/dashboard"), env, ctx)
@@ -89,6 +112,7 @@ assert.match(r.headers.get("content-type"), /javascript/)
 const script = await r.text()
 assert.ok(script.includes("/api/summary") && script.includes("function esc("))
 assert.ok(script.includes("esc(e.message"), "message escaped like other player text")
+assert.ok(script.includes("playersDaily") && page.includes('id="players"'), "the players card")
 // the script parses (a stray backtick or dollar-brace in String.raw would break it)
 new Function(script)
 r = await worker.fetch(new Request("http://stats.example.workers.dev/dashboard"), env, ctx)

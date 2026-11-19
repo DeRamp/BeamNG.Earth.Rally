@@ -3,18 +3,22 @@
 --
 --   Asked when the player turns the leaderboard on (#76): its own Yes / No, separate from the leaderboard, which
 --   works either way. Nothing is recorded or sent before a Yes; closing the menu with the question up counts as No.
---   Only the answer and anything waiting to go are kept, in the user folder's earthRally/telemetry/; every message
---   sent is also written word for word to SENT_FILE, so the player can read exactly what left their PC.
+--   Only the answer, the install number (below) and anything waiting to go are kept, in the user folder's
+--   earthRally/telemetry/; every message sent is also written word for word to SENT_FILE, so the player can read
+--   exactly what left their PC.
 --
---   No install number: each game session gets a new random number, never reused, so two sessions of the same
---   player cannot be linked (the owner's choice, 2026-11-16: "fully anonymous"), and the leaderboard's player id is
---   never sent with them. The price: installs are not counted, only sessions, and there is nothing to delete by.
+--   Each game session gets a new random number, never reused, and every event carries it. The leaderboard's player id
+--   is never sent with them.
+--   The install number (the owner, 2026-11-18: count players): a random number made on Yes and kept in STATE_FILE,
+--   sent once per session in its own event, install_seen, with only the versions and the day: never with the session
+--   number and never with a stage, so the server can count players but not tie one to what they drove. A No deletes
+--   it; a later Yes makes a new one.
 --
 --   Sent through the leaderboard's companion (online.lua, M.transport): the game's Lua cannot reach the internet, so
 --   events go to the companion on 127.0.0.1 and it posts them over HTTPS to the stats server (server/). Recorded only
 --   while the leaderboard is on; sent in batches; the game never waits on them.
 --
---   What is sent: the event, the session number, the mod, game and BeamNG.Earth versions, the day (UTC, no time),
+--   What is sent: the event, the session number (install_seen: the install number instead), the mod, game and BeamNG.Earth versions, the day (UTC, no time),
 --   and per event a few fields (EVENTS): a finished stage's car and class, an error's cleaned text. Rallies and
 --   stages are sent by name, a pack's and the player's own imported or home-made ones alike (the owner, 2026-11-18);
 --   a car that is not one of the game's own is sent as 'custom'. Never: the player's names, accounts, hardware,
@@ -45,8 +49,10 @@ M.EVENTS = {
   recce_done = { result = true },
   error = { code = true, module = true, message = true },
 }
+-- install_seen: its own event, never through record() (no session number): exactly these fields
+M.INSTALL_FIELDS = { event = true, install = true, mod = true, game = true, earth = true, day = true }
 
-local st = nil              -- { consent = 'ask'|'yes'|'no' }
+local st = nil              -- { consent = 'ask'|'yes'|'no', install = 32 hex (only with yes) }
 local queue = nil
 local session = nil         -- this game session's random number (never reused)
 local modVersion = '?'
@@ -78,7 +84,7 @@ local function encode(t)
   error('no jsonEncode')
 end
 
--- A random number for this session: 32 hex digits. Not tied to anything on the PC, never reused.
+-- A random number for this session (and the install number): 32 hex digits. Not tied to anything on the PC.
 local seeded = false
 function M.newSession()
   if not seeded then
@@ -95,10 +101,13 @@ local function load()
   if st then return end
   local saved = readJson(M.STATE_FILE) or {}
   st = { consent = (saved.consent == 'yes' or saved.consent == 'no') and saved.consent or 'ask' }
+  if st.consent == 'yes' and type(saved.install) == 'string' and saved.install:match('^%x+$') and #saved.install == 32 then
+    st.install = saved.install:lower()
+  end
   local q = readJson(M.QUEUE_FILE)
   queue = (st.consent == 'yes' and q and type(q.events) == 'table') and q.events or {}
 end
-local function saveState() writeJson(M.STATE_FILE, { consent = st.consent }) end
+local function saveState() writeJson(M.STATE_FILE, { consent = st.consent, install = st.install }) end
 local function saveQueue() writeJson(M.QUEUE_FILE, { events = queue }) end
 
 -- Drop the send under way (its answer ignored): after No, nothing more is taken off the queue or sent.
@@ -114,6 +123,8 @@ function M.consent() load() return st.consent end
 function M.answer(yes)
   load()
   st.consent = yes and 'yes' or 'no'
+  -- (Yes: the install number kept, or made; No: deleted, so a later Yes makes a new one)
+  if yes then st.install = st.install or M.newSession() else st.install = nil end
   -- (No throws the session's start away with the rest: a Yes after it records the start again)
   if not yes then queue = {} saveQueue() cancelSend() wantSend = false sessionSent = false end
   saveState()
@@ -160,9 +171,18 @@ function M.record(name, fields)
   return true
 end
 
+-- install_seen: the install number on its own, with only the versions and the day (INSTALL_FIELDS).
+local function recordInstall()
+  if not st.install then st.install = M.newSession() saveState() end
+  queue[#queue + 1] = { event = 'install_seen', install = st.install, mod = modVersion, game = rawget(_G, 'beamng_version'),
+    earth = earthVersion(), day = os.date('!%Y-%m-%d') }
+  while #queue > M.QUEUE_MAX do table.remove(queue, 1) end
+  saveQueue()
+end
+
 function M.sessionStart()
   if sessionSent then return end
-  if M.record('session_start') then sessionSent = true end
+  if M.record('session_start') then sessionSent = true recordInstall() end
 end
 
 -- What a rally and a stage are called in the stats: their names, from a pack or the player's own imported or
@@ -374,6 +394,7 @@ end
 function M._queue() return queue end
 function M._state() return st end
 function M._session() return session end
+function M._install() return st and st.install end
 function M._job() return job end
 
 return M

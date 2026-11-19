@@ -30,6 +30,12 @@ The live D1 was made before these columns. Run once from this folder, then deplo
 `npx wrangler d1 execute earth-rally-stats --remote --file=migrate-2026-11-18.sql`. A second run fails with
 "duplicate column name", which is harmless. New databases get them from `schema.sql`.
 
+## Update the live database (2026-11-18b: players)
+
+Run once from this folder, after the one above, then deploy:
+`npx wrangler d1 execute earth-rally-stats --remote --file=migrate-2026-11-18b.sql`, then `npx wrangler deploy`.
+It adds the install number (`install_seen` events only), which the dashboard counts as players.
+
 ## Your dashboard
 
 Open `https://earth-rally-stats.<your-subdomain>.workers.dev/dashboard` and type the DASHBOARD_KEY from step 5. The

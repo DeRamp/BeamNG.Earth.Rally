@@ -12,6 +12,9 @@ Owner and contact for this data: **DeRamp**, through
 - The event: a session started, a stage or rally started or finished, a recce done, an error.
 - A random session number, made new each time you start the game and never used again, so your sessions cannot
   be linked to each other (see the note under Your controls).
+- Once a session, on its own: a random install number kept on your PC, with only the versions and the day. It
+  counts players. It is never sent with the session number or your stages. Answering No deletes it; a later Yes
+  makes a new one.
 - The Earth Rally, BeamNG.drive and BeamNG.Earth versions.
 - The day, with no time of day.
 - For a stage: the rally and stage name, the result, the stage time in whole seconds and the number of resets.
@@ -37,14 +40,16 @@ stores it, and request logs are off.
 - Sent through the Earth Rally Leaderboards add-on on your PC, which passes it on over HTTPS. Only while
   Leaderboards are on.
 - Stored in a Cloudflare database run by DeRamp.
-- Kept 12 months. After that, only monthly totals are kept, with no session numbers.
+- Kept 12 months. After that, only monthly totals are kept, with no session or install numbers.
 
 ## Your controls
 
 - **See what was sent:** every message is also saved word for word in `earthRally/telemetry/sent.jsonl` in your
   BeamNG user folder.
-- **Turn it off:** Settings › Privacy › Off. Nothing more is sent, and anything waiting is thrown away.
-- There is no "delete my stats": stats carry no name or id, so there is nothing to look them up by.
+- **Turn it off:** Settings › Privacy › Off. Nothing more is sent, anything waiting is thrown away, and the
+  install number is deleted from your PC.
+- There is no "delete my stats": stats carry no name, and the install number is not on your stages, so there is
+  nothing to look them up by.
 
 Stats are only sent while Leaderboards are on, and they never carry your leaderboard name or id. But a finished
 stage's time, car and day are also on the leaderboard, so someone with both databases could match a session to a
