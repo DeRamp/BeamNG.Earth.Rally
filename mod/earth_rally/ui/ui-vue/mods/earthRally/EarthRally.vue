@@ -315,7 +315,7 @@
             <template v-if="stg.autoCan"><b>Auto recce</b>: {{ !st.autoOk
               ? "works the line out from the map's roads. Not available with this BeamNG.Earth."
               : st.autoWalks
-                ? "works the line out from the map's roads. Takes the car along the stage to read them, then brings it back."
+                ? "works the line out from the map's roads. Takes the car along the stage to read them, downloading the map there as it goes, then brings it back. Slow."
               : st.autoCanFetch
                 ? "takes you to the start, then works the line out from the map's roads. Where the map data is missing it tells you how much there is to download and asks first."
                 : "works the line out from the map's roads. Reads only the map data already on your disk; downloads nothing." }}<br></template>

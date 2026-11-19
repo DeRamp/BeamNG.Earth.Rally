@@ -727,6 +727,7 @@ local function autoDone(ok, matched, why, how)
   log('I', logTag, string.format('auto recce of %s: %s (%s)', tostring(a.stageId), kind, tostring(why or 'written')))
 end
 M._autoDone = autoDone
+autoRecce.noHome = function() return rallyRun.preparing() end   -- (upstream-earth: no trip home between prep stages)
 
 -- Start the matching leg: the same call the 1.3.0 button made, with the banner and the row mark it sets.
 local function autoStartMatch(ev, stage, ss)
@@ -1171,7 +1172,7 @@ doAction = function(what, eventId, stageId, fromPanel, queued)
     return res(true, string.format('Auto recce of %s: %d windows. %s', stage.name, pr.windows or 0,
       earth.hasAreaRoute() and 'It reads the map data on your disk, and asks before downloading any it needs.'
         or (earth.roadGraphMode() == 'walk'
-          and 'It takes the car along the stage to read the roads, then brings it back. Slower on this BeamNG.Earth.'
+          and 'It takes the car along the stage to read the roads (downloading the map there), then brings it back. Slow.'
           or 'It reads only the map data already on your disk and downloads nothing.')))
   end
   if what == 'drive' then

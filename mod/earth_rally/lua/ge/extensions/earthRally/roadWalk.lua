@@ -15,6 +15,7 @@
 local M = {}
 
 M.TIMEOUT_S = 180       -- a teleport, the world loaded and a graph built round the car, at most this long
+M.NO_GRAPH_S = 60      -- the world ready this long and no traffic graph at all: traffic or roads are off
 M.SETTLE_S = 1.0        -- once a fresh graph is there, held this long (a second one may follow the first)
 M.NEAR_M = 300          -- the car set down farther than this from the window's centre: the window is not trusted
 M.RADIUS_M = 800        -- the window the auto recce plans with: the graph reaches ~1100 m, less NEAR_M of slack
@@ -23,6 +24,14 @@ M.NAME = 'Earth Rally auto recce'
 local function api() return rawget(_G, 'beamngEarth_api') end
 local function core() return rawget(_G, 'beamngEarth_core') end
 local function wall() return os.clock() end
+
+-- A teleport kept out of BeamNG.Earth's recent places and its saved spawn points (core.teleport's 'tool' kind,
+-- { record = false }); api.teleport where that is not there.
+local function teleport(lat, lon)
+  local c = core()
+  if type(c) == 'table' and type(c.teleport) == 'function' then return c.teleport(lat, lon, M.NAME, { record = false }) end
+  return api().teleport(lat, lon, M.NAME)
+end
 M._wall = wall
 
 local function navgraph()
@@ -115,7 +124,7 @@ local function go(q)
   local g = graph()
   q.serial, q.anchor = g and g.serial, g and g.anchor
   if not home and p then home = { lat = p.lat, lon = p.lon } end
-  local okT, ok, why = pcall(api().teleport, q.lat, q.lon, M.NAME)
+  local okT, ok, why = pcall(teleport, q.lat, q.lon)
   if not okT or ok == false then
     return answer({ error = 'BeamNG.Earth would not teleport the car there (' .. tostring(okT and why or ok) .. ')' })
   end
@@ -131,7 +140,7 @@ function M.goHome()
   if not h then return false end
   local a = api()
   if a and type(a.teleport) == 'function' then
-    pcall(a.teleport, h.lat, h.lon, M.NAME)
+    pcall(teleport, h.lat, h.lon)
     log('I', 'earthRally', 'auto recce walk: the car taken back to where it was')
     return true
   end
@@ -162,8 +171,14 @@ function M.update()
     log('W', 'earthRally', 'auto recce walk: no road graph round the car in ' .. M.TIMEOUT_S .. ' s')
     return answer({ error = 'timed out' })
   end
-  if not settled() then q.seenAt = nil return end
+  if not settled() then q.seenAt = nil q.readyAt = nil return end
+  q.readyAt = q.readyAt or wall()
   local g = graph()
+  if not g and wall() - q.readyAt > M.NO_GRAPH_S then
+    -- (BeamNG.Earth builds this graph only with its traffic and roads on: none at all, a minute after the world is
+    --  ready, is that, not a slow build)
+    return answer({ error = 'BeamNG.Earth sent no road graph: its traffic or roads are off' })
+  end
   local aid = anchorId()
   if not (g and aid and g.anchor == aid) then q.seenAt = nil return end
   if not q.fresh and g.anchor == q.anchor and g.serial == q.serial then return end   -- the graph from before
@@ -197,7 +212,7 @@ function M.update()
     r = { geoNodes = geo, edges = g.edges, complete = true }
     local h = home
     home = nil
-    pcall(a.teleport, h.lat, h.lon, M.NAME)
+    pcall(teleport, h.lat, h.lon)
     log('I', 'earthRally', 'auto recce walk: last window read; the car taken back to where it was')
     q.homing, q.homedAt, q.result = true, wall(), r
     return

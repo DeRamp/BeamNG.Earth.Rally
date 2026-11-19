@@ -1034,7 +1034,9 @@ local function finish(ok, result, why, kind, extra)
   gen = gen + 1
   -- (a walk that ended early: the car back where it was. After the last window it is home already, and this is a
   --  no-op)
-  if earth.roadGraphHome then earth.roadGraphHome() end
+  -- (in a full rally's prep the next stage takes the car away at once: forgotten there, not taken back)
+  if M.noHome and M.noHome() then pcall(earth._roadWalk.reset)
+  elseif earth.roadGraphHome then earth.roadGraphHome() end
   local how = nil
   if j then
     local withData = 0
@@ -1212,7 +1214,7 @@ function M.ask(i)
   j.askLat, j.askLon = earth.anchor()
   j.token = (j.token or 0) + 1
   local myGen, token = gen, j.token
-  local ok, why = earth.roadGraph(w.lat, w.lon, { radius = j.radius, cachedOnly = true, home = (i == #j.plan) },
+  local ok, why = earth.roadGraph(w.lat, w.lon, { radius = j.radius, cachedOnly = true, home = (i == #j.plan) and not (M.noHome and M.noHome()) },
     function(r) onWindow(myGen, token, i, r) end)
   if not ok then return finish(false, nil, why or 'BeamNG.Earth refused the road graph request', M.FAILED) end
   return true
