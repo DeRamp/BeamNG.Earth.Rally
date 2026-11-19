@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Rally · rally loop test</title>
+<!-- The owner's checklist for the rally-loop build (1.9.1-alpha+rallyloop) on the Warden Test Rally. Each item: Works /
+     Broken / Skipped and a note; kept in this browser (localStorage) until Reset. "Copy report" puts the broken and
+     skipped items, with their notes, on the clipboard to paste back. Self-contained: nothing fetched. -->
+<style>
+:root { --orange: #f26b1d; --orange-d: #c75b1e; --muted: #b8bcc6; --dim: #8a909a; --green: #3ccf7e; --red: #e5533d; --amber: #ffd36b; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #0d0f12; color: #f0f0f0; font: 16px/1.45 "Noto Sans", system-ui, sans-serif; }
+header { position: sticky; top: 0; z-index: 5; background: #1a1d22; border-bottom: 1px solid #2a2e35; padding: 14px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+h1 { margin: 0; font-size: 22px; letter-spacing: .04em; } h1 span { color: var(--orange); }
+.count { color: var(--muted); font-size: 15px; } .count b { color: #fff; } .count .bad { color: var(--red); } .count .ok { color: var(--green); }
+.bar { flex: 1 1 200px; height: 8px; border-radius: 4px; background: #2a2e35; overflow: hidden; display: flex; min-width: 160px; }
+.bar i { display: block; height: 100%; } .bar .g { background: var(--green); } .bar .r { background: var(--red); } .bar .s { background: #5a6070; }
+button { font: inherit; font-size: 14px; padding: 7px 14px; border-radius: 4px; border: 1px solid #3a3f48; background: #23272e; color: #ddd; cursor: pointer; }
+button.main { background: var(--orange-d); border-color: var(--orange-d); color: #fff; font-weight: 600; }
+.filters button.on { background: #3a3f48; color: #fff; }
+main { max-width: 1100px; margin: 0 auto; padding: 18px 24px 80px; }
+.intro { color: var(--muted); margin: 6px 0 22px; } .intro b { color: #fff; }
+section { margin-bottom: 26px; }
+h2 { margin: 0 0 8px; font-size: 15px; letter-spacing: .14em; text-transform: uppercase; color: var(--orange); display: flex; gap: 10px; align-items: baseline; }
+h2 small { color: var(--dim); letter-spacing: 0; text-transform: none; font-size: 14px; font-weight: 400; }
+.item { background: #16191e; border: 1px solid #23272e; border-left: 4px solid #3a3f48; border-radius: 6px; padding: 12px 14px; margin-bottom: 8px; }
+.item.ok { border-left-color: var(--green); } .item.bad { border-left-color: var(--red); } .item.skip { border-left-color: #5a6070; opacity: .75; }
+.row { display: flex; gap: 14px; align-items: flex-start; }
+.what { flex: 1; } .what b { font-weight: 600; } .how { color: var(--muted); font-size: 14px; margin-top: 2px; }
+.flag { font-size: 12px; color: var(--amber); border: 1px solid rgba(255,211,107,.4); border-radius: 3px; padding: 0 6px; margin-left: 6px; white-space: nowrap; }
+.pick { display: flex; gap: 4px; flex: none; }
+.pick button { min-width: 74px; padding: 5px 8px; }
+.pick button.ok.on { background: var(--green); border-color: var(--green); color: #052; font-weight: 700; }
+.pick button.bad.on { background: var(--red); border-color: var(--red); color: #fff; font-weight: 700; }
+.pick button.skip.on { background: #5a6070; border-color: #5a6070; color: #fff; }
+textarea { width: 100%; margin-top: 10px; min-height: 54px; background: #0d0f12; color: #eee; border: 1px solid #3a3f48; border-radius: 4px; padding: 8px; font: inherit; font-size: 14px; resize: vertical; }
+.item:not(.bad):not(.noted) textarea { display: none; }
+.addnote { background: none; border: none; color: var(--dim); padding: 0; font-size: 13px; margin-top: 6px; text-decoration: underline; }
+.item.bad .addnote, .item.noted .addnote { display: none; }
+#toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--orange-d); color: #fff; padding: 10px 18px; border-radius: 6px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+#toast.show { opacity: 1; }
+.hide { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span>Earth Rally</span> · rally loop test</h1>
+  <span class="count" id="count"></span>
+  <div class="bar" id="bar"></div>
+  <span class="filters"><button data-f="all" class="on">All</button><button data-f="todo">To do</button><button data-f="bad">Broken</button></span>
+  <button class="main" id="copy">Copy report</button>
+  <button id="reset">Reset</button>
+</header>
+<main>
+  <p class="intro">Build <b>1.9.1-alpha+rallyloop</b> on the <b>Warden Test Rally</b> (Sat 7 – Sun 8 Nov 2026). Mark each
+    item <b>Works</b>, <b>Broken</b> or <b>Skip</b>; a Broken one opens a note for what you saw. Ticks are kept in this
+    browser. When done, <b>Copy report</b> and paste it to me. <span class="flag">first try</span> marks what has never
+    run in the game.</p>
+  <div id="list"></div>
+</main>
+<div id="toast"></div>
+
+<script>
+// [id, what, how, firstTry]
+const SECTIONS = [
+  ["Set-up", "", [
+    ["setup-menu", "The Earth Rally menu opens", "Escape > Rally menu, or Home's Rally tile."],
+    ["setup-pack", "Warden Test Rally is in Drive rally with its cover", "And no old \"Warden Test Rally V2\" beside it."],
+  ]],
+  ["Start the rally", "Drive rally > Warden Test Rally", [
+    ["start-when", "\"Starts Sat 7 Nov 2026, 16:00 local\"", "The start line on the left card."],
+    ["start-traffic", "Traffic on road sections: On / Off", "The first time it follows the world's traffic; after that, your last pick."],
+    ["start-cancel", "Cancelled stages: As it really ran / Run them all", "SS4 was cancelled on the day."],
+    ["start-notes", "Nothing above Start about weather or BeamNG.Earth", "With the official BeamNG.Earth and its weather hooks there."],
+    ["start-pad", "Every row and Start work with the controller", "D-pad between rows and choices, A picks."],
+  ]],
+  ["Time of day", "the sky follows the rally clock", [
+    ["tod-start", "The sky jumps to about 16:00 at the start", "Late afternoon light, not your own time of day."],
+    ["tod-loop2", "SS1 in last daylight, SS2 at dusk, SS3 in the dark", "16:08, 16:51, 17:05."],
+    ["tod-day2", "After Service B, Sunday 09:00 in daylight", "The Overnight jumps the clock."],
+    ["tod-pause", "The clock doesn't run on under the pause menu", "Pause a minute on a road section; the sky and due time hold."],
+    ["tod-back", "Your own time of day comes back after the rally", "After finishing, Save and quit, or Retire."],
+  ]],
+  ["Weather", "one made-up weather per stage", [
+    ["wx-stages", "Each stage drives in its own weather", "SS1 cloudy · SS2 rain · SS3 clear night · SS5 snow · SS6 storm."],
+    ["wx-ss4", "SS4 in fog with Run them all", "Only if you pick Run them all at the start."],
+    ["wx-card", "The time card shows each stage's weather beside its name", "Icon, word and temperature; SS3 \"clear night\" with a moon."],
+    ["wx-f", "°F with Units set to miles", "Settings > Units: miles, then the time card."],
+    ["wx-banner", "The transit banner shows the next stage's weather", "Time card, right-hand TRANSIT card."],
+    ["wx-back", "Your own weather comes back straight away after the rally", "Not up to 10 minutes later.", true],
+    ["wx-off", "Settings > Rally's real time and weather: Off", "Next rally runs in your own time of day and weather."],
+  ]],
+  ["Road sections", "the real schedule", [
+    ["rs-due", "Due time and time left on the HUD on a road section", "Counts down to the next time control."],
+    ["rs-ontime", "On time at a control: no penalty", "Transit column shows on time."],
+    ["rs-late", "Late: 10 s for each minute", "In the Transit column and the transit penalties."],
+    ["rs-early", "Early: told to wait short of the board", "The clock runs on to your minute; Shift+E or Y skips the wait."],
+    ["rs-earlypen", "Early check-in penalty On: early at Service In costs 60 s a minute", "Settings > Early check-in penalty: On, then arrive early at Service In (TC1A)."],
+    ["rs-earlyfree", "Early at Regroup In and at the Finish is free", "Even with the setting On."],
+    ["rs-nolimit", "Very late is never a retirement", "There is no lateness limit any more."],
+    ["rs-svc", "Out of a service on its scheduled time", "The due time after it counts from the service's out time."],
+    ["rs-card", "Time card: Due / In / Transit columns, targets, totals", "\"Transit penalties\" under the card and in OVERALL."],
+    ["rs-resume", "Save and quit, then Continue: the clock is right", "Due times and the sky as you left them."],
+  ]],
+  ["Splits", "on a stage you have driven before", [
+    ["sp-hud", "Splits at 25, 50 and 75 % of the stage", "Against your best on that stage: green ahead, amber slower."],
+    ["sp-page", "Best splits on the stage page", "Drive stage > the stage, under Your runs."],
+  ]],
+  ["Results", "", [
+    ["res-stage", "The stage finish card shows time, position and penalties", ""],
+    ["res-rally", "The rally's finish shows the total and transit penalties", "Rally page: \"incl. transit penalties\" or \"no transit penalties\"."],
+    ["res-chips", "The rally page lists each stage's time and what each stop cost", ""],
+  ]],
+  ["Cards and the controller", "the HUD's pop-up cards", [
+    ["card-load", "\"Load the stage?\" at a time control: A loads, D-pad to Not yet", ""],
+    ["card-recover", "Recover? on a road section: works with the pad", ""],
+    ["card-results", "The finish card's buttons: D-pad and A", "Next, Retry, Rally menu, Close; a rally's Continue."],
+    ["card-keys", "The same cards with the keyboard", "Arrows and Enter."],
+  ]],
+  ["Traffic", "road sections only", [
+    ["tr-on", "Traffic On: traffic on road sections, none on a stage", ""],
+    ["tr-off", "Traffic Off: no traffic all rally", ""],
+    ["tr-back", "Your own traffic amount back after the rally", "Off: the traffic you had before comes back."],
+  ]],
+  ["Weather on Drive stage", "Drive stage > a stage page", [
+    ["ds-row", "A Weather row above Drive stage, on Current", ""],
+    ["ds-pad", "D-pad / stick left and right cycle it", "If not: does A step through them?", true],
+    ["ds-click", "A click on ‹ › or the value cycles it", ""],
+    ["ds-rday", "Rally day on Hillside: \"Rally day · rain\"", "Rally day shows only where the shown pass has stored weather.", true],
+    ["ds-apply", "The pick is the stage's weather when it loads", "Try Snow or Storm.", true],
+    ["ds-current", "Current leaves BeamNG.Earth's weather alone", "", true],
+    ["ds-back", "Your own weather straight back after the stage", "Finish, or Back out of the run.", true],
+    ["ds-keep", "The pick is kept from stage to stage", "", true],
+  ]],
+  ["Multiplayer", "only if you play BeamMP", [
+    ["mp-card", "On a BeamMP server the menu is one card", "\"Earth Rally is off in multiplayer\"; Close or B shuts it."],
+  ]],
+  ["Anything else", "", [
+    ["other", "Anything else that looked wrong", "Use the note."],
+  ]],
+];
+const KEY = "earthRally.test.rallyLoop.v1";
+let S = {};
+try { S = JSON.parse(localStorage.getItem(KEY) || "{}") } catch (e) { S = {} }
+const save = () => localStorage.setItem(KEY, JSON.stringify(S));
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const all = SECTIONS.flatMap(s => s[2]);
+
+function render() {
+  document.getElementById("list").innerHTML = SECTIONS.map(([name, sub, items]) => `<section>
+    <h2>${esc(name)} <small>${esc(sub)}</small></h2>
+    ${items.map(([id, what, how, first]) => `<div class="item" data-id="${id}">
+      <div class="row"><div class="what"><b>${esc(what)}</b>${first ? '<span class="flag">first try</span>' : ""}
+        ${how ? `<div class="how">${esc(how)}</div>` : ""}<button class="addnote">add a note</button></div>
+        <div class="pick"><button class="ok">Works</button><button class="bad">Broken</button><button class="skip">Skip</button></div></div>
+      <textarea placeholder="What happened? Where (stage, control), what you pressed, what you expected."></textarea>
+    </div>`).join("")}</section>`).join("");
+  document.querySelectorAll(".item").forEach(el => {
+    const id = el.dataset.id, ta = el.querySelector("textarea");
+    ta.value = (S[id] && S[id].note) || "";
+    el.querySelectorAll(".pick button").forEach(b => b.onclick = () => {
+      const st = b.className.split(" ")[0]
+      S[id] = { ...(S[id] || {}), st: (S[id] && S[id].st === st) ? null : st }
+      save(); paint()
+      if (S[id].st === "bad") ta.focus()
+    });
+    el.querySelector(".addnote").onclick = () => { el.classList.add("noted"); ta.focus() };
+    ta.oninput = () => { S[id] = { ...(S[id] || {}), note: ta.value }; save(); paint(false) };
+  });
+  paint();
+}
+let filter = "all";
+function paint(full = true) {
+  let ok = 0, bad = 0, skip = 0;
+  document.querySelectorAll(".item").forEach(el => {
+    const s = S[el.dataset.id] || {};
+    if (full) {
+      el.classList.remove("ok", "bad", "skip");
+      if (s.st) el.classList.add(s.st);
+      el.classList.toggle("noted", !!(s.note && s.note.trim()));
+      el.querySelectorAll(".pick button").forEach(b => b.classList.toggle("on", b.classList.contains(s.st || "-")));
+      el.classList.toggle("hide", filter === "todo" ? !!s.st : filter === "bad" ? s.st !== "bad" : false);
+    }
+    if (s.st === "ok") ok++; else if (s.st === "bad") bad++; else if (s.st === "skip") skip++;
+  });
+  const n = all.length, todo = n - ok - bad - skip;
+  document.getElementById("count").innerHTML = `<b>${n - todo}</b> / ${n} checked · <span class="ok">${ok} work</span> · <span class="bad">${bad} broken</span> · ${skip} skipped`;
+  document.getElementById("bar").innerHTML = `<i class="g" style="width:${ok / n * 100}%"></i><i class="r" style="width:${bad / n * 100}%"></i><i class="s" style="width:${skip / n * 100}%"></i>`;
+}
+document.querySelectorAll(".filters button").forEach(b => b.onclick = () => {
+  filter = b.dataset.f;
+  document.querySelectorAll(".filters button").forEach(x => x.classList.toggle("on", x === b));
+  paint();
+});
+function report() {
+  const out = ["Rally loop test (1.9.1-alpha+rallyloop, Warden Test Rally)", ""];
+  const part = (st, title) => {
+    const rows = [];
+    for (const [name, , items] of SECTIONS) for (const [id, what] of items) {
+      const s = S[id] || {};
+      if (s.st === st) rows.push(`- [${name}] ${what}${s.note && s.note.trim() ? "\n  " + s.note.trim().replace(/\n/g, "\n  ") : ""}`);
+    }
+    if (rows.length) out.push(title, ...rows, "");
+  };
+  part("bad", "BROKEN");
+  part("skip", "SKIPPED");
+  const notes = [];
+  for (const [name, , items] of SECTIONS) for (const [id, what] of items) {
+    const s = S[id] || {};
+    if (s.st === "ok" && s.note && s.note.trim()) notes.push(`- [${name}] ${what}\n  ${s.note.trim().replace(/\n/g, "\n  ")}`);
+  }
+  if (notes.length) out.push("WORKS, WITH A NOTE", ...notes, "");
+  const todo = all.filter(([id]) => !(S[id] && S[id].st)).length;
+  out.push(`${all.length - todo} of ${all.length} checked${todo ? `, ${todo} not checked yet` : ""}.`);
+  return out.join("\n");
+}
+function toast(t) { const e = document.getElementById("toast"); e.textContent = t; e.classList.add("show"); setTimeout(() => e.classList.remove("show"), 1800) }
+document.getElementById("copy").onclick = async () => {
+  const t = report();
+  try { await navigator.clipboard.writeText(t); toast("Report copied: paste it to Claude") }
+  catch (e) { const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); toast("Report copied") }
+};
+document.getElementById("reset").onclick = () => { if (confirm("Clear every tick and note?")) { S = {}; save(); render() } };
+render();
+</script>
+</body>
+</html>
