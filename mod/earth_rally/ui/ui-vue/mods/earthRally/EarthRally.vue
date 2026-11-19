@@ -282,6 +282,19 @@
           <div v-else class="er-card er-line-note"><span class="er-pill" :class="pill(stg.status).cls">{{ pill(stg.status).label }}</span><span>{{ stg.note }}</span></div>
           <!-- Auto recce is the fourth button, before Recce, so the two recce buttons sit together and the cheap
                one comes first. While one runs it is replaced in place by its Stop, not joined by a fifth button. -->
+          <!-- (plan G) Weather, one row the start screen's look, cycled with left / right or a click on the arrows:
+               Current (nothing set), Rally day (only when the pass shown has stored weather), BeamNG.Earth's
+               presets. Kept between stages; set as the stage loads (stageWeather.lua). Not without the hook. -->
+          <div v-if="stg.wxCan" class="er-wxrow">
+            <span class="er-wxl">Weather</span>
+            <span class="er-cyc" v-bng-on-ui-nav:focus_l="() => wxNav(-1)" v-bng-on-ui-nav:focus_r="() => wxNav(1)">
+              <span class="er-ar" @click="wxStep(-1)">‹</span>
+              <span ref="wxVal" class="er-val" tabindex="0" bng-nav-item @keydown.left.prevent="wxStep(-1)"
+                @keydown.right.prevent="wxStep(1)" @keydown.enter="wxStep(1)" @click="wxStep(1)">
+                <svg v-if="wxShown.icon" viewBox="0 0 24 24" v-html="wxIcon(wxShown)"></svg>{{ wxShown.label }}</span>
+              <span class="er-ar" @click="wxStep(1)">›</span>
+            </span>
+          </div>
           <div class="er-actions">
             <BngButton v-bng-ui-nav-focus="1" :accent="ACCENTS.main" :disabled="!stg.canDrive || busy" @click="action('drive', stg.eventId, stg.id)">Drive stage</BngButton>
             <BngButton :accent="ACCENTS.secondary" :disabled="busy" @click="action('route', stg.eventId, stg.id)">Route to start</BngButton>
@@ -428,7 +441,7 @@ import EarthRallyFull from "./EarthRallyFull.vue"
 import EarthRallyLoading from "./EarthRallyLoading.vue"
 import {
   state, season, rally, stage, busyMsg, action as luaAction, refreshState, takeOpenAt, loadSeason, loadRally, loadStage,
-  closeMenu, pickCar, keep, lastPlace, helperPromptClose, namePromptLater, loadRallyStart, loadRallyCard, rallyAction, loadDrive, pointTo,
+  closeMenu, pickCar, keep, lastPlace, setSetting, wxIcon, helperPromptClose, namePromptLater, loadRallyStart, loadRallyCard, rallyAction, loadDrive, pointTo,
   arr, mmss, units, len, lenNum, riseNum, riseUnit, time, longTime, when, ord, days, ssName, STATUS, AUTO_OUTCOME, RUN_WORDS,
 } from "./store.js"
 
@@ -932,6 +945,28 @@ function back() {
   } else if (view.value === "season") go("rallies")
   else closeMenu()
 }
+// (plan G) the stage page's Weather row: the picks in order, Rally day only when the shown pass has stored weather
+// (a remembered Rally day reads as Current where there is none, and comes back on a stage that has it)
+const WX_PICKS = [["current", "Current"], ["rallyday", "Rally day"], ["clear", "Clear", "sun"], ["cloudy", "Cloudy", "cloud"],
+  ["rain", "Rain", "rain"], ["storm", "Storm", "storm"], ["snow", "Snow", "snow"], ["fog", "Fog", "fog"]]
+const wxVal = ref(null)
+const wxPicks = computed(() => WX_PICKS.filter(p => p[0] !== "rallyday" || (stg.value && stg.value.wxDay)))
+const wxPick = computed(() => {
+  const v = st.value.settings && st.value.settings.settings && st.value.settings.settings.stageWeather
+  return wxPicks.value.some(p => p[0] === v) ? v : "current"
+})
+const wxShown = computed(() => {
+  const p = wxPicks.value.find(x => x[0] === wxPick.value) || WX_PICKS[0]
+  if (p[0] === "rallyday") return { ...stg.value.wxDay, label: "Rally day · " + (stg.value.wxDay.night && stg.value.wxDay.text === "clear" ? "clear night" : stg.value.wxDay.text) }
+  return { icon: p[2], label: p[1] }
+})
+function wxStep(d) {
+  const ps = wxPicks.value
+  const i = Math.max(0, ps.findIndex(p => p[0] === wxPick.value))
+  setSetting("stageWeather", ps[(i + d + ps.length) % ps.length][0])
+}
+// (the D-pad / stick: only while the row has the focus)
+function wxNav(d) { if (wxVal.value && document.activeElement === wxVal.value) wxStep(d) }
 function action(what, eventId, stageId) {
   luaAction(what, eventId, stageId, () => {
     if (view.value === "stage" && sel.value.stageId) loadStage(sel.value.eventId, sel.value.stageId, sel.value.pass)
@@ -1128,6 +1163,15 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 
 .er-stage-page { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 28px; align-items: start; }
 .er-rcol { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+/* (plan G) the Weather row (docs/mockups-rally-loop/weather.html, screen d) */
+.er-wxrow { display: flex; align-items: center; gap: 16px; margin-top: 22px;
+  .er-wxl { font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--er-muted); } }
+.er-cyc { display: inline-flex; align-items: center; gap: 4px; background: rgba(0, 0, 0, 0.45); border-radius: 0.25rem; padding: 4px;
+  .er-ar { padding: 8px 12px; font-size: 18px; font-weight: 700; color: var(--er-muted); cursor: pointer; }
+  .er-val { display: inline-flex; align-items: center; gap: 8px; min-width: 250px; justify-content: center; padding: 8px 16px;
+    border-radius: 3px; background: #c75b1e; color: #fff; font-size: 18px; font-weight: 600; white-space: nowrap; cursor: pointer;
+    svg { width: 20px; height: 20px; flex: none; } }
+  &:focus-within { outline: 2px solid var(--er-orange); outline-offset: 2px; .er-ar { color: #fff; } } }
 .er-stage-ss { font-family: "Overpass Mono", monospace; font-size: 20px; color: var(--er-orange); font-weight: 700; letter-spacing: 0.05em; }
 .er-stage-name { font-size: 52px; font-weight: 700; line-height: 1.1; }
 .er-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 26px 0; }

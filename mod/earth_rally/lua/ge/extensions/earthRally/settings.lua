@@ -41,6 +41,9 @@ M.SCHEMA = {
   -- time; 'world' (none picked yet): On when the world's traffic is running, else Off (rallyRun.trafficChoice)
   rallyTraffic = { default = 'world', options = { { 'world' }, { 'on' }, { 'off' } } },
   -- (Traffic Off) the player's traffic amount while a rally holds it at 0, so a Lua reload cannot lose it; false: none
+  -- (plan G) the stage page's Weather pick (stageWeather.lua), the same on every stage until changed
+  stageWeather = { default = 'current', options = { { 'current' }, { 'rallyday' }, { 'clear' }, { 'cloudy' }, { 'rain' },
+    { 'storm' }, { 'snow' }, { 'fog' } } },
   rallyTrafficStash = { default = false, check = function(v) return v == false or type(v) == 'number' and v >= 0 end },
 }
 M.ORDER = { 'units', 'resetPenalty', 'earlyPenalty', 'realWorld', 'zoneBrake', 'clockView', 'worldLoaded', 'onlineBoard',

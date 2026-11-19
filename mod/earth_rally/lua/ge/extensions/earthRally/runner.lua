@@ -37,6 +37,7 @@ local stats = require('earthRally/stats')   -- anonymous stats, only with the pl
 local dressing = require('earthRally/dressing')
 local junctions = require('earthRally/junctions')
 local online = require('earthRally/online')
+local stageWx = require('earthRally/stageWeather')   -- (plan G) the stage page's weather pick
 
 local M = {}
 local logTag = 'earthRally'
@@ -520,6 +521,8 @@ function M.start(event, stage, opts)
     local t = rallyNow()
     if t and run.inRally then run.rcDay = math.floor(t / 86400) * 86400 end
   end
+  -- (plan G) the stage page's weather pick, set as a single stage loads (a rally sets its own: rallyRun.setWorld)
+  if not run.inRally then pcall(stageWx.apply, event, stage) end
   -- the line it is timed on, kept with the time (events.addResult): its start and flying finish on it (a time is
   -- placed while the stage's line has those within a few metres: events.onLine), and its key as a record
   run.lineKey = events.lineKey(source, kind)
@@ -2341,6 +2344,7 @@ end
 -- are, taken away by distance (sitesTick) or with the next stage, not the moment the car drives off)
 tidy = function(keepLayout, leaveSites)
   M.keepDamage(false)
+  pcall(stageWx.giveBack)   -- (plan G: the stage's weather pick, given back)
   trafficOn()
   earth.originMoved()
   zoneRelease()

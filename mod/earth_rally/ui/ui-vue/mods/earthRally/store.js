@@ -331,3 +331,25 @@ export function onlineName(name, cb) {
 }
 // typing in a text box: the game's keys off meanwhile (as BeamNG.Earth's add-ons page does)
 export function typing(on) { engineLua(`if setCEFTyping then setCEFTyping(${on ? "true" : "false"}) end`) }
+
+// A stage's stored weather in a word ({ text, tempC, icon, night }, rallyRun.weatherWord) and its icon (the time card,
+// the stage page's Weather row)
+export function wxText(w) {
+  const t = w.night && w.text === "clear" ? "clear night" : w.text
+  if (w.tempC == null) return t
+  // (miles on the Units setting: °F, as a player who drives in miles reads temperatures)
+  const f = units() === "mi"
+  const v = Math.round(f ? w.tempC * 9 / 5 + 32 : w.tempC)
+  return `${t} · ${v < 0 ? "−" + -v : v} ${f ? "°F" : "°C"}`
+}
+const WX_CLOUD = '<path d="M6.5 15h11a4 4 0 0 0 .5-7.97A5.5 5.5 0 0 0 7.1 7.4 3.8 3.8 0 0 0 6.5 15z" fill="#aeb4be"/>'
+export const WX_SVG = {
+  sun: '<circle cx="12" cy="12" r="5" fill="#ffd36b"/><g stroke="#ffd36b" stroke-width="2" stroke-linecap="round"><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></g>',
+  moon: '<path d="M15.5 3a8.5 8.5 0 1 0 5.6 14.9A7.2 7.2 0 0 1 15.5 3z" fill="#e8e4c8"/><circle cx="19" cy="6" r="1.1" fill="#e8e4c8"/>',
+  cloud: '<path d="M6.5 19h11a4.5 4.5 0 0 0 .6-8.96A6 6 0 0 0 6.6 10.6 4.2 4.2 0 0 0 6.5 19z" fill="#c9ced6"/>',
+  rain: WX_CLOUD + '<g stroke="#6fb0ff" stroke-width="2" stroke-linecap="round"><path d="M8 18l-1 3M12.5 18l-1 3M17 18l-1 3"/></g>',
+  snow: WX_CLOUD + '<g fill="#eef3ff"><circle cx="7.5" cy="19" r="1.3"/><circle cx="12" cy="21" r="1.3"/><circle cx="16.5" cy="19" r="1.3"/></g>',
+  storm: WX_CLOUD + '<path d="M12.5 14l-3 5h3l-1.5 4 4.5-6h-3l1.5-3z" fill="#ffd36b"/>',
+  fog: '<g stroke="#c9ced6" stroke-width="2.4" stroke-linecap="round"><path d="M3 8h18M5 12.5h14M3 17h18"/></g>',
+}
+export const wxIcon = w => WX_SVG[w.icon] || WX_SVG.cloud

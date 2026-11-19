@@ -1790,6 +1790,11 @@ function M.uiStage(eventId, stageId, pass)
   local out = menu.stage(eventId, stageId, arrival, earth.hasRoadGraph(), pass)
   for k, v in pairs(runSummary()) do out[k] = v end
   out.autoLine = autoLines[autoKey(eventId, stageId)]
+  -- (plan G) the Weather row: Rally day's weather in a word (the shown pass's stored weather), nil with none
+  local sw = require('earthRally/stageWeather')
+  local e = menu.findEvent(eventId)
+  out.wxDay = rallyRun.weatherWord(sw.passWeather(e, sw.pagePass(eventId, stageId, out)))
+  out.wxCan = earth.hasSceneHooks() or nil
   return out
 end
 

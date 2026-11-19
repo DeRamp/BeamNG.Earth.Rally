@@ -221,6 +221,9 @@ M._setWorld = setWorld
 -- reload mid-rally -- given back to the player's own)
 function M.clearStrayWorld()
   if R then return false end
+  -- (a single stage's weather pick, plan G: set on purpose, given back by the runner)
+  local sw = package.loaded['earthRally/stageWeather']
+  if sw and sw.isOn() then return false end
   local okS, set = pcall(earth.sceneSet)
   if not (okS and set) then return false end
   pcall(earth.clearScene)
