@@ -148,7 +148,7 @@ function M.stageBase(e, s, i, arrival, autoRecce)
   -- nil when the stage has no line.
   local info = events.stageLineInfo(e.id, s.id, s)
   local bs = info and events.bestSplits(e.id, s.id, info.key) or nil
-  local bestSplits = bs and { timeS = bs.timeS, splits = bs.splits, date = bs.date, rally = bs.rally } or nil
+  local bestSplits = bs
   local function gap(t, b)
     if type(t) ~= 'number' or type(b) ~= 'number' then return nil end
     return math.floor((t - b) * 10 + 0.5) / 10
@@ -165,7 +165,7 @@ function M.stageBase(e, s, i, arrival, autoRecce)
       local sp = r.splits
       if info and r.lineKey == info.key and type(sp) == 'table' and type(sp[1]) == 'number'
         and type(sp[2]) == 'number' and type(sp[3]) == 'number' then
-        local isBest = bs and not bs.rally and bs.date == r.date and bs.timeS == r.timeS
+        local isBest = bs ~= nil and not bs.rally and bs.index == k
         local cmp = (bs and not isBest) and bs or nil
         row.splits = {}
         for n = 1, 3 do

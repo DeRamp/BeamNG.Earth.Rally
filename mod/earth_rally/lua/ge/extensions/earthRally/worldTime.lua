@@ -56,6 +56,11 @@ function M.hm(t)
   local s = floor(t) % 86400
   return string.format('%02d:%02d', floor(s / 3600), floor(s / 60) % 60)
 end
+-- 'HH:MM:SS' (a time in at a control, to the second)
+function M.hms(t)
+  if type(t) ~= 'number' then return nil end
+  return M.hm(t) .. string.format(':%02d', floor(t) % 60)
+end
 M.DAYS = { 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat' }
 M.MONTHS = { 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec' }
 -- 'Fri 6 Feb'

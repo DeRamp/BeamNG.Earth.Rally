@@ -918,7 +918,7 @@ function M.checkIn(it, tc, inT, dueT, key)
   local res = rally.checkIn(R, it, inT, dueT, settings.get('earlyPenalty') == true, key)
   if tc then
     tc.result, tc.wait = res, nil
-    tc.timeIn = wt.hm(inT) .. ':' .. string.format('%02d', math.floor(inT) % 60)
+    tc.timeIn = wt.hms(inT)
   end
   log('I', logTag, string.format('rally: checked in at %s %s, due %s: %s%s', tostring(it.ss or it.label), wt.hm(inT),
     wt.hm(dueT), res.kind, res.penaltyS > 0 and string.format(' (+%d s)', res.penaltyS) or ''))
@@ -1744,9 +1744,8 @@ function M.uiCard()
   if ciRoad then
     local inType = ciRoad.inType or cur.inType
     checkIn = { inType = inType, due = wt.hm(ciRoad.dueT),
-      timeIn = wt.hm(ciRoad.inT) .. ':' .. string.format('%02d', math.floor(ciRoad.inT) % 60),
-      kind = ciRoad.kind, min = ciRoad.min, penaltyS = ciRoad.penaltyS,
-      free = (inType and type(R.earlyFree) == 'table' and R.earlyFree[inType] == true) or nil,
+      timeIn = wt.hms(ciRoad.inT),
+      kind = ciRoad.kind, min = ciRoad.min, penaltyS = ciRoad.penaltyS, free = ciRoad.free,
       outAt = (cur.outT and not cur.final) and wt.hm(cur.outT) or nil }
   end
   return {

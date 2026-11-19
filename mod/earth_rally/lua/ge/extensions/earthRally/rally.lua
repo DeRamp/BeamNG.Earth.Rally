@@ -310,7 +310,7 @@ function M.checkIn(r, item, inT, dueT, earlyPenalty, key)
   end
   r.road = type(r.road) == 'table' and r.road or {}
   r.road[key or item.ss] = { dueT = dueT, inT = inT, kind = res.kind, min = res.min, penaltyS = res.penaltyS,
-    inType = item.inType }
+    inType = item.inType, free = res.free }
   return res
 end
 

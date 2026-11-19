@@ -318,6 +318,13 @@ do
   T.check(r3.timeS == 70 and r3.splits == nil, 'a run on another line: no splits')
   T.check(r4.timeS == 79 and r4.splits and r4.splits[1].timeS == 20 and r4.splits[1].gapS == nil
     and r4.splits[4].gapS == nil and r4.bestSplits, 'the best run itself: its splits, no gaps')
+  -- (review 2026-11-19) two runs with the same date and time: only the best one itself marked (by its place in runs)
+  files['/earthRally/results/mm__delta.json'].runs[5] = sp(79, 21, 41, 61, nil, '2026-11-14T10:00:00Z')
+  events.forget()
+  s = menu.stage('mm', 'delta', 'start')
+  T.check(s.runs[5].bestSplits and not s.runs[1].bestSplits and s.runs[1].splits[1].gapS == 1,
+    'the best run marked by identity, not by its date and time: its twin compared with it')
+  files['/earthRally/results/mm__delta.json'].runs[5] = nil
   -- a full-rally pass faster on this line: the best splits are its, and the row says so
   files['/earthRally/results/mm__delta.json'].rallyPasses = { { timeS = 78.5, splits = { 18, 39, 59 }, lineKey = key,
     date = '2026-11-16T10:00:00Z' } }

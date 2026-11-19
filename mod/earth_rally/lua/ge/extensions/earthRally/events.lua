@@ -579,14 +579,15 @@ end
 function M.bestSplits(eventId, stageId, lineKey)
   local r = M.results(eventId, stageId)
   local best = nil
-  local function look(x, finished, rally)
+  -- (index: the run's place in runs, so the stage page marks that run by identity; nil for a rally pass)
+  local function look(x, finished, rally, index)
     if type(x) == 'table' and finished and type(x.timeS) == 'number' and type(x.splits) == 'table'
       and type(x.splits[1]) == 'number' and (lineKey == nil or x.lineKey == lineKey)
       and (not best or x.timeS < best.timeS) then
-      best = { timeS = x.timeS, splits = x.splits, date = x.date, rally = rally or nil }
+      best = { timeS = x.timeS, splits = x.splits, date = x.date, rally = rally or nil, index = index }
     end
   end
-  for _, x in ipairs(r.runs or {}) do look(x, x.finished, false) end
+  for i, x in ipairs(r.runs or {}) do look(x, x.finished, false, i) end
   for _, x in ipairs(r.rallyPasses or {}) do look(x, true, true) end
   return best
 end
