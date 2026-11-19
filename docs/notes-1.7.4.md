@@ -42,3 +42,33 @@ on `play`, the page is put back. Test: `test_run`, "the page up the whole time".
 
 The owner wanted it "more obviously Earth Rally". It is now the GitHub social preview (the jump shot with the
 EARTH RALLY wordmark), cut to 16:9 at 960x540. Source: `Earth Rally marketing/social/github-social-preview.jpg`.
+
+### 3. Home has to be scrolled
+
+The owner: "When I open up the menu, I have to scroll on that main page on Earth Rally Home."
+
+**Diagnosis.** `.er-hm` (EarthRallyHomeMenu.vue) is `height: 100%; min-height: 640px` of the scrolling content box
+(`.er-content`, `overflow-y: auto`). Anything above it adds to that height. From the main menu the new note line
+("BeamNG.Earth loads when you drive a stage or start a rally.") sits above it, so the page is taller than the screen
+by that line. On a small or scaled screen the 640px floor and the 76px heading add more.
+
+**Fix (for the owner's go):** Home's content becomes a column (`display: flex; flex-direction: column`), and the
+grid takes what is left (`flex: 1; min-height: 0`), with no 640px floor. Headings go 76 → 68px and 56 → 50px, and
+tile padding gets a little tighter. Files: `EarthRallyHomeMenu.vue`, and `EarthRally.vue` for the Home content class.
+Mock-up: `docs/mockups-1.7.3+mainmenu/home.html`.
+
+### 4. Drive rally and Drive stage tiles: in-game pictures with cars
+
+The owner: "can you make these in-game pictures, please? I want to see cars on here. Make it make sense."
+
+**Now:** the two tiles are placeholder SVG drawings (a gradient and a route line).
+
+**Fix (for the owner's go):** two in-game shots of the rally car, shipped in the mod as jpgs and shown with
+`object-fit: cover` under the same dark fade:
+
+- Drive rally: rally day. The car past the spectator tape and fencing at Weaver Bend, dust behind it
+  (`marketing/social/post-weaver-bend-16x9.jpg`).
+- Drive stage: one car on one stage road, the hero shot (`marketing/social/square-01-hero-1x1.jpg`, cropped above
+  its wordmark).
+
+Files: `EarthRallyHomeMenu.vue`, plus `ui/modules/apps/earthRally/home-rally.jpg` and `home-stage.jpg`.
