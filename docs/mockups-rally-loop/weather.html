@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Earth Rally: weather and multiplayer (mock-ups)</title>
 <!-- Mock-ups for docs/plan-rally-loop.md, sections E (weather and time of day on the official BeamNG.Earth: each stage's
-     stored weather on the time card, the start screen's lines) and F (Earth Rally off in multiplayer). Not built.
+     stored weather on the time card, the start screen's lines, a weather pick on Drive stage) and F (Earth Rally off in multiplayer). Not built.
      1920x1080, the look of rally-loop.html / additions.html and the built Vue (EarthRallyFull.vue, EarthRallyHomeMenu.vue,
      EarthRally.vue). Self-contained: nothing fetched. Names are made up: real event data never goes in git. -->
 <style>
@@ -136,6 +136,45 @@ h5 { margin: 0 0 10px; font-size: 20px; letter-spacing: .04em; }
 .mpcard .kick svg { width: 26px; height: 26px; }
 .mpcard h2 { margin: 12px 0 18px; font-size: 48px; }
 .mpcard p { margin: 0 0 34px; font-size: 22px; line-height: 1.5; color: #dfe2e8; max-width: 800px; }
+
+/* ===== d drive stage: a stage (EarthRally.vue's er-stage-page) ===== */
+.sp { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 28px; align-items: start; width: 100%; }
+.sp-ss { font: 700 20px var(--mono); color: var(--orange); letter-spacing: .05em; }
+.sp-name { font-size: 52px; font-weight: 700; line-height: 1.1; }
+.sp-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 26px 0; }
+.sp-tile { padding: 18px 20px; }
+.sp-tile .v { font: 700 40px var(--mono); line-height: 1.1; } .sp-tile .v small { font-size: 18px; margin-left: 4px; color: var(--muted); }
+.sp-tile .l, .sp-pt .l { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.sp-pts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: -10px 0 10px; }
+.sp-pt { padding: 12px 16px; } .sp-pt .pv { font-size: 17px; font-weight: 600; } .sp-pt .pv b { font: 700 22px var(--mono); margin-right: 6px; }
+.sp-help { margin: 0 0 22px; font-size: 15px; color: var(--muted); }
+.lnote { display: flex; align-items: center; gap: 14px; padding: 14px 18px; font-size: 17px; }
+.pill { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; padding: 3px 12px; border-radius: 999px; white-space: nowrap; background: rgba(40,140,80,.55); color: #d9ffe6; }
+.pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.acts { display: flex; gap: 14px; margin-top: 24px; flex-wrap: wrap; }
+.acts .btn { font-size: 18px; padding: 12px 22px; }
+.acts .btn.sec { background: #3a3f48; font-weight: 500; }
+.acthelp { margin-top: 16px; font-size: 15px; line-height: 1.7; color: var(--muted); } .acthelp b { color: #fff; }
+.lb { padding: 20px 0 10px; }
+.lb-top { display: flex; align-items: center; gap: 16px; padding: 0 26px 12px; } .lb-top h3 { margin: 0; font-size: 20px; }
+.lb-tabs { margin-left: auto; display: flex; gap: 4px; background: rgba(0,0,0,.45); border-radius: 4px; padding: 4px; }
+.lb-tabs span { padding: 4px 14px; border-radius: 3px; font: 600 16px var(--mono); color: var(--muted); } .lb-tabs span.on { background: var(--orange-d); color: #fff; }
+.lr { display: grid; grid-template-columns: 54px minmax(0, 1fr) 80px 110px 100px; align-items: center; height: 36px; padding: 0 26px; font-size: 17px; border-top: 1px solid rgba(255,255,255,.06); }
+.lr.hd { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; border-top: 0; }
+.lr .r { text-align: right; } .lr.me { background: rgba(42,109,244,.3); }
+.runs { padding: 22px 26px; } .runs h3 { margin: 0 0 12px; font-size: 20px; }
+.bestb { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; } .bestb .t { font: 700 44px var(--mono); }
+.badge { background: rgb(0,200,0); color: #002a00; font-weight: 800; padding: 2px 10px; border-radius: 6px; }
+.run { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; padding: 9px 0; border-top: 1px solid rgba(255,255,255,.07); font-size: 17px; } .run .c { color: #6fd39a; text-align: right; }
+/* the new bit: the weather pick, one option row (the start screen's er-lbl + er-seg look) that cycles left / right */
+.wxrow { display: flex; align-items: center; gap: 16px; margin-top: 22px; }
+.wxrow .wl { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.cyc { display: inline-flex; align-items: center; gap: 4px; background: rgba(0,0,0,.45); border-radius: 4px; padding: 4px; }
+.cyc .ar { padding: 8px 12px; font-size: 18px; font-weight: 700; color: var(--muted); }
+.cyc .val { display: inline-flex; align-items: center; gap: 8px; min-width: 250px; justify-content: center; padding: 8px 16px; border-radius: 3px; background: var(--orange-d); color: #fff; font-size: 18px; font-weight: 600; white-space: nowrap; }
+.cyc .val svg { width: 20px; height: 20px; flex: none; }
+.cyc.foc { outline: 2px solid var(--orange); outline-offset: 2px; } .cyc.foc .ar { color: #fff; }
+.k.lr2 { width: auto; padding: 0 8px; border-radius: 14px; background: #ddd; }
 </style>
 </head>
 <body>
@@ -155,6 +194,7 @@ h5 { margin: 0 0 10px; font-size: 20px; letter-spacing: .04em; }
   <button data-s="tc">a · Time card</button>
   <button data-s="start">b · Start the rally</button>
   <button data-s="mp">c · Multiplayer</button>
+  <button data-s="ds">d · Drive stage: weather</button>
 </div>
 <div class="vbar" id="vbar"></div>
 <div class="wrap"><div class="box" id="box"><div class="screen" id="screen">
@@ -162,7 +202,7 @@ h5 { margin: 0 0 10px; font-size: 20px; letter-spacing: .04em; }
   <div class="dimmer"></div>
   <div class="page">
     <div class="top">
-      <span class="back" data-m="tc.now tc.prop tc.nowx start.now start.prop start.nowx start.cant">‹ Back</span>
+      <span class="back" data-m="tc.now tc.prop tc.nowx start.now start.prop start.nowx start.cant ds.now ds.prop ds.rday ds.rain">‹ Back</span>
       <span class="back" data-m="mp.now mp.prop">‹ Close</span>
       <div class="title"><span>Earth</span> Rally</div>
       <div class="crumbs" id="crumbs"></div>
@@ -293,9 +333,72 @@ h5 { margin: 0 0 10px; font-size: 20px; letter-spacing: .04em; }
       </div>
     </div>
 
+    <!-- ================= d drive stage: a stage, with the weather pick ================= -->
+    <div class="content tl" data-m="ds.now ds.prop ds.rday ds.rain">
+      <div class="sp">
+        <div>
+          <div class="sp-ss">SS1 · SS5 · PINE RIDGE RALLY</div>
+          <div class="sp-name">Quarry Loop</div>
+          <div class="muted">Time control before the start · stop control after the flying finish</div>
+          <div class="sp-tiles">
+            <div class="card sp-tile"><div class="v">14.2<small>km</small></div><div class="l">Length</div></div>
+            <div class="card sp-tile"><div class="v">163</div><div class="l">Corners</div></div>
+            <div class="card sp-tile"><div class="v">412<small>m</small></div><div class="l">Gain</div></div>
+            <div class="card sp-tile"><div class="v">388<small>m</small></div><div class="l">Loss</div></div>
+          </div>
+          <div class="sp-pts">
+            <div class="card sp-pt"><div class="l">Radio</div><div class="pv"><b>3</b>on the map</div></div>
+            <div class="card sp-pt"><div class="l">Medical</div><div class="pv"><b>2</b>on the map</div></div>
+            <div class="card sp-pt"><div class="l">Marshal</div><div class="pv"><b>9</b>on the map</div></div>
+            <div class="card sp-pt"><div class="l">Spectators</div><div class="pv"><b>4</b>on the map</div></div>
+          </div>
+          <div class="sp-help">All four are where the organisers put them.</div>
+          <div class="card lnote"><span class="pill">Ready</span><span>Notes from the map's roads, all the way. No recce needed.</span></div>
+          <div class="wxrow" data-m="ds.prop ds.rday ds.rain">
+            <span class="wl">Weather</span>
+            <span class="cyc" data-m="ds.prop"><span class="ar">‹</span><span class="val">Your own</span><span class="ar">›</span></span>
+            <span class="cyc foc" data-m="ds.rday"><span class="ar">‹</span><span class="val"><svg><use href="#i-rain"/></svg>Rally day · light rain</span><span class="ar">›</span></span>
+            <span class="cyc" data-m="ds.rain"><span class="ar">‹</span><span class="val"><svg><use href="#i-rain"/></svg>Rain</span><span class="ar">›</span></span>
+          </div>
+          <div class="acts">
+            <div class="btn sel" data-m="ds.now ds.prop ds.rain">Drive stage</div>
+            <div class="btn" data-m="ds.rday">Drive stage</div>
+            <div class="btn sec">Route to start</div>
+            <div class="btn out">Reset</div>
+            <div class="btn sec">Recce</div>
+          </div>
+          <div class="acthelp">
+            <b>Drive stage</b>: takes you to the time control before the start, then through the stage as in a real rally.<br>
+            <b>Route to start</b>: the way there on the GPS, arrows on the road. No teleport.<br>
+            <b>Reset</b>: removes this stage's line, so you can make it again -- with the auto recce or by driving a recce. Your times are kept.<br>
+            <b>Recce</b>: drive the stage once at your own pace; the line you drive gives the notes.
+          </div>
+        </div>
+        <div class="col">
+          <div class="card lb">
+            <div class="lb-top"><h3>Leaderboard</h3><div class="lb-tabs"><span class="on" data-m="ds.now ds.prop ds.rday">SS1</span><span data-m="ds.rain">SS1</span><span data-m="ds.now ds.prop ds.rday">SS5</span><span class="on" data-m="ds.rain">SS5</span></div></div>
+            <div class="lr hd"><span>Pos</span><span>Driver</span><span>Class</span><span class="r">Time</span><span class="r">Gap</span></div>
+            <div class="lr"><span>1</span><span>A. Merrow</span><span>O4WD</span><span class="mono r">8:02.4</span><span class="mono r"></span></div>
+            <div class="lr"><span>2</span><span>J. Tallis</span><span>O4WD</span><span class="mono r">8:05.9</span><span class="mono r">+3.5</span></div>
+            <div class="lr"><span>3</span><span>K. Oduya</span><span>L4WD</span><span class="mono r">8:11.0</span><span class="mono r">+8.6</span></div>
+            <div class="lr me"><span>9</span><span>You</span><span>O4WD</span><span class="mono r">8:31.7</span><span class="mono r">+29.3</span></div>
+            <div class="lr"><span>10</span><span>R. Pell</span><span>O2WD</span><span class="mono r">8:33.0</span><span class="mono r">+30.6</span></div>
+          </div>
+          <div class="card runs">
+            <h3>Your runs</h3>
+            <div class="bestb"><span class="t">8:31.7</span><span class="badge">BEST</span></div>
+            <div class="run"><span>Tue 17 Nov <span class="dim">· last</span></span><span class="mono">8:31.7</span><span class="c">clean</span></div>
+            <div class="run"><span>Mon 16 Nov</span><span class="mono">8:44.0</span><span class="c">clean</span></div>
+            <div class="muted small">Times include penalties.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="prompts">
       <span><span class="k a">A</span>Select</span>
-      <span data-m="tc.now tc.prop tc.nowx start.now start.prop start.nowx start.cant"><span class="k b">B</span>Back</span>
+      <span data-m="tc.now tc.prop tc.nowx start.now start.prop start.nowx start.cant ds.now ds.prop ds.rday ds.rain"><span class="k b">B</span>Back</span>
+      <span data-m="ds.rday"><span class="k lr2">◀ ▶</span>Weather</span>
       <span data-m="mp.now mp.prop"><span class="k b">B</span>Close</span>
       <span class="paused">Game paused</span>
     </div>
@@ -323,6 +426,13 @@ const SCREENS = {
     note: {
       now: "<b>Now.</b> In a BeamMP session the menu opens on Home as anywhere else, and a rally or stage can be started on the server.",
       prop: "<b>In a BeamMP session the menu is one card</b> and Close (A or B) shuts the menu. The pause menu's Rally menu button opens the same. A rally under way when you joined is kept as Save and quit keeps it, to carry on after you leave the server."
+    } },
+  ds: { crumbs: "Home<i>›</i>Drive stage<i>›</i>Coastal Series 2026<i>›</i>Pine Ridge Rally<i>›</i><b>Quarry Loop</b>", v: [["now", "Now", "n"], ["prop", "Proposed · Your own", "p"], ["rday", "Proposed · Rally day (focused)", "p"], ["rain", "Proposed · SS5, no stored weather", "p"]],
+    note: {
+      now: "<b>Now.</b> The stage page: tiles, points, the line's state, then Drive stage, Route to start, Reset / Auto recce and Recce. The stage runs in whatever weather BeamNG.Earth has.",
+      prop: "<b>One option row above the buttons:</b> Weather, in the start screen's look, cycled with left / right (or a click on ‹ ›). Order: Your own, Rally day, Clear, Cloudy, Rain, Storm, Snow, Fog. <i>Your own</i> is the default and leaves BeamNG.Earth's weather alone. Remembered between stages. No help line.",
+      rday: "<b>Rally day</b> shows only when the pack stores weather for the pass picked on the leaderboard (here SS1): that day's weather in a word, as on the time card. Focused, the prompt bar shows ◀ ▶ Weather.",
+      rain: "<b>SS5 picked, a pass with no stored weather:</b> Rally day drops out of the cycle. A remembered Rally day falls back to Your own here and comes back on a stage that has it. Rain is a BeamNG.Earth preset."
     } },
 };
 let cur = "tc", curV = {};
