@@ -1361,15 +1361,28 @@ end
 -- (#77) The pop-up asking the player to install the Leaderboards helper: it did not answer when the menu opened,
 -- "Don't show this again" was not ticked on this version, no stage, full rally or recce is running, and the stats question
 -- is not up (online.promptWanted).
+local helperWhy = nil
 function M.helperPromptWanted()
-  if not menuOpen or helperDone or online.probeResult() ~= 'no' then return false end
-  local r = runner.current()
-  local running = (r ~= nil and runner.state() ~= 'finished' and runner.state() ~= 'failed') or rallyRun.active() ~= nil
-    or recce.active() or autoRecce.active()
+  if not menuOpen or helperDone then return false end
+  local probe = online.probeResult()
+  if probe ~= 'no' then
+    -- (the helper answered, or the check is under way or too early after the game started: said once in the log)
+    if probe ~= nil and probe ~= helperWhy then helperWhy = probe log('I', logTag, 'helper pop-up held: probe ' .. tostring(probe)) end
+    return false
+  end
+  -- (on a stage: its countdown or timed section, not a run driving to or waiting at the start -- found in test,
+  -- 2026-11-18, #77: a stage picked earlier held it back for good)
+  local st = runner.current() and runner.state() or 'idle'
+  local onStage = st == 'countdown' or st == 'launched' or st == 'running'
+  local running = onStage or rallyRun.active() ~= nil or recce.active() or autoRecce.active()
   local okC, consent = pcall(stats.consent)
   local ok, want = pcall(online.promptWanted, { probe = online.probeResult(), version = M.VERSION,
     dismissedFor = online.promptDismissedFor(), running = running, done = helperDone,
     consent = settings.get('onlineBoard') == true and okC and consent == 'ask' })
+  -- (why it shows or not, once per menu open, for the log)
+  local why = string.format('probe %s, run %s, rally %s, recce %s, dismissed for %s', tostring(online.probeResult()), st,
+    tostring(rallyRun.active() ~= nil), tostring(recce.active() or autoRecce.active()), tostring(online.promptDismissedFor()))
+  if why ~= helperWhy then helperWhy = why log('I', logTag, 'helper pop-up ' .. ((ok and want) and 'shown' or 'held') .. ': ' .. why) end
   return ok and want == true
 end
 

@@ -1993,6 +1993,22 @@ do
     reopen()
     T.check(not main.uiState().helperPrompt, 'helper prompt: not while a recce runs')
     recce.active = hadRA
+    -- a stage picked, the car driving to or waiting at the start: shown; on the stage itself: held (found in test,
+    -- 2026-11-18: a run waiting at the start held it back for good)
+    local hadCur, hadSt = runner.current, runner.state
+    local fakeRun = { event = { id = 'e', name = 'E', stages = {} }, stage = { id = 's', name = 'S' } }
+    runner.current = function() return fakeRun end
+    for _, st in ipairs({ 'toAtc', 'toStart', 'waitStart', 'travel' }) do
+      runner.state = function() return st end fakeRun.state = st
+      online._reset() online._socket = { tcp = function() return sk end } online.update(16) reopen()
+      T.check(main.uiState().helperPrompt == true, 'helper prompt: shown with a run in ' .. st)
+    end
+    for _, st in ipairs({ 'countdown', 'running' }) do
+      runner.state = function() return st end fakeRun.state = st
+      online._reset() online._socket = { tcp = function() return sk end } online.update(16) reopen()
+      T.check(not main.uiState().helperPrompt, 'helper prompt: held on the stage (' .. st .. ')')
+    end
+    runner.current, runner.state = hadCur, hadSt
     main.onUiChangedState('play')
     online._reset()
     online._socket, jsonReadFile, jsonWriteFile = hadSock, hadR, hadW
