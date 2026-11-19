@@ -7,6 +7,10 @@ argument-hint: <X.Y.Z-alpha> [release name]
 
 Release `$ARGUMENTS` of Earth Rally. Read `docs/writing-standard.md` first; it is the rule for every text below.
 
+0. **Confirm the number with the owner first**, every time, even when `/release` names one. Propose it with one line
+   of reasoning and wait for a yes: a **patch** (`1.9.1` -> `1.9.2`) for fixes and small improvements, a **minor**
+   (`1.9.x` -> `1.10.0`) only for a major new feature or system. When unsure, propose the patch. Nothing is tagged,
+   pushed or released before the owner says yes.
 1. **Preconditions.** The commit to release is on `origin/main` and already holds the release text: the top `CHANGELOG.md` entry in the
    standard's template (`Works with` line, patch 150 words at most, minor 400) and `M.VERSION` in `mod/`. README
    names no version. If they are missing, add them on a branch and land it on `main` first (see `CLAUDE.md`).
