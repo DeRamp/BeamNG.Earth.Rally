@@ -565,13 +565,19 @@ local function realOf(wx)
   if okP and p == M.SCENE_PRESET then return type(entry) == 'table' and entry.earthRallyReal or nil end
   if okP and p == nil and type(wx.current) == 'function' then
     local okC, m = pcall(wx.current)
-    if okC and type(m) == 'table' then return m end
+    -- (not a preset's message left as current: only a real one, and not one of ours nested)
+    if okC and type(m) == 'table' and m.preset == nil and m.earthRallyReal == nil then return m end
   end
   return nil
 end
 local function weatherBack(wx, real)
   pcall(wx.setPreset, nil)
-  if type(real) == 'table' and type(wx.onWeather) == 'function' then pcall(wx.onWeather, real) end
+  if type(real) == 'table' and type(wx.onWeather) == 'function' then
+    -- (the weather only: its time zone and place are from when ours went on, and the sky already has today's)
+    local m = {}
+    for k, v in pairs(real) do if k ~= 'utcOffsetS' and k ~= 'lat' and k ~= 'lon' then m[k] = v end end
+    pcall(wx.onWeather, m)
+  end
 end
 
 -- Is BeamNG.Earth's weather following its real weather (mode 'real')? Only then does a preset show; true when the

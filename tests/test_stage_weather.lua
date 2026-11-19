@@ -8,7 +8,7 @@ local preset, clock = nil, nil
 beamngEarth_sky = { setServerClock = function(c) clock = c return c end, serverClock = function() return clock end }
 -- (as BeamNG.Earth's weather.lua: setPreset(nil) keeps the preset's message as lastMsg until a real one comes;
 --  onWeather takes a real message only with no preset set)
-local lastMsg = { code = 1, real = true }
+local lastMsg = { code = 1, real = true, utcOffsetS = 28800, lat = -34, lon = 116 }
 beamngEarth_weather = {
   PRESETS = { clear = { code = 0 }, rain = { code = 63 }, fog = { code = 45 } },
   setPreset = function(n)
@@ -38,6 +38,14 @@ T.check(sw.apply(e, stage) and preset == 'earthrally' and beamngEarth_weather.PR
   and clock == nil, 'Rally day: that pass\'s weather, no clock')
 T.check(sw.giveBack() and preset == nil and beamngEarth_weather.PRESETS.earthrally == nil, 'given back')
 T.check(lastMsg.real == true and lastMsg.code == 1, 'the real weather back at once, not at the next real message')
+T.check(lastMsg.utcOffsetS == nil and lastMsg.lat == nil, 'handed back without its time zone and place')
+-- a preset's message left as current is never kept as the real one
+lastMsg = { code = 95, preset = 'storm' }
+settings.set('stageWeather', 'rallyday')
+sw.apply(e, stage)
+T.check(beamngEarth_weather.PRESETS.earthrally.earthRallyReal == nil, 'a preset message is not the real weather')
+sw.giveBack()
+lastMsg = { code = 1, real = true }
 T.check(sw.giveBack() == false, 'given back once')
 -- a pass with none stored: as Current
 sw.pagePass('ev', 'quarry', { board = { pass = 'SS5' } })
