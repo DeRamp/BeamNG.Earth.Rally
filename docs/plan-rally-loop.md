@@ -174,3 +174,129 @@ no push** (the lead pushes). Then the lead runs `/handoff` over the whole diff.
 **Added after the review (the owner, 2026-11-18):** a setting **Rally's real date and weather** (`realWorld`, default
 on, after Early check-in penalty). Off: Earth Rally never sets BeamNG.Earth's world time (one it set is given back as
 the menu closes), and the start screen shows no fork note.
+
+## Additions (2026-11-19)
+
+Two small additions to this build, as the owner picked them. Mock-ups: `docs/mockups-rally-loop/additions.html`.
+**Plan and mock-ups only: nothing is built until the owner OKs them.** The owner's rules still apply: no maximum
+lateness anywhere; slower than your best is amber; the early penalty is off by default.
+
+### A. Results show it all
+
+**What the player sees.**
+- **Results tab, a finished timed rally.** The "Your full rally" strip above the results grows a second line: one
+  chip per stage (`SS1 6:48.2`), with the road penalty taken getting to that stage's time control after its time, in
+  amber (`+20 s`). A stop where you were late (a service, the finish) gets a chip of its own (`Service A +20 s`). The
+  first line adds `incl. road penalties +1:10` after the total; with none, `no road penalties` in green.
+- **Stage page.** In Your runs, under the BEST box, a **Best splits** row: 1/4, 1/2, 3/4 and Finish of your fastest
+  run with splits on the line the stage runs on now, and where it came from (`your run of 14 Nov` or `a full-rally
+  pass, 16 Nov`). Each run in the list with splits on that line gets a second, smaller line: its four times, each
+  with its gap to the best splits (ahead green, slower amber, none on the best run itself).
+- Untimed rallies, finished rallies saved before this, and runs with no splits look exactly as today.
+
+**The logic.**
+- `rally.finished(r)` keeps, per pass, `roadS` (its `r.road[ss].penaltyS`, nil when none), and `stops = { { label,
+  inType, min, penaltyS } }` for each stop checked in at a cost (addition B). `roadPenaltyS` is already there.
+- `rallyRun.resultsFor(id)` passes the best finished rally's `passes`, `stops` and `roadPenaltyS` through to the page
+  (`main.lua`'s `rallyFinished` is already filled from it).
+- `menu.stageBase`: `bestSplits = events.bestSplits(e.id, s.id, info.key)`, `info = events.stageLineInfo(...)`; nil
+  when the stage has no line. `events.bestSplits` also returns the run's `date`, and `rally = true` for a rally pass.
+  Each run in `runs` gets `splits = { { timeS, gapS }... }` (four: s1, s2, s3 and the finish, its `timeS`) only when
+  it has three splits and its `lineKey` is the current line's; `gapS` against `bestSplits` (nil on the best run).
+
+**Files / functions.** `rally.lua` (`finished`), `rallyRun.lua` (`resultsFor`), `events.lua` (`bestSplits`: date,
+rally), `menu.lua` (`stageBase`: `bestSplits`, `runs[k].splits`), `EarthRally.vue` (the full-rally strip's chips;
+Your runs' Best splits and each run's split line).
+
+**Tests.** `test_rally` (finished: `roadS` per pass, `stops`, an untimed rally unchanged); `test_menu_rally_files`
+(best splits on the current line only, date and rally flag, gaps signed, no line: none, a run on another line: no
+splits).
+
+**Choices I've made.**
+1. **Best splits are one run's**, the fastest with splits on the current line: the one the HUD compares with. Not the
+   best of each quarter from different runs (that time was never driven).
+2. A run on an earlier line shows its time as today but **no splits**: a quarter of another line is another place.
+3. The best splits may come from a **full-rally pass**, which is never in Your runs: the row says so.
+4. Road penalties go on the **full rally's** strip only: the "Your rally" card beside the real top 10 is built from
+   single-stage bests, which have no road sections.
+5. A stop gets a chip **only when it cost something**; an on-time or free early check-in adds none.
+
+### B. Time controls complete
+
+**What the event files hold** (the made-up Warden test rally's shape): after a stage, the road section runs to the
+next "in" control; each row has `target_min` (from the row before) and `first_car`.
+- `SVC_IN` (target 6 after SS1) → `SVC_OUT` (its target is the service's length) → ATC.
+- `RGC_IN` (5) → `RGC_OUT` (the regroup's length; "Regroup Out / Service In") → `SVC_OUT` → next day `MTC_OUT`.
+- The last stage → `MTC_IN` (6: the finish).
+- `time_rules.early_checkin_allowed: ["MTC_IN", "RGC_IN"]`.
+
+Today `itineraryOf` adds every target between two passes into the next pass's `targetMin` and keeps the last out row
+(`outAt`, `outTargetMin`); a stop has only its out time (`outT`). Nothing is due at a stop: `arrive()` repairs, saves
+and opens the card; `transitDueNow` returns nil while `toStop`; `uiCard` shows `–` on every row whose due is not
+known, and no Due / In / Road on stops.
+
+**What the player sees.**
+- **Driving to a service, a regroup or the finish:** the HUD's transit line and the time card's banner get the due
+  time and the time left, as on the way to an ATC (amber under a minute, red when late).
+- **Arriving** (stopped at its board): the time card opens as now; its stop card carries the check-in: Time in, Due,
+  Result (`On time` / `2 min late · +20 s` / `3 min early · no penalty`) and Out (the scheduled out time the clock
+  jumps to). A regroup or the finish says `early check-in allowed`.
+- **The time card:** stop rows get Due / In / Road like stage rows. A row whose due isn't known yet shows its road
+  section's target instead of `–`: `target 14 min`, dim. Rows the schedule fixes (after a stop's out time) keep their
+  due time, as now.
+- Road penalties at stops go into the same total, the overall standing and the finished rally.
+
+**The logic.**
+- **`pack.itineraryOf`:** in each stretch after a pass, the first row of type `SVC_IN`, `RGC_IN`, `MTC_IN` or `PF_IN`
+  is its check-in, carried on the next pass as `inType` and `inTargetMin` (the targets from the pass up to and
+  including that row; a lateness of a pass with no line counted in, as for `targetMin`). The stretch after the last
+  pass goes in `timing.finish = { inType, inTargetMin }`. In the stops loop each stop takes `inType` / `inTargetMin`
+  from `out[st.after + 1]`, as it takes `outAt` now. `timing.earlyFree = { MTC_IN = true, RGC_IN = true }` from
+  `time_rules.early_checkin_allowed` (strings: `rulesOf` reads numbers only, so it is read beside it).
+- **`rally.orderOf`:** a stop item gets `inType` and `inTargetMin` (+ `carry` from passes left out before it, as a
+  stage's `targetMin` does); the final stop gets `timing.finish`'s. `rally.new` keeps `r.earlyFree`. `holdOut`: a
+  stage taken out right before a stop adds its target and lateness to the stop's `inTargetMin`; two stops merged keep
+  the first one's in (the one driven into).
+- **`rally.dueFor(r, i)`** for a stop: `lastOut + inTargetMin` (to the minute), nil without either. Only the stop
+  right after the stage just done has one: a stage's time out is never known in advance.
+- **`rally.checkIn(r, item, inT, dueT, earlyPenalty, key)`:** key = the stage's `ss`, or `'stop' .. i` for a stop
+  (its place in `r.order`, as `serviced` keys it). Late: `lateSPerMin`, as at an ATC. Early: free when
+  `r.earlyFree[item.inType]`, else as at an ATC (the setting). The entry keeps `inType`.
+- **`rallyRun`:** `dueAt(i)` answers for the current stop too; `transitDueNow` also runs while driving to a stop
+  (`toStop`), labelled with the stop. `arrive(driven)`: driven in (stopped at the board, or near it from the time
+  card's button) with a due known, `M.checkIn` before `save()`, so the save at the service holds it; the final stop
+  checks in before `finish()`. A teleport (a Realistic recovery, a stop with no place, a move) checks nothing in. No
+  wait at a stop: the clock jumps to the out time anyway; with the early penalty on, you wait short of the board, as
+  crews wait outside a control.
+- **`uiCard`:** stop rows read `R.road['stop' .. i]` for `due` / `timeIn` / `roadPenaltyS` / `roadKind`, else
+  `due = dueAt(i)`. A row with no due, not done: `targetMin` (a stage: its `targetMin`, or `outTargetMin` after a
+  stop; a stop: `inTargetMin`). At a stop, `at.checkIn = { inType, due, timeIn, kind, min, penaltyS, free, outAt }`.
+  The transit block works for `toStop` as for a stage.
+- **Save:** still format 3. A rally saved before this goes on as it was: its stops have no `inTargetMin`, so nothing
+  is due at them.
+
+**Files / functions.** `pack.lua` (`itineraryOf`, its stops loop), `rally.lua` (`orderOf`, `new`, `holdOut`,
+`dueFor`, `checkIn`, `finished`), `rallyRun.lua` (`dueAt`, `transitDueNow`, `arrive`, `goNext`'s near-arrival,
+`uiCard`), `EarthRallyFull.vue` (stop rows, `target N min` in a wider Due column, the stop card's check-in, the `toStop`
+banner). The HUD
+app needs nothing: `hudFrame` already shows whatever `transitDue` gives.
+
+**Tests.** `test_pack` (a made-up itinerary in the Warden shape: the service-in's 6, the regroup-in's 5 before an
+overnight, the finish's 6, `earlyFree`; a pass with no line before a stop); `test_rally` (`orderOf` with a cancelled
+pass before a stop; `dueFor` for a stop; `checkIn` late at a service, early free at a regroup and at the finish,
+early at a service with the setting on and off; `holdOut` before a stop); `test_run` (arriving driven checks in and
+saves it; a recovery doesn't; the final service checks in before finishing; `uiCard` stop rows, `targetMin`,
+`at.checkIn`).
+
+**Choices I've made.**
+1. **One check-in per stop:** the first "in" control after the stage. A regroup right before a service (the Warden
+   shape) is checked at the regroup, early free; the service-in after it is not timed again.
+2. **A regroup on its own** (no service or overnight next to it) stays inside the road section, as today: no stop on
+   the map. Its time is in the next ATC's target, so lateness there costs the same, once, at the ATC.
+3. **Early at a service-in** follows the early-penalty setting: off (the default), `3 min early · no penalty`; on,
+   1 min a minute. No wait card at a stop: with the penalty on, you wait short of the board.
+4. **No check-in without driving in:** a Realistic recovery, a stop with no place on the map, or a teleport leaves the
+   row blank, as today.
+5. **`target 14 min`** is the road section's target from the control before it; rows whose due the schedule fixes
+   keep the due time.
+6. **No maximum lateness**, here as everywhere: lateness at a stop only costs its penalty.
