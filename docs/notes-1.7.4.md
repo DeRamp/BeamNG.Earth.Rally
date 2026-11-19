@@ -72,3 +72,15 @@ The owner: "can you make these in-game pictures, please? I want to see cars on h
   its wordmark).
 
 Files: `EarthRallyHomeMenu.vue`, plus `ui/modules/apps/earthRally/home-rally.jpg` and `home-stage.jpg`.
+
+### 5. The Rally page tile: the name big, the car on the left
+
+The owner likes the picture, but the words are small and low; the tile shows as a small thumbnail, so small text and
+detail are lost. Wanted: the car in the air on the left, the name in big type on the right, and it reads
+"earth.rally", in line with BeamNG.drive and BeamNG.Earth.
+
+**Fix (for the owner's go):** a new `ui/modules/apps/earthRally/tile.jpg` (960x540), from the clean jump shot
+(`marketing/samples/picture-02-jump-sunrise-1080p.jpg`, no wordmark): the car on the left, the right side darkened,
+and the name stacked in two lines, white then orange (`EARTH` / `.RALLY`, Segoe UI Black). Two cases to pick from:
+`docs/mockups-1.7.3+mainmenu/tile-a.jpg` (capitals) and `tile-b.jpg` (lower case), with `-thumb.png` at 240x135.
+Only the picture changes; the tile's name stays "Earth Rally".
