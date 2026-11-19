@@ -5,7 +5,7 @@
   <div class="er-consent">
     <div class="er-cs-card">
       <h1>Also send anonymous stats?</h1>
-      <p>Leaderboards are on. Separately, Earth Rally can send anonymous stats and error reports through the same
+      <p>Leaderboards are on by default. Separately, Earth Rally can send anonymous stats and error reports through the same
         add-on: which stages you run, whether you finish them, and what went wrong. It shows what needs fixing. Your
         leaderboard works the same either way.</p>
       <div class="er-cs-cols">

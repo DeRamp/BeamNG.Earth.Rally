@@ -3,6 +3,22 @@
 Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/writing-standard.md). Downloads:
 [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
 
+## 1.8.1-alpha: the leaderboard helper prompt (2026-11-18)
+
+Works with BeamNG.drive 0.40.5 · BeamNG.Earth 1.10+ for **Add from GitHub**, e.g. the
+[DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases) (official 1.10+ works, without the auto recce).
+
+A reminder to add the leaderboard helper, and leaderboards on from the start.
+
+### Changed
+* **Leaderboards** are on by default. Nothing is sent until you pick a name.
+* If you saved your settings before, your own **Leaderboards** choice is kept.
+* The stats question comes up the first time the menu opens. Off unless you say yes.
+
+### New
+* When the **Earth Rally Leaderboards** helper is not running, opening the menu shows how to add it.
+* **Got it** hides it until next time; **Don't show again** hides it until the next update.
+
 ## 1.8.0-alpha: leaderboards (2026-11-18)
 
 Works with BeamNG.drive 0.40.5 · BeamNG.Earth 1.10+ for **Add from GitHub**, e.g. the

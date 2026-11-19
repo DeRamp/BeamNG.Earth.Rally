@@ -310,7 +310,7 @@ end
 -- Look once (the menu opened). Not again while a look is under way. The board's connection up counts as a yes.
 function M.probeStart()
   if probeResult == 'probing' then return false end
-  if state == 'connected' then probeResult = 'yes' return true end
+  if state == 'connected' and hello then probeResult = 'yes' return true end
   local okS, sk = pcall(function() return M._socket or socket or require('socket') end)
   if not okS or not sk then probeResult = 'unknown' return false end
   local okT, s = pcall(sk.tcp)
@@ -326,7 +326,7 @@ end
 
 probeStep = function(dt)
   if probeResult ~= 'probing' then return end
-  if state == 'connected' then return probeEnd('yes') end
+  if state == 'connected' and hello then return probeEnd('yes') end
   probeT = probeT + (dt or 0)
   -- Only a real answer counts: the helper's hello, asked once the connection seems up. (A socket's getpeername alone
   -- said yes on Windows with nothing on the port -- found in test, 2026-11-18, #77.)
@@ -335,7 +335,7 @@ probeStep = function(dt)
     if okS then
       local sent = n or partial or 0
       if sent > 0 then probeOut = probeOut:sub(sent + 1) end
-      if not n and err ~= 'timeout' then return probeEnd('no') end
+      -- (an error here may only mean the connection is not up yet: waited for until PROBE_TIMEOUT_S)
     end
   else
     local okR, line, err, part = pcall(probeSock.receive, probeSock, '*l')
@@ -356,7 +356,7 @@ function M.markLoaded() loadedAt = clock end
 
 -- nil | 'probing' | 'yes' | 'no' | 'unknown' | 'early'; the board's connection up is always a yes.
 function M.probeResult()
-  if state == 'connected' then return 'yes' end
+  if state == 'connected' and hello then return 'yes' end   -- (the helper's own answer, not a socket that seems up)
   return probeResult
 end
 
@@ -434,6 +434,8 @@ end
 -- for runSample / runReset / runFinish, or nil when the online board is off or the stage has no line.
 function M.runStart(desc)
   if not (enabled and desc) then return nil end
+  -- (the helper there but no name picked yet: nothing is sent; with no helper, the run still says why it was not sent)
+  if hello and not hello.player then return nil end
   local h = { desc = desc, trace = {}, resets = {}, slowS = 0, asking = true }
   M.request('start', { stage = desc }, function(r)
     h.asking = false
