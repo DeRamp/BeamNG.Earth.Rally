@@ -10,12 +10,18 @@ CREATE TABLE IF NOT EXISTS events (
   stages_done INTEGER, stages_total INTEGER,
   code TEXT, module TEXT,
   message TEXT, car TEXT, cls TEXT,  -- added 2026-11-18 (migrate-2026-11-18.sql for the live table)
-  install TEXT                  -- install_seen only (its session is ''); added 2026-11-18 (migrate-2026-11-18b.sql)
+  install TEXT                  -- unused since 2026-11-19 (install_seen goes to installs); added by migrate-2026-11-18b.sql
 );
 CREATE INDEX IF NOT EXISTS events_day ON events (day, event);
 CREATE INDEX IF NOT EXISTS events_session ON events (session);
-CREATE INDEX IF NOT EXISTS events_install ON events (install, day);   -- players: once per install and day
 CREATE INDEX IF NOT EXISTS events_err ON events (event, code, module, mod, day);   -- errors: first seen, cheaply
+
+-- players: one row per install number and day, from install_seen. A table of its own, with no row number, so an
+-- install cannot be matched to the session rows sent alongside it (added 2026-11-19, migrate-2026-11-19.sql)
+CREATE TABLE IF NOT EXISTS installs (
+  install TEXT NOT NULL, day TEXT NOT NULL, mod TEXT, game TEXT, earth TEXT,
+  PRIMARY KEY (install, day)
+) WITHOUT ROWID;
 
 -- rows older than a year, as monthly counts (worker.js prune)
 CREATE TABLE IF NOT EXISTS archive (month TEXT, event TEXT, rally TEXT, stage TEXT, result TEXT, n INTEGER);

@@ -10,8 +10,9 @@
 //
 // Each event carries a session number: random, made new each time the game starts, never reused. One event does
 // not: install_seen carries only the install number (random, kept on the player's PC from their Yes until a No),
-// the versions and the day, sent once a session to count players. It is stored with an empty session, at most once
-// per install and day, so players are counted but never tied to a session or a stage. Never stored: the IP address
+// the versions and the day, sent once a session to count players. It goes to its own table, installs (one row per
+// install and day, no row number, nothing in common with events), never to events, so players are counted but
+// never tied to a session or a stage. Never stored: the IP address
 // (never read here), headers, anything not in EVENTS.
 
 import { DASHBOARD_HTML, DASHBOARD_JS } from "./dashboard.js"
@@ -40,7 +41,8 @@ const LENGTHS = { message: 200 }
 const CLASSES = new Set(["stock", "open"])
 const NUMBERS = { pass: [0, 999], time_s: [0, 86400], resets: [0, 9999], stages_total: [0, 999], stages_done: [0, 999] }
 const COLUMNS = ["day", "event", "session", "mod", "game", "earth", "rally", "stage", "pass", "result", "time_s",
-  "resets", "line", "stages_done", "stages_total", "code", "module", "message", "car", "cls", "install"]
+  "resets", "line", "stages_done", "stages_total", "code", "module", "message", "car", "cls"]
+// (events.install, added 2026-11-18b, is never written: install_seen goes to installs)
 const HEX32 = /^[0-9a-f]{32}$/
 
 const text = (s, n = 80) => (typeof s === "string" || typeof s === "number") ? String(s).slice(0, n) : null
@@ -56,7 +58,7 @@ export function clean(e) {
     : (typeof e.session !== "string" || !HEX32.test(e.session))) return null
   // the player's day, unless it is far off (a wrong clock): then ours
   const day = typeof e.day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(e.day) && e.day >= daysAgo(2) && e.day <= daysAgo(-2) ? e.day : today()
-  if (install) return { day, event: e.event, session: "", install: e.install, mod: text(e.mod, 40), game: text(e.game, 40), earth: text(e.earth, 20) }
+  if (install) return { day, event: e.event, install: e.install, mod: text(e.mod, 40), game: text(e.game, 40), earth: text(e.earth, 20) }
   const row = { day, event: e.event, session: e.session, mod: text(e.mod, 40), game: text(e.game, 40), earth: text(e.earth, 20) }
   for (const f of EVENTS[e.event]) {
     const v = e[f]
@@ -85,27 +87,25 @@ async function readBody(req) {
 
 // A message can hold several sessions (events waiting from an earlier game). Each session is capped at
 // MAX_PER_SESSION rows in all, so one broken client cannot fill the database; a session over it is skipped.
-// install_seen is kept once per install and day (the dashboard counts players per day, no more is needed).
+// install_seen goes to installs, once per install and day (INSERT OR IGNORE on its key), in a batch of its own.
 async function postEvents(req, env) {
   const body = await readBody(req)
   if (!body || !Array.isArray(body.events) || body.events.length > MAX_EVENTS) return empty(400)
   const rows = body.events.map(clean).filter(Boolean)
-  const bySession = new Map(), seen = new Set()
+  const bySession = new Map(), installs = []
   const sql = `INSERT INTO events (${COLUMNS.join(", ")}) VALUES (${COLUMNS.map(() => "?").join(", ")})`
   const inserts = []
   for (const r of rows) {
-    if (!r.install) { bySession.set(r.session, [...(bySession.get(r.session) || []), r]); continue }
-    const k = r.install + " " + r.day
-    if (seen.has(k)) continue
-    seen.add(k)
-    const had = await env.DB.prepare("SELECT 1 AS x FROM events WHERE install = ? AND day = ? LIMIT 1").bind(r.install, r.day).first()
-    if (!had) inserts.push(env.DB.prepare(sql).bind(...COLUMNS.map(c => r[c] ?? null)))
+    if (r.event === "install_seen") installs.push(env.DB.prepare("INSERT OR IGNORE INTO installs (install, day, mod, game, earth) VALUES (?, ?, ?, ?, ?)")
+      .bind(r.install, r.day, r.mod ?? null, r.game ?? null, r.earth ?? null))
+    else bySession.set(r.session, [...(bySession.get(r.session) || []), r])
   }
   for (const [session, mine] of bySession) {
     const { n } = await env.DB.prepare("SELECT COUNT(*) AS n FROM events WHERE session = ?").bind(session).first()
     if (n + mine.length > MAX_PER_SESSION) continue
     for (const r of mine) inserts.push(env.DB.prepare(sql).bind(...COLUMNS.map(c => r[c] ?? null)))
   }
+  if (installs.length) await env.DB.batch(installs)
   if (inserts.length) await env.DB.batch(inserts)
   return empty(204)
 }
@@ -122,10 +122,9 @@ async function summary(url, env) {
   const q = (sql, ...b) => env.DB.prepare(sql).bind(...b)
   // (every query reads by the day index or events_err: D1's free plan counts rows read, and the mod's own posts
   // stop when they run out)
-  // (install_seen rows have an empty session: left out of everything counted by session)
   const [tot, daily, stages, times, rallies, mods, games, earths, errors, firsts, classes, cars, players, perDay] = await env.DB.batch([
     q(`SELECT
-         (SELECT COUNT(DISTINCT session) FROM events WHERE day >= ?1 AND event != 'install_seen') AS sessions,
+         (SELECT COUNT(DISTINCT session) FROM events WHERE day >= ?1) AS sessions,
          (SELECT COUNT(*) FROM events WHERE day >= ?1 AND event = 'stage_started') AS started,
          (SELECT COUNT(*) FROM events WHERE day >= ?1 AND event = 'stage_finished' AND result = 'finished') AS finished,
          (SELECT COUNT(*) FROM events WHERE day >= ?1 AND event = 'rally_finished') AS rallies_finished,
@@ -146,9 +145,9 @@ async function summary(url, env) {
     q(`SELECT rally, MAX(stages_total) AS stages, SUM(event = 'rally_started') AS started,
          SUM(event = 'rally_finished') AS finished, COUNT(DISTINCT session) AS sessions
          FROM events WHERE day >= ? AND event IN ('rally_started', 'rally_finished') GROUP BY rally ORDER BY started DESC`, since),
-    q(`SELECT mod AS v, COUNT(DISTINCT session) AS n FROM events WHERE day >= ? AND event != 'install_seen' GROUP BY mod ORDER BY n DESC`, since),
-    q(`SELECT game AS v, COUNT(DISTINCT session) AS n FROM events WHERE day >= ? AND event != 'install_seen' GROUP BY game ORDER BY n DESC`, since),
-    q(`SELECT earth AS v, COUNT(DISTINCT session) AS n FROM events WHERE day >= ? AND event != 'install_seen' GROUP BY earth ORDER BY n DESC`, since),
+    q(`SELECT mod AS v, COUNT(DISTINCT session) AS n FROM events WHERE day >= ? GROUP BY mod ORDER BY n DESC`, since),
+    q(`SELECT game AS v, COUNT(DISTINCT session) AS n FROM events WHERE day >= ? GROUP BY game ORDER BY n DESC`, since),
+    q(`SELECT earth AS v, COUNT(DISTINCT session) AS n FROM events WHERE day >= ? GROUP BY earth ORDER BY n DESC`, since),
     // (message: the newest one the group has, its row id padded in front so MAX picks it, then cut off)
     q(`SELECT code, module, mod, COUNT(*) AS times, COUNT(DISTINCT session) AS sessions, MAX(day) AS last,
          substr(MAX(printf('%012d', id) || message), 13) AS message
@@ -157,13 +156,12 @@ async function summary(url, env) {
     q(`SELECT cls AS v, COUNT(*) AS n FROM events WHERE day >= ? AND event = 'stage_finished' GROUP BY cls ORDER BY n DESC`, since),
     q(`SELECT car AS v, COUNT(*) AS n FROM events WHERE day >= ? AND event = 'stage_finished' AND car IS NOT NULL
          GROUP BY car ORDER BY n DESC LIMIT 20`, since),
-    // players: distinct install numbers (install_seen only); all time = the 12 months kept
+    // players: distinct install numbers (the installs table); all time = the 12 months kept
     q(`SELECT
-         (SELECT COUNT(DISTINCT install) FROM events WHERE install IS NOT NULL) AS all_time,
-         (SELECT COUNT(DISTINCT install) FROM events WHERE day >= ?1 AND event = 'install_seen') AS in_range,
-         (SELECT COUNT(DISTINCT install) FROM events WHERE day >= ?2 AND event = 'install_seen') AS last7`, since, daysAgo(6)),
-    q(`SELECT day, COUNT(DISTINCT install) AS players FROM events WHERE day >= ? AND event = 'install_seen'
-         GROUP BY day ORDER BY day`, since),
+         (SELECT COUNT(DISTINCT install) FROM installs) AS all_time,
+         (SELECT COUNT(DISTINCT install) FROM installs WHERE day >= ?1) AS in_range,
+         (SELECT COUNT(DISTINCT install) FROM installs WHERE day >= ?2) AS last7`, since, daysAgo(6)),
+    q(`SELECT day, COUNT(*) AS players FROM installs WHERE day >= ? GROUP BY day ORDER BY day`, since),
   ])
   const byStage = {}
   for (const t of times.results) (byStage[t.rally + "\u0000" + t.stage] ||= []).push(t.time_s)
@@ -195,6 +193,7 @@ async function prune(env) {
       SELECT substr(day, 1, 7), event, rally, stage, result, COUNT(*) FROM events WHERE day < ?
       GROUP BY substr(day, 1, 7), event, rally, stage, result`).bind(cut),
     env.DB.prepare("DELETE FROM events WHERE day < ?").bind(cut),
+    env.DB.prepare("DELETE FROM installs WHERE day < ?").bind(cut),
   ])
 }
 

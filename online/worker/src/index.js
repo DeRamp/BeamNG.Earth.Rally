@@ -368,7 +368,7 @@ async function route(req, env) {
     const { results } = await db.prepare(
       "SELECT s.id, s.name, s.rally, s.length_m AS lengthM, s.created_at AS createdAt, " +
       "COUNT(r.id) AS runs, COALESCE(SUM(r.status = 'flagged'), 0) AS flagged, " +
-      "COALESCE(SUM(r.status != 'flagged' AND EXISTS (SELECT 1 FROM reports x WHERE x.run_id = r.id)), 0) AS reported " +
+      "COALESCE(SUM(r.status = 'ok' AND EXISTS (SELECT 1 FROM reports x WHERE x.run_id = r.id)), 0) AS reported " +
       "FROM stages s LEFT JOIN runs r ON r.stage_id = s.id GROUP BY s.id ORDER BY s.rally, s.name LIMIT 2000",
     ).all()
     return json({ stages: results || [] })
@@ -406,7 +406,9 @@ async function route(req, env) {
       "r.car, r.time_ms AS timeMs, r.flags, r.wall_ratio AS wallRatio, r.submitted_at AS at, " +
       "(SELECT COUNT(*) FROM reports x WHERE x.run_id = r.id) AS reports " +
       "FROM runs r JOIN players p ON p.id = r.player_id JOIN stages s ON s.id = r.stage_id " +
-      "WHERE r.status = 'flagged' OR r.id IN (SELECT run_id FROM reports) ORDER BY r.submitted_at DESC LIMIT 200",
+      // (a hidden run keeps its reports, but is dealt with: off the list)
+      "WHERE r.status != 'hidden' AND (r.status = 'flagged' OR r.id IN (SELECT run_id FROM reports)) " +
+      "ORDER BY r.submitted_at DESC LIMIT 200",
     ).all()
     return json({ runs: results || [] })
   }

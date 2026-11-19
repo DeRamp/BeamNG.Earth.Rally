@@ -119,7 +119,7 @@ tr.trace td { background: #141413; }
 <section class="view" id="v-overview">
   <div class="tiles" id="tiles"></div>
   <div class="card" style="margin-bottom:14px"><h2>Players</h2><div class="sub">Different installs that sent stats: each counts once
-      however often it plays. Counted from a number sent on its own, never with stages, and new after the player says No.</div>
+      however often it plays. Counted from a number sent in a message of its own and kept in a table apart from sessions and stages, with nothing linking them; new after the player says No.</div>
     <div class="tiles" id="players" style="grid-template-columns: repeat(3, 1fr); margin-bottom:12px"></div>
     <div class="sub" id="playersSub"></div><div id="playersDaily"></div></div>
   <div class="grid2">
@@ -298,7 +298,7 @@ function draw() {
   $("dailySub").textContent = "Started and finished, last " + rw;
   $("topSub").textContent = rw + ". Full list under Stages & rallies.";
   $("allSub").innerHTML = esc(rw) + ". Times from the stats (stage ends, finished only): anonymous, every car and both boards together, so they read as " +
-    "how fast people drive it, not a leaderboard. Click a column to sort. Players' own imported maps count together as <b>Own stages</b> (their names are never sent, so no times).";
+    "how fast people drive it, not a leaderboard. Click a column to sort. Players' own stages are sent by name from 1.8.2; rows from older versions, sent as <code>custom</code>, count together as <b>Own stages</b> (no names, so no times).";
   ["vSub1", "vSub2", "vSub3"].forEach(function (id) { $(id).textContent = "Share of sessions, " + rw; });
   $("newErrSub").textContent = days >= 365 ? "Not shown for 12 months: choose a shorter range." :
     (t.since && t.since > data.since ? "First seen in the last " + rw + ". Stats began on " + t.since + ", so every error is new for now." :

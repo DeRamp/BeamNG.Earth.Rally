@@ -10,8 +10,9 @@
 --   Each game session gets a new random number, never reused, and every event carries it. The leaderboard's player id
 --   is never sent with them.
 --   The install number (the owner, 2026-11-18: count players): a random number made on Yes and kept in STATE_FILE,
---   sent once per session in its own event, install_seen, with only the versions and the day: never with the session
---   number and never with a stage, so the server can count players but not tie one to what they drove. A No deletes
+--   sent once per session in its own event, install_seen, with only the versions and the day, in a message of its
+--   own: never with the session number or a stage, so the server can count players but not tie one to what they
+--   drove (it keeps them in a table apart, server/schema.sql installs). A No deletes
 --   it; a later Yes makes a new one.
 --
 --   Sent through the leaderboard's companion (online.lua, M.transport): the game's Lua cannot reach the internet, so
@@ -329,8 +330,14 @@ end
 
 local function sendBatch()
   if not M.transport or st.consent ~= 'yes' or #queue == 0 then return false end
+  -- (install_seen always goes in a message of its own, never with session events: the oldest waiting event says
+  -- which kind this message carries)
+  local installs = queue[1].event == 'install_seen'
   local batch = {}
-  for k = 1, math.min(#queue, M.BATCH) do batch[k] = queue[k] end
+  for _, e in ipairs(queue) do
+    if #batch >= M.BATCH then break end
+    if (e.event == 'install_seen') == installs then batch[#batch + 1] = e end
+  end
   local myGen = gen
   job = true
   local started = M.transport(batch, function(r)

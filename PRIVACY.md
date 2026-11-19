@@ -12,9 +12,10 @@ Owner and contact for this data: **DeRamp**, through
 - The event: a session started, a stage or rally started or finished, a recce done, an error.
 - A random session number, made new each time you start the game and never used again, so your sessions cannot
   be linked to each other (see the note under Your controls).
-- Once a session, on its own: a random install number kept on your PC, with only the versions and the day. It
-  counts players. It is never sent with the session number or your stages. Answering No deletes it; a later Yes
-  makes a new one.
+- Once a session, in a message of its own: a random install number kept on your PC, with only the versions and the
+  day. It counts players. It is never sent with the session number or your stages, and the server stores it once
+  a day in a table of its own, with nothing linking it to them. (On a day with very few players, the day and
+  versions alone could narrow it down.) Answering No deletes it; a later Yes makes a new one.
 - The Earth Rally, BeamNG.drive and BeamNG.Earth versions.
 - The day, with no time of day.
 - For a stage: the rally and stage name, the result, the stage time in whole seconds and the number of resets.

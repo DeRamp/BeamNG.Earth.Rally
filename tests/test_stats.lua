@@ -158,11 +158,18 @@ connected = true
 stats.update(stats.WAIT_S + 1)
 T.check(#sent == 1 and stats._job() ~= nil, 'sent to the companion')
 T.check(sent[1][1].session == stats._session(), 'the batch carries the events')
+for _, e in ipairs(sent[1]) do T.check(e.event ~= 'install_seen', 'install_seen never in a message with session events') end
 stats.record('error', { code = 'two' })
 reply({ ok = true })
-T.check(#stats._queue() == 1 and stats._queue()[1].code == 'two', 'taken off by identity: the one queued meanwhile kept')
+local q2 = stats._queue()
+T.check(#q2 == 2 and q2[1].event == 'install_seen' and q2[2].code == 'two', 'taken off by identity: the one queued meanwhile kept')
 T.check(stats.uiState().last ~= nil, 'the last message kept for the page')
-frames(1) reply({ ok = true })
+frames(1)
+T.check(#sent[2] == 1 and sent[2][1].event == 'install_seen', 'install_seen sent in a message of its own')
+reply({ ok = true })
+frames(1)
+T.check(#sent[3] == 1 and sent[3][1].code == 'two', 'then the session events, without it')
+reply({ ok = true })
 T.check(#stats._queue() == 0, 'and sent next')
 
 -- a failed answer keeps the events and waits; a refused batch is dropped

@@ -232,6 +232,12 @@ test("moderation", async () => {
     assert.equal((await t.call("POST", `/v1/admin/runs/${b.body.runId}`, { status: "hidden" }, "admin:letmein")).status, 200)
     let board = await t.call("POST", "/v1/boards", { stage: STAGE, board: "stock" })
     assert.deepEqual(board.body.rows.map(r => r.name), ["Ann"])
+    // and dealt with: off the Flagged list and out of the stage's flagged and reported counts, its report kept
+    assert.equal((await t.call("GET", "/v1/admin/flagged", undefined, "admin:letmein")).body.runs.length, 0)
+    const hs = (await t.call("GET", "/v1/admin/stages", undefined, "admin:letmein")).body.stages[0]
+    assert.deepEqual([hs.runs, hs.flagged, hs.reported], [2, 0, 0])
+    const hr = (await t.call("GET", `/v1/admin/stages/${hs.id}/runs`, undefined, "admin:letmein")).body.runs
+    assert.deepEqual(hr.filter(r => r.status === "hidden").map(r => r.reports), [1])
     // banned: off every board
     const pid = ann.split(":")[0]
     await t.call("POST", `/v1/admin/players/${pid}`, { banned: true }, "admin:letmein")

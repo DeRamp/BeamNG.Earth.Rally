@@ -34,7 +34,17 @@ The live D1 was made before these columns. Run once from this folder, then deplo
 
 Run once from this folder, after the one above, then deploy:
 `npx wrangler d1 execute earth-rally-stats --remote --file=migrate-2026-11-18b.sql`, then `npx wrangler deploy`.
-It adds the install number (`install_seen` events only), which the dashboard counts as players.
+It adds the install number (`install_seen` events only), which the dashboard counts as players. Since
+`migrate-2026-11-19.sql` that column is unused: install_seen goes to its own table, `installs`.
+
+## Update the live database (2026-11-19: players in a table of their own)
+
+Run from this folder, after 2026-11-18b, then deploy, then run it once more (it is safe to repeat; the second run
+sweeps up any install_seen the old Worker stored in between):
+`npx wrangler d1 execute earth-rally-stats --remote --file=migrate-2026-11-19.sql`, `npx wrangler deploy`, and the
+first command again. It makes `installs`, moves any install_seen rows out of `events` into it, and deletes them
+from `events`. Deploying first would fail every post with install_seen in it until the table exists (the mod keeps
+those and sends them later).
 
 ## Update: stage times and the Leaderboards tab (1.8.2)
 

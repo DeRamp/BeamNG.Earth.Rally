@@ -40,10 +40,9 @@ for (let d = 89; d >= 0; d--) {
     const c = { day, session: hex(), mod: d > 40 ? pick(["1.6.1-alpha", "1.6.2-alpha"]) : pick(["1.6.2-alpha", "1.6.2-alpha", "1.7.0-alpha"]),
       game: rnd() < 0.9 ? "0.40.5.0" : "0.40.4.0", earth: rnd() < 0.8 ? "1.10" : "1.9" }
     add({ ...c, event: "session_start" })
-    // (one of a pool of players: the install number, on its own row, once a day)
+    // (one of a pool of players: the install number, in installs, once a day)
     const who = "1".repeat(24) + String(Math.floor(rnd() * Math.min(400, 40 + (90 - d) * 4))).padStart(8, "0")
-    if (!db.prepare("SELECT 1 FROM events WHERE install = ? AND day = ?").get(who, day))
-      db.prepare("INSERT INTO events (day, event, session, install, mod, game, earth) VALUES (?, 'install_seen', '', ?, ?, ?, ?)").run(day, who, c.mod, c.game, c.earth)
+    db.prepare("INSERT OR IGNORE INTO installs (install, day, mod, game, earth) VALUES (?, ?, ?, ?, ?)").run(who, day, c.mod, c.game, c.earth)
     const own = rnd() < 0.2
     const r = own ? null : pick(rallies)
     const full = !own && rnd() < 0.3

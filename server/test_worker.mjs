@@ -36,7 +36,7 @@ assert.equal(clean({ ...base, event: "stage_finished", resets: -3 }).resets, und
 // install_seen: the install number, never a session; nothing else carries an install number
 const inst = "abcdefabcdefabcdefabcdefabcdef01"
 const seen = { event: "install_seen", install: inst, mod: "1.8.1-alpha", game: "0.40.5.0", earth: "1.10", day }
-assert.deepEqual(clean({ ...seen, session: id, rally: "ARA 2026" }), { day, event: "install_seen", session: "", install: inst, mod: "1.8.1-alpha", game: "0.40.5.0", earth: "1.10" })
+assert.deepEqual(clean({ ...seen, session: id, rally: "ARA 2026" }), { day, event: "install_seen", install: inst, mod: "1.8.1-alpha", game: "0.40.5.0", earth: "1.10" })
 assert.equal(clean({ ...seen, install: "Bob" }), null)
 assert.equal(clean({ ...seen, install: undefined }), null)
 assert.equal(clean({ ...base, event: "stage_finished", install: inst }).install, undefined)
@@ -84,20 +84,21 @@ assert.equal(s.totals.last_day, day)
 assert.equal(s.totals.sessions_ever, undefined)  // (a full scan nobody reads)
 assert.deepEqual([s.players.all_time, s.players.last7, s.players.in_range, s.players.daily.length], [0, 0, 0, 0])
 
-// players: install_seen stored once per install and day, with an empty session; counted apart from sessions
+// players: install_seen stored in installs once per install and day, never in events; counted apart from sessions
 const inst2 = "0000000000000000000000000000beef", old = new Date(Date.now() - 10 * 86400000).toISOString().slice(0, 10)
 assert.equal((await post("/v1/events", { events: [seen, seen, { ...seen, install: inst2 }, { ...base, event: "session_start" }] })).status, 204)
 assert.equal((await post("/v1/events", { events: [seen] })).status, 204)
-assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events WHERE event = 'install_seen'").get().n, 2)
-assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events WHERE install IS NOT NULL AND (session != '' OR event != 'install_seen')").get().n, 0)
-db.exec(`INSERT INTO events (day, event, session, install) VALUES ('${old}', 'install_seen', '', '${inst}'), ('${old}', 'install_seen', '', '${"9".repeat(32)}')`)
+assert.equal(db.prepare("SELECT COUNT(*) AS n FROM installs").get().n, 2)
+assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events WHERE event = 'install_seen' OR install IS NOT NULL").get().n, 0)
+assert.deepEqual(Object.keys(db.prepare("SELECT * FROM installs LIMIT 1").get()).sort(), ["day", "earth", "game", "install", "mod"])
+db.exec(`INSERT INTO installs (day, install) VALUES ('${old}', '${inst}'), ('${old}', '${"9".repeat(32)}')`)
 r = await worker.fetch(new Request("http://x/api/summary?days=30", { headers: { authorization: "Bearer " + env.DASHBOARD_KEY } }), env, ctx)
 const p = (await r.json())
 assert.deepEqual([p.players.all_time, p.players.last7, p.players.in_range], [3, 2, 3])
 assert.deepEqual(p.players.daily, [{ day: old, players: 2 }, { day, players: 2 }])
-assert.equal(p.totals.sessions, 1)                         // (the empty session of install_seen not counted)
+assert.equal(p.totals.sessions, 1)
 assert.equal(p.versions.mod.reduce((a, v) => a + v.n, 0), 1)
-db.exec("DELETE FROM events WHERE event = 'install_seen'")
+db.exec("DELETE FROM installs")
 
 // the dashboard page: served without the key (it asks for it), carries no data, https only off localhost
 r = await worker.fetch(new Request("http://localhost/dashboard"), env, ctx)
@@ -145,9 +146,25 @@ assert.equal(count(), n + 1)
 // prune: a year-old row archived
 db.exec("DELETE FROM events")
 db.exec(`INSERT INTO events (day, event, session) VALUES ('2020-01-05', 'session_start', '${id}')`)
+db.exec(`INSERT INTO installs (day, install) VALUES ('2020-01-05', '${inst}')`)
 await worker.scheduled({}, env)
 assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events").get().n, 0)
+assert.equal(db.prepare("SELECT COUNT(*) AS n FROM installs").get().n, 0)
 assert.equal(db.prepare("SELECT n FROM archive WHERE month = '2020-01'").get().n, 1)
+
+// migrate-2026-11-19.sql: old install_seen rows in events moved to installs, then gone from events; runs twice
+{
+  const { readFileSync } = await import("node:fs")
+  const mig = readFileSync(new URL("migrate-2026-11-19.sql", here), "utf8")
+  db.exec("DELETE FROM events; DELETE FROM installs")
+  db.exec(`INSERT INTO events (day, event, session, install, mod) VALUES ('${day}', 'install_seen', '', '${inst}', '1.8.1-alpha'),
+    ('${day}', 'install_seen', '', '${inst}', '1.8.1-alpha'), ('${day}', 'session_start', '${id}', NULL, '1.8.1-alpha')`)
+  db.exec(mig)
+  db.exec(mig)
+  assert.deepEqual(db.prepare("SELECT install, day, mod FROM installs").all().map(r => ({ ...r })), [{ install: inst, day, mod: "1.8.1-alpha" }])
+  assert.deepEqual(db.prepare("SELECT event FROM events").all().map(r => r.event), ["session_start"])
+  db.exec("DELETE FROM events; DELETE FROM installs")
+}
 
 // the board's moderation, passed on: dashboard key needed, only the listed calls, the admin token added here
 {
