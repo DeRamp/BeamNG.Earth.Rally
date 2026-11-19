@@ -203,6 +203,8 @@ function M.transitText(tr, units)
     if (tr.penaltyS or 0) > 0 then parts[#parts + 1] = string.format('+%d s', tr.penaltyS) end
   elseif tr.leftS and tr.leftS < 0 then
     parts[#parts + 1] = 'due now'      -- (inside the due minute: on time still, nothing left to count down)
+  elseif tr.early then
+    parts[#parts + 1] = 'early: wait short of the board'   -- (a stop that charges early: rallyRun transitDueNow)
   elseif tr.leftS then
     parts[#parts + 1] = M.diffText(tr.leftS) .. ' left'
   end
@@ -213,7 +215,7 @@ end
 function M.transitKey(tr)
   if type(tr) ~= 'table' or not tr.due then return 'tr-' end
   return 'tr' .. tostring(tr.due) .. '|' .. tostring(tr.leftS and math.floor(tr.leftS) or '-') .. '|' ..
-    tostring(tr.late) .. '|' .. tostring(tr.penaltyS)
+    tostring(tr.late) .. '|' .. tostring(tr.penaltyS) .. (tr.early and '|e' or '')
 end
 
 -- The same line as words, for the game's Messages app: 'Route to Kuhnle · 4.2 km · gets ready as you arrive'.
@@ -222,7 +224,7 @@ function M.approachText(a, units, tr)
   local d = a.distM and (' · ' .. M.lengthText(a.distM, units) .. (units == 'mi' and ' mi' or ' km')) or ''
   -- (a timed road section, tr = rallyRun.transitDue: 'due 18:50 · 6:12 left' before the distance)
   if type(tr) == 'table' and tr.due and not a.waiting then
-    local t = { distM = nil, due = tr.due, leftS = tr.leftS, late = tr.late, penaltyS = tr.penaltyS }
+    local t = { distM = nil, due = tr.due, leftS = tr.leftS, late = tr.late, penaltyS = tr.penaltyS, early = tr.early }
     d = ' · ' .. M.transitText(t, units) .. d
   end
   -- (the HUD app is not on screen between stages: the Messages line carries the transit's controls, #27)

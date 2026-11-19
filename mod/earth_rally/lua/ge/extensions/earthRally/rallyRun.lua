@@ -202,6 +202,10 @@ local function transitDueNow()
   if not dueT then return nil end
   local t = R.clock.t
   local late = math.max(0, math.floor(t / 60) - math.floor(dueT / 60))
+  -- (additions B, choice 3) driving to a stop that charges early, the car early: the line says to wait short of the
+  -- board (no wait card at a stop)
+  local early = toStop ~= nil and math.floor(t / 60) < math.floor(dueT / 60) and settings.get('earlyPenalty') == true
+    and not rally.earlyFree(R, it) or nil
   local label, distM
   if toStop then
     label, distM = it.label .. (it.name and (' · ' .. it.name) or ''), toStop.distM
@@ -210,7 +214,7 @@ local function transitDueNow()
     label, distM = it.ss .. ' ' .. tostring(stageName(it)), ap and ap.distM or nil
   end
   return { label = label, due = wt.hm(dueT), dueT = dueT, leftS = dueT - t,
-    distM = distM, late = late, penaltyS = late * (R.lateSPerMin or rally.LATE_S_PER_MIN) }
+    distM = distM, late = late, penaltyS = late * (R.lateSPerMin or rally.LATE_S_PER_MIN), early = early }
 end
 -- (asked three or four times a frame -- the Messages line, the stream, the runner's frame and its keys: worked out
 -- once a frame, again only if the clock or where the rally is moved in between)
@@ -1088,7 +1092,15 @@ function M.resume(id)
   setWorld()
   getReady(function()
     local it = rally.current(R)
-    if it and it.kind ~= 'stage' then goToStop()
+    if it and it.kind ~= 'stage' then
+      -- (a timed rally left on the road section to this stop: checked in at it at the rally clock saved, the lateness
+      -- so far counted -- never early, the car would have waited short of the board)
+      local key = 'stop' .. R.pos
+      local dueT = timed() and not (type(R.road) == 'table' and R.road[key]) and dueAt(R.pos) or nil
+      if dueT then
+        M.checkIn(it, nil, math.max(R.clock.t, math.floor(dueT / 60) * 60), dueT, key)
+      end
+      goToStop()
     elseif it then
       -- (left between two stages: back at the last stop's place, the transit to the stage driven from there -- a
       -- leave and continue is no skip of a road section, #33)
@@ -1116,6 +1128,9 @@ end
 -- Leave the rally (continue later): BeamNG's recovery back, the run stopped. The save stays at its last service.
 function M.quit()
   if not R then return true end
+  -- (Realistic, timed, left on a road section: the clock as it is now kept with the loop, so a Continue checks in at
+  -- the next stop with the lateness so far)
+  if loop and not R.done and timed() and not runLiveAny() then pcall(saveLoop) end
   -- (the sky given back first: nothing after may leave it on the rally's date)
   pcall(setWorld, true)
   if M.inRun() then pcall(runner.abort, true) end

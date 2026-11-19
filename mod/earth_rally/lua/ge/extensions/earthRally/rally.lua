@@ -288,10 +288,15 @@ end
 -- nothing. Kept in r.road under key: a stop's 'stop<i>' (its place in order, as serviced keys it), else the stage's
 -- ss. At a stop's "in" control the event lets you reach early (r.earlyFree[item.inType]: a regroup, the finish),
 -- early is free whatever the setting. Returns { kind, min, penaltyS, free (early allowed there) }.
+-- Is early free at this item's "in" control (r.earlyFree[item.inType]: a regroup, the finish)?
+function M.earlyFree(r, item)
+  return item ~= nil and item.inType ~= nil and type(r and r.earlyFree) == 'table' and r.earlyFree[item.inType] == true
+end
+
 function M.checkIn(r, item, inT, dueT, earlyPenalty, key)
   local res = { kind = 'onTime', min = 0, penaltyS = 0 }
   if not (r and r.timed and item and inT and dueT) then return res end
-  local free = item.inType ~= nil and type(r.earlyFree) == 'table' and r.earlyFree[item.inType] == true
+  local free = M.earlyFree(r, item)
   res.free = free or nil
   local diff = math.floor(inT / 60) - math.floor(dueT / 60)
   if diff > 0 then

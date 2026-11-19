@@ -3779,6 +3779,19 @@ do
       'stop check-in: the transit to the stop has its due time (' .. tostring(td and td.label) .. ')')
     c = rallyRun.uiCard()
     T.check(c.transit and c.transit.due == '08:40' and c.rows[3].due == '08:40', 'stop check-in: the card\'s banner and row')
+    -- (choice 3) early, driving to a stop that charges early: the line says to wait short of the board
+    local hud = require('earthRally/hudFrame')
+    settings.set('earlyPenalty', true)
+    T.check(td.early == nil, 'stop check-in: early at a finish that allows it: no wait note')
+    R.earlyFree = {}
+    R.clock.t = t0 + 35 * 60 + 1
+    td = rallyRun.transitDue()
+    T.check(td and td.early and hud.transitText(td) == 'due 08:40 · early: wait short of the board',
+      'stop check-in: early with the penalty on: ' .. tostring(td and hud.transitText(td)))
+    settings.set('earlyPenalty', false)
+    R.clock.t = t0 + 35 * 60 + 2
+    T.check(rallyRun.transitDue().early == nil, 'stop check-in: the early penalty off: no wait note')
+    R.earlyFree = { MTC_IN = true }
     R.clock.t = t0 + 43 * 60 + 30
     car.lat, car.lon, car.speed = parkLat, parkLon, 0
     rframes(5)
@@ -3792,6 +3805,26 @@ do
     local fin = rallyRun.resultsFor('test19t')
     T.check(fin and fin.roadPenaltyS == 30 and fin.passes and fin.passes[1].ss == 'SS1' and fin.stops[1].after == 'SS1',
       'stop check-in: the Results tab gets the passes, stops and road total')
+    rallyRun.endRally()
+    rallyRun.abandon('test19t')
+    -- (Realistic) left on the road section to the stop, 3 min late by then, and continued: checked in at the stop at
+    -- the rally clock as it was left, the lateness counted
+    car.lat, car.lon, car.speed = parkLat, parkLon, 0
+    T.check(rallyRun.start('test19t', { mode = 'realistic', class = 'L4WD' }), 'resume to a stop: started')
+    rframes(60)
+    R = rallyRun.active()
+    T.check(rallyRun.goNext() and runner.approaching(), 'resume to a stop: on the transit to SS1')
+    rallyRun.onFinished({ timeS = 200, stageS = 200, penaltyS = 0, startT = t0 + 20 * 60, finishT = t0 + 25 * 60 })
+    R.clock.t = t0 + 43 * 60 + 30
+    car.lat, car.lon = parkLat + 0.05, parkLon
+    rallyRun.quit()
+    car.lat, car.lon = parkLat, parkLon
+    T.check(rallyRun.resume('test19t'), 'resume to a stop: continued')
+    rframes(30)
+    R = rallyRun.active()
+    T.check(R and R.road.stop3 and R.road.stop3.kind == 'late' and R.road.stop3.min == 3 and R.road.stop3.penaltyS == 30,
+      'resume to a stop: checked in there at the clock left, 3 min late, +30 s (' ..
+      tostring(R and R.road.stop3 and R.road.stop3.kind) .. ')')
     rallyRun.endRally()
     rallyRun.abandon('test19t')
     -- a stop with no place: gone to, not driven in -- nothing checked in
