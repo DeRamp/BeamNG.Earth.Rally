@@ -102,6 +102,7 @@ function M.windowErrorWhy(what)
   end
   if what == 'timed out' or what == 'no answer' or what == 'no roads in the answer'
      or what:find('could not be read', 1, true) or what:find('world moved on', 1, true)
+     or what:find('set down', 1, true)     -- (the walk's car landed off the window: teleported again)
      or what:match('^[%a_][%w_%.]*Error$') or what:match('^[%a_][%w_%.]*Exception$')
      or what:match('^[%a_][%w_%.]*Timeout$') or what:match('^%u[%l%d]+%u%w*$') then
     return nil

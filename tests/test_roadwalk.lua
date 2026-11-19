@@ -13,6 +13,7 @@ package.loaded['beamngEarth/navgraph'] = { currentGraph = function() return g en
 _G.beamngEarth_core = { _state = function() return st end }
 _G.beamngEarth_api = {
   version = function() return 1, 8 end,
+  earthVersion = function() return '1.10.1-beta' end,
   has = function(n) return n == 'transform' end,
   ready = function() return ready end,
   rebasing = function() return false end,
@@ -101,7 +102,7 @@ os.time = realNow
 -- another BeamNG.Earth: thrown away
 _G.beamngEarth_api.earthVersion = function() return '1.10.2-beta' end
 T.check(not walk._cache.covered(-34.05, 117.0, 1000), 'another BeamNG.Earth version: walked again')
-_G.beamngEarth_api.earthVersion = nil
+_G.beamngEarth_api.earthVersion = function() return '1.10.1-beta' end
 
 -- a level teardown: forgotten, the car not moved
 earth.roadGraph(-34.7, 117.0, {}, function() end)

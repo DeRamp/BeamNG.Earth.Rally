@@ -17,10 +17,11 @@ local M = {}
 M.TIMEOUT_S = 180       -- a teleport, the world loaded and a graph built round the car, at most this long
 M.NO_GRAPH_S = 60      -- the world ready this long and no traffic graph at all: traffic or roads are off
 M.SETTLE_S = 0.5        -- once a fresh graph is there, held this long (a second one may follow the first)
-M.NEAR_M = 50           -- the car set down farther than this from the window's centre: the window is not trusted
-                        -- (BeamNG.Earth's teleport lands on the spot: 0 m in every stop of the first walks)
+M.NEAR_M = 75           -- the car set down farther than this from the window's centre: the window is not trusted
+                        -- (the graph, GRAPH_M round the car, must hold the window, RADIUS_M round its centre, with
+                        --  a margin: 1100 - 1000 - 25. BeamNG.Earth's teleport landed 0 m off in the first walks)
 M.GRAPH_M = 1100        -- BeamNG.Earth's traffic graph: a square this half size round the car (navgraph.WINDOW_M)
-M.KEEP_M = 1025         -- the square a read is kept as covering in walkCache: GRAPH_M less NEAR_M, less a margin
+M.KEEP_MARGIN_M = 25    -- a read is kept as covering GRAPH_M less this round the car
 M.RADIUS_M = 1000       -- the window the auto recce plans with: inside KEEP_M, so a window walked once is a cache hit
 M.NAME = 'Earth Rally auto recce'
 
@@ -238,7 +239,7 @@ function M.update()
   end
   local edges = {}
   for _, e in ipairs(g.edges) do if type(e) == 'table' then edges[#edges + 1] = { e[1], e[2] } end end
-  local okS, err = pcall(walkCache.store, geo, edges, p.lat, p.lon, M.KEEP_M)
+  local okS, err = pcall(walkCache.store, geo, edges, p.lat, p.lon, M.GRAPH_M - M.KEEP_MARGIN_M)
   if not okS then log('W', 'earthRally', 'auto recce walk: not kept in the cache: ' .. tostring(err)) end
   local r = { geoNodes = geo, edges = edges, complete = true }
   if q.home and home then

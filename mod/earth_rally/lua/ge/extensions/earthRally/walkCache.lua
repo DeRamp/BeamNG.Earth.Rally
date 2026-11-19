@@ -32,11 +32,7 @@ function M.stamp()
     local ok, v = pcall(a.earthVersion)
     if ok and v ~= nil then return tostring(v) end
   end
-  if type(a.version) == 'function' then
-    local ok, x, y = pcall(a.version)
-    if ok and x then return 'api ' .. tostring(x) .. '.' .. tostring(y) end
-  end
-  return nil
+  return nil      -- (not known yet, before the server's hello: nothing kept or trusted, rather than a wrong stamp)
 end
 
 local floor, cos, pi = math.floor, math.cos, math.pi
@@ -83,6 +79,24 @@ function M.store(nodes, edges, cLat, cLon, half)
   local stamp = M.stamp()
   if not stamp or type(nodes) ~= 'table' then return false end
   local t, k = tileFor(cLat, cLon, stamp)
+  -- what was kept inside this square before goes: this read is the map as it is now (a road removed or moved since
+  -- is not kept beside the new one)
+  local kl, ko = mLat(), mLon(cLat)
+  for _, ot in ipairs(M._tilesOver(cLat, cLon, half, stamp)) do
+    local gone = {}
+    for name, n in pairs(ot.nodes or {}) do
+      if math.abs((n[1] - cLat) * kl) <= half and math.abs((n[2] - cLon) * ko) <= half then
+        ot.nodes[name] = nil
+        gone[name] = true
+      end
+    end
+    if next(gone) then
+      local keep = {}
+      for _, e in ipairs(ot.edges or {}) do if not (gone[e[1]] or gone[e[2]]) then keep[#keep + 1] = e end end
+      ot.edges, ot.seen = keep, nil
+    end
+    for kk, tt in pairs(tiles) do if tt == ot then dirty[kk] = true end end
+  end
   t.squares[#t.squares + 1] = { cLat, cLon, half, now() }
   dirty[k] = true
   for name, n in pairs(nodes) do
@@ -150,22 +164,14 @@ function M.covered(lat, lon, half)
       if (s[4] or 0) >= oldest then sq[#sq + 1] = s end
     end
   end
-  if #sq == 0 then return false end
-  local kl, ko = mLat(), mLon(lat)
-  local steps = math.ceil(2 * half / M.SAMPLE_M)
-  for a = 0, steps do
-    for b = 0, steps do
-      local y = -half + 2 * half * a / steps
-      local x = -half + 2 * half * b / steps
-      local pLat, pLon = lat + y / kl, lon + x / ko
-      local ok = false
-      for _, s in ipairs(sq) do
-        if math.abs((pLat - s[1]) * kl) <= s[3] and math.abs((pLon - s[2]) * mLon(s[1])) <= s[3] then ok = true break end
-      end
-      if not ok then return false end
-    end
+  -- One stored square must hold the whole window. Squares stitched together are not enough: BeamNG.Earth's graph
+  -- keeps only the edges with both ends inside it, so a road crossing the seam between two reads is in neither.
+  local kl = mLat()
+  for _, s in ipairs(sq) do
+    local ko = mLon(s[1])
+    if math.abs((lat - s[1]) * kl) + half <= s[3] and math.abs((lon - s[2]) * ko) + half <= s[3] then return true end
   end
-  return true
+  return false
 end
 
 -- The roads kept for a square: { geoNodes = { [name] = { lat, lon, alt, radius } }, edges = { { a, b } ... } }.
@@ -191,6 +197,7 @@ function M.read(lat, lon, half, margin)
   return { geoNodes = nodes, edges = edges, complete = true }
 end
 
+M._tilesOver = tilesOver
 -- Everything forgotten from memory (a test; or after the files were removed).
 function M.forget() tiles, dirty = {}, {} end
 return M
