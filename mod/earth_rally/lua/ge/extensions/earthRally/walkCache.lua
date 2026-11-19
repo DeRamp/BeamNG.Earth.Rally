@@ -17,6 +17,7 @@ local M = {}
 M.DIR = '/earthRally/roadcache/'
 M.TILE_DEG = 0.1
 M.MAX_AGE_DAYS = 30
+M.NEAR_CAR_M = 400       -- a read is kept only with a road this near the car
 M.SAMPLE_M = 50          -- a window's square is checked for coverage at a point every this far
 
 local tiles = {}         -- key -> tile table (loaded or new)
@@ -78,6 +79,14 @@ end
 function M.store(nodes, edges, cLat, cLon, half)
   local stamp = M.stamp()
   if not stamp or type(nodes) ~= 'table' then return false end
+  -- (a read that does not look like the ground round the car is not kept: no roads at all, or none near the car --
+  --  a graph built for somewhere else, landing just after the teleport. Kept, it would be trusted for 30 days)
+  local kl0, ko0, near = mLat(), mLon(cLat), false
+  for _, n in pairs(nodes) do
+    if type(n) == 'table' and n.lat and math.abs((n.lat - cLat) * kl0) <= M.NEAR_CAR_M
+       and math.abs((n.lon - cLon) * ko0) <= M.NEAR_CAR_M then near = true break end
+  end
+  if not near then return false end
   local t, k = tileFor(cLat, cLon, stamp)
   -- what was kept inside this square before goes: this read is the map as it is now (a road removed or moved since
   -- is not kept beside the new one)
@@ -126,8 +135,10 @@ function M.store(nodes, edges, cLat, cLon, half)
   return true
 end
 
+local madeDir = false
 function M.flush()
   if not jsonWriteFile then dirty = {} return end
+  if not madeDir and FS and FS.directoryCreate then pcall(FS.directoryCreate, FS, M.DIR, true) madeDir = true end
   for k in pairs(dirty) do
     local t = tiles[k]
     if t then
