@@ -27,6 +27,7 @@ local rally = require('earthRally/rally')             -- the full rally (1.7.0):
 local rallyRun = require('earthRally/rallyRun')       -- ... and driving it in the game
 local loadScreen = require('earthRally/loadScreen')   -- the page's loading screen (1.7.0, #49)
 local online = require('earthRally/online')         -- the online leaderboard (prototype): via the companion
+local codriver = require('earthRally/codriver')       -- the game's co-driver settings, on our settings page
 local gameTile = require('earthRally/gameTile')       -- the tile on the game's own Rally page
 menuPause.holding = earth.holding                    -- (BeamNG.Earth's own holds: our request waits for them)
 -- (#63: the run moving the world's origin needs the physics on: the page's pause waits for it, the screen shows it.
@@ -1558,6 +1559,13 @@ end
 
 ------------------------------------------------------------------------------------------ the menu page's data
 
+-- Voice and style locked while a run is under way: the game takes a new voice at once, but the run's notes were built
+-- for the old one's calls (rallyAdapter.speaks), so a casual voice would go silent on the rest.
+local function codriverLocked()
+  local r = runner.current()
+  return r ~= nil and r.state ~= 'finished' and r.state ~= 'failed'
+end
+
 local function runSummary()
   local r = runner.current()
   local out = {}
@@ -1640,6 +1648,7 @@ function M.uiState()
   -- what changed under the mod since it was built (versions.lua): nothing to show in the normal case
   s.versionNotes = versions.notes()
   s.settings = settings.uiState()
+  s.codriver = codriver.uiState(codriverLocked())
   s.stats = stats.uiState()
   s.rallies = menu.rallies(importer.lastReports)
   -- the Rallies page: seasons, loose rallies and single stages (menu.home); `rallies` above stays for the pause
@@ -1768,6 +1777,7 @@ function M.uiStage(eventId, stageId, pass)
 end
 
 function M.uiSet(key, value) return settings.set(key, value) end
+function M.uiCodriverSet(key, value) return codriver.set(key, value, codriverLocked()) end
 
 ------------------------------------------------------------------------------------------ the online board
 

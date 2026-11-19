@@ -124,6 +124,15 @@ export function setSetting(key, value) {
   })
 }
 
+// The game's co-driver settings (codriver.lua): key = voice / style / timing / audio / visual.
+// cb(r) after the answer (r is nil when nothing answered).
+export function setCodriver(key, value, cb) {
+  engineLua(`earthRally_main and earthRally_main.uiCodriverSet(${q(key)}, ${luaValue(value)}) or nil`, r => {
+    if (r && r.codriver) state.value.codriver = r.codriver
+    if (cb) cb(r)
+  })
+}
+
 // The game's vehicle picker for a rally at the main menu: purpose 'start' (a new rally's car) or 'resume' (a saved
 // rally's car found once). The menu comes back by itself.
 export function pickCar(eventId, purpose) {

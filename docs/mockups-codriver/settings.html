@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Rally · co-driver settings</title>
+<!-- Mock-up for the owner's "co-driver options on the Earth Rally settings page" (2026-11-19), 1920x1080.
+     "Now" is EarthRallySettings.vue as built (one column of segmented switches). "Proposed" puts the game's own
+     co-driver settings (BeamNG.drive 0.40.6 Options > Rally, plus the voice the game keeps in
+     rallyCodriverVoicepackMRU) in a second column, with Casual / Professional as its own switch.
+     The game's voices come in pairs: each person has a casual pack and an "enthusiast" (here: Professional) pack.
+     Clover (the cat) has casual only, so Style shows Casual alone for her. Voice packs the player installed show
+     as extra voices. Everything is clickable.
+     The owner's answers (2026-11-19): timing is a slider, 0-10 s in 0.1 s like the game's; voices show the accent;
+     countdown, false starts, traffic and repair do not apply; the old Time controls note and the Leaderboards
+     "Sent: ..." sentence go; no "from your next run" line. Clover is hidden by the game itself. Open with #now or #new; ?shot for a bare 1920x1080 screen. -->
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700;800&family=Overpass+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto Sans", system-ui, sans-serif; }
+.mock-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 16px; background: #1a1d22; border-bottom: 1px solid #2a2e35; position: sticky; top: 0; z-index: 10; }
+.mock-bar b { margin-right: 8px; font-weight: 600; }
+.mock-bar button { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 4px; border: 1px solid #3a3f48; background: #23272e; color: #ddd; cursor: pointer; }
+.mock-bar button.on { background: #c75b1e; border-color: #c75b1e; color: #fff; }
+.mock-bar .sep { width: 1px; height: 22px; background: #3a3f48; margin: 0 6px; }
+.stage-wrap { padding: 16px; }
+.screen-box { position: relative; width: 100%; max-width: 1920px; margin: 0 auto; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 6px; box-shadow: 0 0 0 1px #2a2e35; }
+.screen { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-size: 16px; overflow: hidden;
+  background: linear-gradient(160deg, #2b3a2a, #1c2420 40%, #14171a); }
+.shot .mock-bar { display: none; } .shot .stage-wrap { padding: 0; }
+.shot .screen-box { width: 1920px; height: 1080px; aspect-ratio: auto; border-radius: 0; box-shadow: none; }
+body.m-new [data-m="now"], body.m-now [data-m="new"] { display: none !important; }
+
+/* stand-in for the Earth Rally page around the settings */
+.page { position: absolute; left: 80px; top: 60px; width: 1760px; height: 960px; background: rgba(12,14,17,.88); border-radius: .5rem; padding: 30px 40px; }
+.tabs { display: flex; gap: 28px; font-size: 19px; color: #9aa3ad; border-bottom: 1px solid rgba(255,255,255,.08); padding-bottom: 14px; margin-bottom: 18px; }
+.tabs .on { color: #fff; font-weight: 700; box-shadow: 0 16px 0 -13px #c75b1e; }
+.cols { display: grid; gap: 0 60px; align-items: start; }
+.cols.one { grid-template-columns: 820px; }
+.cols.two { grid-template-columns: 1fr 1fr; }
+.grp { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: #9aa3ad; padding: 4px 8px 6px; }
+
+/* EarthRallySettings.vue's own CSS, at its page size */
+.er-set { display: flex; align-items: center; justify-content: space-between; gap: 1.5em; padding: 0.7em 0.5em; border-bottom: 1px solid rgba(255,255,255,0.07); font-size: 17px; }
+.er-set-n { font-size: 1.15em; font-weight: 600; }
+.er-set-d { font-size: 0.9em; color: #b8bcc6; margin-top: 2px; }
+.er-seg { display: flex; flex-shrink: 0; border-radius: 0.25rem; overflow: hidden; box-shadow: inset 0 0 0 1px #5a6070; }
+.er-seg span { padding: 0.45em 0.9em; cursor: pointer; color: #b8bcc6; white-space: nowrap; }
+.er-seg span:hover { background: rgba(255,255,255,0.08); }
+.er-seg span.on { background: #c75b1e; color: #fff; font-weight: 600; }
+.er-seg span.off { color: #5d626c; cursor: default; background: none; }
+.er-set-note { margin-top: 1em; font-size: 15px; line-height: 1.5; color: #b8bcc6; padding: 0 8px; }
+/* new: a stepper for the call timing (- 3.0 s +), the same box as the switches */
+.er-step { display: flex; align-items: center; flex-shrink: 0; border-radius: 0.25rem; overflow: hidden; box-shadow: inset 0 0 0 1px #5a6070; }
+.er-step span { padding: 0.45em 0.9em; cursor: pointer; color: #fff; font-weight: 700; }
+.er-step span:hover { background: rgba(255,255,255,0.08); }
+.er-step b { min-width: 4.2em; text-align: center; font: 700 1em "Overpass Mono", monospace; }
+.er-later { margin: 10px 8px 0; padding: 8px 12px; border-left: 3px solid #c75b1e; background: rgba(199,91,30,.12); font-size: 15px; display: none; }
+.er-later.show { display: block; }
+.who { position: absolute; left: 80px; bottom: 6px; width: 1760px; background: rgba(255,250,150,.96); color: #222; font: 500 16px/1.45 "Noto Sans", sans-serif; padding: 8px 16px; border-radius: 4px; }
+.shot .who { display: none; }
+</style>
+</head>
+<body class="m-new">
+<div class="mock-bar">
+  <b>Co-driver settings</b>
+  <button data-mode="now">Now</button>
+  <button data-mode="new" class="on">Proposed</button>
+  <span class="sep"></span>
+</div>
+<div class="stage-wrap"><div class="screen-box"><div class="screen" id="screen">
+  <div class="page">
+    <div class="tabs"><span>Home</span><span>Stages</span><span>Rallies</span><span>Leaderboards</span><span class="on">Settings</span></div>
+
+    <!-- NOW -->
+    <div class="cols one" data-m="now">
+      <div class="rally-rows"></div>
+      <div class="er-set-note"><b>Time controls</b>: <i>Full</i>, as in a real rally: stop at the time control (the red clock board), get your start time, move up to the start line and wait for your minute; driving past the time control costs 60 s.</div>
+    </div>
+
+    <!-- PROPOSED -->
+    <div class="cols two" data-m="new">
+      <div>
+        <div class="grp">Rally</div>
+        <div class="rally-rows"></div>
+      </div>
+      <div>
+        <div class="grp">Co-driver</div>
+        <div class="er-set">
+          <div><div class="er-set-n">Voice</div><div class="er-set-d">Who reads your notes</div></div>
+          <div class="er-seg" id="voice"></div>
+        </div>
+        <div class="er-set">
+          <div><div class="er-set-n">Style</div><div class="er-set-d" id="styleDesc"></div></div>
+          <div class="er-seg" id="style"></div>
+        </div>
+        <div class="er-set">
+          <div><div class="er-set-n">Call timing</div><div class="er-set-d">How far ahead each call ends before you reach it</div></div>
+          <div class="er-step" style="box-shadow:none;gap:.8em"><input id="tr" type="range" min="0" max="10" step="0.1" value="3" style="width:12em;accent-color:#c75b1e"><b id="tv">3.0 s</b></div>
+        </div>
+        <div class="er-set">
+          <div><div class="er-set-n">Spoken calls</div><div class="er-set-d">Hear the co-driver</div></div>
+          <div class="er-seg" data-sw="audio"></div>
+        </div>
+        <div class="er-set">
+          <div><div class="er-set-n">Calls on screen</div><div class="er-set-d">The pacenote symbols at the top of the screen</div></div>
+          <div class="er-seg" data-sw="visual"></div>
+        </div>
+              </div>
+    </div>
+  </div>
+  <div class="who" data-m="new">Proposed: the game's own co-driver settings on our page (the same values as Options › Rally, so a change here shows there too). Yen (an installed casual-only pack) has Professional greyed out.</div>
+</div></div></div>
+
+<script>
+const RALLY = [
+  ['Units', 'Stage lengths and distances on the HUD', ['km', 'miles'], 0],
+  ['Reset penalty', '+10 s for each car reset during the timed stage', ['On', 'Off'], 0],
+  ['Control-zone brake', "The brakes ease on in a control's zone, so you stop at its board", ['On', 'Off'], 0],
+  ['Start clock view', 'Where the close-up of the start clock shows during the countdown', ['Right', 'Top', 'Off'], 0],
+  ['World loaded before driving', 'How much of the world around the car must load before a loading screen lets you drive. Higher: less scenery popping in, a longer wait.', ['40%', '50%', '60%', '70%', '80%', '90%'], 2],
+  ['Leaderboards', 'Send your stage times to the public leaderboard (needs the Earth Rally Leaderboards add-on running)', ['On', 'Off'], 0],
+  ['Developer panel', "The old Earth Rally window with each run's checks", ['On', 'Off'], 1],
+];
+function seg(el, opts, on, pick, offs) {
+  el.innerHTML = '';
+  opts.forEach((o, i) => {
+    const s = document.createElement('span'); s.textContent = o;
+    if (offs && offs[i]) s.className = 'off'; else if (i === on) s.className = 'on';
+    if (!(offs && offs[i])) s.onclick = () => pick(i);
+    el.appendChild(s);
+  });
+}
+document.querySelectorAll('.rally-rows').forEach(box => RALLY.forEach(r => {
+  const row = document.createElement('div'); row.className = 'er-set';
+  row.innerHTML = `<div><div class="er-set-n">${r[0]}</div><div class="er-set-d">${r[1]}</div></div><div class="er-seg"></div>`;
+  box.appendChild(row);
+  const el = row.querySelector('.er-seg'); let on = r[3];
+  const pick = i => { on = i; seg(el, r[2], on, pick); }; pick(on);
+}));
+
+// voices as the game ships them: person -> the styles it has a pack for
+const VOICES = [['Alex Kihurani (US)', [1, 1]], ['dirtwheel (US)', [1, 1]], ['HighDef (UK)', [1, 1]], ['Yen', [1, 0]]];
+let voice = 0, style = 1, mid = false;
+const STY = ['Casual', 'Professional'];
+const DESC = ['Simple calls: corner number and direction', 'Every call: corner shapes, crests, cautions and more'];
+function draw() {
+  seg(document.getElementById('voice'), VOICES.map(v => v[0]), voice, i => { voice = i; changed(); });
+  const has = VOICES[voice][1];
+  if (!has[style]) style = has.indexOf(1);
+  seg(document.getElementById('style'), STY, style, i => { style = i; changed(); }, has.map(h => !h));
+  document.getElementById('styleDesc').textContent = DESC[style];
+}
+function changed() { draw(); }
+draw();
+let t = 3.0;
+const tv = document.getElementById('tv');
+document.getElementById('tr').oninput = e => { tv.textContent = Number(e.target.value).toFixed(1) + ' s'; };
+document.querySelectorAll('[data-sw]').forEach(el => { let on = 0; const p = i => { on = i; seg(el, ['On', 'Off'], on, p); }; p(0); });
+
+function mode(m) { document.body.className = 'm-' + m; document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === m)); }
+document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { mode(b.dataset.mode); location.hash = b.dataset.mode; });
+if (location.hash === '#now') mode('now');
+if (location.search.includes('shot')) document.documentElement.classList.add('shot');
+function fit() { const box = document.querySelector('.screen-box'); document.getElementById('screen').style.transform = `scale(${box.clientWidth / 1920})`; }
+addEventListener('resize', fit); fit();
+</script>
+</body>
+</html>

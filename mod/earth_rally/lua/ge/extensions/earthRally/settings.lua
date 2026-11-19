@@ -23,8 +23,7 @@ M.SCHEMA = {
       .. 'scenery popping in, a longer wait.',
     options = { { 40, '40%' }, { 50, '50%' }, { 60, '60%' }, { 70, '70%' }, { 80, '80%' }, { 90, '90%' } } },
   onlineBoard = { default = true, label = 'Leaderboards',
-    desc = 'Send your stage times to the public leaderboard (needs the Earth Rally Leaderboards add-on running). '
-      .. 'Sent: your board name, the stage, the car, the time and where the car went.',
+    desc = 'Send your stage times to the public leaderboard (needs the Earth Rally Leaderboards add-on running)',
     options = { { true, 'On' }, { false, 'Off' } } },
   devPanel = { default = false, label = 'Developer panel',
     desc = "The old Earth Rally window with each run's checks", options = { { true, 'On' }, { false, 'Off' } } },
