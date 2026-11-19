@@ -1112,19 +1112,44 @@ end
 -- holds its parked cars at 0 over a teleport and puts its amount back once the place is built, and starts its parking
 -- only once it knows the place's driveways: at the check-in either can still be to come, and the parked cars came back
 -- at Maryhill's start (in game, 2026-11-13). The first amount seen that is not 0 is the player's, given back after.
-local function trafficHold()
-  local stash = run and run.trafficStash
-  if not stash then return end
+-- (shared with the full rally's Traffic Off, rallyRun: one hold-and-give-back) Each system (only: a set of names,
+-- nil for all) showing cars set to 0, the first amount seen that is not 0 kept in stash[name]. Returns true when an
+-- amount was kept this time.
+local function holdAt0(stash, only, what)
+  local kept = false
   for name, s in pairs(systems()) do
-    local ok, cur = pcall(s.get)
-    -- (0 now: none showing, or BeamNG.Earth holding them over a teleport: looked at again next time)
-    if ok and cur ~= nil and cur ~= 0 then
-      if pcall(s.set, 0) and stash[name] == nil then
-        stash[name] = cur
-        log('I', logTag, (name == 'parking' and 'parked cars' or 'traffic') .. ' out of the way for the stage')
+    if not only or only[name] then
+      local ok, cur = pcall(s.get)
+      -- (0 now: none showing, or BeamNG.Earth holding them over a teleport: looked at again next time)
+      if ok and cur ~= nil and cur ~= 0 then
+        if pcall(s.set, 0) and stash[name] == nil then
+          stash[name], kept = cur, true
+          log('I', logTag, (name == 'parking' and 'parked cars' or 'traffic') .. ' ' .. (what or 'out of the way for the stage'))
+        end
       end
     end
   end
+  return kept
+end
+
+-- The amounts in stash given back, each only where it is still our 0: an amount the player or BeamNG.Earth changed
+-- since is theirs.
+local function giveBack(stash)
+  local sys = systems()
+  for name, amount in pairs(stash) do
+    local s = sys[name]
+    if s then
+      local ok, cur = pcall(s.get)
+      if ok and cur == 0 then pcall(s.set, amount) end
+    end
+  end
+end
+M.trafficHoldAt0, M.trafficGiveBack = holdAt0, giveBack
+
+local function trafficHold()
+  local stash = run and run.trafficStash
+  if not stash then return end
+  holdAt0(stash)
   run.checks.trafficHidden = (stash.traffic and 'traffic ' or '') .. (stash.parking and 'parked cars' or '')
 end
 
@@ -1138,15 +1163,7 @@ local function trafficOn()
   local stash = run and run.trafficStash
   if not stash then return end
   run.trafficStash = nil
-  local sys = systems()
-  for name, amount in pairs(stash) do
-    local s = sys[name]
-    -- (only where it is still our 0: an amount the player or BeamNG.Earth changed since is theirs)
-    if s then
-      local ok, cur = pcall(s.get)
-      if ok and cur == 0 then pcall(s.set, amount) end
-    end
-  end
+  giveBack(stash)
 end
 M._trafficOff = function() trafficOff() end
 

@@ -322,78 +322,75 @@ function M.blocked() return blocked end
 
 ------------------------------------------------------------------------------------------ traffic on road sections
 
--- (the owner, 2026-11-19) The start screen's "Traffic on road sections": R.traffic = 'on' | 'off' (nil, a save from
--- before: off). Off: the game's traffic held at an active amount of 0 for the whole rally, transits included (as the
--- runner holds it for a stage: BeamNG.Earth's teleport hold and adaptive traffic both leave a 0 set by someone else
--- alone), the player's amount given back when the rally ends or is left. On: traffic on the road sections and at the
--- stops; each stage still clears it and puts it back as it ends (runner trafficOff / trafficOn). With the game's
--- traffic not running (the world started without it), On sets the game's own traffic up for the rally and takes it
--- away again after. Parked cars are not traffic: as before, cleared for each stage only.
+-- (the owner, 2026-11-19: "an option that lets you enable traffic or not before you start a rally ... just for during
+-- transits") The start screen's "Traffic on road sections": R.traffic = 'on' | 'off'.
+--   On   the world's traffic left exactly as it is on the road sections and at the stops: BeamNG.Earth spawns its own
+--        regional traffic and spawns it again as the region changes (the game's stock traffic set up here would be
+--        the wrong cars, and a hitch). A world started with no traffic has none: the start screen says so. Each stage
+--        still clears it and puts it back as it ends (runner trafficOff / trafficOn).
+--   Off  the game's traffic held at an active amount of 0 for the whole rally, transits included (runner's
+--        trafficHoldAt0, as it holds it for a stage: BeamNG.Earth's teleport hold and adaptive traffic both leave a 0
+--        set by someone else alone), the player's amount given back when the rally ends or is left. The amount is
+--        also kept in the settings (rallyTrafficStash) until it is given back, so a Lua reload does not lose it.
+--   nil  a save from before the choice: the world left alone, as On (as it was before).
+-- The start screen's default is the player's last pick (settings rallyTraffic), else the world's: On when its
+-- traffic is running. Parked cars are not traffic: as before, cleared for each stage only.
 M.TRAFFIC_HOLD_S = 1
-local traffic = nil    -- the rally's traffic: { mode = 'on' | 'off', t, stash (the player's amount), started }
+local traffic = nil    -- the rally's traffic: { mode = 'on' | 'off', t, stash = { traffic = the player's amount } }
+local TRAFFIC_ONLY = { traffic = true }
 
-local function trafficSys()
+-- Is the world's traffic running (on, or on its way)?
+function M.worldTraffic()
   local g = rawget(_G, 'gameplay_traffic')
-  if type(g) == 'table' and g.getState and g.setActiveAmount and g.getTrafficVars then return g end
-  return nil
+  if type(g) ~= 'table' or not g.getState then return false end
+  local ok, st = pcall(g.getState)
+  return ok and st ~= nil and st ~= 'off'
 end
-local function trafficAmount(g)
-  local ok, v = pcall(g.getTrafficVars)
-  return ok and type(v) == 'table' and v.activeAmount or nil
+
+-- The start screen's pick: the player's last, else the world's.
+function M.trafficChoice()
+  local last = settings.get('rallyTraffic')
+  if last == 'on' or last == 'off' then return last end
+  return M.worldTraffic() and 'on' or 'off'
+end
+
+local function stashSaved()
+  local v = settings.get('rallyTrafficStash')
+  return type(v) == 'number' and v or nil
 end
 
 local function trafficHold()
-  local g = trafficSys()
-  if not (traffic and traffic.mode == 'off' and g) then return end
-  local okS, st = pcall(g.getState)
-  if not okS or st ~= 'on' then return end
-  local cur = trafficAmount(g)
-  if cur == nil or cur == 0 then return end
-  if pcall(g.setActiveAmount, 0) and traffic.stash == nil then
-    traffic.stash = cur
-    log('I', logTag, 'rally: traffic off for the rally (the player\'s amount ' .. tostring(cur) .. ' kept)')
-  end
+  if not (traffic and traffic.mode == 'off') then return end
+  local ok, kept = pcall(runner.trafficHoldAt0, traffic.stash, TRAFFIC_ONLY, 'off for the rally')
+  if ok and kept and traffic.stash.traffic ~= nil then pcall(settings.set, 'rallyTrafficStash', traffic.stash.traffic) end
 end
 
 local function trafficStart()
-  if not R then return end
-  if traffic then return end
-  traffic = { mode = R.traffic == 'on' and 'on' or 'off', t = 0 }
-  local g = trafficSys()
+  if not R or traffic then return end
+  traffic = { mode = R.traffic == 'off' and 'off' or 'on', t = 0, stash = {} }
   if traffic.mode == 'on' then
-    local okS, st = true, nil
-    if g then okS, st = pcall(g.getState) end
-    -- (only with none at all: 'loading' / 'spawning' is traffic on its way, and setupTraffic deletes it first)
-    if g and okS and st == 'off' and g.setupTraffic then
-      local ok, err = pcall(g.setupTraffic, -1)
-      if ok and err == false then ok, err = false, 'it said no' end
-      traffic.started = ok == true
-      log(ok and 'I' or 'W', logTag, 'rally: traffic on road sections: the game\'s traffic ' ..
-        (ok and 'set up for the rally' or ('could not be set up: ' .. tostring(err))))
-    else
-      log('I', logTag, 'rally: traffic on road sections ' .. (g and 'on (the game\'s own)' or 'on, but the game has no traffic here'))
-    end
+    log('I', logTag, "rally: traffic on road sections: the world's own, left as it is" ..
+      (R.traffic == nil and ' (a save from before the choice)' or '') .. (M.worldTraffic() and '' or ' (none running)'))
   else
+    -- (a Lua reload during a rally left the player's amount here)
+    traffic.stash.traffic = stashSaved()
     log('I', logTag, 'rally: no traffic for the rally')
     trafficHold()
   end
 end
 
--- The player's traffic as it was: the amount back (only where it is still our 0), or the traffic we set up taken away.
+-- The player's traffic as it was: the amount back (only where it is still our 0). Also with none under way, for an
+-- amount a Lua reload left in the settings.
 local function trafficEnd()
   local t = traffic
-  if not t then return end
   traffic = nil
-  local g = trafficSys()
-  if not g then return end
-  if t.stash ~= nil and trafficAmount(g) == 0 then
-    pcall(g.setActiveAmount, t.stash)
-    log('I', logTag, 'rally: the player\'s traffic back (' .. tostring(t.stash) .. ')')
+  local amount = t and t.stash and t.stash.traffic
+  if amount == nil then amount = stashSaved() end
+  if amount ~= nil then
+    pcall(runner.trafficGiveBack, { traffic = amount })
+    log('I', logTag, "rally: the player's traffic back (" .. tostring(amount) .. ')')
   end
-  if t.started and g.deleteVehicles then
-    pcall(g.deleteVehicles)
-    log('I', logTag, 'rally: the traffic set up for the rally taken away')
-  end
+  if stashSaved() ~= nil then pcall(settings.set, 'rallyTrafficStash', false) end
 end
 function M.trafficState() return traffic end
 
@@ -522,7 +519,9 @@ function M.startInfo(id)
     start = type(e.rallyStart) == 'table' and e.rallyStart.name or nil, toRecce = toRecce, heldOut = held,
     saved = M.saved(id), inProgress = R and R.eventId or nil,
     -- (interface 7: a timed rally's real start, and whether BeamNG.Earth can show its date)
-    startsAt = M.startsAt(r), worldTime = worldTime }
+    startsAt = M.startsAt(r), worldTime = worldTime,
+    -- (Traffic on road sections: the pick to show, and whether the world has traffic -- On with none: a note)
+    traffic = { pick = M.trafficChoice(), world = M.worldTraffic() } }
 end
 
 -- A timed rally's start for the start screen: { text = 'Fri 6 Feb 2026, 18:00 local', light = 'night' | 'dusk' |
@@ -1016,9 +1015,12 @@ function M.start(id, opts)
   if not load(id) then return false, 'that rally is not on this computer any more' end
   local car = M.car()
   if not car then return false, 'get in a car first' end
+  -- (traffic: the start screen's pick, kept as the default next time; none sent: the default)
+  local picked = opts and (opts.traffic == 'on' or opts.traffic == 'off') and opts.traffic or nil
   local r, why = rally.new(ev, { mode = opts and opts.mode, class = opts and opts.class,
-    cancelled = opts and opts.cancelled, traffic = opts and opts.traffic, car = car })
+    cancelled = opts and opts.cancelled, traffic = picked or M.trafficChoice(), car = car })
   if not r then return false, why end
+  if picked and settings.get('rallyTraffic') ~= picked then pcall(settings.set, 'rallyTraffic', picked) end
   if question then pcall(runner.askLayout, false) end
   R, card, recoveredAt, question, move, toStop = r, nil, nil, nil, nil, nil
   savedResults = nil

@@ -18,7 +18,7 @@
 --     pos (the item to do next; #order + 1 when the rally is over), results = { [ss] = { timeS, stageS, penaltyS,
 --     superRally, classBestS, addS } }, missed (stages missed so far: Super Rally), serviced = { ['<pos>'] = true }
 --     (string keys: the save is JSON),
---     done, unclassified, traffic = 'on' | 'off' (traffic on the road sections; nil in an older save: off),
+--     done, unclassified, traffic = 'on' | 'off' (traffic on the road sections; nil in an older save: the world left alone, as on),
 --     (format 3, the rally-loop plan: a timed rally only -- nil for an untimed one, and for a format-2 save)
 --     timed = true, tz (the event's time zone), clock = { t (the rally clock: local time, worldTime.lua) },
 --     lastOut (the last stage's time out, local; nil when unknown), road = { [ss | 'stop<i>'] = { dueT, inT, kind =
@@ -226,7 +226,7 @@ function M.new(event, opts)
     class = type(opts.class) == 'string' and opts.class ~= '' and opts.class or 'L4WD', cancelled = cancelled,
     car = type(opts.car) == 'table' and { name = opts.car.name } or nil,
     order = order, pos = 1, results = {}, missed = 0, serviced = {}, done = false, heldOut = {},
-    -- (traffic on the road sections, the start screen's choice: 'on' | 'off'; nil in a save from before = off)
+    -- (traffic on the road sections, the start screen's choice: 'on' | 'off'; nil in a save from before = on)
     traffic = opts.traffic == 'on' and 'on' or 'off' }
   -- (interface 1: timed when the event has target times, and so a start on its clock)
   if startT then

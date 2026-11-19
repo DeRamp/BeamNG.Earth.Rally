@@ -300,3 +300,29 @@ saves it; a recovery doesn't; the final service checks in before finishing; `uiC
 5. **`target 14 min`** is the road section's target from the control before it; rows whose due the schedule fixes
    keep the due time.
 6. **No maximum lateness**, here as everywhere: lateness at a stop only costs its penalty.
+
+### C. Controller on the HUD cards
+
+(The owner, 2026-11-19: "controller support doesn't work on the pop-up menus"; no mock-up, the cards are unchanged.)
+While a card is up and showing ("Load the stage?", Recover?, the finish card), a Lua action map takes A / Enter (ok),
+B (back), the d-pad / arrows / left stick (move), and the game's own actions on those buttons are filtered out until
+they are up again (`cardInput.lua`).
+- **Xbox-type pads only.** A PlayStation pad over DirectInput, or a wheel, gets nothing on the cards (the mouse still
+  works). The reason: BeamNG 0.40.6 hosts HUD apps with no UI nav (its `AppHost.vue` sets `bng-no-child-nav`), so a
+  card cannot use the game's own menu navigation, which knows every device; our map binds the xinput pad and the
+  keyboard only.
+
+### D. Traffic on road sections
+
+(The owner, 2026-11-19: "an option that lets you enable traffic or not before you start a rally ... just for during
+transits". No mock-up: the owner specified it.) The start screen's Rally settings get **Traffic on road sections:
+On / Off**.
+- **On:** the world's traffic is left exactly as it is on the road sections and at the stops. BeamNG.Earth spawns
+  its own regional traffic and spawns it again as the region changes; the mod never sets up the game's stock traffic
+  (the wrong cars, and a hitch). A world started without traffic has none: the start screen then says "This world
+  has no traffic. Start BeamNG.Earth with traffic on to have it on road sections."
+- **Off:** traffic held at 0 for the whole rally, the player's amount given back when the rally ends or is left. The
+  amount is kept in the settings meanwhile, so a Lua reload does not lose it.
+- **Each stage** is closed to traffic either way, as before.
+- **Default:** the player's last pick; before any, the world's (On when its traffic is running). A save from before
+  this leaves the world's traffic alone.

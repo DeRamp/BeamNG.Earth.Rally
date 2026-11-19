@@ -32,6 +32,12 @@ M.SCHEMA = {
     options = { { 40, '40%' }, { 50, '50%' }, { 60, '60%' }, { 70, '70%' }, { 80, '80%' }, { 90, '90%' } } },
   devPanel = { default = false, label = 'Developer panel',
     desc = "The old Earth Rally window with each run's checks", options = { { true, 'On' }, { false, 'Off' } } },
+  -- Kept, not shown (not in ORDER, so not on the Settings page):
+  -- (the owner, 2026-11-19) the full rally start screen's last "Traffic on road sections" pick, its default next
+  -- time; 'world' (none picked yet): On when the world's traffic is running, else Off (rallyRun.trafficChoice)
+  rallyTraffic = { default = 'world', options = { { 'world' }, { 'on' }, { 'off' } } },
+  -- (Traffic Off) the player's traffic amount while a rally holds it at 0, so a Lua reload cannot lose it; false: none
+  rallyTrafficStash = { default = false, check = function(v) return v == false or type(v) == 'number' and v >= 0 end },
 }
 M.ORDER = { 'units', 'resetPenalty', 'earlyPenalty', 'realWorld', 'zoneBrake', 'clockView', 'worldLoaded', 'devPanel' }
 
@@ -58,6 +64,10 @@ end
 function M.validate(key, v)
   local s = M.SCHEMA[key]
   if not s then return nil, 'unknown setting ' .. tostring(key) end
+  if s.check then
+    if s.check(v) then return v end
+    return nil, tostring(key) .. ': not a value it takes (' .. tostring(v) .. ')'
+  end
   for _, o in ipairs(s.options) do
     if o[1] == v then return v end
   end
