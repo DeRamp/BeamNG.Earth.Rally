@@ -1010,6 +1010,7 @@ end
 
 -- (1.7.3) Every frame (main.lua onUpdate): a window waiting out RETRY_DELAY_S is asked again once the wait is over.
 function M.update()
+  if job and earth.roadGraphUpdate then earth.roadGraphUpdate() end
   local j = job
   if not (j and j.retryAt) or M.wall() < j.retryAt then return end
   j.retryAt = nil
@@ -1020,6 +1021,7 @@ function M.cancel()
   if not job then return false end
   gen = gen + 1                      -- (a window still in flight answers into nothing)
   job = nil
+  if earth.roadGraphHome then earth.roadGraphHome() end   -- (a walk: the car back where it was)
   return true
 end
 
@@ -1030,6 +1032,9 @@ local function finish(ok, result, why, kind, extra)
   local j = job
   job = nil
   gen = gen + 1
+  -- (a walk that ended early: the car back where it was. After the last window it is home already, and this is a
+  --  no-op)
+  if earth.roadGraphHome then earth.roadGraphHome() end
   local how = nil
   if j then
     local withData = 0
@@ -1106,7 +1111,12 @@ local function onWindow(myGen, token, i, r)
   -- toGeo would read them in the new one. The window is thrown away and asked for again (it is named by lat / lon,
   -- so the same ground comes back), rather than converted with the wrong frame.
   local la, lo = earth.anchor()
-  if earth.rebasing() or la ~= j.askLat or lo ~= j.askLon then
+  -- (a walk teleports, so the frame it answers in is never the one it was asked in: it says which frame its nodes
+  --  are in (anchorLat / lon, current as it answers), or hands them over as lat / lon already (geoNodes))
+  local wantLat, wantLon = j.askLat, j.askLon
+  if type(r) == 'table' and r.anchorLat ~= nil then wantLat, wantLon = r.anchorLat, r.anchorLon end
+  local geoAlready = type(r) == 'table' and type(r.geoNodes) == 'table'
+  if not geoAlready and (earth.rebasing() or la ~= wantLat or lo ~= wantLon) then
     j.tries = (j.tries or 0) + 1
     if j.tries <= M.RETRIES then
       log('I', 'earthRally', 'auto recce: the world\'s origin moved under window ' .. i .. ': asking again')
@@ -1115,6 +1125,9 @@ local function onWindow(myGen, token, i, r)
     return finish(false, nil, 'the world\'s origin kept moving while the roads were read', M.FAILED)
   end
   j.tries = 0
+  if type(r) == 'table' and geoAlready and r.error == nil then
+    r = { nodes = r.geoNodes, edges = r.edges, complete = r.complete, geo = true }
+  end
   if type(r) ~= 'table' or r.error ~= nil or type(r.nodes) ~= 'table' then
     -- (1.7.3) Timed out, an exception, or rows that could not be read: asked again, ERROR_RETRIES times. After a
     -- timeout, TIMEOUT_RETRY_DELAY_S: the server is still building the window that timed out, on its one thread, so
@@ -1151,7 +1164,12 @@ local function onWindow(myGen, token, i, r)
     for name, node in pairs(r.nodes) do
       -- (a node seen in an earlier window is the same node -- the names are stable across windows and across
       --  anchors -- so it is not converted or stored twice, and the overlap adds no geometry)
-      if j.graph.nodes[name] == nil then
+      if j.graph.nodes[name] == nil and r.geo then
+        if type(node) == 'table' and node.lat ~= nil then
+          j.graph.nodes[name] = { lat = node.lat, lon = node.lon, alt = node.alt, radius = node.radius }
+          added = added + 1
+        end
+      elseif j.graph.nodes[name] == nil then
         local x, y, z, radius = nodePos(node)
         if x ~= nil then
           local lat, lon, alt = earth.toGeo(x, y, z or 0)
@@ -1194,7 +1212,7 @@ function M.ask(i)
   j.askLat, j.askLon = earth.anchor()
   j.token = (j.token or 0) + 1
   local myGen, token = gen, j.token
-  local ok, why = earth.roadGraph(w.lat, w.lon, { radius = j.radius, cachedOnly = true },
+  local ok, why = earth.roadGraph(w.lat, w.lon, { radius = j.radius, cachedOnly = true, home = (i == #j.plan) },
     function(r) onWindow(myGen, token, i, r) end)
   if not ok then return finish(false, nil, why or 'BeamNG.Earth refused the road graph request', M.FAILED) end
   return true
@@ -1221,12 +1239,13 @@ function M.start(event, stage, done)
   if select(1, earth.anchor()) == nil then
     return false, 'BeamNG.Earth has not placed the world yet: wait until it is loaded'
   end
-  local plan, why, radius, inner = M.plan(stage.line, M.RADIUS_M)
+  local plan, why, radius, inner = M.plan(stage.line, (earth.roadGraphRadius and earth.roadGraphRadius()) or M.RADIUS_M)
   if not plan then return false, why end
   gen = gen + 1
   job = { event = event, stage = stage, plan = plan, radius = radius, inner = inner,
           graph = { nodes = {}, edges = {} }, seen = {}, i = 1, tries = 0, done = done, t0 = M.wall() }
-  log('I', 'earthRally', string.format('auto recce: %s, %d window(s) of %.0f m', stage.id, #plan, radius))
+  log('I', 'earthRally', string.format('auto recce: %s, %d window(s) of %.0f m%s', stage.id, #plan, radius,
+    (earth.roadGraphMode and earth.roadGraphMode() == 'walk') and ', walking the car (official BeamNG.Earth)' or ''))
   return M.ask(1)
 end
 

@@ -38,7 +38,7 @@ loadScreen.moving = function() return runner.originMoving() or earth.rebasing() 
 local M = {}
 local logTag = 'earthRally'
 local logPausedSim         -- (below, by onUpdate)
-M.VERSION = '1.8.2-alpha'
+M.VERSION = '1.8.2-alpha+upstream'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_FLOOR_S = 1             -- the HUD's streams sent when what they show changes, and at least this often
 M.STREAM_GAP_S = 0.1              -- ... the stock stream at most this often outside waitStart / running
@@ -1170,7 +1170,9 @@ doAction = function(what, eventId, stageId, fromPanel, queued)
     local pr = autoRecce.progress() or {}
     return res(true, string.format('Auto recce of %s: %d windows. %s', stage.name, pr.windows or 0,
       earth.hasAreaRoute() and 'It reads the map data on your disk, and asks before downloading any it needs.'
-        or 'It reads only the map data already on your disk and downloads nothing.'))
+        or (earth.roadGraphMode() == 'walk'
+          and 'It takes the car along the stage to read the roads, then brings it back. Slower on this BeamNG.Earth.'
+          or 'It reads only the map data already on your disk and downloads nothing.')))
   end
   if what == 'drive' then
     local ok, why = runner.start(ev, stage)
@@ -1292,6 +1294,7 @@ local function runSummary()
   -- whether the one button can also fetch the ground: the page says "downloads nothing" without it, and offers the
   -- download with it, so this has to reach the UI rather than being decided in the Lua alone
   out.autoCanFetch = earth.hasRoadGraph() and earth.hasAreaRoute()
+  out.autoWalks = earth.roadGraphMode() == 'walk'     -- (upstream-earth: no fork; the car is taken along the stage)
   if autoRecce.active() and autoRun then
     local p = autoRecce.progress() or {}
     out.auto = { eventId = autoRun.eventId, stageId = autoRun.stageId, stageName = autoRun.stageName,
