@@ -1576,7 +1576,7 @@ function M.uiRallyAction(what, eventId, opts)
       local act = rallyRun.active()
       if rallyRun.preparing() and act and act.eventId == eventId then
         autoSeq, rallyQ = nil, nil
-        if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
+        if autoRecce.active() then autoRun = nil; pcall(earth._roadWalk.reset); pcall(autoRecce.cancel) end
       end
     end
     if what == 'endNew' or what == 'endDrive' then
@@ -2134,7 +2134,7 @@ function M.onClientEndMission()
   -- autoSeq as well: a sequence between its legs has no window in flight, so cancelling the auto recce alone
   -- would leave it behind and the page busy for ever (the guard in doAction refuses everything while one runs)
   autoSeq, rallyQ = nil, nil
-  if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
+  if autoRecce.active() then autoRun = nil; pcall(earth._roadWalk.reset); pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
   pcall(rallyRun.release)
@@ -2166,7 +2166,7 @@ function M.onModDeactivated()
   -- autoSeq as well: a sequence between its legs has no window in flight, so cancelling the auto recce alone
   -- would leave it behind and the page busy for ever (the guard in doAction refuses everything while one runs)
   autoSeq, rallyQ = nil, nil
-  if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
+  if autoRecce.active() then autoRun = nil; pcall(earth._roadWalk.reset); pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
   pcall(rallyRun.release)
@@ -2194,7 +2194,7 @@ function M.onExtensionUnloaded()
   -- autoSeq as well: a sequence between its legs has no window in flight, so cancelling the auto recce alone
   -- would leave it behind and the page busy for ever (the guard in doAction refuses everything while one runs)
   autoSeq, rallyQ = nil, nil
-  if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
+  if autoRecce.active() then autoRun = nil; pcall(earth._roadWalk.reset); pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
   pcall(rallyRun.release)

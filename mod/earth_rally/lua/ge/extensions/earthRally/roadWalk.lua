@@ -17,7 +17,6 @@ local M = {}
 M.TIMEOUT_S = 180       -- a teleport, the world loaded and a graph built round the car, at most this long
 M.SETTLE_S = 1.0        -- once a fresh graph is there, held this long (a second one may follow the first)
 M.NEAR_M = 300          -- the car set down farther than this from the window's centre: the window is not trusted
-M.SKIP_M = 150          -- the car already this near the window's centre, with a graph round it: no teleport
 M.RADIUS_M = 800        -- the window the auto recce plans with: the graph reaches ~1100 m, less NEAR_M of slack
 M.NAME = 'Earth Rally auto recce'
 
@@ -102,25 +101,26 @@ function M.request(lat, lon, opts, callback)
   if req then return false, 'a window is already being walked to' end
   if not M.available() then return false, 'this BeamNG.Earth cannot be walked for its roads' end
   opts = opts or {}
+  local g = graph()
+  req = { lat = lat, lon = lon, callback = callback, t0 = wall(), home = opts.home == true,
+          serial = g and g.serial, anchor = g and g.anchor, waiting = true }
+  -- (always a teleport: the graph round a car that is already there may be centred up to 500 m from it, and the
+  --  client does not keep its centre, so it cannot be trusted to cover the window. The teleport itself waits in
+  --  M.update until the world is ready, so `home` is never read from a car still on its way somewhere)
+  return true
+end
+
+local function go(q)
   local p = where()
   local g = graph()
-  local aid = anchorId()
-  req = { lat = lat, lon = lon, callback = callback, t0 = wall(), home = opts.home == true,
-          serial = g and g.serial, anchor = g and g.anchor }
-  -- already there, with a graph built in this frame: read it as it is
-  if p and settled() and g and g.anchor == aid and metres(p.lat, p.lon, lat, lon) <= M.SKIP_M then
-    req.teleported, req.fresh = true, true
-    return true
-  end
+  q.serial, q.anchor = g and g.serial, g and g.anchor
   if not home and p then home = { lat = p.lat, lon = p.lon } end
-  local okT, ok, why = pcall(api().teleport, lat, lon, M.NAME)
+  local okT, ok, why = pcall(api().teleport, q.lat, q.lon, M.NAME)
   if not okT or ok == false then
-    req = nil
-    return false, 'BeamNG.Earth would not teleport the car there (' .. tostring(okT and why or ok) .. ')'
+    return answer({ error = 'BeamNG.Earth would not teleport the car there (' .. tostring(okT and why or ok) .. ')' })
   end
-  req.teleported = true
-  log('I', 'earthRally', string.format('auto recce walk: to %.5f, %.5f', lat, lon))
-  return true
+  q.waiting, q.t0 = false, wall()
+  log('I', 'earthRally', string.format('auto recce walk: to %.5f, %.5f', q.lat, q.lon))
 end
 
 -- The car back where it was before the walk (a stop, a failure, the end). No wait: Earth's teleport runs on.
@@ -145,16 +145,22 @@ function M.reset() req, home = nil, nil end
 function M.update()
   local q = req
   if not q then return end
-  if wall() - q.t0 > M.TIMEOUT_S then
-    log('W', 'earthRally', 'auto recce walk: no road graph round the car in ' .. M.TIMEOUT_S .. ' s')
-    return answer({ error = 'timed out' })
+  if q.waiting then
+    if settled() then go(q) elseif wall() - q.t0 > M.TIMEOUT_S then return answer({ error = 'timed out' }) end
+    return
   end
   if q.homing then
     -- (the last window's graph is kept; the car on its way back. Answered once the world is ready there, so the
-    --  stage's own placing after the match does not race the teleport)
+    --  stage's own placing after the match does not race the teleport; its own deadline, and the window's data
+    --  answered even if the trip home is slow)
+    if wall() - q.homedAt > M.TIMEOUT_S then return answer(q.result) end
     if wall() - q.homedAt < 2.0 or not settled() then return end
     -- (the nodes were converted to lat / lon before the car went home: see below)
     return answer(q.result)
+  end
+  if wall() - q.t0 > M.TIMEOUT_S then
+    log('W', 'earthRally', 'auto recce walk: no road graph round the car in ' .. M.TIMEOUT_S .. ' s')
+    return answer({ error = 'timed out' })
   end
   if not settled() then q.seenAt = nil return end
   local g = graph()

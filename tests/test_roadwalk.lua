@@ -32,6 +32,8 @@ T.check(earth.roadGraphRadius() == walk.RADIUS_M, 'the walk plans smaller window
 -- a window far away: teleported, and not answered from the graph that was there before
 local got = nil
 local ok = earth.roadGraph(-34.05, 117.0, { radius = 800 }, function(r) got = r end)
+T.check(#teleports == 0, 'no teleport until the frame after, with the world ready')
+walk.update()
 T.check(ok and #teleports == 1, 'a far window: the car teleported there')
 ready = true
 walk.update(); now = now + 5; walk.update()
@@ -48,6 +50,7 @@ T.check(got and got.nodes.b and got.complete and got.anchorLat == -34.05, 'the f
 -- the last window: the car goes home before it is answered, the nodes already lat / lon
 got = nil
 ok = earth.roadGraph(-34.1, 117.0, { radius = 800, home = true }, function(r) got = r end)
+walk.update()
 T.check(ok and #teleports == 2, 'the last window: teleported')
 ready = true; st.anchorId = 3
 pose = { lat = -34.1, lon = 117.0, anchorLat = -34.1, anchorLon = 117.0 }
@@ -64,6 +67,7 @@ T.check(not earth.roadGraphHome(), 'home already: nothing more to do')
 got = nil
 pose = { lat = -34.1, lon = 117.0, anchorLat = -34.1, anchorLon = 117.0 }
 earth.roadGraph(-34.3, 117.0, {}, function(r) got = r end)
+walk.update()
 ready = true; st.anchorId = 4; g = { anchor = 4, serial = 11, nodes = {}, edges = {} }
 now = now + 25; walk.update()
 T.check(got and got.error and got.error:find('set down'), 'set down far off: an error, not a window')
@@ -79,6 +83,12 @@ earth.roadGraph(-34.6, 117.0, {}, function(r) got = r end)
 ready = false
 now = now + walk.TIMEOUT_S + 1; walk.update()
 T.check(got and got.error == 'timed out', 'no graph in TIMEOUT_S: timed out (the auto recce waits and asks again)')
+
+-- a level teardown: forgotten, the car not moved
+earth.roadGraph(-34.7, 117.0, {}, function() end)
+walk.reset()
+before = #teleports
+T.check(not walk.busy() and not earth.roadGraphHome() and #teleports == before, 'reset: no teleport')
 
 -- the fork's call wins where it is there
 _G.beamngEarth_api.has = function(n) return n == 'transform' or n == 'roadGraph' end
