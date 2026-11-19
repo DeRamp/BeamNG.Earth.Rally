@@ -25,7 +25,7 @@
       </div>
     </div>
 
-    <div class="er-content" v-bng-ui-nav-scroll>
+    <div class="er-content" :class="{ 'er-content-fill': view === 'home' }" v-bng-ui-nav-scroll>
       <!-- the run or the recce under way -->
       <div v-if="banner" class="er-banner">
         <span>{{ banner }}</span>
@@ -895,6 +895,8 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
   .er-cgo:hover { color: #fff; text-decoration: underline; } }
 .er-right { margin-left: auto; display: flex; gap: 12px; }
 .er-content { flex: 1; padding: 28px 64px 24px; overflow-y: auto; }
+/* Home: a column, its lines at their height and the tiles in what is left (notes-1.7.4 #3) */
+.er-content-fill { display: flex; flex-direction: column; > * { flex-shrink: 0; } }
 /* (a controller's focus on the small things -- tabs, Back, a setting's choice, a leaderboard pass -- that have no
    :focus look of their own; the cards and rows keep theirs) */
 .er-page :deep(span[bng-nav-item]:focus), .er-back:focus { outline: 2px solid var(--er-orange); outline-offset: 2px; }
