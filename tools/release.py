@@ -20,7 +20,6 @@ It refuses, changing nothing, unless:
 - the commit's top CHANGELOG entry is `## X.Y.Z-alpha: <name> (<date>)` with a `Works with` line, within the word
   limit (patch 150, minor 400, counted like `wc -w`);
 - the commit's `M.VERSION` is the version, and its README.md names no version;
-- the DeRamp BeamNG.Earth fork's latest release has a Windows installer (.exe);
 - the --pack folder is there, with its season.json at its top.
 
 Each step is skipped when already done (tag on that commit, tag on origin, release on GitHub), so if a step fails,
@@ -38,7 +37,6 @@ import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO = 'DeRamp/BeamNG.Earth.Rally'
-FORK = 'DeRamp/BeamNG.Earth'
 MAIN_LUA = 'mod/earth_rally/lua/ge/extensions/earthRally/main.lua'
 MOD = 'mod/earth_rally'
 VERSION_RE = re.compile(r'^(\d+)\.(\d+)\.(\d+)-alpha$')
@@ -52,8 +50,7 @@ PACK_NOTICE = ('# ARA Nationals 2026\n\n'
                "Earth Rally's MIT licence.\n")
 INSTALL = """---
 **Install:**
-1. Install BeamNG.Earth 1.10 or newer, e.g. [the DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases), with its
-   installer, as you would the official one.
+1. Install [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10 or newer with its installer.
 2. In BeamNG.Earth, open **Add-ons** > **Add from GitHub**, paste `DeRamp/BeamNG.Earth.Rally` and press **Install**.
 3. Paste `DeRamp/earth-rally-leaderboards` the same way, press **Install**, then **Start** (tick
    **Start with BeamNG.Earth**).
@@ -179,9 +176,6 @@ def checks(version, commit, pack):
     found = re.search(r'\b\d+\.\d+\.\d+-alpha\b', show(sha, 'README.md'))
     if found:
         raise Refuse(f'README.md names a version ({found.group(0)}); it says alpha only')
-    assets = run(gh_exe(), 'release', 'view', '-R', FORK, '--json', 'assets', '-q', '.assets[].name')
-    if not any(a.lower().endswith('.exe') for a in assets.split()):
-        raise Refuse(f'the {FORK} latest release has no .exe installer')
     body = entry.split('\n', 1)[1].strip() + '\n\n' + INSTALL.format(v=version)
     return sha, name, body, words, limit
 

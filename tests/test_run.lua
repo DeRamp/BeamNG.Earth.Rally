@@ -2472,8 +2472,8 @@ do
   -- ---------------------------------------------------------------- started, polled, stopped
   resetGraph()
   local a = main.uiAction('autoRecce', 'test8', 'two')
-  T.check(a.ok and a.message and a.message:find('downloads nothing'),
-    'Auto recce starts, and says it downloads nothing (' .. tostring(a.message) .. ')')
+  T.check(a.ok and a.message and a.message:find('reads the roads'),
+    'Auto recce starts, and says it reads the roads (' .. tostring(a.message) .. ')')
   T.check(auto.active(), 'the auto recce is running')
   local prog = main.uiState().auto
   T.check(prog and prog.stageId == 'two' and prog.eventId == 'test8' and prog.ss == 2,

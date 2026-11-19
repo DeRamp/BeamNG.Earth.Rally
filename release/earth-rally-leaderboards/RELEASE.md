@@ -6,7 +6,7 @@ commit Earth Rally 1.8.0-alpha is released from. Body: everything below this com
 
 The helper that connects Earth Rally 1.8.0-alpha and later to its online leaderboards.
 
-Works with [Earth Rally](https://github.com/DeRamp/BeamNG.Earth.Rally) 1.8.0-alpha+ · [BeamNG.Earth, DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)
+Works with [Earth Rally](https://github.com/DeRamp/BeamNG.Earth.Rally) 1.8.0-alpha+ · [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+
 
 ### New
 * Sends your stage runs to the Earth Rally leaderboards and fetches the boards for the game.

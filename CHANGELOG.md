@@ -3,6 +3,21 @@
 Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/writing-standard.md). Downloads:
 [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
 
+## 1.9.0-alpha: official BeamNG.Earth (2026-11-19)
+
+Works with BeamNG.drive 0.40.5 · [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+.
+
+Earth Rally now runs fully on the official BeamNG.Earth: no fork needed, auto recce included.
+
+### Changed
+* **Auto recce** works on official BeamNG.Earth. It takes the car along the stage to read the roads, then brings it back.
+* Install the [official BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases). The DeRamp fork still works, and its auto recce stays faster.
+
+### Known issues
+* **Auto recce** on official BeamNG.Earth is slower: about five minutes for a 30 km stage on ground already downloaded.
+* It needs BeamNG.Earth's traffic and roads on; with them off it says so and stops.
+* A full rally's prep reads each stage in turn; it no longer downloads the next while you drive.
+
 ## 1.8.2-alpha: name prompt and stats update (2026-11-19)
 
 Works with BeamNG.drive 0.40.5 · BeamNG.Earth 1.10+ for **Add from GitHub**, e.g. the
