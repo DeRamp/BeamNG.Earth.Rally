@@ -1965,6 +1965,7 @@ do
       connect = function() return nil, 'connection refused' end }
     online._reset()
     online._socket = { tcp = function() return sk end }
+    online.update(16)          -- (past the first 15 s after the game started)
     local function reopen() main.onUiChangedState('play') main.onUiChangedState('earthRally') end
     main.onUiChangedState('play')
     T.check(not main.uiState().helperPrompt, 'helper prompt: not with the menu closed')
@@ -1982,6 +1983,16 @@ do
     reopen()
     T.check(main.uiState().helperPrompt == true, 'helper prompt: a new version shows it again')
     main.VERSION = hadV
+    -- not while a recce runs
+    local hadRA = recce.active
+    recce.active = function() return true end
+    files = {}
+    online._reset()
+    online._socket = { tcp = function() return sk end }
+    online.update(16)
+    reopen()
+    T.check(not main.uiState().helperPrompt, 'helper prompt: not while a recce runs')
+    recce.active = hadRA
     main.onUiChangedState('play')
     online._reset()
     online._socket, jsonReadFile, jsonWriteFile = hadSock, hadR, hadW

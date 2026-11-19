@@ -23,8 +23,10 @@ export function arr(x) {
   return []
 }
 
+let helperClosing = false   // (#77: a poll's answer from before the close must not bring the pop-up back)
 export function refreshState(cb) {
   engineLua("earthRally_main and earthRally_main.uiState() or nil", s => {
+    if (s && helperClosing) s.helperPrompt = null
     if (s) state.value = s
     if (cb) cb(s)
   })
@@ -132,8 +134,12 @@ export function statsAction(what, a, b, cb) {
 
 // The Leaderboards helper pop-up (#77; main.lua uiHelperPrompt): Got it, with "Don't show this again" or not.
 export function helperPromptClose(dontShow) {
+  helperClosing = true
   state.value = Object.assign({}, state.value, { helperPrompt: null })
-  engineLua(`earthRally_main and earthRally_main.uiHelperPrompt("close", ${dontShow ? "true" : "false"}) or nil`, () => refreshState())
+  engineLua(`earthRally_main and earthRally_main.uiHelperPrompt("close", ${dontShow ? "true" : "false"}) or nil`, () => {
+    helperClosing = false
+    refreshState()
+  })
 }
 
 // view: the page to open at; none opens where the menu was left (EarthRally.vue's lastPlace)

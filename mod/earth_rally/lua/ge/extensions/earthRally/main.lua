@@ -1359,12 +1359,13 @@ function M.uiState()
 end
 
 -- (#77) The pop-up asking the player to install the Leaderboards helper: it did not answer when the menu opened,
--- "Don't show this again" was not ticked on this version, no stage or full rally is running, and the stats question
+-- "Don't show this again" was not ticked on this version, no stage, full rally or recce is running, and the stats question
 -- is not up (online.promptWanted).
 function M.helperPromptWanted()
   if not menuOpen or helperDone or online.probeResult() ~= 'no' then return false end
   local r = runner.current()
   local running = (r ~= nil and runner.state() ~= 'finished' and runner.state() ~= 'failed') or rallyRun.active() ~= nil
+    or recce.active() or autoRecce.active()
   local okC, consent = pcall(stats.consent)
   local ok, want = pcall(online.promptWanted, { probe = online.probeResult(), version = M.VERSION,
     dismissedFor = online.promptDismissedFor(), running = running, done = helperDone,
@@ -2140,6 +2141,7 @@ end
 -- hold left behind takes its "server not running" message with it on any layout without its apps.
 function M.onExtensionUnloaded()
   pcall(online.enable, false)  -- (the companion's socket closed: nothing reads it once the module goes)
+  pcall(online.probeStop)      -- (#77: and the helper look's, if one is under way)
   pcall(stats.unwatchLog)      -- (the game's log function given back)
   pcall(menuPause.releaseAll)   -- (the menu's pause request, if the module goes with the page up: a reload)
   if recce.active() then pcall(recce.stop, false) end
@@ -2170,6 +2172,7 @@ function M.onExtensionLoaded()
   show[0] = settings.get('devPanel') == true
   online.VERSION = M.VERSION
   online.enable(settings.get('onlineBoard') == true)
+  online.markLoaded()          -- (#77: a helper look in the next 15 s is not trusted, it may still be starting)
   pcall(stats.init, M.VERSION)
   -- stats (#76): through the leaderboard's companion, only while the leaderboard is on; Earth Rally's errors in the
   -- log recorded as they happen (only with the player's yes)

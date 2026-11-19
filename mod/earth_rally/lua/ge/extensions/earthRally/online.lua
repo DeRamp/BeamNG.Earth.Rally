@@ -267,7 +267,7 @@ end
 function M.enable(on)
   enabled = on == true
   if enabled and state == 'off' then state, timer = 'disconnected', M.RECONNECT_S end
-  if not enabled then closeSock() state = 'off' end
+  if not enabled then closeSock() state = 'off' M.probeStop() end
 end
 function M.enabled() return enabled end
 
@@ -291,13 +291,17 @@ end
 -- the menu opens, one look: a connection tried and closed again, nothing sent, even with Leaderboards off. Its own
 -- socket, so the board's connection is never disturbed. Non-blocking, stepped by M.update; no answer within
 -- PROBE_TIMEOUT_S is a no.
-M.PROBE_TIMEOUT_S = 3
+M.PROBE_TIMEOUT_S = 2
+M.PROBE_GRACE_S = 15          -- a look this soon after the game started is not trusted: the helper may still be starting
 M.PROMPT_FILE = '/earthRally/helperPrompt.json'   -- { dismissedFor = the mod version "Don't show this again" was ticked on }
 
-local probeSock, probeT = nil, 0
-local probeResult = nil       -- nil (never looked) | 'probing' | 'yes' | 'no' | 'unknown' (no socket library)
+local probeSock, probeT, probeAt, loadedAt = nil, 0, 0, 0
+local probeResult = nil       -- nil (never looked) | 'probing' | 'yes' | 'no' | 'unknown' (no socket library) |
+                              -- 'early' (no answer, but within PROBE_GRACE_S of the game starting: looked at again
+                              -- on the next menu open)
 
 local function probeEnd(result)
+  if result == 'no' and probeAt < loadedAt + M.PROBE_GRACE_S then result = 'early' end
   if probeSock then pcall(probeSock.close, probeSock) end
   probeSock, probeResult = nil, result
 end
@@ -310,7 +314,7 @@ function M.probeStart()
   if not okS or not sk then probeResult = 'unknown' return false end
   local okT, s = pcall(sk.tcp)
   if not okT or not s then probeResult = 'unknown' return false end
-  probeSock, probeT, probeResult = s, 0, 'probing'
+  probeSock, probeT, probeAt, probeResult = s, 0, clock, 'probing'
   pcall(s.settimeout, s, 0)
   local ok, err = s:connect(M.HOST, M.PORT)
   if ok then probeEnd('yes')
@@ -327,7 +331,10 @@ probeStep = function(dt)
   if probeT >= M.PROBE_TIMEOUT_S then probeEnd('no') end
 end
 
--- nil | 'probing' | 'yes' | 'no' | 'unknown'; the board's connection up is always a yes.
+-- The extension loaded (main.lua): the start of PROBE_GRACE_S.
+function M.markLoaded() loadedAt = clock end
+
+-- nil | 'probing' | 'yes' | 'no' | 'unknown' | 'early'; the board's connection up is always a yes.
 function M.probeResult()
   if state == 'connected' then return 'yes' end
   return probeResult
@@ -352,6 +359,11 @@ function M.promptDismiss(version)
   if not w then return false end
   local ok, r = pcall(w, M.PROMPT_FILE, { dismissedFor = dismissed }, true)
   return ok and r ~= false
+end
+
+-- (the extension unloading, the board turned off: the look's socket closed, nothing left open)
+function M.probeStop()
+  if probeResult == 'probing' then probeEnd(nil) end
 end
 
 -- Whether the pop-up shows: t = { probe (M.probeResult()), version, dismissedFor, running (a stage or a full rally),
@@ -474,7 +486,7 @@ function M._reset()
   pending, hello, boards, clock, nextId, helloAt, unsent = {}, nil, {}, 0, 0, 0, {}
   M.lastError, M.lastResult = nil, nil
   if probeSock then pcall(probeSock.close, probeSock) end
-  probeSock, probeT, probeResult, dismissed = nil, 0, nil, nil
+  probeSock, probeT, probeAt, loadedAt, probeResult, dismissed = nil, 0, 0, 0, nil, nil
 end
 
 return M

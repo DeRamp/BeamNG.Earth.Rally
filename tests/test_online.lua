@@ -210,17 +210,32 @@ O.update(0.1)
 T.check(O.probeResult() == 'yes' and pclosed == 1 and psent == 0 and not O.enabled(), 'probe: the helper answers, closed, nothing sent, board off')
 O._reset()
 pmode, pclosed, pconnects = 'refuses', 0, 0
+O.markLoaded()
+O.update(5)
 O.probeStart()
-T.check(O.probeResult() == 'no' and pclosed == 1, 'probe: refused at once is a no')
+T.check(O.probeResult() == 'early' and pclosed == 1, 'probe: refused 5 s after the game started: not trusted')
+O.update(11)
+O.probeStart()
+T.check(O.probeResult() == 'no' and pclosed == 2 and pconnects == 2, 'probe: refused after 15 s is a no, looked at again')
 O._reset()
+O.update(16)
 pmode, pclosed, pconnects = 'silent', 0, 0
 O.probeStart()
 O.probeStart()
 T.check(pconnects == 1, 'probe: not started again while one is under way')
-for _ = 1, 25 do O.update(0.1) end
-T.check(O.probeResult() == 'probing', 'probe: still waiting at 2.5 s')
+for _ = 1, 15 do O.update(0.1) end
+T.check(O.probeResult() == 'probing', 'probe: still waiting at 1.5 s')
 for _ = 1, 6 do O.update(0.1) end
-T.check(O.probeResult() == 'no' and pclosed == 1, 'probe: no answer in 3 s is a no')
+T.check(O.probeResult() == 'no' and pclosed == 1, 'probe: no answer in 2 s is a no')
+O._reset()
+O.update(16)
+pclosed = 0
+O.probeStart()
+O.probeStop()
+T.check(O.probeResult() == nil and pclosed == 1, 'probe: stopped (unload): its socket closed')
+O.probeStart()
+O.enable(false)
+T.check(O.probeResult() == nil and pclosed == 2, 'probe: the board turned off closes it too')
 O._reset()
 O._socket = { tcp = function() error('no luasocket') end }
 O.probeStart()
