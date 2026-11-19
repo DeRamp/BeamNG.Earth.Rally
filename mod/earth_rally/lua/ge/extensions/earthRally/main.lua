@@ -38,7 +38,7 @@ loadScreen.moving = function() return runner.originMoving() or earth.rebasing() 
 local M = {}
 local logTag = 'earthRally'
 local logPausedSim         -- (below, by onUpdate)
-M.VERSION = '1.8.0-alpha'
+M.VERSION = '1.8.0-alpha+helperprompt'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_FLOOR_S = 1             -- the HUD's streams sent when what they show changes, and at least this often
 M.STREAM_GAP_S = 0.1              -- ... the stock stream at most this often outside waitStart / running
@@ -56,6 +56,7 @@ local scanIn = nil       -- seconds until the import folder is looked at (a file
 local menuOpen = false   -- the menu page is the screen now (onUiChangedState)
 local statsMenuUp = false  -- the same, as stats last saw it (onUiChangedState only)
 local openAt = nil       -- the page to show when the menu opens next: { view, eventId, stageId }
+local helperDone = false -- (#77) the helper prompt was shown and closed in this menu open (or not wanted)
 local earthSeen = false  -- the BeamNG.Earth level has been loaded at least once since the mod loaded. The version
                          -- check runs again then: that is where the game's rally engine can be looked at without
                          -- dragging it in at the main menu, which is a cost every start for an answer wanted
@@ -257,6 +258,8 @@ function M.onUiChangedState(toState)
   local was = statsMenuUp
   statsMenuUp = menuOpen
   if menuOpen and not was then pcall(stats.sessionStart) pcall(stats.flushSoon) pcall(online.forgetBoards) end
+  -- (#77) the Leaderboards helper looked for once per menu open: the pop-up if it does not answer
+  if menuOpen and not was then helperDone = false pcall(online.probeStart) end
   if was and not menuOpen then pcall(stats.menuClosed) end
   -- Our own full-screen page counts too: it is not called 'menu...' but it is just as much in the way. So does
   -- BeamNG.Earth's world map, a route of its own ('beamngEarthMap', its credits.lua MAP_ROUTE).
@@ -1351,7 +1354,31 @@ function M.uiState()
   s.message = message
   local a = rallyRun.active()
   s.rallyActive = a and { id = a.eventId, name = a.name, done = a.done or nil } or nil
+  s.helperPrompt = M.helperPromptWanted() or nil
   return s
+end
+
+-- (#77) The pop-up asking the player to install the Leaderboards helper: it did not answer when the menu opened,
+-- "Don't show this again" was not ticked on this version, no stage or full rally is running, and the stats question
+-- is not up (online.promptWanted).
+function M.helperPromptWanted()
+  if not menuOpen or helperDone or online.probeResult() ~= 'no' then return false end
+  local r = runner.current()
+  local running = (r ~= nil and runner.state() ~= 'finished' and runner.state() ~= 'failed') or rallyRun.active() ~= nil
+  local okC, consent = pcall(stats.consent)
+  local ok, want = pcall(online.promptWanted, { probe = online.probeResult(), version = M.VERSION,
+    dismissedFor = online.promptDismissedFor(), running = running, done = helperDone,
+    consent = settings.get('onlineBoard') == true and okC and consent == 'ask' })
+  return ok and want == true
+end
+
+-- The pop-up's Got it: hidden until the next menu open; with "Don't show this again" ticked, until another version.
+function M.uiHelperPrompt(what, dontShow)
+  if what == 'close' then
+    helperDone = true
+    if dontShow == true then online.promptDismiss(M.VERSION) end
+  end
+  return { ok = true }
 end
 
 -- The page to open at, once (the menu page asks as it opens): { view, eventId, stageId } or nil.

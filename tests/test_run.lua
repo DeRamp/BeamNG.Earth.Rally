@@ -1954,6 +1954,38 @@ do
     T.check(seen.closed == 1, 'stats: menu closed by Ctrl+Alt+K: seen (' .. tostring(seen.closed) .. ')')
     stats.flushSoon, stats.sessionStart, stats.menuClosed = hadFlush, hadStart, hadClosed
   end
+  -- (#77) the Leaderboards helper pop-up: the helper looked for on each menu open, Got it, the box, a new version
+  do
+    local online = require('earthRally/online')
+    local hadSock, hadR, hadW, hadV = online._socket, rawget(_G, 'jsonReadFile'), rawget(_G, 'jsonWriteFile'), main.VERSION
+    local files = {}
+    jsonReadFile = function(p) return files[p] end
+    jsonWriteFile = function(p, t) files[p] = t return true end
+    local sk = { settimeout = function() end, close = function() end,
+      connect = function() return nil, 'connection refused' end }
+    online._reset()
+    online._socket = { tcp = function() return sk end }
+    local function reopen() main.onUiChangedState('play') main.onUiChangedState('earthRally') end
+    main.onUiChangedState('play')
+    T.check(not main.uiState().helperPrompt, 'helper prompt: not with the menu closed')
+    reopen()
+    T.check(main.uiState().helperPrompt == true, 'helper prompt: no helper, the menu opened: shown')
+    main.uiHelperPrompt('close', false)
+    T.check(not main.uiState().helperPrompt, 'helper prompt: Got it hides it')
+    reopen()
+    T.check(main.uiState().helperPrompt == true, 'helper prompt: the next menu open shows it again')
+    main.uiHelperPrompt('close', true)
+    reopen()
+    T.check(not main.uiState().helperPrompt and files[online.PROMPT_FILE].dismissedFor == main.VERSION,
+      "helper prompt: Don't show this again, kept with the version")
+    main.VERSION = hadV .. '.next'
+    reopen()
+    T.check(main.uiState().helperPrompt == true, 'helper prompt: a new version shows it again')
+    main.VERSION = hadV
+    main.onUiChangedState('play')
+    online._reset()
+    online._socket, jsonReadFile, jsonWriteFile = hadSock, hadR, hadW
+  end
   -- the Escape menu ('pause' in 0.40): our HUD hidden, and BeamNG.Earth's imgui strips told it is a menu (earthMenuFix)
   do
     local told = {}

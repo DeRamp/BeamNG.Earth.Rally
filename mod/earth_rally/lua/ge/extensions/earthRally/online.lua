@@ -35,6 +35,7 @@ local clock = 0
 local helloAt = 0
 local unsent = {}             -- finished runs the companion was not there to take: sent when it is back
 M.lastError = nil
+local probeStep               -- (the helper prompt's look, below: #77)
 M.lastResult = nil            -- the last run's answer: { ok, status, pos, of, best, error, queued, stage, board }
 
 local function enc(v) return (rawget(_G, 'jsonEncode') or M._jsonEncode)(v) end
@@ -231,6 +232,7 @@ end
 function M.update(dt)
   dt = dt or 0
   clock = clock + dt
+  probeStep(dt)
   if not enabled then
     if sock then closeSock() end
     state = 'off'
@@ -282,6 +284,81 @@ function M.register(name, cb)
     if r.ok and hello then hello.player = r.player end
     if cb then cb(r) end
   end)
+end
+
+------------------------------------------------------------------------------------------ the helper prompt (#77)
+-- The mod cannot see BeamNG.Earth's add-on list, only whether the helper (the companion) answers on HOST:PORT. When
+-- the menu opens, one look: a connection tried and closed again, nothing sent, even with Leaderboards off. Its own
+-- socket, so the board's connection is never disturbed. Non-blocking, stepped by M.update; no answer within
+-- PROBE_TIMEOUT_S is a no.
+M.PROBE_TIMEOUT_S = 3
+M.PROMPT_FILE = '/earthRally/helperPrompt.json'   -- { dismissedFor = the mod version "Don't show this again" was ticked on }
+
+local probeSock, probeT = nil, 0
+local probeResult = nil       -- nil (never looked) | 'probing' | 'yes' | 'no' | 'unknown' (no socket library)
+
+local function probeEnd(result)
+  if probeSock then pcall(probeSock.close, probeSock) end
+  probeSock, probeResult = nil, result
+end
+
+-- Look once (the menu opened). Not again while a look is under way. The board's connection up counts as a yes.
+function M.probeStart()
+  if probeResult == 'probing' then return false end
+  if state == 'connected' then probeResult = 'yes' return true end
+  local okS, sk = pcall(function() return M._socket or socket or require('socket') end)
+  if not okS or not sk then probeResult = 'unknown' return false end
+  local okT, s = pcall(sk.tcp)
+  if not okT or not s then probeResult = 'unknown' return false end
+  probeSock, probeT, probeResult = s, 0, 'probing'
+  pcall(s.settimeout, s, 0)
+  local ok, err = s:connect(M.HOST, M.PORT)
+  if ok then probeEnd('yes')
+  elseif not (err == 'timeout' or err == 'Operation already in progress') then probeEnd('no') end
+  return true
+end
+
+probeStep = function(dt)
+  if probeResult ~= 'probing' then return end
+  if state == 'connected' then return probeEnd('yes') end
+  local okP, peer = pcall(probeSock.getpeername, probeSock)
+  if okP and peer then return probeEnd('yes') end
+  probeT = probeT + (dt or 0)
+  if probeT >= M.PROBE_TIMEOUT_S then probeEnd('no') end
+end
+
+-- nil | 'probing' | 'yes' | 'no' | 'unknown'; the board's connection up is always a yes.
+function M.probeResult()
+  if state == 'connected' then return 'yes' end
+  return probeResult
+end
+
+-- The version "Don't show this again" was ticked on (nil: never). Read once, then kept.
+local dismissed = nil         -- nil: not read yet; false: never ticked; else the version
+function M.promptDismissedFor()
+  if dismissed == nil then
+    dismissed = false
+    local fs, read = rawget(_G, 'FS'), rawget(_G, 'jsonReadFile')
+    if read and not (fs and fs.fileExists and not fs:fileExists(M.PROMPT_FILE)) then
+      local ok, d = pcall(read, M.PROMPT_FILE)
+      if ok and type(d) == 'table' and type(d.dismissedFor) == 'string' then dismissed = d.dismissedFor end
+    end
+  end
+  return dismissed or nil
+end
+function M.promptDismiss(version)
+  dismissed = tostring(version)
+  local w = rawget(_G, 'jsonWriteFile')
+  if not w then return false end
+  local ok, r = pcall(w, M.PROMPT_FILE, { dismissedFor = dismissed }, true)
+  return ok and r ~= false
+end
+
+-- Whether the pop-up shows: t = { probe (M.probeResult()), version, dismissedFor, running (a stage or a full rally),
+-- consent (the stats question is up), done (it was already shown and closed in this menu open) }.
+function M.promptWanted(t)
+  if t.probe ~= 'no' or t.running or t.consent or t.done then return false end
+  return t.dismissedFor == nil or t.dismissedFor ~= t.version
 end
 
 ------------------------------------------------------------------------------------------ boards
@@ -396,6 +473,8 @@ function M._reset()
   sock, state, timer, enabled, inbuf, outbuf = nil, 'off', 0, false, '', ''
   pending, hello, boards, clock, nextId, helloAt, unsent = {}, nil, {}, 0, 0, 0, {}
   M.lastError, M.lastResult = nil, nil
+  if probeSock then pcall(probeSock.close, probeSock) end
+  probeSock, probeT, probeResult, dismissed = nil, 0, nil, nil
 end
 
 return M

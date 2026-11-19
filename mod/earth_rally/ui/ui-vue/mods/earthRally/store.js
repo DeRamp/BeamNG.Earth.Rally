@@ -130,6 +130,12 @@ export function statsAction(what, a, b, cb) {
   })
 }
 
+// The Leaderboards helper pop-up (#77; main.lua uiHelperPrompt): Got it, with "Don't show this again" or not.
+export function helperPromptClose(dontShow) {
+  state.value = Object.assign({}, state.value, { helperPrompt: null })
+  engineLua(`earthRally_main and earthRally_main.uiHelperPrompt("close", ${dontShow ? "true" : "false"}) or nil`, () => refreshState())
+}
+
 // view: the page to open at; none opens where the menu was left (EarthRally.vue's lastPlace)
 export function openMenu(view, eventId) {
   engineLua(`if earthRally_main then earthRally_main.openMenu(${q(view)}, ${q(eventId)}) end`)

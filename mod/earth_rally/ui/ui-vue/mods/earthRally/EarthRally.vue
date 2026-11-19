@@ -359,6 +359,8 @@
 
     <!-- the stats question (#76): once, when the leaderboard is turned on; its own yes or no -->
     <EarthRallyConsent v-if="onlineOn && st.stats && st.stats.consent === 'ask'" />
+    <!-- the Leaderboards helper not answering (#77): how to install it; never over the stats question (main.lua) -->
+    <EarthRallyHelperPrompt v-else-if="st.helperPrompt" />
     <EarthRallyPrompts :top="view === 'home'" :results="view === 'pick' && !!(pickView && pickView.hasResults)" />
     </template>
   </div>
@@ -372,6 +374,7 @@ import { useUINavScope } from "@/services/uiNav"
 import EarthRallySettings from "./EarthRallySettings.vue"
 import EarthRallyPrivacy from "./EarthRallyPrivacy.vue"
 import EarthRallyConsent from "./EarthRallyConsent.vue"
+import EarthRallyHelperPrompt from "./EarthRallyHelperPrompt.vue"
 import EarthRallyHome from "./EarthRallyHome.vue"
 import EarthRallyHomeMenu from "./EarthRallyHomeMenu.vue"
 import EarthRallyPick from "./EarthRallyPick.vue"
