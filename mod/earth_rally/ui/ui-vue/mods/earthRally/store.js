@@ -23,8 +23,10 @@ export function arr(x) {
   return []
 }
 
+let helperClosing = false   // (#77: a poll's answer from before the close must not bring the pop-up back)
 export function refreshState(cb) {
   engineLua("earthRally_main and earthRally_main.uiState() or nil", s => {
+    if (s && helperClosing) s.helperPrompt = null
     if (s) state.value = s
     if (cb) cb(s)
   })
@@ -127,6 +129,16 @@ export function statsAction(what, a, b, cb) {
   engineLua(`earthRally_main and earthRally_main.uiStats(${q(what)}, ${luaText(a)}, ${b ? "true" : "false"}) or nil`, r => {
     if (r && r.stats) state.value = Object.assign({}, state.value, { stats: r.stats })
     if (cb) cb(r)
+  })
+}
+
+// The Leaderboards helper pop-up (#77; main.lua uiHelperPrompt): Got it, with "Don't show this again" or not.
+export function helperPromptClose(dontShow) {
+  helperClosing = true
+  state.value = Object.assign({}, state.value, { helperPrompt: null })
+  engineLua(`earthRally_main and earthRally_main.uiHelperPrompt("close", ${dontShow ? "true" : "false"}) or nil`, () => {
+    helperClosing = false
+    refreshState()
   })
 }
 

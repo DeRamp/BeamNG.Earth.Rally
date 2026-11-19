@@ -22,7 +22,7 @@ M.SCHEMA = {
     desc = 'How much of the world around the car must load before a loading screen lets you drive. Higher: less '
       .. 'scenery popping in, a longer wait.',
     options = { { 40, '40%' }, { 50, '50%' }, { 60, '60%' }, { 70, '70%' }, { 80, '80%' }, { 90, '90%' } } },
-  onlineBoard = { default = false, label = 'Leaderboards',
+  onlineBoard = { default = true, label = 'Leaderboards',
     desc = 'Send your stage times to the public leaderboard (needs the Earth Rally Leaderboards add-on running). '
       .. 'Sent: your board name, the stage, the car, the time and where the car went.',
     options = { { true, 'On' }, { false, 'Off' } } },

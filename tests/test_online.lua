@@ -189,4 +189,94 @@ T.check(O.lastResult and O.lastResult.ok == false and O.lastResult.error:find('n
 O.enable(false)
 T.check(O.status().on == false, 'off again')
 
+------------------------------------------------------------------------------------------ the helper prompt (#77)
+-- The probe: its own socket, connect then close, nothing sent; stepped by update even with the board off.
+local pmode, psent, pclosed, pconnects = 'answers', 0, 0, 0
+local probeSock = {}
+function probeSock.settimeout() end
+function probeSock:connect() pconnects = pconnects + 1
+  if pmode == 'refuses' then return nil, 'connection refused' end
+  return nil, 'timeout' end
+function probeSock:getpeername() return '127.0.0.1' end    -- (says yes either way, as on Windows)
+function probeSock:send(d) psent = psent + 1 if pmode == 'refuses' then return nil, 'closed' end return #d end
+function probeSock:receive() if pmode == 'answers' then return '{"id":0,"ok":true,"version":"0.2.0"}' end
+  return nil, 'timeout', '' end
+function probeSock:close() pclosed = pclosed + 1 end
+local boardSock = O._socket
+O._reset()
+O._socket = { tcp = function() return probeSock end }
+T.check(O.probeResult() == nil, 'probe: nothing looked at yet')
+O.probeStart()
+T.check(O.probeResult() == 'probing', 'probe: under way')
+O.update(0.1)
+O.update(0.1)
+T.check(O.probeResult() == 'yes' and pclosed == 1 and psent == 1 and not O.enabled(), "probe: the helper answers its hello, closed, board off")
+O._reset()
+pmode, pclosed, pconnects = 'refuses', 0, 0
+O.markLoaded()
+O.update(5)
+O.probeStart()
+T.check(O.probeResult() == 'early' and pclosed == 1, 'probe: refused 5 s after the game started: not trusted')
+O.update(11)
+O.probeStart()
+T.check(O.probeResult() == 'no' and pclosed == 2 and pconnects == 2, 'probe: refused after 15 s is a no, looked at again')
+O._reset()
+O.update(16)
+pmode, pclosed, pconnects = 'silent', 0, 0
+O.probeStart()
+O.probeStart()
+T.check(pconnects == 1, 'probe: not started again while one is under way')
+for _ = 1, 15 do O.update(0.1) end
+T.check(O.probeResult() == 'probing', 'probe: still waiting at 1.5 s')
+for _ = 1, 6 do O.update(0.1) end
+T.check(O.probeResult() == 'no' and pclosed == 1, 'probe: no answer in 2 s is a no')
+O._reset()
+O.update(16)
+pclosed = 0
+O.probeStart()
+O.probeStop()
+T.check(O.probeResult() == nil and pclosed == 1, 'probe: stopped (unload): its socket closed')
+O.probeStart()
+O.enable(false)
+T.check(O.probeResult() == nil and pclosed == 2, 'probe: the board turned off closes it too')
+O._reset()
+O._socket = { tcp = function() error('no luasocket') end }
+O.probeStart()
+T.check(O.probeResult() == 'unknown', 'probe: no socket library is not a no')
+-- the board already connected counts as installed
+O._reset()
+O._socket = boardSock
+refused = false
+O.enable(true)
+frames(60)
+drain()
+T.check(O.status().connected and O.probeResult() == 'yes', 'probe: the board connected is a yes')
+O.probeStart()
+T.check(O.probeResult() == 'yes', 'probe: the board connected, nothing to look for')
+O._reset()
+
+-- The show / hide rules
+local base = { probe = 'no', version = '1.8.0-alpha' }
+local function w(t) local x = {} for k, v in pairs(base) do x[k] = v end for k, v in pairs(t or {}) do x[k] = v end return O.promptWanted(x) end
+T.check(w() == true, 'prompt: no helper, never dismissed: shown')
+T.check(not w({ probe = 'yes' }) and not w({ probe = 'probing' }) and not w({ probe = 'unknown' }),
+  'prompt: only on a no')
+T.check(not w({ dismissedFor = '1.8.0-alpha' }), 'prompt: dismissed for this version: hidden')
+T.check(w({ dismissedFor = '1.7.3-alpha' }) == true, 'prompt: a new version shows it again')
+T.check(not w({ running = true }), 'prompt: not during a stage or full rally')
+T.check(not w({ consent = true }), 'prompt: not over the stats question')
+T.check(not w({ done = true }), 'prompt: once per menu open')
+
+-- The box remembered with the version, in its own file
+local files = {}
+local oldR, oldW = rawget(_G, 'jsonReadFile'), rawget(_G, 'jsonWriteFile')
+jsonReadFile = function(p) return files[p] end
+jsonWriteFile = function(p, t) files[p] = t return true end
+T.check(O.promptDismissedFor() == nil, 'prompt: never dismissed')
+T.check(O.promptDismiss('1.8.0-alpha') and files[O.PROMPT_FILE].dismissedFor == '1.8.0-alpha', 'prompt: the version written')
+O._reset()
+T.check(O.promptDismissedFor() == '1.8.0-alpha', 'prompt: the version read back')
+jsonReadFile, jsonWriteFile = oldR, oldW
+O._reset()
+
 T.done('test_online')

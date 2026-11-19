@@ -35,6 +35,7 @@ local clock = 0
 local helloAt = 0
 local unsent = {}             -- finished runs the companion was not there to take: sent when it is back
 M.lastError = nil
+local probeStep               -- (the helper prompt's look, below: #77)
 M.lastResult = nil            -- the last run's answer: { ok, status, pos, of, best, error, queued, stage, board }
 
 local function enc(v) return (rawget(_G, 'jsonEncode') or M._jsonEncode)(v) end
@@ -231,6 +232,7 @@ end
 function M.update(dt)
   dt = dt or 0
   clock = clock + dt
+  probeStep(dt)
   if not enabled then
     if sock then closeSock() end
     state = 'off'
@@ -265,7 +267,7 @@ end
 function M.enable(on)
   enabled = on == true
   if enabled and state == 'off' then state, timer = 'disconnected', M.RECONNECT_S end
-  if not enabled then closeSock() state = 'off' end
+  if not enabled then closeSock() state = 'off' M.probeStop() end
 end
 function M.enabled() return enabled end
 
@@ -282,6 +284,113 @@ function M.register(name, cb)
     if r.ok and hello then hello.player = r.player end
     if cb then cb(r) end
   end)
+end
+
+------------------------------------------------------------------------------------------ the helper prompt (#77)
+-- The mod cannot see BeamNG.Earth's add-on list, only whether the helper (the companion) answers on HOST:PORT. When
+-- the menu opens, one look: a connection tried and closed again, nothing sent, even with Leaderboards off. Its own
+-- socket, so the board's connection is never disturbed. Non-blocking, stepped by M.update; no answer within
+-- PROBE_TIMEOUT_S is a no.
+M.PROBE_TIMEOUT_S = 2
+M.PROBE_GRACE_S = 15          -- a look this soon after the game started is not trusted: the helper may still be starting
+M.PROMPT_FILE = '/earthRally/helperPrompt.json'   -- { dismissedFor = the mod version "Don't show this again" was ticked on }
+
+local probeSock, probeT, probeAt, loadedAt = nil, 0, 0, 0
+local probeOut, probeIn = '', ''   -- (the hello still to send, the answer so far)
+local probeResult = nil       -- nil (never looked) | 'probing' | 'yes' | 'no' | 'unknown' (no socket library) |
+                              -- 'early' (no answer, but within PROBE_GRACE_S of the game starting: looked at again
+                              -- on the next menu open)
+
+local function probeEnd(result)
+  if result == 'no' and probeAt < loadedAt + M.PROBE_GRACE_S then result = 'early' end
+  if probeSock then pcall(probeSock.close, probeSock) end
+  probeSock, probeResult = nil, result
+end
+
+-- Look once (the menu opened). Not again while a look is under way. The board's connection up counts as a yes.
+function M.probeStart()
+  if probeResult == 'probing' then return false end
+  if state == 'connected' and hello then probeResult = 'yes' return true end
+  local okS, sk = pcall(function() return M._socket or socket or require('socket') end)
+  if not okS or not sk then probeResult = 'unknown' return false end
+  local okT, s = pcall(sk.tcp)
+  if not okT or not s then probeResult = 'unknown' return false end
+  probeSock, probeT, probeAt, probeResult = s, 0, clock, 'probing'
+  probeOut, probeIn = '{"id":0,"op":"hello"}\n', ''     -- (written out: nothing here can fail half way)
+  pcall(s.settimeout, s, 0)
+  local ok, err = s:connect(M.HOST, M.PORT)
+  if ok then return true             -- (connected at once: the hello is asked next)
+  elseif not (err == 'timeout' or err == 'Operation already in progress') then probeEnd('no') end
+  return true
+end
+
+probeStep = function(dt)
+  if probeResult ~= 'probing' then return end
+  if state == 'connected' and hello then return probeEnd('yes') end
+  probeT = probeT + (dt or 0)
+  -- Only a real answer counts: the helper's hello, asked once the connection seems up. (A socket's getpeername alone
+  -- said yes on Windows with nothing on the port -- found in test, 2026-11-18, #77.)
+  if probeOut ~= '' then
+    local okS, n, err, partial = pcall(probeSock.send, probeSock, probeOut)
+    if okS then
+      local sent = n or partial or 0
+      if sent > 0 then probeOut = probeOut:sub(sent + 1) end
+      -- (an error here may only mean the connection is not up yet: waited for until PROBE_TIMEOUT_S)
+    end
+  else
+    local okR, line, err, part = pcall(probeSock.receive, probeSock, '*l')
+    if okR then
+      if line then
+        local a = dec(probeIn .. line)
+        return probeEnd((type(a) == 'table' and a.ok == true) and 'yes' or 'no')
+      end
+      if part and #part > 0 then probeIn = probeIn .. part end
+      if err ~= 'timeout' then return probeEnd('no') end
+    end
+  end
+  if probeT >= M.PROBE_TIMEOUT_S then probeEnd('no') end
+end
+
+-- The extension loaded (main.lua): the start of PROBE_GRACE_S.
+function M.markLoaded() loadedAt = clock end
+
+-- nil | 'probing' | 'yes' | 'no' | 'unknown' | 'early'; the board's connection up is always a yes.
+function M.probeResult()
+  if state == 'connected' and hello then return 'yes' end   -- (the helper's own answer, not a socket that seems up)
+  return probeResult
+end
+
+-- The version "Don't show this again" was ticked on (nil: never). Read once, then kept.
+local dismissed = nil         -- nil: not read yet; false: never ticked; else the version
+function M.promptDismissedFor()
+  if dismissed == nil then
+    dismissed = false
+    local fs, read = rawget(_G, 'FS'), rawget(_G, 'jsonReadFile')
+    if read and not (fs and fs.fileExists and not fs:fileExists(M.PROMPT_FILE)) then
+      local ok, d = pcall(read, M.PROMPT_FILE)
+      if ok and type(d) == 'table' and type(d.dismissedFor) == 'string' then dismissed = d.dismissedFor end
+    end
+  end
+  return dismissed or nil
+end
+function M.promptDismiss(version)
+  dismissed = tostring(version)
+  local w = rawget(_G, 'jsonWriteFile')
+  if not w then return false end
+  local ok, r = pcall(w, M.PROMPT_FILE, { dismissedFor = dismissed }, true)
+  return ok and r ~= false
+end
+
+-- (the extension unloading, the board turned off: the look's socket closed, nothing left open)
+function M.probeStop()
+  if probeResult == 'probing' then probeEnd(nil) end
+end
+
+-- Whether the pop-up shows: t = { probe (M.probeResult()), version, dismissedFor, running (a stage or a full rally),
+-- consent (the stats question is up), done (it was already shown and closed in this menu open) }.
+function M.promptWanted(t)
+  if t.probe ~= 'no' or t.running or t.consent or t.done then return false end
+  return t.dismissedFor == nil or t.dismissedFor ~= t.version
 end
 
 ------------------------------------------------------------------------------------------ boards
@@ -325,6 +434,8 @@ end
 -- for runSample / runReset / runFinish, or nil when the online board is off or the stage has no line.
 function M.runStart(desc)
   if not (enabled and desc) then return nil end
+  -- (the helper there but no name picked yet: nothing is sent; with no helper, the run still says why it was not sent)
+  if hello and not hello.player then return nil end
   local h = { desc = desc, trace = {}, resets = {}, slowS = 0, asking = true }
   M.request('start', { stage = desc }, function(r)
     h.asking = false
@@ -396,6 +507,8 @@ function M._reset()
   sock, state, timer, enabled, inbuf, outbuf = nil, 'off', 0, false, '', ''
   pending, hello, boards, clock, nextId, helloAt, unsent = {}, nil, {}, 0, 0, 0, {}
   M.lastError, M.lastResult = nil, nil
+  if probeSock then pcall(probeSock.close, probeSock) end
+  probeSock, probeT, probeAt, loadedAt, probeResult, dismissed = nil, 0, 0, 0, nil, nil
 end
 
 return M

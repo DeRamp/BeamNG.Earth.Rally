@@ -164,6 +164,7 @@ Players build their own stages and pass them around.
 | Rally setup mode: recce-drive any roads to make a stage, place your own ATC, start, finish and stop (18) | M |
 | In-game editor, top-down on the map: draw or reroute stages, drag controls, edit existing stages (11) | L |
 | Friends' times through shared files (20; local leaderboards against real results came in 1.4.0) | S |
+| A pop-up on menu open when the Leaderboards helper does not answer: how to install it, "Don't show this again" until a new version (#77; built on `feature/helper-prompt`) | S |
 
 ## 2.0.0: public release
 

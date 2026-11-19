@@ -1,6 +1,6 @@
 # Earth Rally: privacy
 
-Earth Rally can send anonymous stats. It asks when you turn on Leaderboards, as its own question, and sends nothing
+Earth Rally can send anonymous stats. It asks the first time the rally menu opens with Leaderboards on (they are on by default), as its own question, and sends nothing
 until you say yes. Closing the question counts as No. The leaderboard works either way. Change it any time in
 **Settings › Privacy**.
 
