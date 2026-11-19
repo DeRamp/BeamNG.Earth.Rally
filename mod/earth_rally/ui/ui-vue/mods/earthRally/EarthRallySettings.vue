@@ -37,9 +37,9 @@
           </div>
           <!-- a drop-down, not buttons: players can add many voices. Our own list, not a <select>: the game's UI browser
                shows no <select> pop-up (docs/notes-codriver.md, 1) -->
-          <div class="er-drop" :class="{ locked: cd.locked }" @keydown.esc.stop="voiceOpen = false">
+          <div class="er-drop" :class="{ locked: cd.locked }" @keydown.esc.stop="voiceOpen && closeVoices()">
             <span
-              class="er-drop-btn" :tabindex="cd.locked ? -1 : 0" :bng-nav-item="cd.locked ? null : ''"
+              ref="voiceBtn" class="er-drop-btn" :tabindex="cd.locked ? -1 : 0" :bng-nav-item="cd.locked ? null : ''"
               @click="toggleVoices" @keydown.enter="toggleVoices"
             >{{ voiceLabel }}<i>{{ voiceOpen ? "▲" : "▼" }}</i></span>
             <div v-if="voiceOpen" class="er-drop-list">
@@ -119,7 +119,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch, onMounted, onUnmounted } from "vue"
+import { computed, ref, watch, nextTick, onMounted, onUnmounted } from "vue"
 import { state, setSetting, setCodriver, arr, startPolling, stopPolling, pointTo } from "./store.js"
 
 defineProps({
@@ -140,7 +140,13 @@ const voiceLabel = computed(() => {
   return v ? v.label : "Choose"
 })
 function toggleVoices() { if (cd.value && !cd.value.locked) voiceOpen.value = !voiceOpen.value }
-function pickVoice(v) { voiceOpen.value = false; setCodriver("voice", v) }
+const voiceBtn = ref(null)
+// (focus back on the button, or a controller is left with nothing focused once the list goes)
+function closeVoices() {
+  voiceOpen.value = false
+  nextTick(() => { if (voiceBtn.value && voiceBtn.value.focus) voiceBtn.value.focus({ preventScroll: true }) })
+}
+function pickVoice(v) { closeVoices(); setCodriver("voice", v) }
 function outside(e) { if (voiceOpen.value && !(e.target.closest && e.target.closest(".er-drop"))) voiceOpen.value = false }
 watch(() => cd.value && cd.value.locked, l => { if (l) voiceOpen.value = false })
 onMounted(() => document.addEventListener("mousedown", outside))
