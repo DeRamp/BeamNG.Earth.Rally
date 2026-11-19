@@ -95,14 +95,17 @@ function M.store(nodes, edges, cLat, cLon, half)
   local kl, ko = mLat(), mLon(cLat)
   local newEdge = {}
   for _, e in ipairs(edges or {}) do if e[1] ~= nil and e[2] ~= nil then newEdge[edgeId(e[1], e[2])] = true end end
-  for _, ot in ipairs(M._tilesOver(cLat, cLon, half + 200, stamp)) do
-    local gone = {}
+  local over = M._tilesOver(cLat, cLon, half + 200, stamp)
+  local gone, goneIn = {}, {}      -- (across all the tiles first: an edge lives in its first node's tile)
+  for ti, ot in ipairs(over) do
     for name, n in pairs(ot.nodes or {}) do
       if nodes[name] == nil and math.abs((n[1] - cLat) * kl) <= half and math.abs((n[2] - cLon) * ko) <= half then
         ot.nodes[name] = nil
-        gone[name] = true
+        gone[name], goneIn[ti] = true, true
       end
     end
+  end
+  for ti, ot in ipairs(over) do
     local keep, changed = {}, false
     for _, e in ipairs(ot.edges or {}) do
       local a, b = e[1], e[2]
@@ -110,7 +113,7 @@ function M.store(nodes, edges, cLat, cLon, half)
       if drop then changed = true else keep[#keep + 1] = e end
     end
     if changed then ot.edges, ot.seen = keep, nil end
-    if changed or next(gone) then
+    if changed or goneIn[ti] then
       for kk, tt in pairs(tiles) do if tt == ot then dirty[kk] = true end end
     end
   end

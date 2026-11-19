@@ -290,8 +290,8 @@ end
 do
   reset()
   -- The organisers' line is one straight 3 km; the road bows up to 180 m north of it between 900 and 2100 m (Bolster
-  -- Hollow: a 12-point line, the road up to 260 m off its straights). Past SNAP_M, inside WIDE_SNAP_M: still the
-  -- stage's road, since it joins the road matched either side.
+  -- Hollow: a 12-point line, the road up to 260 m off its straights). The waypoints on the bow miss it (past SNAP_M);
+  -- the line is one straight (past SPARSE_M), so the run is bridged along the road.
   local pts = {}
   for d = 0, 3000, 20 do
     local off = 0
@@ -317,6 +317,25 @@ do
   run(EVENT, stageOf(lineEast(3000, 100)))
   local m = matchedFile()
   T.check(m and m.gapM > 600, 'a road off to the side that joins nothing is not the stage (' ..
+    tostring(m and m.gapM) .. ' m with no road)')
+end
+
+do
+  reset()
+  -- a well-drawn line (a point every 100 m) over a stretch with no road, beside a road 150 m north that does join
+  -- the stage's road at both ends: the line is not rough there, so the stage is not moved onto that road
+  local north = {}
+  for d = 1000, 2000, 20 do
+    local off = 150
+    if d < 1150 then off = (d - 1000) elseif d > 1850 then off = (2000 - d) end
+    north[#north + 1] = at(d, off, 100 + d * 0.01)
+  end
+  local road = { name = 'n', pts = north, names = {} }
+  road.names[1], road.names[#north] = 'a51', 'b1'
+  world.roads = { eastRoadFrom('a', 0, 1000, 20, 0), eastRoadFrom('b', 2000, 3000, 20, 0), road }
+  run(EVENT, stageOf(lineEast(3000, 100)))
+  local m = matchedFile()
+  T.check(m and m.gapM > 600, 'a well-drawn line keeps its gap beside a joined road off to the side (' ..
     tostring(m and m.gapM) .. ' m with no road)')
 end
 

@@ -13,9 +13,15 @@ bends away from a straight run, it is 100-260 m off the line. The matcher (`auto
 `SNAP_M` = 60 m of each waypoint, so those stretches are marked no road and the stage shows **Recce recommended**. The
 fork matches the same way, so it would have done the same.
 
-**Fix options (plan, not built):**
-- When a waypoint misses, retry it with a wider snap (say 250 m, inside `CORRIDOR_M` 300). Only take the road if it
-  joins up with the matched road before and after, so a wrong parallel road isn't picked.
-- Or weight the snap by how long the straight run around the waypoint is: a long run means a rough line, so allow
-  more.
-- Touches `autoRecce.lua` (waypoint snap) and `tests/test_autorecce*.lua`.
+**Built (owner: "implement this fix"):**
+- `autoRecce.lua`: where the organisers' line has a straight of `SPARSE_M` (300 m) or more, a run of waypoints that
+  miss the road is bridged by routing from the matched road before it to the matched road after it, within the
+  detour limit. The detour limit now grows with how far each snapped point is off the line. A well-drawn line keeps
+  its gaps. (A 250 m wide snap was tried first and dropped: it could land on a spur and draw an out-and-back.)
+- `walkCache.lua`: a fresh read deleted old links that crossed its edge, cutting Bolster Hollow Road in two in the
+  cache. Now it keeps links it cannot see, and drops a node's links in every tile.
+- On the cached roads (cut links restored): Bolster Hollow no road 3510 m -> 0, Steamboat 8000 m -> 1600 m.
+- Still there: Steamboat 6400-8000 m. Bolster Hollow's line doubles back near 2.3 km (as before; it is the
+  organisers' line).
+- Not done: `tools/auto_recce.py` has no bridge. walkCache: a node that moves tile keeps a stale copy; `read` misses
+  an edge filed under a node outside its reach (both low, from the debugger).

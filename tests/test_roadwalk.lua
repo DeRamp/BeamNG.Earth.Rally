@@ -133,6 +133,23 @@ do
   C.forget()
 end
 
+-- a read across a 0.1 degree tile line: a node gone from one tile takes its edge kept in the other tile with it
+do
+  local C = walk._cache
+  C.forget()
+  local K = 111320
+  local function at(n, e) return { lat = 10.1 + n / K, lon = 20.05 + e / (K * math.cos(math.rad(10))) } end
+  -- x just south of the tile line, y just north; the edge x - y lives in x's tile
+  T.check(C.store({ x = at(-20, 0), y = at(20, 0), z = at(0, 30) }, { { 'x', 'y' } }, 10.1, 20.05, 1000), 'kept')
+  -- a later read here without y (the road moved): y goes, and so does x - y
+  T.check(C.store({ x = at(-20, 0), z = at(0, 30) }, {}, 10.1, 20.05, 1000), 'read again')
+  local r = C.read(10.1, 20.05, 1000, 0)
+  local has = false
+  for _, e in ipairs(r.edges) do if (e[1] == 'x' and e[2] == 'y') or (e[1] == 'y' and e[2] == 'x') then has = true end end
+  T.check(not has and r.geoNodes.y == nil, 'across a tile line: the gone node and its edge both gone')
+  C.forget()
+end
+
 -- a level teardown: forgotten, the car not moved
 earth.roadGraph(-34.7, 117.0, {}, function() end)
 walk.reset()
