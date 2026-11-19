@@ -3,6 +3,21 @@
 Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/writing-standard.md). Downloads:
 [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
 
+## 1.8.2-alpha: name prompt and stats update (2026-11-19)
+
+Works with BeamNG.drive 0.40.5 · BeamNG.Earth 1.10+ for **Add from GitHub**, e.g. the
+[DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases) (official 1.10+ works, without the auto recce).
+
+A pop-up to pick your leaderboard name, and opt-in stats that name your own stages and count players.
+
+### New
+* With **Leaderboards** on and no name picked, opening the menu asks for one. **Later** hides it until next time.
+
+### Changed
+* **Stats** now send the names of your own imported or home-made rallies and stages, not `custom`.
+* **Stats** keep a random player number on your computer, sent on its own to count players. **No** deletes it.
+* If you said yes to stats before, you are asked again. What is sent: [privacy](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/PRIVACY.md).
+
 ## 1.8.1-alpha: the leaderboard helper prompt (2026-11-18)
 
 Works with BeamNG.drive 0.40.5 · BeamNG.Earth 1.10+ for **Add from GitHub**, e.g. the
