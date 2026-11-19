@@ -331,3 +331,51 @@ On / Off**.
 the parking brake, shift up, look back and reset are off while the card is up, and the arrows / left stick move the
 card's pick as well as steering. After a walk-mode recce in a rally's prep, a stop with no place on the map is run where
 the last recce window left the car (no ARA stop is like that).
+
+## E. Weather and time of day on the official BeamNG.Earth (plan, 2026-11-19, awaiting the owner's go)
+
+The owner, 2026-11-19: "We're trying to officially not use anything with my fork of Earth anymore. I want to just
+be using the main fork of Earth from now on." And: the weather is stored in the pack, never fetched as a stage loads.
+This replaces item 2's fork API (`api.setWorldTime`, the `world-time` branch of the fork: abandoned, not released).
+
+**How, on the official BeamNG.Earth (checked on 1.10.1-beta).** Two hooks it keeps for BeamMP servers (the server's
+clock and weather for everyone, `mpsession.lua:482-483`). Neither switches the player's sky / weather setting to
+Manual, saves anything or shows a toast; nil gives back what the player had:
+- `beamngEarth_sky.setServerClock({ hours, speed = 1, epoch })`: the local hour shown, run on in real time.
+- `beamngEarth_weather.setPreset(name)`: a weather message held, live reports ignored while it is. The messages are a
+  plain table, `beamngEarth_weather.PRESETS`, so Earth Rally adds its own entry (`earthRally`) holding the stage's
+  stored weather and picks it.
+These are not modding API: a BeamNG.Earth update can rename them. `earthAdapter` checks both are there; if either is
+missing, one log line, and the rally runs on the player's own sky and weather. In a BeamMP session (a server clock
+already set by someone else) Earth Rally leaves them alone.
+
+**The limit:** the clock hook sets the hour, not the date. The sun is where it is *today* at that hour, not on the
+rally's day (a February rally driven in November: sunset up to ~40 min off). The weather is the real day's.
+
+**Weather in the pack.** A tool, `tools/pack_weather.py <pack folder>`, run once when a pack is made:
+- for each SS row of each event file: the hour of its start (`date` + `first_car`, the event's `timezone`) at the
+  stage's start point (the map's line), from Open-Meteo's historical archive (`archive-api.open-meteo.com`, keyless;
+  the historical forecast API for the last few days before today);
+- writes `weather` on that row, in BeamNG.Earth's own message shape (`code, cover{low,mid,high}, wind{ms,gustMs,
+  fromDeg}, visM, rainMmH, snowCmH, slTempC, fog`), worked out the way its server does (`server/weather.py derive`,
+  MIT, credited), plus `weather_source` on the event ("Open-Meteo.com, archive, fetched <date>");
+- a rally still in the future: nothing written (the tool says so), and in game that rally keeps the player's weather;
+- `--force` to fetch again; otherwise rows that have weather are left alone.
+Run on the Warden and ARA packs (they stay out of git, as all rally data). `docs/rally-file.md` gets the field.
+
+**In game:**
+- `pack.itineraryOf` carries `weather` per pass; the order's stages keep it.
+- At each stage's load and at the start / out of each stop: the clock hook to the rally clock's local hour; the weather
+  to the next stage's stored weather (the road section before a stage has that stage's weather; service the next).
+- Re-set as now on unpause and on drift (the hook's clock runs on wall time, not game time).
+- Given back (clock nil, preset nil, our table entry removed) at the end, on leave, on quit, and at load if left set.
+- The setting "Rally's real date and weather" becomes **"Rally's real time and weather"** (default on).
+- Start screen: the fork note goes. Instead, only when it applies: "This rally has no stored weather: your own weather"
+  or "Your BeamNG.Earth can't set the time and weather (log has why)".
+- The fork code goes: `earthAdapter.setWorldTime / hasWorldTime / worldTime`, `KNOWN_API_MINOR` back to main's.
+
+**Optional, needs a mock-up first:** each stage's weather in a word on the time card ("SS2 · overcast, 15 °C").
+
+**Files:** new `tools/pack_weather.py` + `tests/test_pack_weather.py` (offline, a made-up archive response); `pack.lua`,
+`rally.lua`, `rallyRun.lua` (setWorld → the hooks), `earthAdapter.lua`, `settings.lua`, `EarthRallyFull.vue` (note
+text), `docs/rally-file.md`, `docs/plan-rally-loop.md`. Tests: test_pack, test_rally, test_run.
