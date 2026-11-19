@@ -45,7 +45,7 @@ g = { anchor = 2, serial = 7, nodes = { b = { 10, 10, 0, 4 } }, edges = { { 'a',
 walk.update()
 T.check(got == nil, 'held SETTLE_S on a fresh graph first')
 now = now + 2; walk.update()
-T.check(got and got.nodes.b and got.complete and got.anchorLat == -34.05, 'the fresh graph handed over, its frame named')
+T.check(got and got.geoNodes and got.geoNodes.b and got.complete, 'the fresh graph handed over, in lat / lon')
 
 -- the last window: the car goes home before it is answered, the nodes already lat / lon
 got = nil
@@ -83,6 +83,25 @@ earth.roadGraph(-34.6, 117.0, {}, function(r) got = r end)
 ready = false
 now = now + walk.TIMEOUT_S + 1; walk.update()
 T.check(got and got.error == 'timed out', 'no graph in TIMEOUT_S: timed out (the auto recce waits and asks again)')
+
+-- walkCache: the first window again is read from the cache, the car not moved
+got = nil
+local tp = #teleports
+earth.roadGraph(-34.05, 117.0, { radius = 1000 }, function(r) got = r end)
+ready = true; walk.update()
+T.check(got and got.geoNodes and got.geoNodes.b and #teleports == tp, 'read before: from the cache, no teleport')
+T.check(walk._cache.covered(-34.05, 117.0, 1000) and not walk._cache.covered(-34.05, 117.0, 1100),
+  'covered: the kept square, not past it')
+T.check(not walk._cache.covered(-34.2, 117.0, 500), 'ground never read is not covered')
+-- too old: not trusted
+local realNow = os.time
+os.time = function() return realNow() + 31 * 86400 end
+T.check(not walk._cache.covered(-34.05, 117.0, 1000), 'older than MAX_AGE_DAYS: walked again')
+os.time = realNow
+-- another BeamNG.Earth: thrown away
+_G.beamngEarth_api.earthVersion = function() return '1.10.2-beta' end
+T.check(not walk._cache.covered(-34.05, 117.0, 1000), 'another BeamNG.Earth version: walked again')
+_G.beamngEarth_api.earthVersion = nil
 
 -- a level teardown: forgotten, the car not moved
 earth.roadGraph(-34.7, 117.0, {}, function() end)
