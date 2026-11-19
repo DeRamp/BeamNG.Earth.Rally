@@ -28,6 +28,10 @@ local M = {}
 
 M.DIR = '/earthRally/telemetry/'
 M.STATE_FILE = M.DIR .. 'state.json'
+-- The terms a Yes was given under, saved with it. 2 (the owner, 2026-11-19): the player's own stage names sent and the
+-- install number. A Yes under older terms (or none) is asked again: back to 'ask', nothing kept, recorded or sent and
+-- no install number made until the new answer. A No stays a No.
+M.TERMS = 2
 M.QUEUE_FILE = M.DIR .. 'queue.json'
 M.SENT_FILE = M.DIR .. 'sent.jsonl'
 M.BATCH = 50              -- events per message
@@ -102,13 +106,21 @@ local function load()
   if st then return end
   local saved = readJson(M.STATE_FILE) or {}
   st = { consent = (saved.consent == 'yes' or saved.consent == 'no') and saved.consent or 'ask' }
+  if st.consent == 'yes' and not (type(saved.terms) == 'number' and saved.terms >= M.TERMS) then
+    st.consent = 'ask'
+    writeJson(M.STATE_FILE, { consent = 'ask' })
+    writeJson(M.QUEUE_FILE, { events = {} })
+    lg('I', 'a Yes under older terms: asking again')
+  end
   if st.consent == 'yes' and type(saved.install) == 'string' and saved.install:match('^%x+$') and #saved.install == 32 then
     st.install = saved.install:lower()
   end
   local q = readJson(M.QUEUE_FILE)
   queue = (st.consent == 'yes' and q and type(q.events) == 'table') and q.events or {}
 end
-local function saveState() writeJson(M.STATE_FILE, { consent = st.consent, install = st.install }) end
+local function saveState()
+  writeJson(M.STATE_FILE, { consent = st.consent, install = st.install, terms = st.consent ~= 'ask' and M.TERMS or nil })
+end
 local function saveQueue() writeJson(M.QUEUE_FILE, { events = queue }) end
 
 -- Drop the send under way (its answer ignored): after No, nothing more is taken off the queue or sent.
