@@ -70,6 +70,8 @@ assert.equal(s.totals.started, 2)
 assert.equal(s.totals.finished, 2)
 assert.equal(s.stages[0].runs, 2)
 assert.equal(s.stages[0].median_s, 410)
+assert.equal(s.stages[0].best_s, 400)
+assert.equal(s.stages.find(x => x.stage === "SS2").best_s, null)
 assert.equal(s.errors[0].code, "menu_action_drive")
 assert.equal(s.errors[0].times, 3)
 assert.equal(s.errors[0].message, "x".repeat(200))            // the newest message, cut to 200 (the "<b>" cut off)
@@ -146,5 +148,68 @@ db.exec(`INSERT INTO events (day, event, session) VALUES ('2020-01-05', 'session
 await worker.scheduled({}, env)
 assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events").get().n, 0)
 assert.equal(db.prepare("SELECT n FROM archive WHERE month = '2020-01'").get().n, 1)
+
+// the board's moderation, passed on: dashboard key needed, only the listed calls, the admin token added here
+{
+  const seen = []
+  const board = { fetch: async req => {
+    seen.push({ method: req.method, url: req.url, auth: req.headers.get("authorization"), body: req.method === "POST" ? await req.text() : null })
+    if (req.url.endsWith("/v1/admin/stages")) return new Response(JSON.stringify({ stages: [{ id: "ab12", name: "SS1" }] }))
+    if (req.url.includes("/runs/7")) return new Response(JSON.stringify({ error: "not an admin" }), { status: 401 })
+    return new Response(JSON.stringify({ ok: true }))
+  } }
+  const benv = { ...env, BOARD: board, BOARD_ADMIN_TOKEN: "tok" }
+  const call = (method, path, e = benv, key = env.DASHBOARD_KEY, body) => worker.fetch(new Request("http://x" + path,
+    { method, body, headers: key ? { authorization: "Bearer " + key } : {} }), e, ctx)
+  assert.equal((await call("GET", "/api/board/stages", benv, null)).status, 401)
+  assert.equal((await call("GET", "/api/board/stages", benv, "wrong")).status, 401)
+  assert.equal(seen.length, 0)
+  r = await call("GET", "/api/board/stages")
+  assert.equal(r.status, 200)
+  assert.deepEqual((await r.json()).stages[0].id, "ab12")
+  assert.deepEqual(seen.pop(), { method: "GET", url: "https://board/v1/admin/stages", auth: "Bearer admin:tok", body: null })
+  await call("POST", "/api/board/runs/12/hide", benv, env.DASHBOARD_KEY, JSON.stringify({ status: "ok", evil: 1 }))
+  assert.deepEqual(seen.pop(), { method: "POST", url: "https://board/v1/admin/runs/12", auth: "Bearer admin:tok", body: '{"status":"hidden"}' })
+  await call("POST", "/api/board/runs/12/restore")
+  assert.equal(seen.pop().body, '{"status":"ok"}')
+  await call("POST", "/api/board/runs/12/move")
+  assert.equal(seen.pop().url, "https://board/v1/admin/runs/12/move")
+  await call("POST", "/api/board/runs/12/approve")
+  assert.equal(seen.pop().url, "https://board/v1/admin/runs/12/approve")
+  await call("POST", "/api/board/players/00ff/ban")
+  assert.deepEqual(seen.pop(), { method: "POST", url: "https://board/v1/admin/players/00ff", auth: "Bearer admin:tok", body: '{"banned":true}' })
+  await call("POST", "/api/board/players/00ff/unban")
+  assert.equal(seen.pop().body, '{"banned":false}')
+  await call("GET", "/api/board/stages/ab12/runs")
+  assert.equal(seen.pop().url, "https://board/v1/admin/stages/ab12/runs")
+  await call("GET", "/api/board/flagged")
+  assert.equal(seen.pop().url, "https://board/v1/admin/flagged")
+  // nothing else passed on
+  for (const [m, pth] of [["GET", "/api/board/players"], ["POST", "/api/board/stages"], ["GET", "/api/board/runs/1/move"],
+    ["POST", "/api/board/runs/../players/x/ban"], ["POST", "/api/board/runs/1/delete"], ["DELETE", "/api/board/runs/1"]]) {
+    assert.equal((await call(m, pth)).status, 404, m + " " + pth)
+  }
+  assert.equal(seen.length, 0)
+  // the board refusing our token: a 502 (a 401 would make the page forget the dashboard key)
+  r = await call("GET", "/api/board/runs/7")
+  assert.equal(r.status, 502)
+  assert.match((await r.json()).error, /BOARD_ADMIN_TOKEN/)
+  // no token set: said so, nothing sent
+  r = await call("GET", "/api/board/stages", { ...env, BOARD: board })
+  assert.equal(r.status, 503)
+  assert.equal(seen.length, 1)
+  // no binding: the public address
+  const realFetch = globalThis.fetch
+  let got = null
+  globalThis.fetch = async (u, init) => { got = [u, init.headers.authorization]; return new Response("{}") }
+  r = await call("GET", "/api/board/flagged", { ...env, BOARD_ADMIN_TOKEN: "tok" })
+  assert.deepEqual(got, ["https://earth-rally-board.station68.workers.dev/v1/admin/flagged", "Bearer admin:tok"])
+  globalThis.fetch = async () => { throw new Error("down") }
+  assert.equal((await call("GET", "/api/board/flagged", { ...env, BOARD_ADMIN_TOKEN: "tok" })).status, 502)
+  globalThis.fetch = realFetch
+  // the page's Leaderboards tab never holds the token
+  const js = await (await worker.fetch(new Request("http://localhost/dashboard.js"), benv, ctx)).text()
+  assert.ok(!js.includes("tok\"") && js.includes("/api/board/") && !js.includes("ADMIN_TOKEN"))
+}
 
 console.log("test_worker: all passed")

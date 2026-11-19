@@ -20,3 +20,9 @@ crons = ["17 3 * * *"]
 binding = "DB"
 database_name = "earth-rally-stats"
 database_id = "8fdc1a11-967b-49d6-806a-12766fee787e"
+
+# The online board's Worker (online/worker), for the dashboard's Leaderboards tab: its admin calls go over this
+# binding, with the board's admin token kept as this Worker's secret BOARD_ADMIN_TOKEN (server/README.md).
+[[services]]
+binding = "BOARD"
+service = "earth-rally-board"

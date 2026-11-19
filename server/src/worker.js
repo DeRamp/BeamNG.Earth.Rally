@@ -3,7 +3,9 @@
 //
 //   POST /v1/events   { events: [...] }   from the companion, at most MAX_EVENTS a message
 //   GET  /api/summary?days=30             the dashboard's numbers; needs  Authorization: Bearer <DASHBOARD_KEY>
-//   GET  /dashboard, /dashboard.js        the owner's page and its script (src/dashboard.js); https only
+//   GET/POST /api/board/...               the online board's moderation, passed on to its Worker (boardApi below);
+//                                         needs the same DASHBOARD_KEY
+//   GET  /dashboard, /dashboard.js       the owner's page and its script (src/dashboard.js); https only
 //   GET  /                                one line saying what this is
 //
 // Each event carries a session number: random, made new each time the game starts, never reused. One event does
@@ -165,7 +167,10 @@ async function summary(url, env) {
   ])
   const byStage = {}
   for (const t of times.results) (byStage[t.rally + "\u0000" + t.stage] ||= []).push(t.time_s)
-  const stageRows = stages.results.map(s => ({ ...s, median_s: median(byStage[s.rally + "\u0000" + s.stage] || []) }))
+  const stageRows = stages.results.map(s => {
+    const t = byStage[s.rally + "\u0000" + s.stage] || []
+    return { ...s, median_s: median(t), best_s: t.length ? t.reduce((a, b) => (b < a ? b : a)) : null }
+  })
   // first seen, ever: per code (any version) and per code, module and version
   const firstCode = {}, firstRow = {}
   for (const f of firsts.results) {
@@ -193,6 +198,44 @@ async function prune(env) {
   ])
 }
 
+// The online board's admin calls (online/worker), made from here so the owner's browser holds only the dashboard key
+// and never the board's ADMIN_TOKEN (a secret of this Worker too: BOARD_ADMIN_TOKEN). Over the service binding BOARD
+// (wrangler.toml) when there is one, else the board's public address. Only these calls are passed on, and the body
+// sent is made here, never the browser's.
+const BOARD_URL = "https://earth-rally-board.station68.workers.dev"
+const BOARD_CALLS = [
+  ["GET", /^\/api\/board\/flagged$/, () => "/v1/admin/flagged"],
+  ["GET", /^\/api\/board\/stages$/, () => "/v1/admin/stages"],
+  ["GET", /^\/api\/board\/stages\/([0-9a-f]{1,32})\/runs$/, m => "/v1/admin/stages/" + m[1] + "/runs"],
+  ["GET", /^\/api\/board\/runs\/(\d{1,12})$/, m => "/v1/admin/runs/" + m[1]],
+  ["POST", /^\/api\/board\/runs\/(\d{1,12})\/(move|approve)$/, m => "/v1/admin/runs/" + m[1] + "/" + m[2]],
+  ["POST", /^\/api\/board\/runs\/(\d{1,12})\/(hide|restore)$/, m => "/v1/admin/runs/" + m[1],
+    m => ({ status: m[2] === "hide" ? "hidden" : "ok" })],
+  ["POST", /^\/api\/board\/players\/([0-9a-f]{1,64})\/(ban|unban)$/, m => "/v1/admin/players/" + m[1],
+    m => ({ banned: m[2] === "ban" })],
+]
+async function boardApi(req, url, env) {
+  let call = null, m = null
+  for (const c of BOARD_CALLS) if (c[0] === req.method && (m = c[1].exec(url.pathname))) { call = c; break }
+  if (!call) return empty(404)
+  if (!env.BOARD_ADMIN_TOKEN) return json({ error: "BOARD_ADMIN_TOKEN is not set on the stats Worker" }, 503)
+  const init = { method: call[0], headers: { authorization: "Bearer admin:" + env.BOARD_ADMIN_TOKEN, "content-type": "application/json" } }
+  if (call[0] === "POST") init.body = JSON.stringify(call[3] ? call[3](m) : {})
+  const target = (env.BOARD ? "https://board" : (env.BOARD_URL || BOARD_URL)) + call[2](m)
+  let r
+  try {
+    r = await (env.BOARD ? env.BOARD.fetch(new Request(target, init)) : fetch(target, init))
+  } catch {
+    return json({ error: "the board could not be reached" }, 502)
+  }
+  // (the board's 401 means BOARD_ADMIN_TOKEN is wrong, not the dashboard key: never passed on as a 401, which would
+  // make the page forget the key)
+  const text = await r.text()
+  const out = r.status === 401 ? JSON.stringify({ error: "the board refused BOARD_ADMIN_TOKEN" }) : text
+  return new Response(out, { status: r.status === 401 ? 502 : r.status,
+    headers: { "content-type": "application/json", "cache-control": "no-store" } })
+}
+
 function authorised(req, env) {
   const key = env.DASHBOARD_KEY
   const got = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "")
@@ -214,6 +257,10 @@ export default {
       if (req.method === "GET" && url.pathname === "/api/summary") {
         if (!authorised(req, env)) return empty(401)
         return await summary(url, env)
+      }
+      if (url.pathname.startsWith("/api/board/")) {
+        if (!authorised(req, env)) return empty(401)
+        return await boardApi(req, url, env)
       }
       if (req.method === "GET" && (url.pathname === "/dashboard" || url.pathname === "/dashboard.js")) {
         // (the key is typed here: never over plain HTTP, which only event posts may still use)
