@@ -637,6 +637,127 @@ do
     'out of the merged stop and due at TC4 agree')
 end
 
+------------------------------------------------------------------------------------------ the stops' check-ins
+-- (additions B) the made-up two-day event, with early check-in allowed at the regroup and the finish, and on day 2
+-- after SS4 a service (in 8, out 07:49), SS5 on its own line C and the finish's MTC in (15). Service A is checked in at
+-- its regroup-in (12 after SS2), the overnight at its MTC in (20 after SS3), Service B at its service-in.
+local function stopsEvent()
+  local ev = timedEvent()
+  ev.time_rules = { early_checkin_allowed = { 'MTC_IN', 'RGC_IN' } }
+  local function add(t) t.classes = { 'national' } t.date, t.day = '2031-02-08', 2 ev.itinerary[#ev.itinerary + 1] = t end
+  add({ type = 'SVC_IN', control = 'TC4A', target_min = 8, first_car = '07:29', location = 'pk' })
+  add({ type = 'SVC_OUT', control = 'TC4B', target_min = 20, first_car = '07:49', location = 'pk' })
+  add({ type = 'ATC', control = 'TC5', target_min = 10, first_car = '07:59' })
+  add({ type = 'SS', control = 'SS5', stage = 'C', first_car = '08:02', lateness_min = 8 })
+  add({ type = 'MTC_IN', control = 'TC5A', target_min = 15, first_car = '08:25', location = 'pk' })
+  return ev
+end
+local function stopsRally(cancelSS2)
+  local it, stops, start, timing = pack._itineraryOf(stopsEvent(), {}, { A = 'a', B = 'b', C = 'c' }, function() end)
+  if cancelSS2 then it[2].cancelled = true end
+  return rally.new({ id = 'tm', name = 'Timed Rally', itinerary = it, rallyStops = stops, rallyStart = start,
+    timing = timing }, { mode = 'realistic', cancelled = 'real' })
+end
+local function at(hm, d) return wt.parse(d or '2031-02-07', hm) end
+local function kindsOf(r)
+  local k = {}
+  for _, x in ipairs(r.order) do k[#k + 1] = x.kind == 'stage' and x.ss or x.kind end
+  return table.concat(k, ' ')
+end
+
+do
+  local r = stopsRally()
+  T.check(kindsOf(r) == 'start SS1 SS2 service SS3 overnight SS4 service SS5 service',
+    'check-ins: the order (' .. kindsOf(r) .. ')')
+  local svc, ovn, svcB, fin = r.order[4], r.order[6], r.order[8], r.order[10]
+  T.check(svc.inType == 'RGC_IN' and svc.inTargetMin == 12 and ovn.inType == 'MTC_IN' and ovn.inTargetMin == 20
+    and svcB.inType == 'SVC_IN' and svcB.inTargetMin == 8 and fin and fin.final and fin.inType == 'MTC_IN'
+    and fin.inTargetMin == 15, 'orderOf: each stop its in and its target, the final the finish\'s')
+  T.check(r.earlyFree and r.earlyFree.RGC_IN and r.earlyFree.MTC_IN and not r.earlyFree.SVC_IN,
+    'rally.new keeps the early-free controls')
+  rally.serviced(r)
+  rally.serviceOut(r)
+  T.check(rally.dueFor(r, 4) == nil, 'dueFor: no stop due before the stage before it is done')
+  rally.stageDone(r, { timeS = 570, outT = at('08:35') })
+  rally.checkIn(r, rally.current(r), at('08:52'), rally.dueFor(r, r.pos), false)      -- (SS2's TC: 2 min late)
+  rally.stageDone(r, { timeS = 400, outT = at('09:00') })
+  T.check(r.pos == 4 and wt.hm(rally.dueFor(r, 4) or 0) == '09:12', 'dueFor a stop: time out + its in target')
+  T.check(rally.dueFor(r, 6) == nil and rally.dueFor(r, 10) == nil, 'dueFor: only the stop right after the stage done')
+  -- early at the regroup-in: free, whatever the setting
+  local res = rally.checkIn(r, svc, at('09:09'), rally.dueFor(r, 4), true, 'stop4')
+  T.check(res.kind == 'early' and res.min == 3 and res.penaltyS == 0 and res.free,
+    'checkIn: early at a regroup-in, setting on: free')
+  T.check(r.road.stop4 and r.road.stop4.inType == 'RGC_IN' and r.road.SS2 and r.road.SS2.penaltyS == 20,
+    'checkIn: the stop kept under its own key, with its in type')
+  -- a service checked in at its service-in: late as at an ATC; early per the setting
+  local due = at('09:12')
+  res = rally.checkIn(r, svcB, at('09:14') + 31, due, false, 'stopX')
+  T.check(res.kind == 'late' and res.min == 2 and res.penaltyS == 20 and not res.free,
+    'checkIn: 2 min late at a service-in: +20 s')
+  res = rally.checkIn(r, svcB, at('09:09'), due, false, 'stopX')
+  T.check(res.kind == 'early' and res.penaltyS == 0, 'checkIn: early at a service-in, setting off: no penalty')
+  res = rally.checkIn(r, svcB, at('09:09'), due, true, 'stopX')
+  T.check(res.kind == 'early' and res.penaltyS == 180, 'checkIn: early at a service-in, setting on: 1 min a minute')
+  r.road.stopX = nil
+  rally.serviced(r)
+  rally.serviceOut(r)
+  rally.stageDone(r, { timeS = 560, outT = at('10:11') })
+  T.check(wt.hm(rally.dueFor(r, 6) or 0) == '10:31', 'the overnight: due at its MTC in')
+  rally.checkIn(r, ovn, at('10:33'), rally.dueFor(r, 6), false, 'stop6')
+  rally.serviced(r)
+  rally.serviceOut(r)
+  rally.stageDone(r, { timeS = 300, outT = at('07:21', '2031-02-08') })
+  T.check(wt.hm(rally.dueFor(r, 8) or 0) == '07:29', 'Service B: due at its service-in')
+  rally.serviced(r)          -- (not checked in: a teleport there)
+  rally.serviceOut(r)
+  rally.stageDone(r, { timeS = 330, outT = at('08:10', '2031-02-08') })
+  res = rally.checkIn(r, fin, at('08:19', '2031-02-08'), rally.dueFor(r, 10), false, 'stop10')
+  T.check(wt.hm(rally.dueFor(r, 10) or 0) == '08:25' and res.kind == 'early' and res.penaltyS == 0 and res.free,
+    'the finish: due 08:25, early free')
+  rally.serviced(r)
+  rally.serviceOut(r)
+  T.check(rally.over(r) and rally.roadPenaltyS(r) == 40, 'road penalties at stops in the same total')
+  local f = rally.finished(r, 'x')
+  T.check(f.roadKept and f.roadPenaltyS == 40 and f.passes[1].roadS == nil and f.passes[2].roadS == 20,
+    'finished: roadS per pass, nil with none')
+  T.check(f.stops and #f.stops == 1 and f.stops[1].label == 'Overnight' and f.stops[1].inType == 'MTC_IN'
+    and f.stops[1].min == 2 and f.stops[1].penaltyS == 20 and f.stops[1].after == 'SS3',
+    'finished: a chip only for the stop that cost something')
+  -- an untimed rally: as before
+  local fu = rally.finished(rally.new(event(), {}), 'x')
+  T.check(fu.roadKept == nil and fu.stops == nil and fu.roadPenaltyS == nil, 'finished: an untimed rally unchanged')
+end
+
+do
+  -- a cancelled pass before a stop: its road section and lateness counted into the stop's in (12 + 15 + 8)
+  local r = stopsRally(true)
+  T.check(r.order[3].kind == 'service' and r.order[3].inTargetMin == 35,
+    'orderOf: a cancelled pass before a stop (' .. tostring(r.order[3].inTargetMin) .. ')')
+  rally.serviced(r)
+  rally.serviceOut(r)
+  rally.stageDone(r, { timeS = 1, outT = at('08:35') })
+  T.check(wt.hm(rally.dueFor(r, r.pos) or 0) == '09:10', 'due at the stop: from SS1 through SS2 left out')
+  -- held out right before a stop: the same; two stops merged keep the first one's in
+  local h = stopsRally()
+  rally.serviced(h)
+  rally.serviceOut(h)
+  rally.holdOut(h, 'b', 'test')
+  T.check(kindsOf(h) == 'start SS1 service SS3 overnight SS5 service', 'holdOut b: SS2 and SS4 out (' .. kindsOf(h) .. ')')
+  T.check(h.order[3].inTargetMin == 35 and h.order[5].inType == 'MTC_IN' and h.order[5].inTargetMin == 20
+    and h.order[7].inTargetMin == 15, 'holdOut before a stop: its target added; the merged stop keeps the first\'s in')
+  rally.stageDone(h, { timeS = 1, outT = at('08:35') })
+  T.check(wt.hm(rally.dueFor(h, h.pos) or 0) == '09:10', 'holdOut: due at the stop from SS1')
+  -- the last stage held out: the stop left at the end goes, and the final service is checked in at its control
+  local c = stopsRally()
+  rally.serviced(c)
+  rally.serviceOut(c)
+  rally.holdOut(c, 'c', 'test')
+  local fin = c.order[#c.order]
+  T.check(kindsOf(c) == 'start SS1 SS2 service SS3 overnight SS4 service' and fin.final and fin.inType == 'SVC_IN'
+    and fin.inTargetMin == 8, 'holdOut of the last stage: the final takes the dropped service\'s in ('
+    .. kindsOf(c) .. ', ' .. tostring(fin.inType) .. ' ' .. tostring(fin.inTargetMin) .. ')')
+end
+
 do
   -- (J) the overall place counts the road penalties, as "Your total" does
   local r = newR(event(), { class = 'L4WD' })

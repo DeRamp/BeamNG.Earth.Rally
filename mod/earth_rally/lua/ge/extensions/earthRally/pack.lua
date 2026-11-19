@@ -460,20 +460,27 @@ M._stopsOf = stopsOf
 -- (the rally-loop plan: timed road sections) The rows a time-control clock starts again from: the scheduled out times
 -- of a service, a regroup or a day's start. Only one standing where the full rally has a stop counts (rally.lua).
 local RESET = { MTC_OUT = true, SVC_OUT = true, RGC_OUT = true, PE_OUT = true }
+-- (additions 2026-11-19, B) The rows a stop is checked in at: the first of them after a pass is the stop's time control.
+local CHECK_IN = { SVC_IN = true, RGC_IN = true, MTC_IN = true, PF_IN = true }
 
 -- The itinerary's passes. With an event file, each pass also carries its schedule (nil where the file gives none):
 --   date, firstCar ('YYYY-MM-DD', 'HH:MM': the first car's start of the stage, printed), latenessMin (the stage's
 --   lateness time, "bogey"), targetMin (the target times of the rows from the pass before to this pass's time
 --   control, added up: the road section(s) driven to it), and when a row in that stretch is a scheduled out time
 --   (RESET), the last one: outDate, outAt and outTargetMin (the targets from it on). Before the first pass, the
---   first timed row stands in when no out row does: the rally's start.
--- Returns the passes, the stops (stopsOf), the start place, and the timing { timezone, start = { date, time } } (nil:
--- an untimed rally, no target time anywhere).
+--   first timed row stands in when no out row does: the rally's start. inType, inTargetMin: the first "in" row
+--   (CHECK_IN) in the stretch before it, and the targets from the pass before up to and including it: where a stop
+--   between the two is checked in, and when.
+-- Returns the passes, the stops (stopsOf, each with the inType / inTargetMin of the stretch it is in), the start place,
+-- and the timing { timezone, start = { date, time }, finish = { inType, inTargetMin } (the stretch after the last
+-- pass), earlyFree = { [inType] = true } (time_rules.early_checkin_allowed) } (nil: an untimed rally, no target time
+-- anywhere).
 local function itineraryOf(evFile, stages, lineId, warn)
   local out, seen, rows = {}, {}, {}
   if evFile and type(evFile.itinerary) == 'table' then
     -- (the stretch since the last pass: targets added up in all, and since its last out row)
     local acc, accOut, hasT, reset, first, copy, timed = 0, 0, false, nil, nil, false, false
+    local inRow = nil     -- (the stretch's check-in row: { type, min })
     local function str0(v) return type(v) == 'string' and v ~= '' and v or nil end
     -- (a row for other classes only -- a regional crew's own MTC IN beside the National regroup -- is not on our road.
     -- 'National', 'ARC National', 'national 2WD': any entry naming National keeps it)
@@ -499,7 +506,8 @@ local function itineraryOf(evFile, stages, lineId, warn)
                       km = tonumber(row.ss_km), cancelled = false, day = tonumber(row.day),
                       powerStage = row.power_stage == true or nil,
                       date = str0(row.date), firstCar = str0(row.first_car), latenessMin = lat,
-                      targetMin = hasT and acc or nil }
+                      targetMin = hasT and acc or nil, inType = inRow and inRow.type or nil,
+                      inTargetMin = inRow and inRow.min or nil }
           -- (before the first pass, no out row: the first timed row is the start)
           local o = reset or (#out == 0 and first) or nil
           if o then
@@ -508,7 +516,7 @@ local function itineraryOf(evFile, stages, lineId, warn)
           end
           timed = timed or p.targetMin ~= nil
           out[#out + 1] = p
-          acc, accOut, hasT, reset, first, copy = 0, 0, false, nil, nil, false
+          acc, accOut, hasT, reset, first, copy, inRow = 0, 0, false, nil, nil, false, nil
         elseif new then
           warn(string.format('itinerary %s "%s": no line of that name in the map', tostring(row.control),
             str(row.stage)))
@@ -532,6 +540,10 @@ local function itineraryOf(evFile, stages, lineId, warn)
           if first and t and first ~= reset then first.acc = (first.acc or 0) + t end
           if fc and dt and RESET[row.type] then reset = { date = dt, time = fc } end
           if fc and dt and not first and #out == 0 then first = { date = dt, time = fc } end
+          -- (after a pass: its first "in" row, the targets up to it -- a regroup before a service is the one checked)
+          if #out > 0 and not inRow and CHECK_IN[row.type] then
+            inRow = { type = row.type, min = hasT and acc or nil }
+          end
         end
       end
     end
@@ -541,11 +553,24 @@ local function itineraryOf(evFile, stages, lineId, warn)
       for _, st in ipairs(stops) do
         local nx = out[st.after + 1]
         if nx and nx.outAt then st.outDate, st.outAt = nx.outDate, nx.outAt end
+        if nx then st.inType, st.inTargetMin = nx.inType, nx.inTargetMin end
       end
       local info = type(evFile.event) == 'table' and evFile.event or {}
       local timing = nil
       if timed and out[1].outAt then
         timing = { timezone = str0(info.timezone), start = { date = out[1].outDate, time = out[1].outAt } }
+        -- (the stretch after the last pass: the finish's check-in)
+        if inRow then timing.finish = { inType = inRow.type, inTargetMin = inRow.min } end
+        -- (the "in" controls where early is free whatever the setting: a list of strings, beside rulesOf's numbers)
+        local tr = type(evFile.time_rules) == 'table' and evFile.time_rules or {}
+        if type(tr.early_checkin_allowed) == 'table' then
+          for _, c in ipairs(tr.early_checkin_allowed) do
+            if type(c) == 'string' then
+              timing.earlyFree = timing.earlyFree or {}
+              timing.earlyFree[c] = true
+            end
+          end
+        end
       end
       return out, stops, start, timing
     end

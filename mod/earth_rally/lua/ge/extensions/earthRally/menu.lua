@@ -143,13 +143,38 @@ function M.stageBase(e, s, i, arrival, autoRecce)
   -- the corner count was taken from the stage's past runs instead -- so a stage recced but never driven showed a
   -- dash, which is the one moment the number is worth having. There is one dash left and it means "no line yet".
   local fig = events.lineFigures(e.id, s.id, s) or {}
+  -- (additions A) Your best splits: the fastest run with splits on the line the stage runs on now, the one the HUD
+  -- compares with (a full-rally pass can be it) -- never quarters picked from different runs, a time never driven.
+  -- nil when the stage has no line.
+  local info = events.stageLineInfo(e.id, s.id, s)
+  local bs = info and events.bestSplits(e.id, s.id, info.key) or nil
+  local bestSplits = bs and { timeS = bs.timeS, splits = bs.splits, date = bs.date, rally = bs.rally } or nil
+  local function gap(t, b)
+    if type(t) ~= 'number' or type(b) ~= 'number' then return nil end
+    return math.floor((t - b) * 10 + 0.5) / 10
+  end
   local runs = {}
   local all = events.results(e.id, s.id).runs or {}
   for k = #all, 1, -1 do
     local r = all[k]
     if r.finished and #runs < M.RUNS_SHOWN then
-      runs[#runs + 1] = { date = r.date, timeS = r.timeS, stageS = r.stageS, penaltyS = r.penaltyS or 0,
+      local row = { date = r.date, timeS = r.timeS, stageS = r.stageS, penaltyS = r.penaltyS or 0,
         text = M.penaltyText(r), last = #runs == 0 or nil }
+      -- (its splits and the finish, each with its gap to the best splits: only on the current line -- a quarter of
+      -- another line is another place -- and none on the best run itself)
+      local sp = r.splits
+      if info and r.lineKey == info.key and type(sp) == 'table' and type(sp[1]) == 'number'
+        and type(sp[2]) == 'number' and type(sp[3]) == 'number' then
+        local isBest = bs and not bs.rally and bs.date == r.date and bs.timeS == r.timeS
+        local cmp = (bs and not isBest) and bs or nil
+        row.splits = {}
+        for n = 1, 3 do
+          row.splits[n] = { timeS = sp[n], gapS = cmp and gap(sp[n], cmp.splits[n]) or nil }
+        end
+        row.splits[4] = { timeS = r.timeS, gapS = cmp and gap(r.timeS, cmp.timeS) or nil }
+        row.bestSplits = isBest or nil
+      end
+      runs[#runs + 1] = row
     end
   end
   local ctl = s.controls or {}
@@ -158,6 +183,7 @@ function M.stageBase(e, s, i, arrival, autoRecce)
     status = st.status, note = st.note, line = st.kind,
     corners = fig.corners, gainM = fig.gainM, lossM = fig.lossM,
     atc = arrival == 'ATC', stop = ctl.stop ~= nil, best = events.best(e.id, s.id), runs = runs,
+    bestSplits = bestSplits,
     canDrive = st.kind ~= nil,
     -- the row under the tiles (docs/mockups-1.6.0/stage-points.html): how many of each kind of organisers' point
     -- the map marks on the stage, { radio, medical, spectator, marshal }, every kind there and 0 for none -- the

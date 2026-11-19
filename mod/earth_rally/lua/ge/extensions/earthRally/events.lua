@@ -575,18 +575,19 @@ end
 -- or a rally's pass (any mode): { timeS, splits = { s1, s2, s3 } }, or nil. Runs saved before splits have none.
 -- lineKey (M.lineKey of the line timed now): only runs on that line -- a split a quarter along another line (recced
 -- again, matched again) is at another place on the road.
+-- (additions A) Also where they came from, for the stage page: date (the run's) and rally = true for a rally's pass.
 function M.bestSplits(eventId, stageId, lineKey)
   local r = M.results(eventId, stageId)
   local best = nil
-  local function look(x, finished)
+  local function look(x, finished, rally)
     if type(x) == 'table' and finished and type(x.timeS) == 'number' and type(x.splits) == 'table'
       and type(x.splits[1]) == 'number' and (lineKey == nil or x.lineKey == lineKey)
       and (not best or x.timeS < best.timeS) then
-      best = { timeS = x.timeS, splits = x.splits }
+      best = { timeS = x.timeS, splits = x.splits, date = x.date, rally = rally or nil }
     end
   end
-  for _, x in ipairs(r.runs or {}) do look(x, x.finished) end
-  for _, x in ipairs(r.rallyPasses or {}) do look(x, true) end
+  for _, x in ipairs(r.runs or {}) do look(x, x.finished, false) end
+  for _, x in ipairs(r.rallyPasses or {}) do look(x, true, true) end
   return best
 end
 

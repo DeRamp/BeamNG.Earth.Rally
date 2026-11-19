@@ -21,10 +21,13 @@
 --     done, unclassified,
 --     (format 3, the rally-loop plan: a timed rally only -- nil for an untimed one, and for a format-2 save)
 --     timed = true, tz (the event's time zone), clock = { t (the rally clock: local time, worldTime.lua) },
---     lastOut (the last stage's time out, local; nil when unknown), road = { [ss] = { dueT, inT, kind = 'onTime' |
---     'late' | 'early', min, penaltyS } } (the check-ins at the stages' time controls), lateSPerMin, earlySPerMin }
+--     lastOut (the last stage's time out, local; nil when unknown), road = { [ss | 'stop<i>'] = { dueT, inT, kind =
+--     'onTime' | 'late' | 'early', min, penaltyS, inType } } (the check-ins at the stages' time controls, and at the
+--     stops' "in" controls keyed by their place in order, as serviced is), lateSPerMin, earlySPerMin, earlyFree =
+--     { [inType] = true } (the "in" controls where early is free: the event's early_checkin_allowed) }
 --   Order items of a timed rally carry: stages { date, firstCar, latenessMin, targetMin, outTargetMin, outT };
---   stops and the start { outT } (the scheduled out time, local), where the event file gives them.
+--   stops and the start { outT } (the scheduled out time, local); stops { inType, inTargetMin } (the control they are
+--   checked in at, and the road section's target to it from the stage before), where the event file gives them.
 --
 -- Super Rally (ARA RCR 6.3.1, the user's choice): a stage missed scores the fastest real National time in your class
 -- on that pass, + 10 min for the first stage missed in the rally and + 7 min for each one after. With no National
@@ -119,17 +122,21 @@ local function orderOf(event, cancelled)
           l.kind, l.label = 'overnight', 'Overnight'
         end
       else
+        -- (its check-in: a pass left out before it adds its road section and lateness, as to a stage's target; a
+        -- stop merged into this one keeps this one's, the control driven into)
         out[#out + 1] = { kind = kind, label = s.label or (kind == 'overnight' and 'Overnight' or 'Service'),
-          name = s.name, place = s.place }
+          name = s.name, place = s.place, inType = s.inType,
+          inTargetMin = tonumber(s.inTargetMin) and (tonumber(s.inTargetMin) + carry) or nil }
       end
     end
   end
   -- (#71, the owner: after the last stage you still drive back to service, and the rally finishes there. The stop the
   -- event has after its last pass when it has a place, else the last day's service park (below). With no service
   -- anywhere, no final service: the rally ends at its last stage, as before. A trailing stop with no place is dropped)
-  local trailing = nil
+  local trailing, trailIn = nil, nil
   while lastIsStop() do
     if not trailing and out[#out].place then trailing = out[#out] end
+    trailIn = out[#out]           -- (once the loop is done: the first stop after the last stage, the one driven into)
     out[#out] = nil
   end
   -- (#48, the owner: you always drive back to service at the end of a day, and the overnight is there. An overnight
@@ -161,7 +168,16 @@ local function orderOf(event, cancelled)
   end
   local fin = trailing or park
   if fin and #out > 0 then
-    out[#out + 1] = M.finalStop(fin.place, fin.kind == 'service' and fin.name or (park and park.name) or fin.name)
+    local f = M.finalStop(fin.place, fin.kind == 'service' and fin.name or (park and park.name) or fin.name)
+    -- (its check-in: the stop it stands for, else the stretch after the last pass -- the finish's MTC in)
+    local tf = type(event.timing) == 'table' and type(event.timing.finish) == 'table' and event.timing.finish or nil
+    if trailIn and trailIn.inTargetMin then
+      f.inType, f.inTargetMin = trailIn.inType, trailIn.inTargetMin
+    elseif tf then
+      f.inType = tf.inType
+      f.inTargetMin = tonumber(tf.inTargetMin) and (tonumber(tf.inTargetMin) + carry) or nil
+    end
+    out[#out + 1] = f
   end
   -- (the services lettered again in this order: one merged away, or the first after a cancelled day, keeps A, B...)
   local n = 0
@@ -216,6 +232,10 @@ function M.new(event, opts)
     r.timed, r.tz, r.clock, r.road = true, tm.timezone, { t = startT }, {}
     r.lateSPerMin = tonumber(rules.lateSPerMin) or M.LATE_S_PER_MIN
     r.earlySPerMin = tonumber(rules.earlySPerMin) or M.EARLY_S_PER_MIN
+    if type(tm.earlyFree) == 'table' then
+      r.earlyFree = {}
+      for k, v in pairs(tm.earlyFree) do if v == true then r.earlyFree[k] = true end end
+    end
   end
   return r
 end
@@ -225,9 +245,17 @@ end
 -- before it starts from + its target time. It starts from the scheduled out time of the stop or start before it (a
 -- service resets you to the schedule), else from the last stage's time out. Local times (worldTime.lua), whole
 -- minutes. nil: not known (an untimed rally or section, a stage given up before it).
+-- A stop (additions B): due at its "in" control at the stage before it's time out + inTargetMin -- so only the stop
+-- right after the stage just done has one (a stage's time out is never known in advance).
 function M.dueFor(r, i)
   if not (r and r.timed) then return nil end
   local it = r.order[i]
+  if it and it.kind ~= 'stage' and it.kind ~= 'start' then
+    local prev = r.order[i - 1]
+    local target = tonumber(it.inTargetMin)
+    if not (prev and prev.kind == 'stage' and r.results[prev.ss] and r.lastOut and target) then return nil end
+    return math.floor(r.lastOut / 60) * 60 + target * 60
+  end
   if not (it and it.kind == 'stage') then return nil end
   local prev = r.order[i - 1]
   local base, target
@@ -255,19 +283,24 @@ end
 
 -- The check-in at a stage's time control: on time in the due minute, late or early by whole minutes (a minute or part
 -- of one), each late minute lateSPerMin, each early one earlySPerMin when early check-ins cost (earlyPenalty), else
--- nothing. Kept in r.road. Returns { kind, min, penaltyS }.
-function M.checkIn(r, item, inT, dueT, earlyPenalty)
+-- nothing. Kept in r.road under key: a stop's 'stop<i>' (its place in order, as serviced keys it), else the stage's
+-- ss. At a stop's "in" control the event lets you reach early (r.earlyFree[item.inType]: a regroup, the finish),
+-- early is free whatever the setting. Returns { kind, min, penaltyS, free (early allowed there) }.
+function M.checkIn(r, item, inT, dueT, earlyPenalty, key)
   local res = { kind = 'onTime', min = 0, penaltyS = 0 }
   if not (r and r.timed and item and inT and dueT) then return res end
+  local free = item.inType ~= nil and type(r.earlyFree) == 'table' and r.earlyFree[item.inType] == true
+  res.free = free or nil
   local diff = math.floor(inT / 60) - math.floor(dueT / 60)
   if diff > 0 then
     res.kind, res.min, res.penaltyS = 'late', diff, diff * (r.lateSPerMin or M.LATE_S_PER_MIN)
   elseif diff < 0 then
     res.kind, res.min = 'early', -diff
-    res.penaltyS = earlyPenalty and -diff * (r.earlySPerMin or M.EARLY_S_PER_MIN) or 0
+    res.penaltyS = (earlyPenalty and not free) and -diff * (r.earlySPerMin or M.EARLY_S_PER_MIN) or 0
   end
   r.road = type(r.road) == 'table' and r.road or {}
-  r.road[item.ss] = { dueT = dueT, inT = inT, kind = res.kind, min = res.min, penaltyS = res.penaltyS }
+  r.road[key or item.ss] = { dueT = dueT, inT = inT, kind = res.kind, min = res.min, penaltyS = res.penaltyS,
+    inType = item.inType }
   return res
 end
 
@@ -290,6 +323,10 @@ function M.holdOut(r, stageId, why)
       table.remove(r.order, i)
       -- (a timed rally: its lateness and road section go to the stage after it, so that one's due time still adds up)
       local nx, pv = r.order[i], r.order[i - 1]
+      -- (a stop right after it is checked in at the end of its road section now: that and its lateness added)
+      if nx and nx.kind ~= 'stage' and nx.inTargetMin then
+        nx.inTargetMin = it.targetMin and (nx.inTargetMin + it.targetMin + (it.latenessMin or 0)) or nil
+      end
       if nx and nx.kind == 'stage' then
         local add = (it.latenessMin or 0)
         if it.outT and pv and pv.kind ~= 'stage' then
@@ -315,17 +352,26 @@ function M.holdOut(r, stageId, why)
     if a.kind ~= 'stage' and b.kind ~= 'stage' then
       -- (#48: the overnight is at the service park: the service's place kept)
       if b.kind == 'overnight' and a.kind == 'service' then a.kind, a.label, a.place = 'overnight', 'Overnight', a.place or b.place end
-      -- (the later stop's out time is the one the stage after them starts from: serviceOut and dueFor agree)
+      -- (the later stop's out time is the one the stage after them starts from: serviceOut and dueFor agree; the
+      -- first one's check-in kept, the control driven into)
       a.outT = b.outT or a.outT
       table.remove(r.order, i)
     else
       i = i + 1
     end
   end
-  while #r.order > r.pos and r.order[#r.order].kind ~= 'stage' do r.order[#r.order] = nil end
+  local dropped = nil
+  while #r.order > r.pos and r.order[#r.order].kind ~= 'stage' do
+    dropped = r.order[#r.order]
+    r.order[#r.order] = nil
+  end
   -- (nothing left to drive: the rally is over)
   if M.stagesLeft(r) == 0 then r.pos, r.done = #r.order + 1, true return n end
-  if final then r.order[#r.order + 1] = final end
+  if final then
+    -- (a stop dropped after the last stage: the final service is checked in at its control, the one driven into)
+    if dropped then final.inType, final.inTargetMin = dropped.inType, dropped.inTargetMin end
+    r.order[#r.order + 1] = final
+  end
   return n
 end
 
@@ -611,16 +657,37 @@ function M.standing(r, board)
   return { pos = pos, of = of, classPos = cpos, classOf = cof, gapS = mine - math.min(all[1], mine), totalS = mine }
 end
 
--- A finished rally as it is kept for the Results tab: { totalS, mode, class, car, unclassified, date, passes }.
+-- A finished rally as it is kept for the Results tab: { totalS, mode, class, car, unclassified, date, passes, stops,
+-- roadPenaltyS, roadKept }. A timed rally's passes carry roadS (the road penalty getting to its time control; nil with none),
+-- and stops lists each stop checked in at a cost: { label, inType, min, penaltyS, after (the ss of the stage before) }.
 function M.finished(r, date)
   local passes = {}
+  local road = r.timed and type(r.road) == 'table' and r.road or {}
   for _, d in ipairs(M.doneStages(r)) do
-    passes[#passes + 1] = { ss = d.item.ss, timeS = d.result.timeS, superRally = d.result.superRally or nil }
+    local x = road[d.item.ss]
+    local pen = x and tonumber(x.penaltyS)
+    passes[#passes + 1] = { ss = d.item.ss, timeS = d.result.timeS, superRally = d.result.superRally or nil,
+      roadS = (pen and pen > 0) and pen or nil }
   end
-  local road = r.timed and M.roadPenaltyS(r) or nil
+  -- (a stop gets a chip only where it cost something: an on-time or free check-in adds none)
+  local stops, after = {}, nil
+  for i, it in ipairs(r.order or {}) do
+    if it.kind == 'stage' then
+      after = it.ss
+    elseif it.kind ~= 'start' then
+      local x = road['stop' .. i]
+      local pen = x and tonumber(x.penaltyS)
+      if pen and pen > 0 then
+        stops[#stops + 1] = { label = it.label, inType = x.inType or it.inType, min = x.min, penaltyS = pen,
+          after = after }
+      end
+    end
+  end
   return { totalS = math.floor(M.totalS(r) * 10 + 0.5) / 10, mode = r.mode, class = r.class,
     car = r.car and r.car.name or nil, unclassified = r.unclassified or nil, date = date, passes = passes,
-    roadPenaltyS = road }
+    stops = #stops > 0 and stops or nil, roadPenaltyS = r.timed and M.roadPenaltyS(r) or nil,
+    -- (roadS and stops kept: a timed rally finished before this has neither, and its Results strip stays as it was)
+    roadKept = r.timed and true or nil }
 end
 
 -- Your finished rallies' best, for the Results tab: a classified Realistic one (the lowest total) before any Casual

@@ -167,9 +167,15 @@ end
 
 -- The due time at the next stage's time control (local), or nil. Ahead of the next stage, only a due time the
 -- schedule fixes (from a stop's out time): one counted from a stage's time out is not known until that stage is done.
+-- (additions B) The stop the rally is at, not yet checked in: due at its "in" control from the stage just done.
 local function dueAt(i)
   if not timed() then return nil end
   if i < R.pos then return nil end
+  local here = R.order[i]
+  if here and here.kind ~= 'stage' then
+    if i ~= R.pos or rally.isServiced(R) then return nil end
+    return rally.dueFor(R, i)
+  end
   local nx = select(2, rally.nextStage(R))
   if i ~= nx then
     local it, prev = R.order[i], R.order[i - 1]
@@ -184,16 +190,27 @@ M._dueAt = function(i) return dueAt(i) end
 local tdCache = { key = nil, v = nil }
 local frameN = 0
 local function transitDueNow()
-  if not timed() or prep or move or toStop or R.done or rally.over(R) then return nil end
+  if not timed() or prep or move or R.done or rally.over(R) then return nil end
   local it, i = rally.current(R), R.pos
-  if not (it and it.kind == 'stage') or runLiveAny() then return nil end
+  -- (additions B: driving to a stop is a road section too, timed to its "in" control)
+  if toStop then
+    if not (it and it.kind ~= 'stage' and toStop.item == it) or runLiveAny() then return nil end
+  elseif not (it and it.kind == 'stage') or runLiveAny() then
+    return nil
+  end
   local dueT = dueAt(i)
   if not dueT then return nil end
   local t = R.clock.t
   local late = math.max(0, math.floor(t / 60) - math.floor(dueT / 60))
-  local ap = runner.approachInfo()
-  return { label = it.ss .. ' ' .. tostring(stageName(it)), due = wt.hm(dueT), dueT = dueT, leftS = dueT - t,
-    distM = ap and ap.distM or nil, late = late, penaltyS = late * (R.lateSPerMin or rally.LATE_S_PER_MIN) }
+  local label, distM
+  if toStop then
+    label, distM = it.label .. (it.name and (' · ' .. it.name) or ''), toStop.distM
+  else
+    local ap = runner.approachInfo()
+    label, distM = it.ss .. ' ' .. tostring(stageName(it)), ap and ap.distM or nil
+  end
+  return { label = label, due = wt.hm(dueT), dueT = dueT, leftS = dueT - t,
+    distM = distM, late = late, penaltyS = late * (R.lateSPerMin or rally.LATE_S_PER_MIN) }
 end
 -- (asked three or four times a frame -- the Messages line, the stream, the runner's frame and its keys: worked out
 -- once a frame, again only if the clock or where the rally is moved in between)
@@ -568,8 +585,11 @@ local function boardM(p)
   return math.sqrt((x - b.x) ^ 2 + (y - b.y) ^ 2)
 end
 
--- At the stop the rally is at (the car there): repaired, the rally saved, the time card up.
-local function arrive()
+-- At the stop the rally is at (the car there): repaired, the rally saved, the time card up. driven: the car drove in
+-- and stopped at its board (or near it, the time card's button) -- then, with a due time known, it is checked in at
+-- the stop's "in" control first, so the save at the service holds it. A teleport (a Realistic recovery, a stop with no
+-- place, a move) checks nothing in. No wait at a stop: the clock jumps to the out time anyway.
+local function arrive(driven)
   move, toStop = nil, nil
   if not R then return end
   local it = rally.current(R)
@@ -577,6 +597,11 @@ local function arrive()
   if runner.current() and not runLive() then pcall(runner.abort, true) end
   gpsOff()
   stopSite(it)
+  local key = 'stop' .. R.pos
+  if driven and timed() and not (type(R.road) == 'table' and R.road[key]) then
+    local dueT = dueAt(R.pos)
+    if dueT then M.checkIn(it, nil, R.clock.t, dueT, key) end
+  end
   if it.final then
     -- (#71: checked in at the final service: the rally is done here, kept as finished)
     rally.serviced(R)
@@ -808,15 +833,15 @@ function M.atControl(it, stage)
   if M.ui.atControl then M.ui.atControl(tc, stage) end
 end
 
--- The check-in at the time control: the result on the card and in the rally (rally.checkIn).
-function M.checkIn(it, tc, inT, dueT)
-  local res = rally.checkIn(R, it, inT, dueT, settings.get('earlyPenalty') == true)
+-- The check-in at the time control: the result on the card and in the rally (rally.checkIn). key: a stop's ('stop<i>').
+function M.checkIn(it, tc, inT, dueT, key)
+  local res = rally.checkIn(R, it, inT, dueT, settings.get('earlyPenalty') == true, key)
   if tc then
     tc.result, tc.wait = res, nil
     tc.timeIn = wt.hm(inT) .. ':' .. string.format('%02d', math.floor(inT) % 60)
   end
-  log('I', logTag, string.format('rally: checked in at %s %s, due %s: %s%s', tostring(it.ss), wt.hm(inT), wt.hm(dueT),
-    res.kind, res.penaltyS > 0 and string.format(' (+%d s)', res.penaltyS) or ''))
+  log('I', logTag, string.format('rally: checked in at %s %s, due %s: %s%s', tostring(it.ss or it.label), wt.hm(inT),
+    wt.hm(dueT), res.kind, res.penaltyS > 0 and string.format(' (+%d s)', res.penaltyS) or ''))
   return res
 end
 
@@ -1076,7 +1101,7 @@ function M.goNext()
       -- (not there yet: a service is driven to, an overnight or a stop with no place is gone to)
       if (it.kind == 'service' or it.kind == 'overnight') and it.place and not recoveredAt then
         if not toStop then driveToStop()
-        elseif (toStop.distM or math.huge) <= M.ARRIVE_NEAR_M and M.stoppedNow() then arrive() end
+        elseif (toStop.distM or math.huge) <= M.ARRIVE_NEAR_M and M.stoppedNow() then arrive(true) end
         return true
       end
       goToStop()
@@ -1350,7 +1375,7 @@ function M.update(dt, dtSim)
         local rr = runner.current()
         local cardUp = rr and rr.resultsOpen       -- (the stage's card read first: arriving takes the run away)
         if not runLive() and not cardUp and stopped and there then
-          arrive()
+          arrive(true)
         end
       end
     end
@@ -1538,14 +1563,27 @@ function M.uiCard()
       and stageName(it) or it.name, km = it.km, day = it.day or (it.kind == 'start' and firstDay or nil),
       next = i == R.pos or nil, done = i < R.pos or nil, final = it.final or nil }
     if timed() then
-      -- (interface 2: a timed rally's controls)
-      local road = it.kind == 'stage' and type(R.road) == 'table' and R.road[it.ss] or nil
+      -- (interface 2: a timed rally's controls; additions B: a stop's at its "in" control, as a stage's)
+      local key = it.kind == 'stage' and it.ss or ('stop' .. i)
+      local road = it.kind ~= 'start' and type(R.road) == 'table' and R.road[key] or nil
       if road then
         -- (roadKind: as checked in -- the card cannot tell late from early by 'HH:MM' over midnight)
         row.due, row.timeIn, row.roadPenaltyS = wt.hm(road.dueT), wt.hm(road.inT), road.penaltyS
         row.roadKind = road.kind
-      elseif it.kind == 'stage' then
+      elseif it.kind ~= 'start' then
         row.due = wt.hm(dueAt(i))
+      end
+      if it.kind ~= 'stage' and it.kind ~= 'start' then row.inType = it.inType end
+      -- (a row ahead whose due isn't known yet: its road section's target instead of "–". Not a stop already done
+      -- with no check-in -- a teleport there leaves its row blank)
+      if not road and not row.due and i >= R.pos and it.kind ~= 'start'
+        and not (i == R.pos and it.kind ~= 'stage' and rally.isServiced(R)) then
+        local prev = R.order[i - 1]
+        if it.kind == 'stage' then
+          row.targetMin = (prev and prev.kind ~= 'stage') and it.outTargetMin or it.targetMin
+        else
+          row.targetMin = it.inTargetMin
+        end
       end
       if it.kind ~= 'stage' and it.outT and not it.final then row.outAt = wt.hm(it.outT) end
     end
@@ -1593,13 +1631,25 @@ function M.uiCard()
   if phase == 'transit' and ap then transit = { name = ap.name, distM = ap.distM }
   elseif phase == 'toStop' and toStop then transit = { name = cur.label .. (cur.name and (' · ' .. cur.name) or ''),
     distM = toStop.distM } end
-  local td = transit and phase == 'transit' and M.transitDue() or nil
+  local td = transit and (phase == 'transit' or phase == 'toStop') and M.transitDue() or nil
   if td then transit.due, transit.leftS, transit.late, transit.penaltyS = td.due, td.leftS, td.late, td.penaltyS end
+  -- (additions B) at a stop checked in: its check-in for the stop card
+  local checkIn = nil
+  local ciRoad = timed() and cur and cur.kind ~= 'stage' and type(R.road) == 'table' and R.road['stop' .. R.pos] or nil
+  if ciRoad then
+    local inType = ciRoad.inType or cur.inType
+    checkIn = { inType = inType, due = wt.hm(ciRoad.dueT),
+      timeIn = wt.hm(ciRoad.inT) .. ':' .. string.format('%02d', math.floor(ciRoad.inT) % 60),
+      kind = ciRoad.kind, min = ciRoad.min, penaltyS = ciRoad.penaltyS,
+      free = (inType and type(R.earlyFree) == 'table' and R.earlyFree[inType] == true) or nil,
+      outAt = (cur.outT and not cur.final) and wt.hm(cur.outT) or nil }
+  end
   return {
     id = R.eventId, name = R.name, mode = R.mode, class = R.class, car = R.car and R.car.name,
     cancelled = R.cancelled, rows = rows, pos = R.pos, phase = phase, transit = transit,
     at = cur and { kind = cur.kind, label = cur.kind == 'stage' and cur.ss or cur.label,
-      name = cur.kind == 'stage' and stageName(cur) or cur.name, serviced = rally.isServiced(R) or nil } or nil,
+      name = cur.kind == 'stage' and stageName(cur) or cur.name, serviced = rally.isServiced(R) or nil,
+      checkIn = checkIn } or nil,
     prep = prep and M.prepInfo() or nil,
     nextStage = nextStage, nextIndex = nxi, superRally = sr, overall = rally.standing(R, board),
     totalS = rally.totalS(R), done = rally.over(R) or nil, unclassified = R.unclassified or nil,
@@ -1614,14 +1664,19 @@ function M.uiCard()
 end
 
 -- The rally's Results tab: your best finished rally against the real National totals. nil with none.
+-- (additions A) A timed rally finished since its road penalties are kept per pass (rally.finished's roadKept): its
+-- passes ({ ss, timeS, roadS }), its stops checked in at a cost and its road penalty total, for the full rally's
+-- strip. An untimed rally, or one finished before this, has none of them: the strip is as it was.
 function M.resultsFor(id)
   local list = M.finishedList(id)
   local best = rally.bestFinished(list)
   if not best then return nil end
   local st = rally.finishedStanding(best, events.boards(id))
+  local kept = best.roadKept == true
   return { totalS = best.totalS, mode = best.mode, class = best.class, car = best.car, date = best.date,
     unclassified = best.unclassified, pos = st and st.pos, of = st and st.of, classPos = st and st.classPos,
-    classOf = st and st.classOf, count = #list }
+    classOf = st and st.classOf, count = #list, passes = kept and best.passes or nil, stops = kept and best.stops or nil,
+    roadPenaltyS = kept and tonumber(best.roadPenaltyS) or nil }
 end
 
 -- (the level left, the mod switched off: the game's own recovery back whatever happens)

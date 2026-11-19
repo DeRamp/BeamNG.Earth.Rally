@@ -3639,6 +3639,85 @@ do
     teleports, moved = 0, false
   end
 
+  -- 3d1. (additions B) a timed rally's stops checked in: driven to the final service and stopped at its board, checked
+  -- in at its MTC in before the rally finishes (late: in the finished rally's stops); a stop with no place gone to
+  -- (no driving in) checks nothing in
+  do
+    local rally = require('earthRally/rally')
+    local rallyRun = require('earthRally/rallyRun')
+    local wt = require('earthRally/worldTime')
+    local parkLat, parkLon = atcLat - 8000 / 111195, full[11][2]
+    local t0 = wt.parse('2031-02-07', '08:00')
+    local timing = { timezone = 'America/Chicago', start = { date = '2031-02-07', time = '08:00' },
+      finish = { inType = 'MTC_IN', inTargetMin = 10 }, earlyFree = { MTC_IN = true } }
+    files['/earthRally/events/test19t.json'] = { format = 1, id = 'test19t', name = 'Test Rally 19T', stages = ev.stages,
+      itinerary = { { ss = 'SS1', stage = 'hill', run = 1, day = 1, km = 3, latenessMin = 10, outDate = '2031-02-07',
+        outAt = '08:00', outTargetMin = 20 } },
+      rallyStops = { { after = 1, kind = 'service', label = 'Service A', name = 'Park',
+        place = { name = 'Park', lat = parkLat, lon = parkLon } } },
+      rallyStart = { name = 'Park', lat = parkLat, lon = parkLon }, timing = timing }
+    files['/earthRally/matched/test19t__hill.json'] = { format = 1, points = recFrom }
+    events.list(true)
+    rallyRun.ui.openCard = function() end
+    core_input_actionFilter = { setGroup = function() end, addAction = function() end }
+    local function rframes(n) for _ = 1, n do rallyRun.update(0.1, 0) frames(1) end end
+    car.lat, car.lon, car.speed = parkLat, parkLon, 0
+    T.check(rallyRun.start('test19t', { mode = 'casual', class = 'L4WD' }), 'stop check-in: started')
+    rframes(60)
+    local R = rallyRun.active()
+    T.check(R.timed and R.order[3].final and R.order[3].inType == 'MTC_IN' and R.order[3].inTargetMin == 10,
+      'stop check-in: the final service checked in at the finish\'s MTC in')
+    local c = rallyRun.uiCard()
+    T.check(c.rows[3].due == nil and c.rows[3].targetMin == 10 and c.rows[3].inType == 'MTC_IN',
+      'stop check-in: the final row shows its target until SS1 is done')
+    T.check(rallyRun.goNext() and runner.approaching(), 'stop check-in: on the transit to SS1')
+    rallyRun.onFinished({ timeS = 200, stageS = 200, penaltyS = 0, startT = t0 + 20 * 60, finishT = t0 + 25 * 60 })
+    T.check(R.lastOut == t0 + 30 * 60 and rallyRun.uiCard().phase == 'toStop', 'stop check-in: SS1 out 08:30, driving in')
+    R.clock.t = t0 + 35 * 60
+    local td = rallyRun.transitDue()
+    T.check(td and td.due == '08:40' and td.leftS == 5 * 60 and td.label == 'Final service · Park',
+      'stop check-in: the transit to the stop has its due time (' .. tostring(td and td.label) .. ')')
+    c = rallyRun.uiCard()
+    T.check(c.transit and c.transit.due == '08:40' and c.rows[3].due == '08:40', 'stop check-in: the card\'s banner and row')
+    R.clock.t = t0 + 43 * 60 + 30
+    car.lat, car.lon, car.speed = parkLat, parkLon, 0
+    rframes(5)
+    T.check(rally.over(R), 'stop check-in: stopped at the final service, the rally over')
+    T.check(R.road.stop3 and R.road.stop3.kind == 'late' and R.road.stop3.min == 3 and R.road.stop3.penaltyS == 30,
+      'stop check-in: checked in 3 min late, +30 s')
+    local list = rallyRun.finishedList('test19t')
+    local f = list[#list]
+    T.check(f and f.roadPenaltyS == 30 and f.stops and f.stops[1].label == 'Final service' and f.stops[1].penaltyS == 30,
+      'stop check-in: before the finish -- the finished rally holds it')
+    local fin = rallyRun.resultsFor('test19t')
+    T.check(fin and fin.roadPenaltyS == 30 and fin.passes and fin.passes[1].ss == 'SS1' and fin.stops[1].after == 'SS1',
+      'stop check-in: the Results tab gets the passes, stops and road total')
+    rallyRun.endRally()
+    rallyRun.abandon('test19t')
+    -- a stop with no place: gone to, not driven in -- nothing checked in
+    files['/earthRally/events/test19u.json'] = { format = 1, id = 'test19u', name = 'Test Rally 19U', stages = ev.stages,
+      itinerary = { { ss = 'SS1', stage = 'hill', run = 1, day = 1, km = 3, latenessMin = 10, outDate = '2031-02-07',
+        outAt = '08:00', outTargetMin = 20 }, { ss = 'SS2', stage = 'hill', run = 2, day = 1, km = 3, targetMin = 30,
+        inType = 'SVC_IN', inTargetMin = 10 } },
+      rallyStops = { { after = 1, kind = 'service', label = 'Service A', inType = 'SVC_IN', inTargetMin = 10 } },
+      rallyStart = { name = 'Park', lat = parkLat, lon = parkLon }, timing = timing }
+    files['/earthRally/matched/test19u__hill.json'] = { format = 1, points = recFrom }
+    events.list(true)
+    car.lat, car.lon, car.speed = parkLat, parkLon, 0
+    T.check(rallyRun.start('test19u', { mode = 'casual', class = 'L4WD' }), 'no place: started')
+    rframes(60)
+    R = rallyRun.active()
+    T.check(rallyRun.goNext() and runner.approaching(), 'no place: on the transit to SS1')
+    rallyRun.onFinished({ timeS = 200, stageS = 200, penaltyS = 0, startT = t0 + 20 * 60, finishT = t0 + 25 * 60 })
+    T.check(rally.current(R).kind == 'service' and rallyRun._dueAt(R.pos) == t0 + 40 * 60, 'no place: the stop is due')
+    rallyRun.goNext()
+    T.check(rally.isServiced(R) and R.road.stop3 == nil and rallyRun.uiCard().rows[3].due == nil
+      and rallyRun.uiCard().rows[3].targetMin == nil, 'no place: done where the car is, nothing checked in, the row blank')
+    core_input_actionFilter = nil
+    rallyRun.abandon('test19u')
+    teleports, moved = 0, false
+  end
+
   -- 3d2. (1.7.2) Stop while a full rally gets its stages ready stops them all, through the real prep: the owner
   -- pressed Stop once a stage before, as the next started a frame later. The prep ends at once with the ending
   -- those presses reached -- the stages with no line held out, the rally going on -- and says so; with no stage
@@ -4252,6 +4331,55 @@ do
   rallyRun.clockPaused = function() return false end
   rallyRun.ui.atControl = nil
   T.check(runner.rallyClock.now() == nil and rallyRun.transitDue() == nil, 'no rally: no clock')
+end
+
+------------------------------------------------------------------------------------------ the stops' check-ins (card)
+-- (additions B) the time card's stop rows: a stop due from the stage just done, its check-in on the stop card, and
+-- rows ahead with their road section's target where the due isn't known
+do
+  local rallyRun = require('earthRally/rallyRun')
+  local wt = require('earthRally/worldTime')
+  local t0 = wt.parse('2031-02-07', '08:00')
+  local place = { name = 'Park', lat = 45, lon = -90 }
+  local r = { format = 3, eventId = 'test', name = 'Test Rally', mode = 'casual', class = 'L4WD', timed = true,
+    tz = 'America/Chicago', clock = { t = t0 + 50 * 60 }, road = {}, lateSPerMin = 10, earlySPerMin = 60,
+    earlyFree = { RGC_IN = true, MTC_IN = true }, results = { SS1 = { timeS = 500 } }, lastOut = t0 + 40 * 60,
+    serviced = { ['1'] = true }, pos = 3, missed = 0, heldOut = {},
+    order = { { kind = 'start', label = 'Start', outT = t0, place = place },
+      { kind = 'stage', ss = 'SS1', stageId = 'hill', outT = t0, outTargetMin = 20, latenessMin = 10 },
+      { kind = 'service', label = 'Service A', name = 'Park', place = place, inType = 'RGC_IN', inTargetMin = 12,
+        outT = t0 + 100 * 60 },
+      { kind = 'stage', ss = 'SS2', stageId = 'hill', targetMin = 15, latenessMin = 10, outT = t0 + 100 * 60,
+        outTargetMin = 18 },
+      { kind = 'stage', ss = 'SS3', stageId = 'hill', targetMin = 14, latenessMin = 10 },
+      { kind = 'service', label = 'Final service', name = 'Park', place = place, final = true, inType = 'MTC_IN',
+        inTargetMin = 6 } } }
+  rallyRun._setRally(r)
+  T.check(rallyRun._dueAt(3) == t0 + 52 * 60 and rallyRun._dueAt(6) == nil,
+    'card: the stop right after the stage done is due (08:52); the final not yet')
+  local ok, c = pcall(rallyRun.uiCard)
+  T.check(ok and c.rows[3].due == '08:52' and c.rows[3].inType == 'RGC_IN' and c.rows[3].outAt == '09:40'
+    and c.rows[3].targetMin == nil, 'card: the stop row has its due and says where it is checked in')
+  T.check(ok and c.rows[4].due == '09:58' and c.rows[4].targetMin == nil, 'card: a due the schedule fixes kept')
+  T.check(ok and c.rows[5].due == nil and c.rows[5].targetMin == 14 and c.rows[6].due == nil
+    and c.rows[6].targetMin == 6, 'card: rows ahead show their road section\'s target')
+  T.check(ok and c.at and c.at.checkIn == nil, 'card: not checked in yet, no check-in on the stop card')
+  -- checked in 2 min early at the regroup-in: free
+  local res = rallyRun.checkIn(r.order[3], nil, t0 + 50 * 60, t0 + 52 * 60, 'stop3')
+  r.serviced['3'] = true
+  ok, c = pcall(rallyRun.uiCard)
+  local ci = ok and c.at and c.at.checkIn
+  T.check(res.kind == 'early' and ci and ci.inType == 'RGC_IN' and ci.due == '08:52' and ci.timeIn == '08:50:00'
+    and ci.kind == 'early' and ci.min == 2 and ci.penaltyS == 0 and ci.free and ci.outAt == '09:40',
+    'card: the stop card carries the check-in (time in, due, result, out)')
+  T.check(ok and c.rows[3].timeIn == '08:50' and c.rows[3].roadKind == 'early' and c.rows[3].roadPenaltyS == 0,
+    'card: the stop row has its in time and road result')
+  -- a stop done with no check-in (a teleport there): its row blank
+  r.road = {}
+  ok, c = pcall(rallyRun.uiCard)
+  T.check(ok and c.rows[3].due == nil and c.rows[3].targetMin == nil and c.at.checkIn == nil,
+    'card: a stop done with no check-in: blank, as before')
+  rallyRun._setRally(nil)
 end
 
 T.done('test_run')

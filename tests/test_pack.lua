@@ -817,12 +817,17 @@ else
   -- before that stage's printed start (the time control's own minute; ARA: 3 min before the start)
   local wt = require('earthRally/worldTime')
   local timedAll, dues, off = true, 0, {}
+  local stopDues, stopKinds = 0, {}     -- (additions B: the stops' check-ins, each after the stage before it)
   for r = 1, 8 do
     local ev = mem['/earthRally/events/' .. tostring(rounds[r]) .. '.json']
     local rr = ev and R.new(ev, { cancelled = 'all' })
     if not (rr and rr.timed) then timedAll = false
     else
       for i, it in ipairs(rr.order) do
+        if it.kind ~= 'stage' and it.kind ~= 'start' and R.dueFor(rr, i) then
+          stopDues = stopDues + 1
+          stopKinds[tostring(it.inType)] = (stopKinds[tostring(it.inType)] or 0) + 1
+        end
         if it.kind == 'stage' then
           local st = wt.parse(it.date, it.firstCar)
           local due = R.dueFor(rr, i)
@@ -833,6 +838,7 @@ else
             end
           end
           rr.lastOut = R.timeOut(it, st, nil)
+          rr.results[it.ss] = { timeS = 0 }     -- (driven: the stop after it is due from its time out)
         end
       end
     end
@@ -841,6 +847,11 @@ else
   print(string.format('test_pack: ARA due times worked out on the schedule: %d; off it: %s', dues,
     #off > 0 and table.concat(off, '; ') or 'none'))
   T.check(dues > 100, 'ARA: due times worked out (' .. dues .. ')')
+  local kinds = {}
+  for k, n in pairs(stopKinds) do kinds[#kinds + 1] = k .. ' ' .. n end
+  table.sort(kinds)
+  print(string.format('test_pack: ARA stops checked in on the schedule: %d (%s)', stopDues, table.concat(kinds, ', ')))
+  T.check(stopDues > 20, 'ARA: stops have a due time at their "in" control (' .. stopDues .. ')')
   print('test_pack: stops with no place on the map: ' .. (#placesMissing > 0 and table.concat(placesMissing, '; ') or 'none'))
   T.check(#placesMissing == 0, 'ARA: every start, service and overnight has its place on the map')
 end
@@ -872,6 +883,58 @@ do
   local kept = true
   for _, m in ipairs(warns) do if m:find('TC2', 1, true) then kept = false end end
   T.check(kept, "class filter: 'ARC National 2WD' kept, no warning")
+end
+
+------------------------------------------------------------------------------------------ the stops' check-ins
+-- (additions B) a made-up itinerary in the Warden test rally's shape: a service-in after SS1, a regroup-in before the
+-- overnight (after a pass with no line), the finish's MTC in, and the event's early check-in list
+do
+  local ev = { event = { timezone = 'Australia/Perth' },
+    time_rules = { early_checkin_allowed = { 'MTC_IN', 'RGC_IN', 7 } },
+    itinerary = {
+      { control = 'TC0', type = 'MTC_OUT', date = '2030-05-04', first_car = '13:00', day = 1 },
+      { control = 'TC1', type = 'ATC', target_min = 5, day = 1 },
+      { control = 'SS1', type = 'SS', stage = 'Alder Way', lateness_min = 5, day = 1 },
+      { control = 'TC1A', type = 'SVC_IN', target_min = 6, day = 1 },
+      { control = 'TC1B', type = 'SVC_OUT', target_min = 20, date = '2030-05-04', first_car = '13:39', day = 1 },
+      { control = 'RZ1', type = 'REFUEL', day = 1 },
+      { control = 'TC2', type = 'ATC', target_min = 9, day = 1 },
+      { control = 'SS2', type = 'SS', stage = 'Birch Rd', lateness_min = 5, day = 1 },
+      { control = 'TC3', type = 'ATC', target_min = 6, day = 1 },
+      { control = 'SS3', type = 'SS', stage = 'Ghost Road', lateness_min = 5, day = 1 },
+      { control = 'TC3A', type = 'RGC_IN', target_min = 5, day = 1 },
+      { control = 'TC3B', type = 'RGC_OUT', target_min = 10, day = 1 },
+      { control = 'TC3C', type = 'SVC_OUT', target_min = 30, date = '2030-05-04', first_car = '14:55', day = 1 },
+      { control = 'TC3D', type = 'MTC_OUT', date = '2030-05-05', first_car = '09:00', day = 2 },
+      { control = 'TC4', type = 'ATC', target_min = 9, day = 2 },
+      { control = 'SS4', type = 'SS', stage = 'Alder Way', lateness_min = 5, day = 2 },
+      { control = 'TC4A', type = 'MTC_IN', target_min = 6, day = 2 },
+    } }
+  local out, stops, _, timing = pack._itineraryOf(ev, {}, { ['Alder Way'] = 'alder', ['Birch Rd'] = 'birch' },
+    function() end)
+  T.check(#out == 3 and out[1].inType == nil and out[1].inTargetMin == nil,
+    'check-ins: none before the first pass')
+  T.check(out[2].inType == 'SVC_IN' and out[2].inTargetMin == 6,
+    "check-ins: the service-in's 6 (" .. tostring(out[2].inType) .. ' ' .. tostring(out[2].inTargetMin) .. ')')
+  -- (SS3 has no line: its road section and lateness counted in, 6 + 5 + 5)
+  T.check(out[3].inType == 'RGC_IN' and out[3].inTargetMin == 16,
+    'check-ins: the regroup-in before the overnight, after a pass with no line (' .. tostring(out[3].inTargetMin) .. ')')
+  T.check(stops and #stops == 2 and stops[1].kind == 'service' and stops[1].inType == 'SVC_IN' and stops[1].inTargetMin == 6
+    and stops[2].kind == 'overnight' and stops[2].inType == 'RGC_IN' and stops[2].inTargetMin == 16,
+    'check-ins: each stop takes the in of its stretch')
+  T.check(timing and timing.finish and timing.finish.inType == 'MTC_IN' and timing.finish.inTargetMin == 6,
+    "check-ins: the finish's 6")
+  T.check(timing and timing.earlyFree and timing.earlyFree.MTC_IN and timing.earlyFree.RGC_IN
+    and not timing.earlyFree.SVC_IN and timing.earlyFree[7] == nil, 'check-ins: early free at the regroup and the finish')
+  -- (no target time anywhere: untimed, nothing carried)
+  local plain = { itinerary = {
+    { control = 'SS1', type = 'SS', stage = 'Alder Way', day = 1 },
+    { control = 'TC1A', type = 'SVC_IN', day = 1 },
+    { control = 'SS2', type = 'SS', stage = 'Birch Rd', day = 1 },
+  } }
+  local o2, _, _, t2 = pack._itineraryOf(plain, {}, { ['Alder Way'] = 'alder', ['Birch Rd'] = 'birch' }, function() end)
+  T.check(t2 == nil and o2[2].inType == 'SVC_IN' and o2[2].inTargetMin == nil,
+    'check-ins: an untimed rally has no target to its stops')
 end
 
 T.done('test_pack')
