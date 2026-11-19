@@ -15,7 +15,7 @@ Owner and contact for this data: **DeRamp**, through
 - The Earth Rally, BeamNG.drive and BeamNG.Earth versions.
 - The day, with no time of day.
 - For a stage: the rally and stage name, the result, the stage time in whole seconds and the number of resets.
-  Stages from your own imported maps are sent as `custom`, never by name.
+  Rallies and stages you imported or made yourself are sent by their names too.
 - For a finished stage: the car, and whether it is Stock or Open. A car that is not one of the game's own is sent
   as `custom`.
 - For an error in Earth Rally: a short code, the part of the mod, and the error's text (up to 200 letters) with your

@@ -1,5 +1,5 @@
 -- stats (#76): nothing recorded before Yes or with the leaderboard off, only allowed fields, a new random number
--- each session (never saved), pack names vs 'custom', one start and one end per run, rally attempts; sent through a
+-- each session (never saved), rallies and stages by name (own ones too), one start and one end per run, rally attempts; sent through a
 -- stand-in companion: sent events taken off by identity, refused batches dropped, No dropping a send under way;
 -- errors cleaned and capped, the game's log watched and given back.
 local T = dofile(TESTS .. '/testlib.lua')
@@ -57,13 +57,17 @@ T.check(q[#q].code == 'x' and q[#q].message ~= nil, 'an error keeps its text')
 stats.record('stage_started', { stage = 'x', message = 'no' })
 T.check(q[#q].message == nil, 'unlisted fields dropped')
 
--- names: a pack's rally is named, a player's own map is 'custom'
+-- names: a pack's rally and a player's own imported or home-made one are both sent by name, cut to 80
 local packEv = { id = 'e1', name = 'ARA 2026', pack = { file = 'ara.zip' }, stages = { { id = 's1', name = 'SS1 A' }, { id = 's2', name = 'SS2 B' } } }
 local ownEv = { id = 'e2', name = "Bob's farm", stages = { { id = 's1', name = 'Back field' } } }
 local r, s = stats.names(packEv, packEv.stages[1])
 T.check(r == 'ARA 2026' and s == 'SS1 A', 'pack: named')
 r, s = stats.names(ownEv, ownEv.stages[1])
-T.check(r == 'custom' and s == 'custom', 'own map: custom')
+T.check(r == "Bob's farm" and s == 'Back field', 'own map: named, not custom')
+r, s = stats.names({ id = 'e3', stages = {} }, { id = 'ss9' })
+T.check(r == 'e3' and s == 'ss9', 'no name: its id')
+r, s = stats.names({ name = string.rep('x', 120) }, nil)
+T.check(#r == 80 and s == nil, 'a long name cut to 80, no stage: nil')
 
 -- one start and one end per run; no end without a start
 local function count(ev) local n = 0 for _, e in ipairs(stats._queue()) do if e.event == ev then n = n + 1 end end return n end

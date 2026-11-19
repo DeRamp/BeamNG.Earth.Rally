@@ -2023,6 +2023,71 @@ do
     online._reset()
     online._socket, jsonReadFile, jsonWriteFile = hadSock, hadR, hadW
   end
+  -- the leaderboard name pop-up: Leaderboards on, the helper connected, no player; the helper pop-up's run rules;
+  -- after the stats question and the helper pop-up; Later until the next menu open
+  do
+    local online = require('earthRally/online')
+    local statsM = require('earthRally/stats')
+    local hadStatus, hadConsent, hadGet, hadHelper = online.status, statsM.consent, settings.get, main.helperPromptWanted
+    local hadReg = online.lastRegister
+    local status = { on = true, connected = true }
+    local consent, boardOn, helperUp = 'no', true, false
+    online.status = function() return status end
+    statsM.consent = function() return consent end
+    settings.get = function(k) if k == 'onlineBoard' then return boardOn end return hadGet(k) end
+    main.helperPromptWanted = function() return helperUp end
+    local function reopen() main.onUiChangedState('play') main.onUiChangedState('earthRally') end
+    main.onUiChangedState('play')
+    T.check(not main.uiState().namePrompt, 'name prompt: not with the menu closed')
+    reopen()
+    T.check(main.uiState().namePrompt == true, 'name prompt: connected, no name: shown')
+    online.lastRegister = { ok = false, error = 'name taken' }
+    T.check(main.uiState().naming and main.uiState().naming.error == 'name taken', 'name prompt: the last Save answer with it')
+    online.lastRegister = hadReg
+    main.uiNamePrompt('later')
+    T.check(not main.uiState().namePrompt, 'name prompt: Later hides it')
+    reopen()
+    T.check(main.uiState().namePrompt == true, 'name prompt: the next menu open shows it again')
+    status.player = { name = 'Me' }
+    T.check(not main.uiState().namePrompt and not main.uiState().naming, 'name prompt: not with a name')
+    status.player = nil
+    status.connected = false
+    T.check(not main.uiState().namePrompt, 'name prompt: not with the helper not connected')
+    status.connected = true
+    boardOn = false
+    T.check(not main.uiState().namePrompt, 'name prompt: not with Leaderboards off')
+    boardOn = true
+    consent = 'ask'
+    T.check(not main.uiState().namePrompt, 'name prompt: waits for the stats question')
+    consent = 'no'
+    helperUp = true
+    local s = main.uiState()
+    T.check(s.helperPrompt and not s.namePrompt, 'name prompt: waits for the helper pop-up')
+    helperUp = false
+    local hadRA = recce.active
+    recce.active = function() return true end
+    T.check(not main.uiState().namePrompt, 'name prompt: not while a recce runs')
+    recce.active = hadRA
+    local rr = require('earthRally/rallyRun')
+    local hadRR = rr.active
+    rr.active = function() return { eventId = 'r' } end
+    T.check(not main.uiState().namePrompt, 'name prompt: not in a full rally')
+    rr.active = hadRR
+    local hadCur, hadSt = runner.current, runner.state
+    local fakeRun = { event = { id = 'e', name = 'E', stages = {} }, stage = { id = 's', name = 'S' } }
+    runner.current = function() return fakeRun end
+    for _, st in ipairs({ 'toAtc', 'waitStart' }) do
+      runner.state = function() return st end fakeRun.state = st
+      T.check(main.uiState().namePrompt == true, 'name prompt: shown with a run in ' .. st)
+    end
+    for _, st in ipairs({ 'countdown', 'launched', 'running' }) do
+      runner.state = function() return st end fakeRun.state = st
+      T.check(not main.uiState().namePrompt, 'name prompt: held on the stage (' .. st .. ')')
+    end
+    runner.current, runner.state = hadCur, hadSt
+    main.onUiChangedState('play')
+    online.status, statsM.consent, settings.get, main.helperPromptWanted = hadStatus, hadConsent, hadGet, hadHelper
+  end
   -- the Escape menu ('pause' in 0.40): our HUD hidden, and BeamNG.Earth's imgui strips told it is a menu (earthMenuFix)
   do
     local told = {}

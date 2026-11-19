@@ -361,6 +361,8 @@
     <EarthRallyConsent v-if="onlineOn && st.stats && st.stats.consent === 'ask'" />
     <!-- the Leaderboards helper not answering (#77): how to install it; never over the stats question (main.lua) -->
     <EarthRallyHelperPrompt v-else-if="st.helperPrompt" :online-on="onlineOn" />
+    <!-- no leaderboard name yet (main.lua namePromptWanted): after the two above, one at a time -->
+    <EarthRallyNamePrompt v-else-if="st.namePrompt" :naming="st.naming" />
     <EarthRallyPrompts :top="view === 'home'" :results="view === 'pick' && !!(pickView && pickView.hasResults)" />
     </template>
   </div>
@@ -375,6 +377,7 @@ import EarthRallySettings from "./EarthRallySettings.vue"
 import EarthRallyPrivacy from "./EarthRallyPrivacy.vue"
 import EarthRallyConsent from "./EarthRallyConsent.vue"
 import EarthRallyHelperPrompt from "./EarthRallyHelperPrompt.vue"
+import EarthRallyNamePrompt from "./EarthRallyNamePrompt.vue"
 import EarthRallyHome from "./EarthRallyHome.vue"
 import EarthRallyHomeMenu from "./EarthRallyHomeMenu.vue"
 import EarthRallyPick from "./EarthRallyPick.vue"
@@ -388,7 +391,7 @@ import EarthRallyFull from "./EarthRallyFull.vue"
 import EarthRallyLoading from "./EarthRallyLoading.vue"
 import {
   state, season, rally, stage, busyMsg, action as luaAction, refreshState, takeOpenAt, loadSeason, loadRally, loadStage,
-  closeMenu, lastPlace, helperPromptClose, loadRallyStart, loadRallyCard, rallyAction, loadDrive, pointTo,
+  closeMenu, lastPlace, helperPromptClose, namePromptLater, loadRallyStart, loadRallyCard, rallyAction, loadDrive, pointTo,
   arr, mmss, units, len, lenNum, riseNum, riseUnit, time, longTime, when, ord, days, ssName, STATUS, AUTO_OUTCOME, RUN_WORDS,
 } from "./store.js"
 
@@ -564,8 +567,8 @@ function stepTab(d) {
   rallyTab.value = t[(i + d + t.length) % t.length].id
 }
 // (the helper pop-up up, #77: the page under it does not move)
-const tabPrev = () => { if (!st.value.helperPrompt) stepTab(-1) }
-const tabNext = () => { if (!st.value.helperPrompt) stepTab(1) }
+const tabPrev = () => { if (!st.value.helperPrompt && !st.value.namePrompt) stepTab(-1) }
+const tabNext = () => { if (!st.value.helperPrompt && !st.value.namePrompt) stepTab(1) }
 const legend = computed(() => !!(rly.value && (rly.value.anyCancelled || rly.value.hasBoard)))
 const cancelledSs = computed(() => {
   for (const s of arr(rly.value && rly.value.list)) {
@@ -780,7 +783,7 @@ function openPick(keep) {
 }
 // Y on Drive rally: the picked rally's Results, its page on the Results tab alone (#55)
 const pickView = ref(null)
-function contextPress() { if (st.value.helperPrompt) return; if (view.value === "pick" && pickView.value) pickView.value.results() }
+function contextPress() { if (st.value.helperPrompt || st.value.namePrompt) return; if (view.value === "pick" && pickView.value) pickView.value.results() }
 function openResults(id, from) {
   if (from === "pick") pickSel.value = id
   openRally(id, false)
@@ -823,6 +826,7 @@ const loadingUp = ref(false)
 function back() {
   if (loadingUp.value) return
   if (st.value.helperPrompt) return helperPromptClose(false)   // (B on the helper pop-up, #77: Got it)
+  if (st.value.namePrompt) return namePromptLater()             // (B on the name pop-up: Later)
   if (view.value === "rallyStart") {
     if (startFrom.value === "pick") openPick(true)
     else openRally(sel.value.eventId, false)

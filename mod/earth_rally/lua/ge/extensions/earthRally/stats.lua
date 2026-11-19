@@ -16,9 +16,9 @@
 --
 --   What is sent: the event, the session number, the mod, game and BeamNG.Earth versions, the day (UTC, no time),
 --   and per event a few fields (EVENTS): a finished stage's car and class, an error's cleaned text. Rallies and
---   stages from a pack are named; a player's own imported maps are sent as 'custom' (a name could be a private
---   place), and so is a car that is not one of the game's own. Never: names, accounts, hardware, other mods,
---   positions, logs. The IP address reaches the server with every request but is not stored.
+--   stages are sent by name, a pack's and the player's own imported or home-made ones alike (the owner, 2026-11-18);
+--   a car that is not one of the game's own is sent as 'custom'. Never: the player's names, accounts, hardware,
+--   other mods, positions, logs. The IP address reaches the server with every request but is not stored.
 local M = {}
 
 M.DIR = '/earthRally/telemetry/'
@@ -165,13 +165,11 @@ function M.sessionStart()
   if M.record('session_start') then sessionSent = true end
 end
 
--- What a rally and a stage are called in the stats: named when they came from a pack (published files), else
--- 'custom' (a player's own map: its name could be a private place or event).
+-- What a rally and a stage are called in the stats: their names, from a pack or the player's own imported or
+-- home-made ones alike (until 2026-11-18 a player's own were sent as 'custom'), cut to 80 as record() does.
 function M.names(event, stage)
-  if type(event) == 'table' and type(event.pack) == 'table' then
-    return tostring(event.name or event.id or '?'), stage and tostring(stage.name or stage.id or '?') or nil
-  end
-  return 'custom', stage and 'custom' or nil
+  local function nm(t) return type(t) == 'table' and tostring(t.name or t.id or '?'):sub(1, 80) or '?' end
+  return nm(event), stage and nm(stage) or nil
 end
 
 ------------------------------------------------------------------------------------------ hooks from the runner
