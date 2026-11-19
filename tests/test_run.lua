@@ -4224,6 +4224,23 @@ do
   T.check(sets == after + 1, 'the sky: asked again at the next jump')
   answer = true
   rallyRun._setWorld()
+  -- the setting "Rally's real date and weather" off: given back as the menu closes, not set again; on: set again
+  settings.set('realWorld', false)
+  rallyRun.clockPaused = function() return true end
+  rallyRun.update(0.1, 0)
+  rallyRun.clockPaused = function() return false end
+  rallyRun.update(0.1, 0.1)
+  T.check(now == nil, 'the setting off: the sky given back as the menu closes')
+  local offSets = sets
+  rallyRun._setWorld()
+  rallyRun.update(0.1, 120)
+  T.check(sets == offSets and now == nil, 'the setting off: never set')
+  settings.set('realWorld', true)
+  rallyRun.clockPaused = function() return true end
+  rallyRun.update(0.1, 0)
+  rallyRun.clockPaused = function() return false end
+  rallyRun.update(0.1, 0.1)
+  T.check(now ~= nil, 'the setting on again: set as the menu closes')
   -- (B) left: the sky given back; and a world time left set with no rally running given back at load
   rallyRun.quit()
   T.check(now == nil and rallyRun.active() == nil, 'quit: the sky given back')

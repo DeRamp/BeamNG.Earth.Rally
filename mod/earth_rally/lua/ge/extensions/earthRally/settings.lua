@@ -17,6 +17,10 @@ M.SCHEMA = {
   earlyPenalty = { default = false, label = 'Early check-in penalty',
     desc = "Checking in before your minute costs the rally's early penalty. Off: you wait for your minute.",
     options = { { true, 'On' }, { false, 'Off' } } },
+  -- (the owner, 2026-11-18) a timed rally's sky and weather of its real day, or the player's own
+  realWorld = { default = true, label = "Rally's real date and weather",
+    desc = "A timed rally runs on its real day: the sky and the weather of its date and time. Off: your own sky "
+      .. 'and weather.', options = { { true, 'On' }, { false, 'Off' } } },
   zoneBrake = { default = true, label = 'Control-zone brake',
     desc = "The brakes ease on in a control's zone, so you stop at its board", options = { { true, 'On' }, { false, 'Off' } } },
   clockView = { default = 'right', label = 'Start clock view',
@@ -29,7 +33,7 @@ M.SCHEMA = {
   devPanel = { default = false, label = 'Developer panel',
     desc = "The old Earth Rally window with each run's checks", options = { { true, 'On' }, { false, 'Off' } } },
 }
-M.ORDER = { 'units', 'resetPenalty', 'earlyPenalty', 'zoneBrake', 'clockView', 'worldLoaded', 'devPanel' }
+M.ORDER = { 'units', 'resetPenalty', 'earlyPenalty', 'realWorld', 'zoneBrake', 'clockView', 'worldLoaded', 'devPanel' }
 
 local values = nil
 -- Settings that were here and are not any more. A saved file still carrying one is not a mistake the player

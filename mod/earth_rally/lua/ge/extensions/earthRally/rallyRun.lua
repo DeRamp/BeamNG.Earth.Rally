@@ -124,8 +124,10 @@ end
 -- drift or a pause, not a jump of the clock: not tried again once BeamNG.Earth has said no. Never while the clock is
 -- paused (BeamNG.Earth's sky would run on from it under the menu): put off until it runs. Without BeamNG.Earth's
 -- world time, the sky is left alone.
+local function realWorldOn() return settings.get('realWorld') ~= false end
+
 local function setWorld(off, resync)
-  if off or not timed() then
+  if off or not timed() or not realWorldOn() then
     local okW, cur = pcall(earth.worldTime)
     -- (one we did not set is given back only on the way out, never on starting an untimed rally)
     if world or (off and okW and cur ~= nil) then pcall(earth.setWorldTime, nil) end
@@ -417,7 +419,8 @@ function M.startInfo(id)
   for _ in pairs(crews) do nCrews = nCrews + 1 end
   -- (interface 7: false when BeamNG.Earth cannot show the rally's date -- the start screen's note; nil untimed)
   local worldTime = nil
-  if r and r.timed then worldTime = earth.hasWorldTime() == true end
+  -- (the setting off: no note asking for the fork)
+  if r and r.timed and settings.get('realWorld') ~= false then worldTime = earth.hasWorldTime() == true end
   return { id = id, name = e.name, canRun = r ~= nil, why = (not r) and 'This rally has no event file, so it ' ..
       'cannot be run as a full rally.' or nil,
     car = car, class = car and rally.guessClass(car.drivetrain) or 'L4WD', classes = rally.CLASSES,
@@ -1250,8 +1253,9 @@ function M.update(dt, dtSim)
       -- (BeamNG.Earth's sky runs on wall-clock time from where it was set and knows nothing of pauses: set again as a
       -- loading screen or a menu goes -- a jump made under it as a jump, else as a catch-up)
       -- (a jump is set as soon as the clock runs, paused before or not: a skip at the board can come unpaused)
+      -- (and the setting turned off or on in the menu: given back, or set, as it closes)
       if not paused and worldDue then setWorld()
-      elseif wasPaused and not paused and world then setWorld(false, true) end
+      elseif wasPaused and not paused and (world or (realWorldOn() and timed())) then setWorld(false, true) end
       -- (and whenever the two have drifted apart all the same while the clock runs: a game pause of its own, slow
       -- motion. Never while it is paused: the sky would be set to a clock standing still)
       if not paused and world and math.abs((world.t + (realT - world.real)) - R.clock.t) > M.WORLD_DRIFT_S then

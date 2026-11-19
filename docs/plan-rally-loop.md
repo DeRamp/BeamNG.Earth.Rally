@@ -170,3 +170,7 @@ Each builder: touched tests pass (`python tests/run_tests.py test_x ...`, never 
 the fork's own weather/sky tests); a short report per item: files and functions changed, what it could not do and
 why, anything the others must know. Commits on the branch, each builder its own commits; **no merge into `main`,
 no push** (the lead pushes). Then the lead runs `/handoff` over the whole diff.
+
+**Added after the review (the owner, 2026-11-18):** a setting **Rally's real date and weather** (`realWorld`, default
+on, after Early check-in penalty). Off: Earth Rally never sets BeamNG.Earth's world time (one it set is given back as
+the menu closes), and the start screen shows no fork note.
