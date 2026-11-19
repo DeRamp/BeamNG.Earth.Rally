@@ -24,6 +24,7 @@ local menuPause = require('earthRally/menuPause')     -- the game paused while t
 local rally = require('earthRally/rally')             -- the full rally (1.7.0): its rules and numbers
 local rallyRun = require('earthRally/rallyRun')       -- ... and driving it in the game
 local loadScreen = require('earthRally/loadScreen')   -- the page's loading screen (1.7.0, #49)
+local cardInput = require('earthRally/cardInput')     -- the pad and the keys on the HUD's cards (cardInput.lua says why)
 menuPause.holding = earth.holding                    -- (BeamNG.Earth's own holds: our request waits for them)
 -- (#63: the run moving the world's origin needs the physics on: the page's pause waits for it, the screen shows it.
 -- Only under a loading screen -- the page's pause otherwise stays as it was -- and the run holds the car still then)
@@ -1569,6 +1570,22 @@ local function routeMessage(gh, dt, on)
 end
 
 local transitSentKey = nil
+-- Our stream sent: the card it shows told to cardInput first, and the card's pick sent with it (ours.card).
+local lastOurs, lastGh = nil, nil
+local function queueOurs(gh, ours)
+  if type(ours) == 'table' then ours.card = cardInput.frame(ours) end
+  lastOurs, lastGh = ours, gh
+  gh.queueStream('earthRally', ours)
+end
+-- (the pick moved on the card: the frame on screen sent again with it)
+cardInput.changed = function()
+  if lastOurs and lastGh then
+    lastOurs.card = cardInput.streamInfo()
+    lastGh.queueStream('earthRally', lastOurs)
+  end
+end
+cardInput.act = function(what) return M.uiResults(what) end
+
 local function sendStreams(dt)
   local gh = rawget(_G, 'guihooks')
   if not (gh and gh.queueStream) then return end
@@ -1579,7 +1596,7 @@ local function sendStreams(dt)
     local rl, ours = preview.frameAt(previewT, settings.get('units'))
     if not rl then M.previewStop() return end
     gh.queueStream('rallyLoop', rl)
-    gh.queueStream('earthRally', ours)
+    queueOurs(gh, ours)
     return
   end
   local r = runner.current()
@@ -1595,7 +1612,7 @@ local function sendStreams(dt)
     if key ~= askSentKey or hudT >= M.STREAM_FLOOR_S then
       askSentKey, hudT = key, 0
       local _, ours = runner.uiFrame()
-      gh.queueStream('earthRally', ours)
+      queueOurs(gh, ours)
       log('I', logTag, M.streamsLine(nil, ours))
     end
     inactiveSent = false
@@ -1617,7 +1634,7 @@ local function sendStreams(dt)
       -- (the idle frame, with the transit's line alongside: not the finished run's cards)
       local show = { approach = ours.show and ours.show.approach or nil }
       ours.state, ours.show = 'idle', show
-      gh.queueStream('earthRally', ours)
+      queueOurs(gh, ours)
       inactiveSent = true
     end
     return
@@ -1631,7 +1648,7 @@ local function sendStreams(dt)
       local rl, ours = runner.uiFrame()
       if rl then gh.queueStream('rallyLoop', { activeState = 'inactive', showStageApps = false }) end
       ours.state, ours.show = 'idle', {}
-      gh.queueStream('earthRally', ours)
+      queueOurs(gh, ours)
       inactiveSent = true
       if streamLogKey then log('I', logTag, 'HUD streams: the run over, the HUD hidden') end
       streamLogKey = nil
@@ -1674,7 +1691,7 @@ local function sendStreams(dt)
   end
   if hudDue then
     hudT, hudKey = 0, kh
-    gh.queueStream('earthRally', ours)
+    queueOurs(gh, ours)
     local key = M.streamsKey(rl, ours)
     if key ~= streamLogKey then
       streamLogKey = key
@@ -1902,6 +1919,9 @@ function M.onUpdate(dtReal, dtSim)
     local okA, asking = pcall(rallyRun.asking)
     pcall(menuPause.card, 'earthRally_ask', okA and asking == true and not menuOpen and not runner.uiHidden)
   end
+  -- (the card up: the pad and the keys are its own, paused or not -- cardInput.lua)
+  pcall(cardInput.update, dtReal or 0, { menuOpen = menuOpen, uiHidden = runner.uiHidden,
+    resPaused = menuPause.cardHeld('earthRally_results') })
   local okL, errL = pcall(loadScreen.update, dtReal or 0)
   if not okL then log('E', logTag, 'loading screen: ' .. tostring(errL)) loadScreen.cancel() end
   earth.update()
@@ -1977,11 +1997,20 @@ function M.flipUpright() local ok, r = pcall(runner.flipUpright) return ok and r
 -- (1.7.0, #25) The pad's rally recovery (D-pad right): the rally's recovery key, and nothing outside a full rally --
 -- there the same button is the game's own reset, which a stage counts already.
 function M.rallyRecover()
+  -- (a card up: the d-pad is the card's, cardInput)
+  if cardInput.active() then return false end
   local r = rallyRun.active()
   if not r or r.done then return false end
   local ok, r = pcall(rallyRun.recoverKey)
   return ok and r
 end
+
+-- The card's buttons (core/input/actions/earthRally.json, map EarthRallyCard: pushed only while a card is up), and
+-- the card's own nav and clicks forwarded from the HUD (src 'ui').
+function M.cardPress(kind, src) local ok, r = pcall(cardInput.press, kind, src) return ok and r end
+function M.cardRelease(kind) pcall(cardInput.release, kind) end
+function M.cardStick(axis, v, src) local ok, r = pcall(cardInput.stick, axis, v, src) return ok and r end
+function M.cardClick(what) local ok, r = pcall(cardInput.click, what) return ok and r end
 
 -- A reset by the player (the game's trackVehReset hook: once a press, a held rewind included): +10 s during the timed
 -- stage (setting resetPenalty).
@@ -2031,6 +2060,7 @@ function M.onClientEndMission()
   if previewT then pcall(M.previewStop) end
   pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
   pcall(rallyRun.release)
+  pcall(cardInput.reset)        -- (the card's buttons given back to the game)
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)
   pcall(earth.reset)
@@ -2063,6 +2093,7 @@ function M.onModDeactivated()
   if previewT then pcall(M.previewStop) end
   pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
   pcall(rallyRun.release)
+  pcall(cardInput.reset)        -- (the card's buttons given back to the game)
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)
   pcall(earth.reset)
@@ -2088,6 +2119,7 @@ function M.onExtensionUnloaded()
   if previewT then pcall(M.previewStop) end
   pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
   pcall(rallyRun.release)
+  pcall(cardInput.reset)        -- (the card's buttons given back to the game)
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)
   pcall(earth.reset)
