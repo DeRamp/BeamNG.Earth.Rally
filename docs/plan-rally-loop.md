@@ -379,3 +379,20 @@ Run on the Warden and ARA packs (they stay out of git, as all rally data). `docs
 **Files:** new `tools/pack_weather.py` + `tests/test_pack_weather.py` (offline, a made-up archive response); `pack.lua`,
 `rally.lua`, `rallyRun.lua` (setWorld → the hooks), `earthAdapter.lua`, `settings.lua`, `EarthRallyFull.vue` (note
 text), `docs/rally-file.md`, `docs/plan-rally-loop.md`. Tests: test_pack, test_rally, test_run.
+
+**The owner's go on E (2026-11-19), with the optional time card weather** (mock-up first:
+`docs/mockups-rally-loop/weather.html`).
+
+## F. Earth Rally off in multiplayer (the owner, 2026-11-19)
+
+"Earth Rally should disable when multiplayer is enabled anyway, as this is a very multiplayer unfriendly mod."
+- In a BeamMP session (`MPCoreNetwork.isMPSession()`, as BeamNG.Earth's own `beammp.inSession` reads it; checked on
+  start, each level start, and about once a second), Earth Rally does nothing: no stage or rally starts, a stage under
+  way is stopped and a rally under way is left as Save and quit leaves it (resumable later), the HUD apps show nothing,
+  no input map or action filter is pushed, BeamNG.Earth's clock / weather hooks are never touched, and traffic is
+  given back.
+- The menu opens on one card: "Earth Rally is off in multiplayer" (mock-up with E's). The pause menu's Rally menu
+  button opens the same.
+- One log line each way ("multiplayer session: Earth Rally off" / "on again").
+Files: `main.lua` (a `multiplayer()` check gating start paths and the update), `rallyRun.lua` (leave), `runner.lua`
+(stop), `menu.lua`/`uiState` (`multiplayer = true`), the menu Vue (after the mock-up). Tests: test_run.
