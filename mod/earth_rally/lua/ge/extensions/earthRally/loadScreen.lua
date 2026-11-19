@@ -6,7 +6,9 @@
 --   M.begin(spec)   spec = { kick, title, sub, tip, steps = { 'text', ... } (the world step is added last),
 --                   probe = fn() -> step (1.. the step now; past the last = all done), bar (0..1 or nil), barText,
 --                   failed (a reason: the screen ends at once), done = fn(ok, why) (called once, at the end),
---                   button = 'Continue' (wait for M.continue() once ready instead of ending by itself) }
+--                   button = 'Continue' (wait for M.continue() once ready instead of ending by itself),
+--                   noWorld = true (no world step: ends when the steps do; the world loading for a button
+--                   pressed at the main menu, whose car is not where the stage is) }
 --   M.update(dt)    every frame (main.onUpdate)
 --   M.ui()          the page's data, nil with none (moving = true while the world's origin moves, #63)
 --   M.continue()    the ready button pressed
@@ -72,7 +74,7 @@ function M.update(dt)
   if failed then finish(false, failed) return end
   if c.ready then return end
   c.step, c.bar, c.barText = tonumber(step) or 1, bar, barText
-  c.world = M.world()
+  c.world = c.spec.noWorld and 0 or M.world()
   if c.step <= n then
     if c.t > M.STEP_WAIT_S then
       log('W', logTag, 'loading screen: ' .. tostring(c.title) .. ' took too long, let go')
@@ -80,6 +82,7 @@ function M.update(dt)
     end
     return
   end
+  if c.spec.noWorld then finish(true) return end
   c.worldT = c.worldT + dt
   local enough = c.world >= M.need()
   if not enough and c.worldT <= M.WORLD_WAIT_S then return end
@@ -121,12 +124,14 @@ function M.ui()
   for i, s in ipairs(c.spec.steps or {}) do
     steps[i] = { text = s, state = (c.ready or i < c.step) and 'done' or (i == c.step and 'now' or 'wait') }
   end
-  steps[n + 1] = { text = string.format('The world around you: at least %d%%', need), world = true,
-    state = c.ready and 'done' or (c.step > n and 'now' or 'wait') }
+  if not c.spec.noWorld then
+    steps[n + 1] = { text = string.format('The world around you: at least %d%%', need), world = true,
+      state = c.ready and 'done' or (c.step > n and 'now' or 'wait') }
+  end
   return { kick = c.spec.kick, title = c.spec.title, sub = c.spec.sub, tip = c.spec.tip, kind = c.spec.kind,
     steps = steps, bar = c.bar, barText = c.barText, world = c.world, need = need,
     worldReady = c.ready or (c.step > n and c.world >= need) or nil, ready = c.ready or nil,
-    button = c.spec.button, card = c.spec.card, thenView = c.spec.thenView,
+    button = c.spec.button, card = c.spec.card, thenView = c.spec.thenView, noWorld = c.spec.noWorld or nil,
     moving = (not c.ready and (function() local ok, m = pcall(M.moving) return ok and m == true end)()) or nil }
 end
 

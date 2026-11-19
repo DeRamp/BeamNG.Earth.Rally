@@ -3,6 +3,34 @@
 Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/writing-standard.md). Downloads:
 [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
 
+## 1.10.0-alpha: roads remembered (2026-11-19)
+
+Works with BeamNG.drive 0.40.6 · [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+.
+
+**Auto recce** is quicker and finds more of the road on stages drawn with rough lines.
+
+### Changed
+* **Auto recce** keeps the roads it reads on disk. Recce the same ground again and the car doesn't move.
+* **Auto recce** stops less often along the stage: about 30% fewer stops.
+
+### Fixed
+* **Recce recommended** on stages that are road all the way, where the organisers' line cuts across bends.
+
+## 1.9.1-alpha: play from the main menu (2026-11-19)
+
+Works with BeamNG.drive 0.40.6 · [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+.
+
+Start Earth Rally straight from the game's main menu, no free roam first.
+
+### New
+* **Play > Rally > Earth Rally** opens the rally menu. BeamNG.Earth loads when you drive a stage or start a rally.
+* A full rally started there uses your last car, or pick one in the game's own vehicle picker.
+* A saved rally continues only in the car it was started in.
+
+### Changed
+* **Home** fits on one screen, with in-game pictures on **Drive rally** and **Drive stage**.
+* BeamNG.drive 0.40.6 no longer shows a version warning.
+
 ## 1.9.0-alpha: official BeamNG.Earth (2026-11-19)
 
 Works with BeamNG.drive 0.40.5 · [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+.

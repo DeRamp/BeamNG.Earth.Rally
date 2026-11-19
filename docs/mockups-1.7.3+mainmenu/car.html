@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Earth Rally: the car, from the main menu</title>
+<!-- Mock-up for 1.7.3-alpha+mainmenu (not built). 1920x1080. The full rally's start screen (EarthRallyFull.vue,
+     kind "start") opened from the game's Rally page tile, with no level loaded and so no car yet. -->
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&family=Overpass+Mono:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root { --or: #f26b1d; --or5: #c75b1e; --mut: #b8bcc6; --dim: #8a909a; --blue: #1f8fff; --ok: #5fd38a; --warn: #ffd36b; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto Sans", sans-serif; }
+.mock-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 16px; background: #1a1d22; border-bottom: 1px solid #2a2e35; position: sticky; top: 0; z-index: 10; }
+.mock-bar b { margin-right: 8px; }
+.mock-bar button { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 4px; border: 1px solid #3a3f48; background: #23272e; color: #ddd; cursor: pointer; }
+.mock-bar button.on { background: var(--or5); border-color: var(--or5); color: #fff; }
+.mock-bar .sep { width: 1px; height: 22px; background: #3a3f48; margin: 0 6px; }
+.wrap { padding: 16px; }
+.screen { position: relative; width: 1920px; height: 1080px; margin: 0 auto; overflow: hidden; transform-origin: top left;
+  background: url(../media/beauty-maryhill-front.jpg) center / cover; }
+.page { position: absolute; inset: 0; background: rgba(10, 12, 16, 0.80); display: flex; flex-direction: column; }
+.top { height: 84px; display: flex; align-items: center; gap: 20px; padding: 0 64px; background: linear-gradient(180deg, rgba(0,0,0,.8), rgba(0,0,0,.35)); }
+.back { padding: 8px 16px 8px 10px; border-radius: 4px; background: rgba(0,0,0,.4); color: var(--mut); font-size: 18px; }
+.crumb { font-size: 18px; color: var(--mut); } .crumb b { color: #fff; }
+.body { flex: 1; padding: 40px 64px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+.note { grid-column: 1 / -1; color: var(--mut); font-size: 17px; margin: -16px 0 -8px; }
+h1 { font-size: 44px; margin: 0 0 6px; } .kick { color: var(--or); text-transform: uppercase; letter-spacing: .1em; font-size: 15px; font-weight: 700; }
+.card { background: rgba(0,0,0,.45); border-radius: 6px; padding: 26px 28px; }
+.lbl { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--mut); margin: 18px 0 8px; }
+.lbl:first-child { margin-top: 0; }
+.box { display: flex; justify-content: space-between; align-items: center; padding: 16px 18px; border-radius: 4px; background: rgba(255,255,255,.06); font-size: 20px; border: 2px solid transparent; }
+.box.sel { border-color: var(--or); background: rgba(242,107,29,.12); }
+.box .m { color: var(--mut); font-size: 16px; }
+.box + .box { margin-top: 10px; }
+.lock { color: var(--mut); font-size: 15px; margin-top: 8px; }
+.seg { display: flex; gap: 8px; } .seg span { flex: 1; text-align: center; padding: 12px; border-radius: 4px; background: rgba(255,255,255,.06); font-size: 18px; }
+.seg span.on { background: var(--or5); }
+.small { color: var(--dim); font-size: 15px; margin-top: 8px; }
+.go { margin-top: 26px; padding: 22px; border-radius: 4px; background: var(--or); font-size: 26px; font-weight: 700; text-align: center; text-transform: uppercase; }
+.go small { display: block; font-size: 16px; font-weight: 500; text-transform: none; opacity: .85; }
+.go.off { background: #3a3f48; color: #9aa; }
+.warn { color: var(--warn); font-size: 17px; margin-top: 12px; }
+.list .row { display: grid; grid-template-columns: 1fr 120px 90px; align-items: center; padding: 12px 16px; border-radius: 4px; font-size: 19px; }
+.list .row:nth-child(odd) { background: rgba(255,255,255,.04); }
+.list .row.sel { outline: 2px solid var(--or); background: rgba(242,107,29,.12); }
+.list .row .m { color: var(--mut); font-size: 15px; }
+.search { padding: 14px 16px; border-radius: 4px; background: rgba(255,255,255,.08); color: var(--mut); font-size: 18px; margin-bottom: 14px; }
+.tabs { display: flex; gap: 8px; margin-bottom: 14px; } .tabs span { padding: 8px 14px; border-radius: 16px; background: rgba(255,255,255,.06); font-size: 16px; } .tabs span.on { background: var(--or5); }
+.prompts { height: 56px; display: flex; gap: 28px; align-items: center; padding: 0 64px; background: rgba(0,0,0,.6); color: var(--mut); font-size: 17px; }
+.k { display: inline-block; min-width: 26px; padding: 1px 6px; margin-right: 6px; border-radius: 4px; background: #fff; color: #000; font-weight: 700; text-align: center; }
+.ann { position: absolute; background: #ffeb3b; color: #000; font-size: 15px; padding: 6px 10px; border-radius: 4px; max-width: 380px; box-shadow: 0 2px 8px rgba(0,0,0,.5); }
+.no-ann .ann { display: none; }
+#cap { max-width: 1920px; margin: 10px auto 0; color: var(--mut); font-size: 15px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="mock-bar">
+  <b>The car, from the main menu</b>
+  <button data-go="now">Now (as built)</button>
+  <span class="sep"></span>
+  <button data-go="start">Proposed: Start, last car</button>
+  <button data-go="pick">Proposed: choose a car (game picker)</button>
+  <button data-go="cont">Proposed: Continue</button>
+  <button data-go="old">Proposed: Continue, older save</button>
+  <span class="sep"></span>
+  <button id="ann" class="on">Notes</button>
+</div>
+<div class="wrap"><div class="screen" id="screen"><div class="page" id="page"></div></div><div id="cap"></div></div>
+
+<script>
+const topBar = crumb => `<div class="top"><div class="back">‹ Back</div><div class="crumb">${crumb}</div></div>`
+const prompts = extra => `<div class="prompts"><span><span class="k">A</span>Select</span><span><span class="k">B</span>Back</span>${extra || ""}</div>`
+const rules = `
+  <div class="lbl">Rules</div><div class="seg"><span class="on">Realistic</span><span>Casual</span></div>
+  <div class="lbl">Cancelled stages</div><div class="seg"><span class="on">None</span><span>Pick</span></div>`
+const head = (kick, title) => `<div><div class="kick">${kick}</div><h1>${title}</h1><div class="small" style="font-size:18px">6 stages · 84.2 km · 2 days</div>`
+
+const V = {
+  now: {
+    cap: "<b>Now (as built on the branch).</b> At the main menu there is no car, so the start screen says “Your default car”. The rally starts in whatever car BeamNG spawns with the BeamNG.Earth level, guesses the class as L4WD, and stays locked to that car. Continue only finds out after the level has loaded whether that car is the saved rally's.",
+    html: topBar("Rallies › <b>Oregon Trail Rally</b> › Start") + `<div class="body">
+      ${head("Full rally · start", "Oregon Trail Rally")}
+        <div class="lbl" style="margin-top:28px">Your car</div>
+        <div class="box"><span>Your default car</span><span class="m">BeamNG.Earth loads when you start</span></div>
+        <div class="lbl">Class</div><div class="seg"><span>RWD</span><span>FWD</span><span class="on">L4WD</span><span>R4WD</span></div>
+        <div class="small">Pick the class of the car you will drive.</div>
+      </div>
+      <div class="card">${rules}<div class="go">Start the rally<small>first car away 09:00</small></div></div>
+    </div>` + prompts(),
+    ann: [[860, 250, "Which car? The player can't see or choose it."]],
+  },
+  start: {
+    cap: "<b>Proposed: Start, last car.</b> “Your car” becomes a choice. The car you drove last in Earth Rally is first and already picked, by name with its drivetrain, and the class is set from it as it is in game. <b>Choose another car</b> opens the game's own vehicle picker (next view). When you press Start, BeamNG.Earth loads with that car, so the rally is in the car shown here. Remembered: the model and the setup (config), saved by Earth Rally when you drive.",
+    html: topBar("Rallies › <b>Oregon Trail Rally</b> › Start") + `<div class="body">
+      ${head("Full rally · start", "Oregon Trail Rally")}
+        <div class="lbl" style="margin-top:28px">Your car</div>
+        <div class="box sel"><span>Hirochi Sunburst Rally</span><span class="m">AWD · your last car ✓</span></div>
+        <div class="box"><span>Choose another car…</span><span class="m">›</span></div>
+        <div class="lbl">Class</div><div class="seg"><span>RWD</span><span>FWD</span><span class="on">L4WD</span><span>R4WD</span></div>
+        <div class="small">Picked from your car's drivetrain.</div>
+      </div>
+      <div class="card">${rules}<div class="go">Start the rally<small>loads BeamNG.Earth · first car away 09:00</small></div></div>
+    </div>` + prompts(),
+    ann: [[860, 300, "Last car first, already selected: one press to go."], [1500, 860, "BeamNG.Earth loads with this car."]],
+  },
+  pick: {
+    cap: "<b>Proposed: choose a car, in the game's own vehicle screen.</b> <b>Choose another car…</b> opens BeamNG's vehicle picker as its challenges and free roam setup do (its pick-and-return mode, <code>openVehicleSelectorForChallenge</code>): every car, with its thumbnails, filters, search and favourites, props and trailers left out. The usual spawn buttons are replaced by one, <b>Select Vehicle</b> (or a double click), which returns to our start screen with that car and setup picked and the class set from its drivetrain. Back returns with nothing changed. Drawn here roughly: it is the game's screen, not ours.",
+    html: `<div class="top" style="background:rgba(0,0,0,.85)"><div class="back">‹ Back</div><div class="crumb">Vehicles › <b>All</b></div><div style="margin-left:auto" class="search">Search…</div></div>
+    <div class="body" style="grid-template-columns: 1.6fr 1fr; background: rgba(20,22,26,.92)">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;align-content:start">
+        ${["Hirochi Sunburst","Ibishu Covet","ETK 800 Series","Bruckell Bastion","Cherrier FCV","Ibishu Pessima","Gavril D-Series","Soliad Wendover","Hirochi SBR4","ETK K-Series","Bruckell LeGran","Civetta Bolide"].map((n,i)=>`<div style="background:rgba(255,255,255,.07);border-radius:6px;overflow:hidden;${i===0?'outline:3px solid var(--or)':''}"><div style="height:120px;background:linear-gradient(135deg,#2c3340,#151a22)"></div><div style="padding:10px 12px;font-size:17px">${n}</div></div>`).join("")}
+      </div>
+      <div class="card"><div class="lbl">Hirochi Sunburst</div>
+        <div class="box sel"><span>Rally (A)</span><span class="m">AWD · 2.0 turbo</span></div>
+        <div class="box"><span>Rally (M)</span><span class="m">AWD</span></div>
+        <div class="box"><span>Sport RS (A)</span><span class="m">AWD</span></div>
+        <div class="go">Select Vehicle<small>back to the rally's start screen</small></div></div>
+    </div>` + prompts(`<span><span class="k">X</span>Select Vehicle</span>`),
+    ann: [[1500, 760, "The game's spawn buttons swapped for one Select Vehicle."], [260, 110, "The game's own screen: every car, thumbnails, filters."]],
+  },
+  cont: {
+    cap: "<b>Proposed: Continue.</b> A saved rally continues in its own car, and that is not a choice: shown, locked. Because the model and setup are saved with the rally, Continue loads BeamNG.Earth with that car already in it. No more “get in that car to continue it” after a level load.",
+    html: topBar("Rallies › <b>Oregon Trail Rally</b>") + `<div class="body">
+      ${head("Full rally · saved at service A", "Oregon Trail Rally")}
+        <div class="lbl" style="margin-top:28px">Your car</div>
+        <div class="box"><span>Hirochi Sunburst Rally</span><span class="m">AWD · L4WD</span></div>
+        <div class="lock">🔒 A rally continues in the car it was started in.</div>
+      </div>
+      <div class="card"><div class="lbl">Next</div><div class="box"><span>SS4 Maryhill Loops</span><span class="m">day 2 · 14.6 km</span></div>
+        <div class="go">Continue<small>loads BeamNG.Earth with your rally car</small></div>
+        <div class="small" style="margin-top:14px">Retire deletes the saved rally.</div></div>
+    </div>` + prompts(),
+    ann: [[860, 300, "Locked: the owner's rule."]],
+  },
+  old: {
+    cap: "<b>Proposed: Continue, a rally saved before this change.</b> Those saves have only the car's name, not its model or setup, so Earth Rally cannot spawn it. Continue is turned off with the reason, and <b>Find this car</b> opens the game's vehicle picker to find it. Once found and used, the rally's save gets the model and setup, and Continue works from then on.",
+    html: topBar("Rallies › <b>Oregon Trail Rally</b>") + `<div class="body">
+      ${head("Full rally · saved at service A", "Oregon Trail Rally")}
+        <div class="lbl" style="margin-top:28px">Your car</div>
+        <div class="box"><span>Hirochi Sunburst Rally</span><span class="m">not found yet</span></div>
+        <div class="box"><span>Find this car…</span><span class="m">›</span></div>
+        <div class="warn">This rally was saved before cars were remembered. Find its car once to continue.</div>
+      </div>
+      <div class="card"><div class="lbl">Next</div><div class="box"><span>SS4 Maryhill Loops</span><span class="m">day 2 · 14.6 km</span></div>
+        <div class="go off">Continue<small>find the car first</small></div></div>
+    </div>` + prompts(),
+    ann: [[860, 360, "Only for older saves: one-time."]],
+  },
+}
+function show(m) {
+  const v = V[m]
+  document.getElementById("page").innerHTML = v.html + v.ann.map(([x, y, t]) => `<div class="ann" style="left:${x}px;top:${y}px">${t}</div>`).join("")
+  document.getElementById("cap").innerHTML = v.cap
+  document.querySelectorAll(".mock-bar button[data-go]").forEach(b => b.classList.toggle("on", b.dataset.go === m))
+  location.hash = m
+}
+document.querySelectorAll(".mock-bar button[data-go]").forEach(b => b.onclick = () => show(b.dataset.go))
+document.getElementById("ann").onclick = e => { e.target.classList.toggle("on"); document.getElementById("screen").classList.toggle("no-ann") }
+function fit() { const s = document.getElementById("screen"), w = Math.min(1, (innerWidth - 32) / 1920); s.style.transform = `scale(${w})`; s.parentElement.style.height = (1080 * w + 120) + "px" }
+addEventListener("resize", fit); fit()
+show(location.hash.slice(1) in V ? location.hash.slice(1) : "start")
+</script>
+</body>
+</html>

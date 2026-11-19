@@ -14,6 +14,7 @@
 ## Good to know
 
 * It works on the [official BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+. It needs BeamNG.Earth's traffic and roads on.
+* The roads it reads are kept, so an auto recce of the same ground again does not move the car.
 * Junction calls, bridges and [[Stage dressing]] come from Auto recce only.
 * Once a stage has a line, **Auto recce** becomes **Reset**. Reset removes the line; your times stay.
 * **Recce** instead: drive the stage once at your own pace. The orange line on the road leads to the flying finish

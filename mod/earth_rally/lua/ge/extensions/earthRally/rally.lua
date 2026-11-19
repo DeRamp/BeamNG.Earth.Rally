@@ -164,7 +164,7 @@ function M.new(event, opts)
     place = st and { name = st.name, lat = st.lat, lon = st.lon } or nil })
   return { format = M.FORMAT, eventId = event.id, name = event.name, mode = mode,
     class = type(opts.class) == 'string' and opts.class ~= '' and opts.class or 'L4WD', cancelled = cancelled,
-    car = type(opts.car) == 'table' and { name = opts.car.name } or nil,
+    car = type(opts.car) == 'table' and { name = opts.car.name, model = opts.car.model, config = opts.car.config } or nil,
     order = order, pos = 1, results = {}, missed = 0, serviced = {}, done = false, heldOut = {} }
 end
 

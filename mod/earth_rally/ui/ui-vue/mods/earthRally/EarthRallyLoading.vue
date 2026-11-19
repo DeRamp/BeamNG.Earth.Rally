@@ -48,7 +48,8 @@
         <ul class="er-steps">
           <li v-for="(s, i) in arr(L.steps)" :key="i" :class="s.state"><span class="er-dot">{{ s.state === "done" ? "✓" : "" }}</span>{{ s.text }}</li>
         </ul>
-        <div class="er-world">
+        <!-- (no world bar while the BeamNG.Earth level itself loads, for a button pressed at the main menu) -->
+        <div v-if="!L.noWorld" class="er-world">
           <!-- (#63) while the world's origin moves (L.moving), its count means nothing yet: a moving stripe -->
           <div class="er-wt"><b>World</b><span v-if="L.moving">Moving the world...</span><span v-else-if="L.worldReady" class="er-ok">Ready to drive</span><span v-else>{{ L.world || 0 }}%</span></div>
           <div class="er-wbar"><i v-if="L.moving" class="move"></i><i v-else :class="{ full: L.worldReady }" :style="{ width: Math.min(100, L.world || 0) + '%' }"></i><em :style="{ left: L.need + '%' }"></em><u :style="{ left: L.need + '%' }">{{ L.need }}%</u></div>

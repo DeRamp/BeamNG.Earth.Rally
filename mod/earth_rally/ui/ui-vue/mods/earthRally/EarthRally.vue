@@ -25,7 +25,7 @@
       </div>
     </div>
 
-    <div class="er-content" v-bng-ui-nav-scroll>
+    <div class="er-content" :class="{ 'er-content-fill': view === 'home' }" v-bng-ui-nav-scroll>
       <!-- the run or the recce under way -->
       <div v-if="banner" class="er-banner">
         <span>{{ banner }}</span>
@@ -46,6 +46,8 @@
         <BngButton :accent="ACCENTS.main" @click="openCard">Time card</BngButton>
       </div>
       <div v-if="st.earthWhy" class="er-warnline">{{ st.earthWhy }}</div>
+      <!-- (opened from the main menu: no world yet, and that is fine -- it loads with the first stage driven) -->
+      <div v-else-if="st.earthNote" class="er-noteline">{{ st.earthNote }}</div>
       <!-- Something changed under the mod since it was built (versions.lua): the game's version, BeamNG.Earth's
            modding API, or one of the internals it has no API for. Empty in the normal case, so nothing shows. -->
       <div v-for="(n, i) in arr(st.versionNotes)" :key="'vn' + i" class="er-warnline">{{ n }}</div>
@@ -102,7 +104,9 @@
             <BngButton :accent="ACCENTS.outlined" @click="retireAsk = null">Cancel</BngButton>
           </template>
           <template v-else>
-            <BngButton v-if="rly.rallySaved" :accent="ACCENTS.main" :disabled="busy" @click="resumeRally(rly.id)">Continue</BngButton>
+            <!-- (at the main menu, a rally saved before cars were remembered: its car found once in the game's picker) -->
+            <BngButton v-if="rly.rallySaved && rly.savedCar && !rly.savedCar.known" :accent="ACCENTS.main" :disabled="busy" @click="pickCar(rly.id, 'resume')">Find the {{ rly.savedCar.name }}…</BngButton>
+            <BngButton v-if="rly.rallySaved" :accent="ACCENTS.main" :disabled="busy || !!(rly.savedCar && !rly.savedCar.known)" @click="resumeRally(rly.id)">{{ rly.savedCar && rly.savedCar.known ? `Continue in the ${rly.savedCar.name}` : "Continue" }}</BngButton>
             <BngButton :accent="rly.rallySaved ? ACCENTS.outlined : ACCENTS.main" :disabled="busy" @click="openStart(rly.id)">{{ rly.rallySaved ? "Start again" : "Start the rally" }}</BngButton>
             <BngButton v-if="rly.rallySaved" :accent="ACCENTS.outlined" :disabled="busy" @click="retireAsk = rly.id">Retire</BngButton>
           </template>
@@ -393,7 +397,7 @@ import EarthRallyFull from "./EarthRallyFull.vue"
 import EarthRallyLoading from "./EarthRallyLoading.vue"
 import {
   state, season, rally, stage, busyMsg, action as luaAction, refreshState, takeOpenAt, loadSeason, loadRally, loadStage,
-  closeMenu, lastPlace, helperPromptClose, namePromptLater, loadRallyStart, loadRallyCard, rallyAction, loadDrive, pointTo,
+  closeMenu, pickCar, keep, lastPlace, helperPromptClose, namePromptLater, loadRallyStart, loadRallyCard, rallyAction, loadDrive, pointTo,
   arr, mmss, units, len, lenNum, riseNum, riseUnit, time, longTime, when, ord, days, ssName, STATUS, AUTO_OUTCOME, RUN_WORDS,
 } from "./store.js"
 
@@ -796,6 +800,7 @@ function openResults(id, from) {
 const startFrom = ref(null)
 function openStart(id, from) {
   startFrom.value = from || null
+  keep.startFrom = startFrom.value
   if (from === "pick") pickSel.value = id
   sel.value = { ...sel.value, eventId: id }
   loadRallyStart(id)
@@ -883,6 +888,7 @@ onMounted(() => {
     if (at && at.view === "timecard") openCard()
     else if (at && at.view === "stage" && at.eventId && at.stageId) openStage(at.eventId, at.stageId)
     else if (at && at.view === "rally" && at.eventId) openRally(at.eventId)
+    else if (at && at.view === "rallyStart" && at.eventId) openStart(at.eventId, keep.startFrom)
     else if (at && at.view === "season" && at.eventId) openSeason(at.eventId)
     else if (at && at.view === "settings") go("settings")
     else if (at && at.view === "rallies") go("rallies")
@@ -919,6 +925,8 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
   .er-cgo:hover { color: #fff; text-decoration: underline; } }
 .er-right { margin-left: auto; display: flex; gap: 12px; }
 .er-content { flex: 1; padding: 28px 64px 24px; overflow-y: auto; }
+/* Home: a column, its lines at their height and the tiles in what is left (notes-1.7.4 #3) */
+.er-content-fill { display: flex; flex-direction: column; > * { flex-shrink: 0; } }
 /* (a controller's focus on the small things -- tabs, Back, a setting's choice, a leaderboard pass -- that have no
    :focus look of their own; the cards and rows keep theirs) */
 .er-page :deep(span[bng-nav-item]:focus), .er-back:focus { outline: 2px solid var(--er-orange); outline-offset: 2px; }
@@ -934,6 +942,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .er-row { display: flex; gap: 12px; flex-wrap: wrap; }
 .er-banner { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; padding: 12px 18px; border-radius: 0.5rem; background: rgba(31, 143, 255, 0.25); border-left: 4px solid var(--er-blue); font-size: 18px; span { margin-right: auto; } }
 .er-warnline { margin-bottom: 14px; color: #ffd36b; }
+.er-noteline { margin-bottom: 14px; color: var(--er-muted); }
 .er-fb-warn { color: #ffd36b; align-self: center; }
 .er-msg { margin-top: 12px; color: #ffd36b; }
 .er-stat .er-v { font-family: "Overpass Mono", monospace; font-size: 32px; font-weight: 700; }

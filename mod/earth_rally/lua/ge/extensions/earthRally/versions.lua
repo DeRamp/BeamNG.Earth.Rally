@@ -29,7 +29,7 @@ local M = {}
 local logTag = 'earthRally'
 
 -- The BeamNG.drive this was built and driven on. Bump it when the mod has actually been run on a new one.
-M.GAME_BUILT = '0.40.5'
+M.GAME_BUILT = '0.40.6'   -- (0.40.6 supported: the owner, 2026-11-19)
 
 ------------------------------------------------------------------------------------------ pure
 

@@ -124,6 +124,14 @@ export function setSetting(key, value) {
   })
 }
 
+// The game's vehicle picker for a rally at the main menu: purpose 'start' (a new rally's car) or 'resume' (a saved
+// rally's car found once). The menu comes back by itself.
+export function pickCar(eventId, purpose) {
+  engineLua(`earthRally_main and earthRally_main.uiPickCar(${q(eventId)}, ${q(purpose)}) or nil`, r => {
+    busyMsg.value = (r && !r.ok && r.message) || ""
+  })
+}
+
 // Stats and Report a problem (+stats; main.lua uiStats): what = yes / no / shown / openFolder / report.
 // a, b: for report, what the player wrote and whether to save the log. (Cut at 4000 without splitting an emoji.)
 const luaText = v => JSON.stringify(String(v || "").replace(/[\u0000-\u0009\u000b-\u001f]/g, " ").slice(0, 4000).replace(/[\ud800-\udbff]$/, ""))
@@ -163,6 +171,8 @@ export function openMenu(view, eventId) {
 // Where the menu page was left: { view, sel, rallyTab }, kept here because the page itself is unmounted when the
 // menu closes (this module lives as long as the UI does; a UI reload starts on Rallies again).
 export const lastPlace = { at: null }
+// Where the rally start screen was opened from, kept across the game's vehicle picker (the page is unmounted under it)
+export const keep = { startFrom: null }
 export function closeMenu() { engineLua("if earthRally_main then earthRally_main.closeMenu() end") }
 
 // The poll while a page or card is open (a count: started / stopped by each)

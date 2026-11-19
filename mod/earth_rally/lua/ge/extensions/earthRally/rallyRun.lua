@@ -185,9 +185,42 @@ function M.car()
       if nm then out.name = (brand and not tostring(nm):find(tostring(brand), 1, true)) and (brand .. ' ' .. nm) or nm end
       out.drivetrain = cfg.Drivetrain or model.Drivetrain
       if type(out.drivetrain) == 'table' then out.drivetrain = out.drivetrain[1] end
+      -- (the model and its setup: what the game spawns it from, so a saved rally can bring the car back itself)
+      local cur = type(d.current) == 'table' and d.current or {}
+      if type(cur.key) == 'string' then out.model = cur.key end
+      if type(cur.config_key) == 'string' then out.config = cur.config_key
+      elseif type(cur.pc_file) == 'string' and cur.pc_file:sub(-3) == '.pc' then out.config = cur.pc_file end
     end
   end
   return out
+end
+
+-- A saved rally from before cars were kept with their model and setup: given them once, from the car picked for it
+-- (the same car by name). Returns ok, why.
+-- The same car as a rally's: by model (and setup, when both have one) once the save has them; by name for a save from
+-- before (names are translated and can change with a mod, so they are the fallback, not the rule).
+function M.sameCar(saved, car)
+  if type(saved) ~= 'table' or type(car) ~= 'table' then return true end
+  if saved.model and car.model then
+    return saved.model == car.model and (saved.config == nil or car.config == nil or saved.config == car.config)
+  end
+  return saved.name == nil or saved.name == 'your car' or saved.name == car.name
+end
+
+function M.setSavedCar(id, car)
+  local t = M.readFile(id)
+  if not t.current then return false, 'there is no rally saved for this one' end
+  local want = type(t.current.car) == 'table' and t.current.car.name or nil
+  if want == 'your car' then want = nil end   -- (M.car's name when the game gave none: any car will do)
+  -- (an older save named only the model -- the player's own default car, or parts changed in game -- takes any
+  --  setup of that model: its name is where the picked car's starts)
+  local fits = want == nil or car.name == want or (type(car.name) == 'string' and car.name:sub(1, #want + 1) == want .. ' ')
+  if not fits then
+    return false, string.format('That is the %s: this rally was started in the %s.', tostring(car.name), want)
+  end
+  t.current.car = { name = car.name, model = car.model, config = car.config }
+  writeFile(id, t)
+  return true
 end
 
 -- The car put right where it stands (the game's own "Repair here": spawn.safeTeleport at its own place with
@@ -700,7 +733,7 @@ function M.resume(id)
   local car = M.car()
   if not car then return false, 'get in a car first' end
   local want = type(t.current.car) == 'table' and t.current.car.name or nil
-  if want and car.name ~= want then
+  if want and not M.sameCar(t.current.car, car) then
     return false, 'this rally was started in the ' .. tostring(want) .. ': get in that car to continue it'
   end
   pcall(runner.abort, true)
