@@ -7,8 +7,9 @@
   <section class="er-hm">
     <div class="er-hm-tile er-hm-big" tabindex="0" bng-nav-item v-bng-ui-nav-focus="cont ? undefined : 1"
       @click="emit('pick')" @keydown.enter.self="emit('pick')">
-      <!-- (in-game shots, notes-1.7.4 #4: rally day at Weaver Bend; one car on a stage road) -->
-      <img class="er-hm-art er-hm-big-art" src="/ui/modules/apps/earthRally/home-rally.jpg" alt="" />
+      <!-- (in-game shots, notes-1.7.4 #4: rally day at Weaver Bend; one car on a stage road. Each car is in the top half
+           of its picture, above the words; not draggable, so a press that moves a little still opens the tile) -->
+      <img class="er-hm-art er-hm-big-art" src="/ui/modules/apps/earthRally/home-rally.jpg" alt="" draggable="false" />
       <div class="er-hm-shade"></div>
       <div class="er-hm-kicker">A whole rally</div>
       <h2>Drive rally</h2>
@@ -29,7 +30,7 @@
 
     <div class="er-hm-side">
       <div class="er-hm-tile er-hm-small" tabindex="0" bng-nav-item @click="emit('stages')" @keydown.enter.self="emit('stages')">
-        <img class="er-hm-art er-hm-small-art" src="/ui/modules/apps/earthRally/home-stage.jpg" alt="" />
+        <img class="er-hm-art er-hm-small-art" src="/ui/modules/apps/earthRally/home-stage.jpg" alt="" draggable="false" />
         <div class="er-hm-shade"></div>
         <div class="er-hm-kicker">One stage</div>
         <h2>Drive stage</h2>
@@ -86,9 +87,13 @@ const cont = computed(() => {
   li { font-size: 16px; padding: 6px 12px; border-radius: 4px; background: rgba(255, 255, 255, 0.12); color: #eee; }
 }
 .er-hm-small h2 { font-size: 50px; }
-.er-hm-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.er-hm-big-art { object-position: 70% 55%; }
-.er-hm-small-art { object-position: 50% 45%; }
+/* a small or narrow window: the tiles cut what does not fit from the top, so less goes in them (no chips, smaller
+   type) and the headings stay */
+@media (max-height: 820px), (max-width: 1400px) {
+  .er-hm-tile { padding: 26px 30px; h2 { font-size: 54px; } p { font-size: 18px; margin-bottom: 16px; } ul { display: none; } }
+  .er-hm-small h2 { font-size: 42px; }
+}
+.er-hm-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; pointer-events: none; }
 .er-hm-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0, 0, 0, 0) 30%, rgba(0, 0, 0, 0.88) 100%); }
 .er-hm-kicker { font-size: 18px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--er-orange); font-weight: 700; }
 /* the game's button, made the mock-up's big one: its own size rules beaten on specificity (.er-hm first), its margin

@@ -13,7 +13,7 @@ local M = {}
 
 M.KEY = 'earthRally'
 M.NAME = 'Earth Rally'
-M.PREVIEW = '/ui/modules/apps/earthRally/tile.jpg'
+M.PREVIEW = '/ui/modules/apps/earthRally/tile.jpg?v=2'   -- (?v=: a new picture is loaded, not the cached one)
 M.TYPE_LABEL = 'bigMap.missionLabels.rallyStage'   -- (what puts it on the Rally page: its filter's own value)
 M.ORDER = -1e12                                     -- (first among the game's rally stages: theirs are -date)
 M.DESCRIPTION = 'Real rally stages on real roads, on BeamNG.Earth\'s map of the world. Pick a rally or a stage: ' ..

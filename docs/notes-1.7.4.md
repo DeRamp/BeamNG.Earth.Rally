@@ -53,7 +53,8 @@ The owner: "When I open up the menu, I have to scroll on that main page on Earth
 by that line. On a small or scaled screen the 640px floor and the 76px heading add more.
 
 **Fix (for the owner's go):** Home's content becomes a column (`display: flex; flex-direction: column`), and the
-grid takes what is left (`flex: 1; min-height: 0`), with no 640px floor. Headings go 76 → 68px and 56 → 50px, and
+grid takes what is left (`flex: 1 1 0`); its floor drops from 640px to 420px, so only a very small window
+scrolls. Headings go 76 → 68px and 56 → 50px, and
 tile padding gets a little tighter. Files: `EarthRallyHomeMenu.vue`, and `EarthRally.vue` for the Home content class.
 Mock-up: `docs/mockups-1.7.3+mainmenu/home.html`.
 
@@ -84,3 +85,12 @@ detail are lost. Wanted: the car in the air on the left, the name in big type on
 and the name stacked in two lines, white then orange (`EARTH` / `.RALLY`, Segoe UI Black). Two cases to pick from:
 `docs/mockups-1.7.3+mainmenu/tile-a.jpg` (capitals) and `tile-b.jpg` (lower case), with `-thumb.png` at 240x135.
 Only the picture changes; the tile's name stays "Earth Rally".
+
+**Built** (the owner's go, 2026-11-19), capitals for #5. After review:
+
+- The Home photos are 2x size and cropped so each car is in the top half, above the words: Drive rally from
+  `samples/hero-spin-5760.jpg` (Weaver Bend), Drive stage from `samples/picture-03-forest-mist-5760.jpg` (a car
+  coming at you on a forest road).
+- The photos cannot be dragged, so a press that moves a little still opens the tile.
+- A small or narrow window drops the chips and uses smaller type, so the headings are not cut.
+- The tile picture's url carries `?v=2`, so the game shows the new one, not a cached one.
