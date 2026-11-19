@@ -2,8 +2,7 @@
 
 You need **BeamNG.drive 0.40.5** and two downloads.
 
-1. **BeamNG.Earth.** Install it from [the DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases) with its
-   installer. The fork adds what **Auto recce** needs. Official BeamNG.Earth 1.6+ also works, without Auto recce.
+1. **BeamNG.Earth.** Install [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10 or newer with its installer.
 2. **Earth Rally.** Download the newest `earth_rally-*.zip` from
    [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
 3. Put the zip, **still zipped**, in `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\mods\`.

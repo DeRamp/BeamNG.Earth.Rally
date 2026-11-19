@@ -314,9 +314,11 @@
             <b>Route to start</b>: the way there on the GPS, arrows on the road. No teleport.<br>
             <template v-if="stg.autoCan"><b>Auto recce</b>: {{ !st.autoOk
               ? "works the line out from the map's roads. Not available with this BeamNG.Earth."
+              : st.autoWalks
+                ? "works the line out from the map's roads. Takes the car along the stage to read them, then brings it back."
               : st.autoCanFetch
                 ? "takes you to the start, then works the line out from the map's roads. Where the map data is missing it tells you how much there is to download and asks first."
-                : "works the line out from the map's roads. Reads only the map data already on your disk; downloads nothing." }}<br></template>
+                : "works the line out from the map's roads." }}<br></template>
             <template v-if="stg.line"><b>Reset</b>: removes this stage's line, so you can make it again -- with the auto recce or by driving a recce. Your times are kept.<br></template>
             <b>Recce</b>: drive the stage once at your own pace; the line you drive gives the notes.
           </div>

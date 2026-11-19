@@ -3,7 +3,7 @@
 Drive real rally stages on the real roads of [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth), timed,
 with BeamNG.drive's own co-driver calling pacenotes worked out from the road.
 
-**Alpha · BeamNG.drive 0.40.5 · BeamNG.Earth 1.10+ · auto recce: [DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)**
+**Alpha · BeamNG.drive 0.40.5 · [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+**
 [Download](https://github.com/DeRamp/BeamNG.Earth.Rally/releases) · [Wiki](https://github.com/DeRamp/BeamNG.Earth.Rally/wiki) ·
 [Changelog](CHANGELOG.md) · [Player guide](docs/guide.md) · [Report a bug](https://github.com/DeRamp/BeamNG.Earth.Rally/issues)
 
@@ -22,8 +22,7 @@ with BeamNG.drive's own co-driver calling pacenotes worked out from the road.
 
 ## Install
 
-1. Install BeamNG.Earth 1.10 or newer, e.g. [the DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases), with its
-   installer.
+1. Install [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10 or newer with its installer.
 2. In BeamNG.Earth, open **Add-ons** > **Add from GitHub**, paste `DeRamp/BeamNG.Earth.Rally` and press **Install**.
 3. Paste `DeRamp/earth-rally-leaderboards` the same way, press **Install**, then **Start**. Tick
    **Start with BeamNG.Earth**.
@@ -31,8 +30,8 @@ with BeamNG.drive's own co-driver calling pacenotes worked out from the road.
 
 No **Add from GitHub**? Put the zip from Releases in `mods`.
 
-The fork adds the API **Auto recce** needs. Official BeamNG.Earth 1.10+ works without it: you drive a recce
-instead. Report fork problems here, not to the BeamNG.Earth team. Details: [player guide](docs/guide.md#the-auto-recce-and-beamngearth).
+**Auto recce** works on the official BeamNG.Earth: it takes the car along the stage, then brings it back.
+Details: [player guide](docs/guide.md#the-auto-recce-and-beamngearth).
 
 ## Updating
 

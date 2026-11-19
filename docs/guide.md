@@ -5,24 +5,20 @@ Everything the [README](../README.md) leaves out. What changed in each version: 
 ## The auto recce and BeamNG.Earth
 
 The auto recce works a stage's driving line out from BeamNG.Earth's roads so you never have to drive a recce. It
-needs **modding API 1.9**, which is [one pull request waiting on TecnaGamer](https://github.com/TecnaGamer/BeamNG.Earth/pull/1249).
-Until an official release has it, install BeamNG.Earth from
-**[the DeRamp fork](https://github.com/DeRamp/BeamNG.Earth/releases)**: BeamNG.Earth with that change added, with the same kind of
-installer. Report problems with the fork to [Earth Rally's issues](https://github.com/DeRamp/BeamNG.Earth.Rally/issues),
-not to the BeamNG.Earth team.
+works on the **[official BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases)** 1.10 or newer: no fork needed.
 
-**With a stock BeamNG.Earth nothing breaks.** Earth Rally asks, gets no for an answer, and greys out **Auto
-recce** with a note saying why — you drive a recce instead, as you always could. That is the only thing you lose.
+It reads the roads round the car, so it takes the car along the stage, a stretch at a time, then brings it back
+where it was. You see the world load at each stop. A 30 km stage takes about five minutes on ground already on your
+computer; new ground takes longer. Where BeamNG.Earth's traffic or roads are switched off it cannot read them, and
+says so.
 
 ## Getting a stage to drive
 
 1. **Add a rally.** In the menu, **Open folder**, and drop in the rally's `.kml`, `.kmz` or `.gpx`. It is
    imported straight away. Each line becomes a stage; named points beside it become its controls.
 2. **Give the stage a line**, which is what the pacenotes and the timing follow. Either:
-   * **Auto recce** — one button. It works out whether BeamNG.Earth has the map data along the stage, tells you how
-     much there is to download and asks first; takes you to the start; then works the line out from the roads
-     there. A 4 km stage takes about a second and a half. Say **Not now** and it stops, having downloaded nothing
-     and moved nobody.
+   * **Auto recce** — one button. It takes you to the start, then along the stage to read its roads, and works
+     the line out from them.
    * **Recce** — drive the stage once at your own pace. The map line is drawn on the road ahead of you (orange, with
      a green ball at the flying finish) and the mod records the line you actually drove.
 

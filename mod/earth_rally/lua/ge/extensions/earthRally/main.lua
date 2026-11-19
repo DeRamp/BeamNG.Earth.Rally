@@ -38,7 +38,7 @@ loadScreen.moving = function() return runner.originMoving() or earth.rebasing() 
 local M = {}
 local logTag = 'earthRally'
 local logPausedSim         -- (below, by onUpdate)
-M.VERSION = '1.8.2-alpha'
+M.VERSION = '1.9.0-alpha'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_FLOOR_S = 1             -- the HUD's streams sent when what they show changes, and at least this often
 M.STREAM_GAP_S = 0.1              -- ... the stock stream at most this often outside waitStart / running
@@ -727,6 +727,7 @@ local function autoDone(ok, matched, why, how)
   log('I', logTag, string.format('auto recce of %s: %s (%s)', tostring(a.stageId), kind, tostring(why or 'written')))
 end
 M._autoDone = autoDone
+autoRecce.noHome = function() return rallyRun.preparing() end   -- (upstream-earth: no trip home between prep stages)
 
 -- Start the matching leg: the same call the 1.3.0 button made, with the banner and the row mark it sets.
 local function autoStartMatch(ev, stage, ss)
@@ -1170,7 +1171,9 @@ doAction = function(what, eventId, stageId, fromPanel, queued)
     local pr = autoRecce.progress() or {}
     return res(true, string.format('Auto recce of %s: %d windows. %s', stage.name, pr.windows or 0,
       earth.hasAreaRoute() and 'It reads the map data on your disk, and asks before downloading any it needs.'
-        or 'It reads only the map data already on your disk and downloads nothing.'))
+        or (earth.roadGraphMode() == 'walk'
+          and 'It takes the car along the stage to read the roads, then brings it back.'
+          or 'It reads the roads along the stage from the map.')))
   end
   if what == 'drive' then
     local ok, why = runner.start(ev, stage)
@@ -1289,9 +1292,10 @@ local function runSummary()
   -- the auto recce: whether one can be run at all (the page shows no button where it cannot, rather than a
   -- disabled one on every row), and the one running, with the window it is on
   out.autoOk = earth.hasRoadGraph()
-  -- whether the one button can also fetch the ground: the page says "downloads nothing" without it, and offers the
+  -- whether the one button can also fetch the ground: the page says nothing of downloads without it, and offers the
   -- download with it, so this has to reach the UI rather than being decided in the Lua alone
   out.autoCanFetch = earth.hasRoadGraph() and earth.hasAreaRoute()
+  out.autoWalks = earth.roadGraphMode() == 'walk'     -- (upstream-earth: no fork; the car is taken along the stage)
   if autoRecce.active() and autoRun then
     local p = autoRecce.progress() or {}
     out.auto = { eventId = autoRun.eventId, stageId = autoRun.stageId, stageName = autoRun.stageName,
@@ -1573,7 +1577,7 @@ function M.uiRallyAction(what, eventId, opts)
       local act = rallyRun.active()
       if rallyRun.preparing() and act and act.eventId == eventId then
         autoSeq, rallyQ = nil, nil
-        if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
+        if autoRecce.active() then autoRun = nil; pcall(earth._roadWalk.reset); pcall(autoRecce.cancel) end
       end
     end
     if what == 'endNew' or what == 'endDrive' then
@@ -2131,7 +2135,7 @@ function M.onClientEndMission()
   -- autoSeq as well: a sequence between its legs has no window in flight, so cancelling the auto recce alone
   -- would leave it behind and the page busy for ever (the guard in doAction refuses everything while one runs)
   autoSeq, rallyQ = nil, nil
-  if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
+  if autoRecce.active() then autoRun = nil; pcall(earth._roadWalk.reset); pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
   pcall(rallyRun.release)
@@ -2163,7 +2167,7 @@ function M.onModDeactivated()
   -- autoSeq as well: a sequence between its legs has no window in flight, so cancelling the auto recce alone
   -- would leave it behind and the page busy for ever (the guard in doAction refuses everything while one runs)
   autoSeq, rallyQ = nil, nil
-  if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
+  if autoRecce.active() then autoRun = nil; pcall(earth._roadWalk.reset); pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
   pcall(rallyRun.release)
@@ -2191,7 +2195,7 @@ function M.onExtensionUnloaded()
   -- autoSeq as well: a sequence between its legs has no window in flight, so cancelling the auto recce alone
   -- would leave it behind and the page busy for ever (the guard in doAction refuses everything while one runs)
   autoSeq, rallyQ = nil, nil
-  if autoRecce.active() then autoRun = nil; pcall(autoRecce.cancel) end
+  if autoRecce.active() then autoRun = nil; pcall(earth._roadWalk.reset); pcall(autoRecce.cancel) end
   if previewT then pcall(M.previewStop) end
   pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
   pcall(rallyRun.release)
