@@ -371,7 +371,7 @@ Run on the Warden and ARA packs (they stay out of git, as all rally data). `docs
 - Given back (clock nil, preset nil, our table entry removed) at the end, on leave, on quit, and at load if left set.
 - The setting "Rally's real date and weather" becomes **"Rally's real time and weather"** (default on).
 - Start screen: the fork note goes. Instead, only when it applies: "This rally has no stored weather: your own weather"
-  or "Your BeamNG.Earth can't set the time and weather (log has why)".
+  or "Your BeamNG.Earth can't set the rally's time and weather." (2026-11-19: no source line under the start time either; the UI as minimal as it can be).
 - The fork code goes: `earthAdapter.setWorldTime / hasWorldTime / worldTime`, `KNOWN_API_MINOR` back to main's.
 
 **Optional, needs a mock-up first:** each stage's weather in a word on the time card ("SS2 · overcast, 15 °C").

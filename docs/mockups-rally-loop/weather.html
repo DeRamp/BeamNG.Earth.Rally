@@ -221,7 +221,6 @@ h5 { margin: 0 0 10px; font-size: 20px; letter-spacing: .04em; }
           <div class="muted" style="font-size:18px;margin-top:6px">9 stages · 2 days · 3 services · real field: 38 National crews</div>
           <div class="when"><span class="sky"></span><div>
             <div>Starts Sat 7 Nov 2026, 13:00 local, in daylight</div>
-            <div class="wl new" data-m="start.prop"><svg><use href="#i-cloud"/></svg>Weather: stored with the rally (Open-Meteo history)</div>
           </div></div>
           <div class="lbl">Car</div>
           <div class="boxv"><span>Rallye 2.0 Gravel</span><span class="muted">AWD</span></div>
@@ -246,7 +245,7 @@ h5 { margin: 0 0 10px; font-size: 20px; letter-spacing: .04em; }
       <div class="cornerbtn">
         <div class="warn nofork" data-m="start.now">Your BeamNG.Earth can't set the rally's date, time of day and weather. Install the Earth Rally fork of BeamNG.Earth to drive it on the real day.</div>
         <div class="cnote muted new" data-m="start.nowx">This rally has no stored weather: your own weather.</div>
-        <div class="cnote warn new" data-m="start.cant">Your BeamNG.Earth can't set the time and weather (the log says why).</div>
+        <div class="cnote warn new" data-m="start.cant">Your BeamNG.Earth can't set the rally's time and weather.</div>
         <div class="btn huge sel">Start the rally<small>first car away 13:00</small></div>
       </div>
     </div>
@@ -316,7 +315,7 @@ const SCREENS = {
   start: { crumbs: "Home<i>›</i>Drive rally<i>›</i><b>Start the rally</b>", v: [["now", "Now (official BeamNG.Earth)", "n"], ["prop", "Proposed · stored weather", "p"], ["nowx", "Proposed · no stored weather", "p"], ["cant", "Proposed · can't set", "p"]],
     note: {
       now: "<b>Now, on the official BeamNG.Earth.</b> The start line, then an amber line above Start asking for the Earth Rally fork, which is no longer the plan.",
-      prop: "<b>Stored weather.</b> Under the start line, one more: the weather comes with the rally, from Open-Meteo's history. The fork line is gone, and nothing shows above Start. The setting that turns this off is renamed <i>Rally's real time and weather</i> (default on); off, neither weather line nor note shows.",
+      prop: "<b>Stored weather.</b> Nothing new on screen: the rally simply runs in its weather (the owner: the player needn't know where it comes from). The fork line is gone, and nothing shows above Start. The setting that turns this off is renamed <i>Rally's real time and weather</i> (default on); off, neither weather line nor note shows.",
       nowx: "<b>No stored weather</b> (a rally still to come, or a pack not run through the tool): the start line stays (the clock is still set to the rally's hour), no weather line, and one plain line above Start.",
       cant: "<b>A BeamNG.Earth without the two hooks</b> (renamed or gone in an update): one amber line above Start; the rally runs, still timed, on your own sky and weather. The log line says which hook is missing."
     } },
