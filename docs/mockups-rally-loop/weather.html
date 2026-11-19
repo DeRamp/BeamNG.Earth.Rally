@@ -356,7 +356,7 @@ h5 { margin: 0 0 10px; font-size: 20px; letter-spacing: .04em; }
           <div class="card lnote"><span class="pill">Ready</span><span>Notes from the map's roads, all the way. No recce needed.</span></div>
           <div class="wxrow" data-m="ds.prop ds.rday ds.rain">
             <span class="wl">Weather</span>
-            <span class="cyc" data-m="ds.prop"><span class="ar">‹</span><span class="val">Your own</span><span class="ar">›</span></span>
+            <span class="cyc" data-m="ds.prop"><span class="ar">‹</span><span class="val">Current</span><span class="ar">›</span></span>
             <span class="cyc foc" data-m="ds.rday"><span class="ar">‹</span><span class="val"><svg><use href="#i-rain"/></svg>Rally day · light rain</span><span class="ar">›</span></span>
             <span class="cyc" data-m="ds.rain"><span class="ar">‹</span><span class="val"><svg><use href="#i-rain"/></svg>Rain</span><span class="ar">›</span></span>
           </div>
@@ -427,12 +427,12 @@ const SCREENS = {
       now: "<b>Now.</b> In a BeamMP session the menu opens on Home as anywhere else, and a rally or stage can be started on the server.",
       prop: "<b>In a BeamMP session the menu is one card</b> and Close (A or B) shuts the menu. The pause menu's Rally menu button opens the same. A rally under way when you joined is kept as Save and quit keeps it, to carry on after you leave the server."
     } },
-  ds: { crumbs: "Home<i>›</i>Drive stage<i>›</i>Coastal Series 2026<i>›</i>Pine Ridge Rally<i>›</i><b>Quarry Loop</b>", v: [["now", "Now", "n"], ["prop", "Proposed · Your own", "p"], ["rday", "Proposed · Rally day (focused)", "p"], ["rain", "Proposed · SS5, no stored weather", "p"]],
+  ds: { crumbs: "Home<i>›</i>Drive stage<i>›</i>Coastal Series 2026<i>›</i>Pine Ridge Rally<i>›</i><b>Quarry Loop</b>", v: [["now", "Now", "n"], ["prop", "Proposed · Current", "p"], ["rday", "Proposed · Rally day (focused)", "p"], ["rain", "Proposed · SS5, no stored weather", "p"]],
     note: {
       now: "<b>Now.</b> The stage page: tiles, points, the line's state, then Drive stage, Route to start, Reset / Auto recce and Recce. The stage runs in whatever weather BeamNG.Earth has.",
-      prop: "<b>One option row above the buttons:</b> Weather, in the start screen's look, cycled with left / right (or a click on ‹ ›). Order: Your own, Rally day, Clear, Cloudy, Rain, Storm, Snow, Fog. <i>Your own</i> is the default and leaves BeamNG.Earth's weather alone. Remembered between stages. No help line.",
+      prop: "<b>One option row above the buttons:</b> Weather, in the start screen's look, cycled with left / right (or a click on ‹ ›). Order: Current, Rally day, Clear, Cloudy, Rain, Storm, Snow, Fog. <i>Current</i> is the default and leaves BeamNG.Earth's weather alone. Remembered between stages. No help line.",
       rday: "<b>Rally day</b> shows only when the pack stores weather for the pass picked on the leaderboard (here SS1): that day's weather in a word, as on the time card. Focused, the prompt bar shows ◀ ▶ Weather.",
-      rain: "<b>SS5 picked, a pass with no stored weather:</b> Rally day drops out of the cycle. A remembered Rally day falls back to Your own here and comes back on a stage that has it. Rain is a BeamNG.Earth preset."
+      rain: "<b>SS5 picked, a pass with no stored weather:</b> Rally day drops out of the cycle. A remembered Rally day falls back to Current here and comes back on a stage that has it. Rain is a BeamNG.Earth preset."
     } },
 };
 let cur = "tc", curV = {};

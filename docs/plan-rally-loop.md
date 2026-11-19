@@ -406,3 +406,11 @@ Files: `main.lua` (a `multiplayer()` check gating start paths and the update), `
 
 **Built 2026-11-19** (Lua side): `main.mpCheck` / `main.multiplayer()`, `earthAdapter.inMultiplayer`, `uiState().multiplayer`.
 The menu's one card built 2026-11-19 (`EarthRally.vue`: every page, Close or B shuts the menu).
+
+## G. Weather on Drive stage (the owner, 2026-11-19; mock-up `weather.html` screen d, OK'd with "Your own" renamed **Current**)
+
+One Weather row above the stage page's drive buttons, like the start screen's Mode row; ‹ › and the D-pad / stick
+left-right cycle: **Current** (default: BeamNG.Earth's weather as it is, nothing set), **Rally day** (only when the pass
+picked on the leaderboard has stored weather: that weather), **Clear, Cloudy, Rain, Storm, Snow, Fog** (BeamNG.Earth's
+presets). Remembered between stages (a hidden setting). Applied as the stage loads through the same hooks as E
+(`setPreset`; no clock change for a single stage), given back when the stage ends or is left. Nothing in a rally.
