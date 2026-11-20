@@ -199,7 +199,7 @@ end
 function M.transitText(tr, units)
   -- (notes-rally-loop 7: the rally's time first, then when you are due)
   local parts = {}
-  if tr.now then parts[1] = 'time ' .. tostring(tr.now) end
+  if tr.now then parts[1] = tostring(tr.now) end
   parts[#parts + 1] = 'due ' .. tostring(tr.due)
   if (tr.late or 0) > 0 then
     parts[#parts + 1] = string.format('%d min late', tr.late)

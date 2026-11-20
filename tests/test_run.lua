@@ -3978,7 +3978,8 @@ do
       gameplay_traffic = { getState = function() return tState end,
         getTrafficVars = function() return { activeAmount = tAmt } end, setActiveAmount = function(n) tAmt = n end,
         setupTraffic = function() setUp = setUp + 1 tState = 'on' end,
-        deleteVehicles = function() deleted = deleted + 1 tState = 'off' end }
+        deleteVehicles = function() deleted = deleted + 1 end,        -- (the game's: the state goes off a frame later)
+        onTrafficStopped = function() tState = 'off' end }
       settings.reset()
       local info = rallyRun.startInfo('test19r')
       T.check(info.traffic and info.traffic.pick == 'on' and info.traffic.world == true,
@@ -4020,6 +4021,7 @@ do
         _startTraffic = function() ngStarts = ngStarts + 1 if beamngEarth_navgraph.choice.traffic then tState = 'on' end end }
       T.check(rallyRun.start('test19r', { mode = 'casual', class = 'L4WD', traffic = 'on' }) and ngStarts == 1
         and tState == 'on' and setUp == 0, "traffic On, none in the world: BeamNG.Earth's traffic started for the rally")
+      T.check(settings.get('rallyTrafficSpawned') == 'off', 'traffic On: the one started kept in the settings (a Lua reload)')
       rallyRun.quit()
       rallyRun.abandon('test19r')
       T.check(deleted == 1 and tState == 'off' and beamngEarth_navgraph.choice.traffic == false,
@@ -4030,11 +4032,20 @@ do
         "traffic On, none in the world, no BeamNG.Earth traffic: the game's set up")
       rallyRun.quit()
       rallyRun.abandon('test19r')
-      T.check(deleted == 2, 'traffic On: taken away after')
+      T.check(deleted == 2 and settings.get('rallyTrafficSpawned') == false, 'traffic On: taken away after')
+      -- (left while it is still spawning: taken away again once it is on)
+      T.check(rallyRun.start('test19r', { mode = 'casual', class = 'L4WD', traffic = 'on' }), 'traffic On: started again')
+      tState = 'spawning'
+      rallyRun.quit()
+      rallyRun.abandon('test19r')
+      T.check(deleted == 3, 'traffic: deleted while still spawning')
+      tState = 'on'
+      rallyRun.update(0.1)
+      T.check(deleted == 4 and tState == 'off', 'traffic: the cars that came after the delete taken away too')
       -- (Casual: the game's own reset and recovery open; the rest blocked. notes-rally-loop 3)
       local casual = rallyRun.blockedFor('casual')
       local has = function(l, x) for _, v in ipairs(l) do if v == x then return true end end return false end
-      T.check(not has(casual, 'reset_physics') and not has(casual, 'recover_vehicle') and has(casual, 'vehicle_selector')
+      T.check(not has(casual, 'reset_physics') and has(casual, 'reset_all_physics') and not has(casual, 'recover_vehicle') and has(casual, 'vehicle_selector')
         and has(casual, 'toggle_slow_motion'), 'Casual: reset and recover open, vehicle swap and slow motion blocked')
       local real = rallyRun.blockedFor('realistic')
       T.check(has(real, 'reset_physics') and has(real, 'recover_vehicle'), 'Realistic: reset and recover blocked')
@@ -4045,12 +4056,15 @@ do
       T.check(rallyRun.normalSpeed() == false, 'normal speed already: nothing done')
       simTimeAuthority = nil
       -- (notes-rally-loop 5) no road map round the ATC yet: a point on the line from the start back through the ATC
-      local stg = { controls = { start = { lat = 47.0, lon = -119.0 } } }
+      local stg = { controls = { start = { lat = 47.0, lon = -119.0 } }, line = { { 47.0, -119.0 }, { 46.9997, -119.0 },
+        { 46.9994, -119.0 } } }      -- (the stage runs on south from the start, away from the ATC)
       local v = rallyRun.straightVia(stg, 47.0009, -119.0, 'ATC')      -- (the ATC 100 m north of the start)
       local geo = require('earthRally/geo')
       T.check(v and v.straight and v.lat > 47.0009 and math.abs(geo.metres(47.0009, -119.0, v.lat, v.lon) - 60) < 2,
         'approach: 60 m back from the ATC, away from the start')
       T.check(rallyRun.straightVia(stg, 47.0009, -119.0, 'start') == nil, 'approach: none for a stage with no ATC')
+      stg.line = { { 47.0, -119.0 }, { 47.0, -118.9993 }, { 47.0, -118.9986 } }      -- (the stage turns east at the start)
+      T.check(rallyRun.straightVia(stg, 47.0009, -119.0, 'ATC') == nil, 'approach: none where the road bends at the start')
       -- (continued over itself while still under way, Off: the player's amount still given back after)
       tState, tAmt = 'on', 8
       rallyRun.start('test19r', { mode = 'casual', class = 'L4WD', traffic = 'off' })

@@ -773,8 +773,9 @@ function openSettings() { const from = view.value === "timecard" ? "timecard" : 
 // Where the menu was left, for the next time it opens with no page asked for (the pause menu's button, Ctrl+Alt+K):
 // the user, 2026-11-14, "the rally menu should also now remember where it was when you close and open it".
 // (not the leaderboard's pass: after another drive the board opens on the pass you place best on, as Lua picks it)
-watch([view, sel, rallyTab], () => {
-  lastPlace.at = { view: view.value, sel: { ...sel.value, pass: null }, rallyTab: rallyTab.value }
+watch([view, sel, rallyTab, settingsFrom], () => {
+  lastPlace.at = { view: view.value, sel: { ...sel.value, pass: null }, rallyTab: rallyTab.value,
+    settingsFrom: settingsFrom.value }
 }, { deep: true })
 function resume(at) {
   const s = at.sel || {}
@@ -784,7 +785,7 @@ function resume(at) {
     openRally(s.eventId, false)
     if (at.rallyTab) rallyTab.value = at.rallyTab
   } else if (at.view === "season" && s.seasonId) openSeason(s.seasonId)
-  else if (at.view === "settings") go("settings")
+  else if (at.view === "settings") { go("settings"); settingsFrom.value = at.settingsFrom || null }
   else if (at.view === "timecard") openCard()
   else if (at.view === "rallies") go("rallies")
   else if (at.view === "pick") openPick()

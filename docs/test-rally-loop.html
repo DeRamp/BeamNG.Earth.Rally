@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Earth Rally · rally loop test</title>
-<!-- The owner's checklist for the rally-loop build (1.9.4-alpha+rallyloop) on the Warden Test Rally. Each item: Works /
+<title>Earth Rally · rally loop test, drive 2</title>
+<!-- Drive 2: in the order the owner meets each thing (notes-rally-loop.md 1-8 marked fixed). The owner's checklist for the rally-loop build (1.9.4-alpha+rallyloop) on the Warden Test Rally. Each item: Works /
      Broken / Skipped and a note; kept in this browser (localStorage) until Reset. "Copy report" puts the broken and
      skipped items, with their notes, on the clipboard to paste back. Self-contained: nothing fetched. -->
 <style>
@@ -28,6 +28,7 @@ h2 small { color: var(--dim); letter-spacing: 0; text-transform: none; font-size
 .item.ok { border-left-color: var(--green); } .item.bad { border-left-color: var(--red); } .item.skip { border-left-color: #5a6070; opacity: .75; }
 .row { display: flex; gap: 14px; align-items: flex-start; }
 .what { flex: 1; } .what b { font-weight: 600; } .how { color: var(--muted); font-size: 14px; margin-top: 2px; }
+.flag.fix { color: #6fd39a; border-color: rgba(111,211,154,.45); }
 .flag { font-size: 12px; color: var(--amber); border: 1px solid rgba(255,211,107,.4); border-radius: 3px; padding: 0 6px; margin-left: 6px; white-space: nowrap; }
 .pick { display: flex; gap: 4px; flex: none; }
 .pick button { min-width: 74px; padding: 5px 8px; }
@@ -45,7 +46,7 @@ textarea { width: 100%; margin-top: 10px; min-height: 54px; background: #0d0f12;
 </head>
 <body>
 <header>
-  <h1><span>Earth Rally</span> · rally loop test</h1>
+  <h1><span>Earth Rally</span> · rally loop, drive 2</h1>
   <span class="count" id="count"></span>
   <div class="bar" id="bar"></div>
   <span class="filters"><button data-f="all" class="on">All</button><button data-f="todo">To do</button><button data-f="bad">Broken</button></span>
@@ -53,94 +54,98 @@ textarea { width: 100%; margin-top: 10px; min-height: 54px; background: #0d0f12;
   <button id="reset">Reset</button>
 </header>
 <main>
-  <p class="intro">Build <b>1.9.4-alpha+rallyloop</b> on the <b>Warden Test Rally</b> (Sat 7 – Sun 8 Nov 2026). Mark each
-    item <b>Works</b>, <b>Broken</b> or <b>Skip</b>; a Broken one opens a note for what you saw. Ticks are kept in this
-    browser. When done, <b>Copy report</b> and paste it to me. <span class="flag">first try</span> marks what has never
-    run in the game.</p>
+  <p class="intro">Build <b>1.9.4-alpha+rallyloop</b> on the <b>Warden Test Rally</b>. The steps run in the order you meet
+    them: set-up, one stage on Drive stage, then the rally from start to finish. Mark each <b>Works</b>, <b>Broken</b> or
+    <b>Skip</b>; Broken opens a note. <span class="flag fix">fixed</span> was broken on drive 1;
+    <span class="flag">first try</span> has never run in the game. When done, <b>Copy report</b> and paste it to me.</p>
   <div id="list"></div>
 </main>
 <div id="toast"></div>
 
 <script>
-// [id, what, how, firstTry]
+// [id, what, how, flag] in the order you meet them; flag: "fixed" (broken on drive 1, fixed), "first" (never run yet)
 const SECTIONS = [
-  ["Set-up", "", [
-    ["setup-menu", "The Earth Rally menu opens", "Escape > Rally menu, or Home's Rally tile."],
-    ["setup-pack", "Warden Test Rally is in Drive rally with its cover", "And no old \"Warden Test Rally V2\" beside it."],
+  ["1 · Before you start", "set up so every fix gets tried", [
+    ["pre-earth", "Leave BeamNG.Earth's Time and Weather on Manual", "That is how they were on drive 1, the case that is fixed. Note your time of day and weather now, to compare at the end."],
+    ["pre-traffic", "World traffic off", "Start BeamNG.Earth without traffic, so Traffic On has to start it.", "fixed"],
+    ["pre-settings", "Earth Rally Settings: Early check-in penalty On", "Rally's real time and weather On, Units km."],
   ]],
-  ["Start the rally", "Drive rally > Warden Test Rally", [
-    ["start-when", "\"Starts Sat 7 Nov 2026, 16:00 local\"", "The start line on the left card."],
-    ["start-traffic", "Traffic on road sections: On / Off", "The first time it follows the world's traffic; after that, your last pick."],
-    ["start-cancel", "Cancelled stages: As it really ran / Run them all", "SS4 was cancelled on the day."],
-    ["start-notes", "Nothing above Start about weather or BeamNG.Earth", "With the official BeamNG.Earth and its weather hooks there."],
-    ["start-pad", "Every row and Start work with the controller", "D-pad between rows and choices, A picks."],
-  ]],
-  ["Time of day", "the sky follows the rally clock", [
-    ["tod-start", "The sky jumps to about 16:00 at the start", "Late afternoon light, not your own time of day."],
-    ["tod-loop2", "SS1 in last daylight, SS2 at dusk, SS3 in the dark", "16:08, 16:51, 17:05."],
-    ["tod-day2", "After Service B, Sunday 09:00 in daylight", "The Overnight jumps the clock."],
-    ["tod-pause", "The clock doesn't run on under the pause menu", "Pause a minute on a road section; the sky and due time hold."],
-    ["tod-back", "Your own time of day comes back after the rally", "After finishing, Save and quit, or Retire."],
-  ]],
-  ["Weather", "one made-up weather per stage", [
-    ["wx-stages", "Each stage drives in its own weather", "SS1 cloudy · SS2 rain · SS3 clear night · SS5 snow · SS6 storm."],
-    ["wx-ss4", "SS4 in fog with Run them all", "Only if you pick Run them all at the start."],
-    ["wx-card", "The time card shows each stage's weather beside its name", "Icon, word and temperature; SS3 \"clear night\" with a moon."],
-    ["wx-f", "°F with Units set to miles", "Settings > Units: miles, then the time card."],
-    ["wx-banner", "The transit banner shows the next stage's weather", "Time card, right-hand TRANSIT card."],
-    ["wx-back", "Your own weather comes back straight away after the rally", "Not up to 10 minutes later.", true],
-    ["wx-off", "Settings > Rally's real time and weather: Off", "Next rally runs in your own time of day and weather."],
-  ]],
-  ["Road sections", "the real schedule", [
-    ["rs-due", "Due time and time left on the HUD on a road section", "Counts down to the next time control."],
-    ["rs-ontime", "On time at a control: no penalty", "Transit column shows on time."],
-    ["rs-late", "Late: 10 s for each minute", "In the Transit column and the transit penalties."],
-    ["rs-early", "Early: told to wait short of the board", "The clock runs on to your minute; Shift+E or Y skips the wait."],
-    ["rs-earlypen", "Early check-in penalty On: early at Service In costs 60 s a minute", "Settings > Early check-in penalty: On, then arrive early at Service In (TC1A)."],
-    ["rs-earlyfree", "Early at Regroup In and at the Finish is free", "Even with the setting On."],
-    ["rs-nolimit", "Very late is never a retirement", "There is no lateness limit any more."],
-    ["rs-svc", "Out of a service on its scheduled time", "The due time after it counts from the service's out time."],
-    ["rs-card", "Time card: Due / In / Transit columns, targets, totals", "\"Transit penalties\" under the card and in OVERALL."],
-    ["rs-resume", "Save and quit, then Continue: the clock is right", "Due times and the sky as you left them."],
-  ]],
-  ["Splits", "on a stage you have driven before", [
-    ["sp-hud", "Splits at 25, 50 and 75 % of the stage", "Against your best on that stage: green ahead, amber slower."],
-    ["sp-page", "Best splits on the stage page", "Drive stage > the stage, under Your runs."],
-  ]],
-  ["Results", "", [
-    ["res-stage", "The stage finish card shows time, position and penalties", ""],
-    ["res-rally", "The rally's finish shows the total and transit penalties", "Rally page: \"incl. transit penalties\" or \"no transit penalties\"."],
-    ["res-chips", "The rally page lists each stage's time and what each stop cost", ""],
-  ]],
-  ["Cards and the controller", "the HUD's pop-up cards", [
-    ["card-load", "\"Load the stage?\" at a time control: A loads, D-pad to Not yet", ""],
-    ["card-recover", "Recover? on a road section: works with the pad", ""],
-    ["card-results", "The finish card's buttons: D-pad and A", "Next, Retry, Rally menu, Close; a rally's Continue."],
-    ["card-keys", "The same cards with the keyboard", "Arrows and Enter."],
-  ]],
-  ["Traffic", "road sections only", [
-    ["tr-on", "Traffic On: traffic on road sections, none on a stage", ""],
-    ["tr-off", "Traffic Off: no traffic all rally", ""],
-    ["tr-back", "Your own traffic amount back after the rally", "Off: the traffic you had before comes back."],
-  ]],
-  ["Weather on Drive stage", "Drive stage > a stage page", [
-    ["ds-row", "A Weather row above Drive stage, on Current", ""],
-    ["ds-pad", "D-pad / stick left and right cycle it", "If not: does A step through them?", true],
+  ["2 · Drive stage: Hillside", "Drive stage > Earth Rally Test Series > Warden Test Rally > Hillside", [
+    ["ds-recce", "Auto recce Hillside if it has no line yet", "The new pack has no lines."],
+    ["ds-row", "A Weather row above Drive stage, on Current", "It now shows with BeamNG.Earth on Manual.", "fixed"],
+    ["ds-rday", "Rally day reads \"Rally day · rain\"", "Hillside's leaderboard pass is SS2.", "fixed"],
+    ["ds-pad", "D-pad / stick left and right cycle the row", "If not, does A step through it?", "first"],
     ["ds-click", "A click on ‹ › or the value cycles it", ""],
-    ["ds-rday", "Rally day on Hillside: \"Rally day · rain\"", "Rally day shows only where the shown pass has stored weather.", true],
-    ["ds-apply", "The pick is the stage's weather when it loads", "Try Snow or Storm.", true],
-    ["ds-current", "Current leaves BeamNG.Earth's weather alone", "", true],
-    ["ds-back", "Your own weather straight back after the stage", "Finish, or Back out of the run.", true],
-    ["ds-keep", "The pick is kept from stage to stage", "", true],
+    ["ds-snow", "Pick Snow, Drive stage: it snows on the stage", "", "fixed"],
+    ["ds-back", "Finish or Back out: your own weather straight back", "Not minutes later; BeamNG.Earth still on Manual after.", "fixed"],
+    ["ds-keep", "Open Canal Road: the row still says Snow", "Then set it back to Current."],
   ]],
-  ["Multiplayer", "only if you play BeamMP", [
-    ["mp-card", "On a BeamMP server the menu is one card", "\"Earth Rally is off in multiplayer\"; Close or B shuts it."],
+  ["3 · Start the rally", "Drive rally > Warden Test Rally", [
+    ["st-when", "\"Starts Sat 7 Nov 2026, 16:00 local\"", ""],
+    ["st-mode", "Pick Casual", "So the reset fix can be tried on the way."],
+    ["st-traffic", "Traffic on road sections: On", "No warning about the world having none.", "fixed"],
+    ["st-cancel", "Cancelled stages: Run them all", "So SS4 runs, in fog."],
+    ["st-pad", "Every row and Start work with the controller", ""],
+    ["st-slow", "Put the game in slow motion, then press Start", "The rally runs at normal speed.", "fixed"],
   ]],
-  ["Anything else", "", [
+  ["4 · Road section to SS1", "", [
+    ["r1-sky", "The sky jumps to about 16:00, cloudy", "Late afternoon light.", "fixed"],
+    ["r1-traffic", "Traffic on the road", "", "fixed"],
+    ["r1-hud", "HUD line: \"16:00 · due 16:05 · … left · km\"", "The rally's time first.", "fixed"],
+    ["r1-route", "The arrows bring you into the ATC from the right side", "From the road before it, not past the board. If one is wrong, say which control in the note.", "fixed"],
+    ["r1-early", "Arrive early: told to wait; Shift+E or Y skips", ""],
+    ["r1-ontime", "Time card: the Transit column says \"on time\"", ""],
+    ["r1-load", "\"Load the stage?\": A loads, D-pad to Not yet", ""],
+  ]],
+  ["5 · SS1 Canal Road", "", [
+    ["s1-wx", "Cloudy, the last daylight", "", "fixed"],
+    ["s1-traffic", "No traffic on the stage", ""],
+    ["s1-reset", "Casual: the game's reset works", "Try it on the stage. The reset penalty counts, as on Drive stage.", "fixed"],
+    ["s1-card", "Finish card: time, position, penalties; buttons with the pad", ""],
+  ]],
+  ["6 · To Service A", "", [
+    ["sv-early", "Arrive early at Service In: 60 s a minute", "Early check-in penalty is On."],
+    ["sv-reset", "Casual: the game's reset works on a road section too", "", "fixed"],
+    ["sv-settings", "Time card > Settings > Back: back on the time card", "", "fixed"],
+    ["sv-units", "Units miles: the time card's weather in °F", "Then back to km."],
+    ["sv-wx", "Each stage's weather on the time card", "SS1 cloudy · SS2 rain · SS3 clear night (moon) · SS4 fog · SS5 snow · SS6 storm."],
+    ["sv-out", "Out of service at 16:39; the due time to SS2 counts from it", ""],
+  ]],
+  ["7 · SS2 Hillside", "", [
+    ["s2-wx", "Rain, at dusk", "", "fixed"],
+    ["s2-splits", "Splits at 25 / 50 / 75 % against your Drive stage run", "Green ahead, amber slower."],
+  ]],
+  ["8 · To SS3, late", "", [
+    ["r3-late", "Arrive a few minutes late: 10 s a minute", "In the Transit column and \"Transit penalties\"."],
+    ["s3-dark", "SS3 Canal Bank in the dark, clear night", "", "fixed"],
+  ]],
+  ["9 · Regroup and Service B", "", [
+    ["rg-free", "Early at Regroup In costs nothing: \"on time\"", "", "fixed"],
+    ["rg-late", "Very late is never a retirement", "Optional: sit at a control a long time."],
+    ["rg-night", "Overnight: Sunday 09:00, daylight", ""],
+    ["rg-save", "Save and quit, then Continue", "The clock, the sky and the traffic as they were; normal speed.", "fixed"],
+    ["rg-settings", "Time card > Settings, close the menu, open it: Back still goes to the time card", "", "fixed"],
+  ]],
+  ["10 · Day 2", "", [
+    ["d2-fog", "SS4 Hillside 2 in fog", "", "fixed"],
+    ["d2-snow", "SS5 Canal Bank 2 in snow, splits against SS3", "", "fixed"],
+    ["d2-storm", "SS6 Canal Road 2 (power stage) in a storm, splits against SS1", "", "fixed"],
+    ["d2-finish", "Early at the Finish: \"on time\"", ""],
+  ]],
+  ["11 · The finish", "", [
+    ["fin-card", "The rally's finish: total and transit penalties", ""],
+    ["fin-page", "Rally page: \"incl. transit penalties\", each stage's time and what each stop cost", ""],
+    ["fin-back", "Your own time of day and weather straight back", "As you noted at the start, fog and clouds too; BeamNG.Earth still on Manual.", "fixed"],
+    ["fin-traffic", "The traffic the rally started is gone", "", "fixed"],
+  ]],
+  ["12 · Last checks", "short", [
+    ["lc-off", "Rally's real time and weather Off: a rally keeps your own sky", "Start one, look, leave it."],
+    ["lc-keys", "The pop-up cards with the keyboard", "Arrows and Enter."],
+    ["lc-mp", "BeamMP: the menu is one card", "Only if you play BeamMP."],
     ["other", "Anything else that looked wrong", "Use the note."],
   ]],
 ];
-const KEY = "earthRally.test.rallyLoop.v1";
+const KEY = "earthRally.test.rallyLoop.v2";
 let S = {};
 try { S = JSON.parse(localStorage.getItem(KEY) || "{}") } catch (e) { S = {} }
 const save = () => localStorage.setItem(KEY, JSON.stringify(S));
@@ -150,8 +155,8 @@ const all = SECTIONS.flatMap(s => s[2]);
 function render() {
   document.getElementById("list").innerHTML = SECTIONS.map(([name, sub, items]) => `<section>
     <h2>${esc(name)} <small>${esc(sub)}</small></h2>
-    ${items.map(([id, what, how, first]) => `<div class="item" data-id="${id}">
-      <div class="row"><div class="what"><b>${esc(what)}</b>${first ? '<span class="flag">first try</span>' : ""}
+    ${items.map(([id, what, how, flag]) => `<div class="item" data-id="${id}">
+      <div class="row"><div class="what"><b>${esc(what)}</b>${flag === "fixed" ? '<span class="flag fix">fixed</span>' : flag === "first" ? '<span class="flag">first try</span>' : ""}
         ${how ? `<div class="how">${esc(how)}</div>` : ""}<button class="addnote">add a note</button></div>
         <div class="pick"><button class="ok">Works</button><button class="bad">Broken</button><button class="skip">Skip</button></div></div>
       <textarea placeholder="What happened? Where (stage, control), what you pressed, what you expected."></textarea>

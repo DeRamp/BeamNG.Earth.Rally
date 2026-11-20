@@ -98,20 +98,23 @@ T.check(settings.set('stageWeather', 'hail').ok == false, 'not a pick: refused')
 
 -- (notes-rally-loop 1) BeamNG.Earth in Manual: put in Real while ours is set, the player's mode (and time) back after
 do
-  local skyMode, wxMode, todSet = 'manual', 'manual', nil
+  local skyMode, wxMode, todSet, fog = 'manual', 'manual', nil, 0.001
   beamngEarth_sky.getMode = function() return skyMode end
   beamngEarth_sky.setMode = function(m) skyMode = m end
   beamngEarth_weather.getMode = function() return wxMode end
   beamngEarth_weather.setMode = function(m) wxMode = m end
   core_environment = { getTimeOfDay = function() return { time = 0.25, play = false } end,
-    setTimeOfDay = function(t) todSet = t end }
+    setTimeOfDay = function(t) todSet = t end, getFogDensity = function() return fog end,
+    setFogDensity = function(v) fog = v end }
   local ea = require('earthRally/earthAdapter')
   T.check(ea.setScene({ hours = 17 }, { code = 63 }) and skyMode == 'real' and wxMode == 'real',
     'Manual: sky and weather in Real while ours is set')
   T.check(ea.setScene({ hours = 18 }, { code = 0 }) and clock.earthRallyMode == 'manual'
     and beamngEarth_weather.PRESETS.earthrally.earthRallyMode == 'manual', 'set again: the Manual kept, not our Real')
+  fog = 0.05                 -- (the stage's fog, written by BeamNG.Earth in Real)
   T.check(ea.clearScene() and skyMode == 'manual' and wxMode == 'manual' and todSet and todSet.time == 0.25,
     "given back: Manual again, the player's time of day back")
+  T.check(fog == 0.001, "given back: the player's own fog back (" .. tostring(fog) .. ')')
   skyMode, wxMode, todSet = 'real', 'real', nil
   ea.setScene({ hours = 17 }, { code = 63 })
   ea.clearScene()

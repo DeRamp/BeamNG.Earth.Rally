@@ -573,7 +573,7 @@ end
 do
   local hf = require('earthRally/hudFrame')
   local t = hf.transitText({ now = '16:04', due = '16:05', leftS = 52, late = 0, distM = 1200 }, 'km')
-  T.check(t:find('^time 16:04 · due 16:05') ~= nil, 'transit line: the rally time, then due (' .. t .. ')')
+  T.check(t:find('^16:04 · due 16:05') ~= nil, 'transit line: the rally time, then due (' .. t .. ')')
   T.check(hf.transitKey({ now = '16:04', due = '16:05' }) ~= hf.transitKey({ now = '16:05', due = '16:05' }),
     'transit key: a new minute sends the line again')
 end

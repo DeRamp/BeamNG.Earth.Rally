@@ -77,10 +77,11 @@ Files: `EarthRally.vue` (back, where Settings was opened from).
 
 ## 7. Asked for: the rally's time on a transit
 
-The owner: "Add rally time for transit." Show the rally clock (the time of day it is in the rally, e.g. 16:04) on the
-road section's HUD line beside the due time and time left, and on the time card's transit banner.
+The owner: "Add rally time for transit." The rally clock (the time of day in the rally, e.g. 16:04) leads the road
+section's HUD line: `16:04 · due 16:10 · 6:00 left · 1.2 km`. The time card's header already shows the clock, so its
+transit banner is unchanged.
 
-Files: `hudFrame.lua` (transitText), `EarthRallyFull.vue` (transit banner), `tests/test_hud.lua`.
+Files: `hudFrame.lua` (transitText), `tests/test_hud.lua`.
 
 ## 8. Wording: "early · free" reads "on time"
 
@@ -93,3 +94,22 @@ Files: `EarthRallyFull.vue` (roadWord).
 Skipped on the checklist (most hang on 1): own time and weather back after the rally, the real-world setting Off,
 late penalties, no lateness limit, the service out time, the time card's columns, Save and quit then Continue, the
 rally's finish and page, cards with the keyboard, Traffic Off, the whole Drive stage Weather row, multiplayer.
+
+## Fixed after review (debugger and contrarian, before drive 2)
+
+- Casual: only the player's reset and recover are open (not "reset all"), and a reset costs the reset penalty, as on
+  Drive stage.
+- Traffic the rally started is kept in the settings (`rallyTrafficSpawned`), so Save and quit then Continue, or a Lua
+  reload, still takes it away at the end. Taken away at once (the game's state otherwise stays "on" a frame, and
+  Continue saw it as the world's). Left while it was still spawning: taken away again once it is on.
+- Traffic that cannot be started: a short line says so.
+- Approach point (5): only where the stage's first 50 m run on the same way as the ATC to the start; round a corner,
+  no point, as before.
+- Manual weather given back: fog, clouds and wind as the player had them, not the last stage's.
+- Settings from the time card: Back still goes to the time card after the menu is closed and opened.
+
+Not acted on:
+- The player changing the time mid-rally: the next stop puts BeamNG.Earth back in Real for the rally. Rare; the
+  player's mode still comes back at the end.
+- A full game Lua reload mid-rally in Manual can give back the rally's hour as the player's time. Edge only.
+

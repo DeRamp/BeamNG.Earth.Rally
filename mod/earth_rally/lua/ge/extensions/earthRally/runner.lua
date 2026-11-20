@@ -509,6 +509,7 @@ function M.start(event, stage, opts)
   for i = 2, #latlon do flatLen = flatLen + geo.metres(latlon[i - 1][1], latlon[i - 1][2], latlon[i][1], latlon[i][2]) end
   run = {
     inRally = (opts and opts.rally) and true or nil,
+    casual = (opts and opts.rally and opts.casual) and true or nil,   -- (a Casual rally's stage: resets cost, below)
     checkInNow = (opts and opts.checkInNow) or nil,
     event = event, stage = stage, state = 'travel', t = 0, latlon = latlon, latlonLength = flatLen,
     startFlat = startFlat, finishFlat = finishFlat,
@@ -2539,8 +2540,8 @@ end
 function M.onReset(vid)
   if not (run and run.state == 'running') then return false end
   if run.online then pcall(online.runReset, run.online, run.clock) end
-  if run.inRally then
-    -- (the game's own recovery is blocked during a rally, rallyRun.lua; one that still got through -- the radial
+  if run.inRally and not run.casual then
+    -- (the game's own recovery is blocked during a Realistic rally, rallyRun.lua; one that still got through -- the radial
     -- menu, quick access: they send no vehicle id -- is the rally's. Not another car's, nor BeamNG.Earth moving it.)
     local _, veh = carPos()
     local okI, id = pcall(function() return veh and veh:getID() end)

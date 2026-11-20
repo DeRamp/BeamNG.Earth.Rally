@@ -55,10 +55,10 @@ M.BLOCKED = {
   'forceField', 'funBoom', 'funBreak', 'funExtinguish', 'funFire', 'funHinges', 'funTires', 'funRandomTire',
   'latchesOpen', 'latchesClose', 'funBoost', 'funBoostBackwards', 'funFling', 'funFlingDownward',
 }
--- (notes-rally-loop 3) Casual: the game's own reset and recovery stay open (Casual lets you carry on); the rest as
--- Realistic.
-M.CASUAL_OPEN = { reset_physics = true, reset_all_physics = true, recover_vehicle = true, recover_vehicle_alt = true,
-  recover_to_last_road = true }
+-- (notes-rally-loop 3) Casual: the game's own reset (the player's car only: not reset_all_physics, which resets
+-- the traffic too) and recovery stay open, so a broken car can carry on; a reset on a stage costs the stage's reset
+-- penalty as on Drive stage (runner.onReset, run.casual). The rest as Realistic.
+M.CASUAL_OPEN = { reset_physics = true, recover_vehicle = true, recover_vehicle_alt = true, recover_to_last_road = true }
 function M.blockedFor(mode)
   local out = {}
   for _, a in ipairs(M.BLOCKED) do
@@ -484,20 +484,55 @@ local function trafficSpawn()
   local ok = pcall(g.setupTraffic, -1)
   return ok and M.worldTraffic(), nil
 end
+-- (the game's deleteVehicles leaves its state 'on' until a frame later: onTrafficStopped at once, so a start straight
+-- after, as on Continue, sees none. Still loading or spawning: the cars would arrive after the delete, so it is done
+-- again once they are on, for up to TRAFFIC_LATE_S)
+M.TRAFFIC_LATE_S = 30
+local lateDelete = nil
+local function trafficDelete()
+  local g = rawget(_G, 'gameplay_traffic')
+  if type(g) ~= 'table' then return end
+  local okS, st = pcall(function() return g.getState and g.getState() end)
+  if okS and (st == 'loading' or st == 'spawning') then lateDelete = M.TRAFFIC_LATE_S end
+  if g.deleteVehicles then pcall(g.deleteVehicles) end
+  if g.onTrafficStopped then pcall(g.onTrafficStopped) end
+end
 local function trafficUnspawn(t)
   local ng = rawget(_G, 'beamngEarth_navgraph')
   if t.choiceWas ~= nil and type(ng) == 'table' and type(ng.choice) == 'table' then ng.choice.traffic = t.choiceWas end
+  trafficDelete()
+end
+local function lateDeleteTick(dt)
+  if not lateDelete then return end
+  lateDelete = lateDelete - (dt or 0)
   local g = rawget(_G, 'gameplay_traffic')
-  if type(g) == 'table' and g.deleteVehicles then pcall(g.deleteVehicles) end
+  local okS, st = pcall(function() return g and g.getState and g.getState() end)
+  if okS and st == 'on' then
+    lateDelete = nil
+    trafficDelete()
+    log('I', logTag, 'rally: the traffic that finished spawning after the rally taken away')
+  elseif lateDelete <= 0 or not (okS and (st == 'loading' or st == 'spawning')) then
+    lateDelete = nil
+  end
 end
 
 local function trafficStart()
   if not R or traffic then return end
   traffic = { mode = R.traffic == 'off' and 'off' or 'on', t = 0, stash = {} }
   if traffic.mode == 'on' then
-    if not M.worldTraffic() and R.traffic == 'on' then
+    local kept = settings.get('rallyTrafficSpawned')
+    if (kept == 'on' or kept == 'off') and M.worldTraffic() then
+      -- (started by this rally before a Lua reload: still ours to take away)
+      traffic.spawned, traffic.choiceWas = true, kept == 'on'
+      log('I', logTag, 'rally: traffic on road sections: the one started for the rally, kept')
+    elseif not M.worldTraffic() and R.traffic == 'on' then
       local ok, was = trafficSpawn()
-      if ok then traffic.spawned, traffic.choiceWas = true, was end
+      if ok then
+        traffic.spawned, traffic.choiceWas = true, was
+        pcall(settings.set, 'rallyTrafficSpawned', was and 'on' or 'off')
+      else
+        runner.say('Traffic could not be started for the rally.', 5, 'warning')
+      end
       log('I', logTag, 'rally: traffic on road sections: ' .. (ok and 'started for the rally' or 'could not be started'))
     else
       log('I', logTag, "rally: traffic on road sections: the world's own, left as it is" ..
@@ -516,8 +551,10 @@ end
 local function trafficEnd()
   local t = traffic
   traffic = nil
-  if t and t.spawned then
-    trafficUnspawn(t)
+  local kept = settings.get('rallyTrafficSpawned')
+  if (t and t.spawned) or kept == 'on' or kept == 'off' then
+    trafficUnspawn(t and t.spawned and t or { choiceWas = kept == 'on' })
+    pcall(settings.set, 'rallyTrafficSpawned', false)
     log('I', logTag, 'rally: the traffic started for the rally taken away')
   end
   local amount = t and t.stash and t.stash.traffic
@@ -931,7 +968,7 @@ local function armTransit()
   if (not tg.via or tg.via.straight) and kind == 'ATC' then tg.lookVia = { stage = stage, lat = lat, lon = lon, kind = kind, tries = 0 } end
   transitGps = tg
   local ok = runner.armApproach(ev, stage, { sticky = true, title = title, rally = true,
-    startOpts = { rally = true, ssLabel = it.ss, keepDamage = true },
+    startOpts = { rally = true, ssLabel = it.ss, keepDamage = true, casual = R.mode == 'casual' },
     onStart = function() M.onStageLoaded() end,
     -- (#40: loaded at the ATC, behind the time control card; #58: once the car has stopped there and the player
     -- said yes to "Load the stage?")
@@ -995,6 +1032,7 @@ M.APPROACH_VIA_ON_ROAD_M = 4      -- (the walked point still this close to a roa
 M.APPROACH_VIA_TRIES = 20         -- (looked for at most this many times on the way in: M.update)
 M.APPROACH_VIA_EVERY_S = 2         -- (one look this often: the road map round the ATC comes in as the car nears it)
 M.APPROACH_STRAIGHT_M = 60         -- (no road map yet: a point this far back on the line from the start through the ATC)
+M.APPROACH_STRAIGHT_DEG = 25       -- (... only where the stage's first 50 m run within this of the ATC-to-start way)
 
 -- (notes-rally-loop 5) Before the road map round the ATC is in (on the official BeamNG.Earth only the roads near the car
 -- are in it, so the road-map point was never found and the GPS went straight in, often to the far side of the board):
@@ -1007,6 +1045,19 @@ function M.straightVia(stage, lat, lon, kind)
   if not st then return nil end
   local d = geo.metres(st.lat, st.lon, lat, lon)
   if not d or d < 20 then return nil end
+  -- (only where the road runs straight on through the ATC into the stage: the stage's first 50 m heading the same way
+  -- as ATC to start, within APPROACH_STRAIGHT_DEG; an ATC round a corner from the start gets no point, as before)
+  local line = stage.line
+  if not (line and #line >= 2) then return nil end
+  local k = 2
+  while k < #line and geo.metres(line[1][1], line[1][2], line[k][1], line[k][2]) < 50 do k = k + 1 end
+  local c = math.cos(math.rad(lat))
+  local ax, ay = (st.lon - lon) * c, st.lat - lat
+  local bx, by = (line[k][2] - line[1][2]) * c, line[k][1] - line[1][1]
+  local la, lb = math.sqrt(ax * ax + ay * ay), math.sqrt(bx * bx + by * by)
+  if la < 1e-9 or lb < 1e-9 or (ax * bx + ay * by) / (la * lb) < math.cos(math.rad(M.APPROACH_STRAIGHT_DEG)) then
+    return nil
+  end
   local f = M.APPROACH_STRAIGHT_M / d
   return { lat = lat + (lat - st.lat) * f, lon = lon + (lon - st.lon) * f, backM = M.APPROACH_STRAIGHT_M, straight = true }
 end
@@ -1052,7 +1103,8 @@ local function startHere(it)
   runner.disarmApproach('the rally moved on')
   toStop = nil
   card = nil
-  local ok, why = runner.start(ev, stage, { rally = true, ssLabel = it.ss, keepDamage = true })
+  local ok, why = runner.start(ev, stage, { rally = true, ssLabel = it.ss, keepDamage = true,
+    casual = R.mode == 'casual' })
   if not ok then return false, why end
   M.onStageLoaded()
   if M.ui.loading then M.ui.loading('stage', it, stage) end
@@ -1551,6 +1603,7 @@ runner.askKey = function() return question and question.key or nil end
 -- (main.onUpdate) a teleport to a stop settling, a service driven to, a stage started (Realistic: from then on
 -- leaving scores it under Super Rally).
 function M.update(dt, dtSim)
+  lateDeleteTick(dt)
   dt = dt or 0
   realT = realT + dt
   frameN = frameN + 1

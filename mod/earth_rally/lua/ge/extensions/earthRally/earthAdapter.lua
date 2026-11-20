@@ -603,11 +603,33 @@ local function envTod()
   for k, v in pairs(t) do if type(v) ~= 'table' and type(v) ~= 'userdata' and type(v) ~= 'function' then out[k] = v end end
   return out
 end
-local function modeBack(x, m, tod)
+-- (in Manual, the player's own weather: the core_environment values BeamNG.Earth's weather writes, put back with it)
+local ENV_WX = { 'CloudCover', 'CloudCirrusCoverage', 'CloudCirrusDensity', 'WindSpeed', 'FogDensity',
+  'FogAtmosphereHeight' }
+local function envWx()
+  local ce = rawget(_G, 'core_environment')
+  if type(ce) ~= 'table' then return nil end
+  local out = {}
+  for _, k in ipairs(ENV_WX) do
+    local g = ce['get' .. k]
+    if type(g) == 'function' then
+      local ok, v = pcall(g)
+      if ok and type(v) == 'number' then out[k] = v end
+    end
+  end
+  return next(out) and out or nil
+end
+local function modeBack(x, m, tod, env)
   if not m or m == 'real' or type(x) ~= 'table' or type(x.setMode) ~= 'function' then return end
   pcall(x.setMode, m)
   local ce = rawget(_G, 'core_environment')
   if tod and ce and ce.setTimeOfDay then pcall(ce.setTimeOfDay, tod) end
+  if type(env) == 'table' and ce then
+    for k, v in pairs(env) do
+      local s = ce['set' .. k]
+      if type(s) == 'function' then pcall(s, v) end
+    end
+  end
 end
 
 -- scene = { hours (local, 0-24) }; msg = the stage's stored weather (BeamNG.Earth's weather message) or nil (the
@@ -636,10 +658,15 @@ function M.setScene(scene, msg)
     local real = realOf(wx)
     local okP0, p0 = pcall(wx.preset)
     local old = wx.PRESETS[M.SCENE_PRESET]
-    local prevMode = (okP0 and p0 == M.SCENE_PRESET and type(old) == 'table') and old.earthRallyMode or modeOf(wx)
+    local kept = okP0 and p0 == M.SCENE_PRESET and type(old) == 'table'
+    local prevMode = kept and old.earthRallyMode or modeOf(wx)
+    local prevEnv
+    if kept then prevEnv = old.earthRallyEnv elseif prevMode and prevMode ~= 'real' then prevEnv = envWx() end
     local p = {}
-    for k, v in pairs(msg) do if k ~= 'earthRallyReal' and k ~= 'earthRallyMode' then p[k] = v end end
-    p.earthRallyReal, p.earthRallyMode = real, prevMode
+    for k, v in pairs(msg) do
+      if k ~= 'earthRallyReal' and k ~= 'earthRallyMode' and k ~= 'earthRallyEnv' then p[k] = v end
+    end
+    p.earthRallyReal, p.earthRallyMode, p.earthRallyEnv = real, prevMode, prevEnv
     wx.PRESETS[M.SCENE_PRESET] = p
     local okP, set = pcall(wx.setPreset, M.SCENE_PRESET)
     if not (okP and set) then
@@ -651,7 +678,7 @@ function M.setScene(scene, msg)
     -- (no stored weather for this stage: the player's own again, in the mode they had)
     local e = wx.PRESETS[M.SCENE_PRESET]
     weatherBack(wx, realOf(wx))
-    modeBack(wx, type(e) == 'table' and e.earthRallyMode or nil)
+    modeBack(wx, type(e) == 'table' and e.earthRallyMode or nil, nil, type(e) == 'table' and e.earthRallyEnv or nil)
     wx.PRESETS[M.SCENE_PRESET] = nil
   end
   return true
@@ -672,7 +699,7 @@ function M.clearScene()
   if okP and p == M.SCENE_PRESET then
     local e = wx.PRESETS[M.SCENE_PRESET]
     weatherBack(wx, realOf(wx))
-    modeBack(wx, type(e) == 'table' and e.earthRallyMode or nil)
+    modeBack(wx, type(e) == 'table' and e.earthRallyMode or nil, nil, type(e) == 'table' and e.earthRallyEnv or nil)
     had = true
   end
   if type(wx) == 'table' and type(wx.PRESETS) == 'table' and wx.PRESETS[M.SCENE_PRESET] ~= nil then
