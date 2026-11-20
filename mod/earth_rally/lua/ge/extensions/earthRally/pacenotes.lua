@@ -280,7 +280,78 @@ function M.sweepers(turn, k, step, corners)
       end
     end
   end
+  -- (the bends a map draws as kinks: M.kinkSweepers, where nothing above is)
+  local taken = {}
+  for _, c in ipairs(out) do for i = c.i0, c.i1 do taken[i] = true end end
+  for _, c in ipairs(M.kinkSweepers(turn, step, taken)) do out[#out + 1] = c end
   table.sort(out, function(a, b) return a.i0 < b.i0 end)
+  return out
+end
+
+-- (the owner's stages, 2026-11-19, the pacenote check: a long bend as a map draws it is two to four kinks of 5 to 22
+--  degrees with 130 to 300 m of nearly straight road between them. Between two kinks the smoothed curvature is nil
+--  for far longer than SWEEP_GAP_M, so the sweeper finder above saw each kink alone, too small to call.) Read
+-- instead off the heading itself, as a road atlas's bend finder does: a stretch of KINK_WINDOW_M or less whose
+-- heading turns KINK_DEG or more one way, its turning points (a sample turning KINK_POINT_DEG or more) no further
+-- than KINK_GAP_M apart, and turning back the other way by no more than KINK_BACK of what it turns (a wiggle is no
+-- bend), where no corner or sweeper is (nor within KINK_CLEAR_M of one). The sweeper runs from its first turning
+-- point to its last; the game measures its number and length off the road between them, as for any note.
+M.KINK_DEG = 20
+M.KINK_WINDOW_M = 500
+M.KINK_GAP_M = 320
+M.KINK_POINT_DEG = 0.3
+M.KINK_BACK = 0.25
+M.KINK_CLEAR_M = 10
+M.KINK_MIN_M = 40
+
+-- turn: geo.curvature's turn at each sample (radians, + left); taken: { [i] = true } where a note already is.
+-- Returns sweepers ({ i0, i1, dir, angleDeg, minRadius, sweeper = true, kinks = true }) in order.
+function M.kinkSweepers(turn, step, taken)
+  local n = #turn
+  local clearN = max(0, floor(M.KINK_CLEAR_M / step + 0.5))
+  local blocked = {}
+  for i = 1, n do
+    if taken[i] then
+      for d = -clearN, clearN do blocked[i + d] = true end
+    end
+  end
+  local winN = floor(M.KINK_WINDOW_M / step + 0.5)
+  local gapN = floor(M.KINK_GAP_M / step + 0.5)
+  local pointT, needT = math.rad(M.KINK_POINT_DEG), math.rad(M.KINK_DEG)
+  local out = {}
+  local i = 2
+  while i < n do
+    local t = turn[i] or 0
+    if blocked[i] or abs(t) < pointT then
+      i = i + 1
+    else
+      local sign = t > 0 and 1 or -1
+      local pos, neg, last, best = 0, 0, i, nil
+      local j = i
+      while j < n and j - i <= winN and not blocked[j] and j - last <= gapN do
+        local tj = (turn[j] or 0) * sign
+        -- (all of its turn counted, its turning points where it turns KINK_POINT_DEG at least; the turn back
+        --  only where it is that much, not the line's own noise)
+        if tj > 0 then pos = pos + tj end
+        if tj >= pointT then last = j
+        elseif -tj >= pointT then neg = neg + -tj end
+        if neg > M.KINK_BACK * pos then break end
+        -- (the furthest turning point that keeps it a bend of KINK_DEG one way)
+        if tj >= pointT and pos - neg >= needT then best = { i1 = j, angle = pos - neg } end
+        j = j + 1
+      end
+      if best and (best.i1 - i) * step >= M.KINK_MIN_M then
+        local deg = math.deg(best.angle)
+        -- (the radius of an arc turning that much over that length: what a driver takes it as)
+        local r = (best.i1 - i) * step / best.angle
+        out[#out + 1] = { i0 = i, i1 = best.i1, dir = sign > 0 and 'left' or 'right', angleDeg = deg, minRadius = r,
+                          sweeper = true, kinks = true }
+        i = best.i1 + 1
+      else
+        i = i + 1
+      end
+    end
+  end
   return out
 end
 

@@ -525,7 +525,46 @@ do
   local six = build(road({ { 'straight', 500 }, { 'arc', 200, 22 }, { 'straight', 500 } }))
   T.check(six.corners == 1, 'a 22 degree bend at 200 m: a corner note, a six (' .. show(notes(six)) .. ')')
   local wide = build(road({ { 'straight', 500 }, { 'arc', 600, 22 }, { 'straight', 500 } }))
-  T.check(wide.corners == 0, 'a 22 degree bend at 600 m: still none (' .. show(notes(wide)) .. ')')
+  -- (2026-11-19, the pacenote check: a bend of pacenotes.KINK_DEG or more one way within KINK_WINDOW_M is called,
+  --  smooth or drawn as kinks; this one was left out before)
+  local wideItems = cornerItems(wide)
+  T.check(wide.corners == 1 and wideItems[1] and wideItems[1].meta.sweeper, 'a 22 degree bend at 600 m: a sweeper (' ..
+    show(notes(wide)) .. ')')
+  -- a bend as a map draws it: straight pieces of 120 m meeting at three kinks of 11 degrees (33 in all; a kink of 12 is a corner): one
+  -- sweeper, from the first kink to the last; 20 degrees in three kinks over 400 m too; a wiggle, 15 degrees over
+  -- 400 m and a bend that turns back are not
+  local function kinks(deg, nodes, length)
+    local pieces = { { 'straight', 300 } }
+    local piece = length / (nodes + 1)
+    for k = 1, nodes do
+      pieces[#pieces + 1] = { 'straight', math.floor(piece) }
+      pieces[#pieces + 1] = { 'arc', 3 / math.rad(math.abs(deg / nodes)), deg / nodes }
+    end
+    pieces[#pieces + 1] = { 'straight', 300 + math.floor(piece) }
+    return road(pieces)
+  end
+  local function sweeperNotes(b)
+    local n = 0
+    for _, c in ipairs(cornerItems(b)) do if c.meta.sweeper then n = n + 1 end end
+    return n
+  end
+  local k36 = build(kinks(-33, 3, 480))
+  local k36i = cornerItems(k36)
+  T.check(#k36i == 1 and k36i[1].meta.sweeper and k36i[1].meta.dir == 'right' and
+    math.abs(k36i[1].meta.angleDeg - 33) < 3, 'a map-drawn bend, 33 degrees in kinks 120 m apart: one sweeper (' ..
+    show(notes(k36)) .. ')')
+  local k36n = k36.notebook.pacenotes
+  local w0, w1 = k36n[1].pacenoteWaypoints[1].pos, k36n[1].pacenoteWaypoints[2].pos
+  T.near(math.sqrt((w1[1] - w0[1]) ^ 2 + (w1[2] - w0[2]) ^ 2), 240, 15, 'the sweeper runs from its first kink to its last')
+  T.check(sweeperNotes(build(kinks(20, 3, 400))) == 1, 'a map-drawn bend, 20 degrees in three kinks over 400 m: one')
+  T.check(sweeperNotes(build(kinks(15, 3, 400))) == 0, '15 degrees over 400 m: none')
+  local function kink(deg) return { 'arc', 3 / math.rad(math.abs(deg)), deg } end
+  local wig = build(road({ { 'straight', 300 }, kink(8), { 'straight', 100 }, kink(-7), { 'straight', 100 },
+                           kink(8), { 'straight', 100 }, kink(-7), { 'straight', 300 } }))
+  T.check(#cornerItems(wig) == 0, 'kinks either way: none (' .. show(notes(wig)) .. ')')
+  local far = build(road({ { 'straight', 300 }, kink(10), { 'straight', 400 }, kink(10), { 'straight', 300 } }))
+  T.check(#cornerItems(far) == 0, 'two kinks of 10 degrees 400 m apart (more than KINK_GAP_M): none (' ..
+    show(notes(far)) .. ')')
   -- ... and a long bend with a tighter corner in it: the bend either side is called too, not just its tight middle
   local lb = build(road({ { 'straight', 400 }, { 'arcs', { { 300, 40 }, { 40, 60 }, { 300, 40 } } },
                          { 'straight', 400 } }))
