@@ -93,6 +93,34 @@ Gaps: crest call to turn, 0-40 / 40-60 / 60-100 / 100+ m. 15 pro stages (77 km),
    further on. A sharp turn hidden behind a crest is always called, with the crest, in the fixtures; a gentle one
    (20° over 100 m, fixture `gentle-bend-behind-jump`) gets no call at all.
 
+## Fixes (1.9.4-alpha+reccecalls, branch `feature/recce-calls`)
+
+What changed is in [`notes-recce-calls.md`](notes-recce-calls.md). The check, rules v2, before and after:
+
+| | Before | After | Pro's own notes |
+|---|---|---|---|
+| Fixtures passed | 11 of 19 | 19 of 19 | |
+| Pro corners found (precision) | 71% (85%) | 72% (84%) | |
+| Same grade / within one | 52% / 90% | 52% / 90% | |
+| Pro "long" corners found / said long | 73% / 55% | 75% / 57% | |
+| Pro crest-with-corner said together | 36% | 39% | |
+| Pro crest-with-corner said as a crest alone | 8 | 1 | |
+| Silent openings, pro / owner's stages | 10 / 17 | 0 / 0 | 0 |
+| Missed bends, pro stages | 0.25/km | 0.13/km | 0.10/km |
+| Missed bends, owner's stages | 93 (0.22/km) | 44 (0.11/km) | |
+| Hidden turn after a crest, pro stages | 14 | 2 | 6 |
+| Hidden turn after a crest, owner's (gaps) | 35 (0 / 7 / 13 / 15) | 14 (0 / 0 / 1 / 13) | |
+| Overlapping notes, owner's stages | 6 | 0 | |
+| Long silences, owner's stages | 42 | 32 | |
+| Notes per km, owner's stages | 6.85 | 6.91 | |
+
+Three fixes to the check itself, each a bug, none a rule change (`RULES_VERSION` stays 2):
+
+- A call with no corner reads a number at its start as a lead too ("150 small crest 250"). Openings told that way
+  were counted silent.
+- "chicane right entry" counts as a right and a left. Its left was counted as a missed bend (3 owner's, 2 pro).
+- Lines are built as the mod reads them: out-and-backs dropped (`geo.foldBacks`).
+
 ## Limits
 
 - The harness has not yet been checked against the game itself. The pro stages show it lines up note by note, but a
