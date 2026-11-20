@@ -71,3 +71,31 @@ issues" (2026-11-19). Numbers before and after: [`pacenote-check.md`, Fixes](pac
   opening is simulated, not heard.
 - **Crests over 100 m:** 13 hidden turns on the owner's stages are still called apart, all 100 m or more past the
   crest (the pro has 4 of those).
+
+## Drive findings
+
+### 1. One bend called as a run of short corners (owner, 2026-11-19, Cathedral Westbound)
+
+"Way more corners than there actually are... a 5 right, a 5 right, a 5 right short, when really it's like a 5 right
+long or extra long, or maybe even a 5 or a 6 right", worst near the start of Cathedral Westbound.
+
+- **Not new in this build.** Cathedral's calls are the same before and after it, apart from a new "hairpin right
+  tightens 90" at 24 m (the corner the stage starts in) and two crests folded into corners. Check that 24 m hairpin
+  is real.
+- **Where:** 1.86-2.25 km ("three right half long", "and five right short", "and six right short 50" with gaps of
+  34 m; then "and five left short", "and four left 150") and 4.09 km ("five left short", "and five left short 150",
+  30 m apart).
+- **Likely cause:** `geo.corners` ends a corner wherever the smoothed radius opens past `maxRadius` (200 m), and joins
+  same-way pieces only within `mergeM` (20 m). A long bend whose map line opens out for a moment splits into pieces
+  30-35 m apart. Each piece is short, so the game grades it alone and calls it "short".
+- **Why the checker missed it:** no rule looks for this. A plain count does not tell it apart: same-way corners
+  within 50 m are 0.62/km on the owner's stages and 0.58/km in the pro's own notes. The pro's pairs differ in grade
+  ("4 right into 2 right"); ours are near-identical short ones.
+- **Plan:**
+  - Checker: a rule for split bends: same-way corner calls within ~50 m, grades within one, with the road still
+    turning that way between them. Tune it on the pro's own notes and fail it on Cathedral 1.86-2.25 km.
+  - A fixture: a 60-degree bend drawn as three arcs with short near-straight bits between.
+  - Fix: in `geo.corners` (or `pacenotes.group`), join same-way pieces up to ~50 m apart when the road between keeps
+    turning that way and their grades are within one. Measure them as one corner (length "long" or "extra long",
+    "tightens" or "opens" where the parts differ).
+  - Watch that real "four right into two right" pairs stay apart: pro recall and precision must not drop.
