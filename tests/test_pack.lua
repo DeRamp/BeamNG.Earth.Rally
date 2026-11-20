@@ -844,6 +844,7 @@ else
   local wt = require('earthRally/worldTime')
   local timedAll, dues, off = true, 0, {}
   local stopDues, stopKinds = 0, {}     -- (additions B: the stops' check-ins, each after the stage before it)
+  local stagesAll, stagesWx, noWx = 0, 0, {}  -- (E: each stage's stored weather, for the rally's sky)
   for r = 1, 8 do
     local ev = mem['/earthRally/events/' .. tostring(rounds[r]) .. '.json']
     local rr = ev and R.new(ev, { cancelled = 'all' })
@@ -855,6 +856,9 @@ else
           stopKinds[tostring(it.inType)] = (stopKinds[tostring(it.inType)] or 0) + 1
         end
         if it.kind == 'stage' then
+          stagesAll = stagesAll + 1
+          if type(it.weather) == 'table' and it.weather.code ~= nil then stagesWx = stagesWx + 1
+          else noWx[#noWx + 1] = tostring(ev.name) .. ' ' .. tostring(it.ss) end
           local st = wt.parse(it.date, it.firstCar)
           local due = R.dueFor(rr, i)
           if due and st then
@@ -870,6 +874,8 @@ else
     end
   end
   T.check(timedAll, 'ARA: every round is timed')
+  T.check(stagesAll > 100 and stagesWx == stagesAll, string.format('ARA: every stage has its weather (%d of %d; none: %s)',
+    stagesWx, stagesAll, table.concat(noWx, ', ')))
   print(string.format('test_pack: ARA due times worked out on the schedule: %d; off it: %s', dues,
     #off > 0 and table.concat(off, '; ') or 'none'))
   T.check(dues > 100, 'ARA: due times worked out (' .. dues .. ')')

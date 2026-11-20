@@ -15,7 +15,7 @@ with BeamNG.drive's own co-driver calling pacenotes worked out from the road.
 * **Auto recce** works out each stage's line from the roads, or drive a recce yourself.
 * Pacenotes from the road: corners, hairpins, crests, jumps, junctions, cautions.
 * **Rally packs** carry a whole season. The ARA 2026 season comes with the mod.
-* **Drive a whole rally**: transits, time controls, service and Super Rally, Realistic or Casual.
+* **Drive a whole rally** to the clock: timed transits, each stage's real time and weather, service and Super Rally, Realistic or Casual.
 * Results against the real crews, rally totals and season standings.
 * **Leaderboards**: your times against other players, per stage and class.
 * Opt-in stats and error reports. See [privacy](PRIVACY.md).
