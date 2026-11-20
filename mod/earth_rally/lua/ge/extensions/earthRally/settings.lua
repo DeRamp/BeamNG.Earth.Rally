@@ -12,7 +12,7 @@ M.SCHEMA = {
   units = { default = 'km', label = 'Units', desc = 'Stage lengths and distances on the HUD',
     options = { { 'km', 'km' }, { 'mi', 'miles' } } },
   resetPenalty = { default = true, label = 'Reset penalty',
-    desc = '+10 s for each car reset during the timed stage', options = { { true, 'On' }, { false, 'Off' } } },
+    desc = '+15 s for each car reset, +5 s for Back on the road, during the timed stage', options = { { true, 'On' }, { false, 'Off' } } },
   -- (the rally-loop plan, interface 6) a timed rally's time controls: early check-ins cost the rally's early penalty
   earlyPenalty = { default = false, label = 'Early check-in penalty',
     desc = "Checking in before your minute costs the rally's early penalty. Off: you wait for your minute.",

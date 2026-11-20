@@ -2575,7 +2575,7 @@ function M.onGameplayInteract()
   pcall(runner.onGameplayInteract)
 end
 
--- Recovery keys (Backspace: back on the road, +10 s on the stage; Shift+Backspace: flip upright).
+-- Recovery keys (Backspace: back on the road, +5 s on the stage; Shift+Backspace: flip upright).
 -- (1.7.0) In a full rally's stage the key is the rally's recovery (rallyRun.recoverKey: free in Casual, the Recover?
 -- question in Realistic).
 function M.backOnRoad()
@@ -2603,7 +2603,7 @@ function M.cardRelease(kind) pcall(cardInput.release, kind) end
 function M.cardStick(axis, v, src) local ok, r = pcall(cardInput.stick, axis, v, src) return ok and r end
 function M.cardClick(what) local ok, r = pcall(cardInput.click, what) return ok and r end
 
--- A reset by the player (the game's trackVehReset hook: once a press, a held rewind included): +10 s during the timed
+-- A reset by the player (the game's trackVehReset hook: once a press, a held rewind included): +15 s during the timed
 -- stage (setting resetPenalty).
 function M.trackVehReset(vid)
   pcall(runner.onReset, vid)

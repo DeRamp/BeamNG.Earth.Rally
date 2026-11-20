@@ -1663,7 +1663,7 @@ do
   veh.getDirectionVector = nil
 end
 
--- the reset penalty: +10 s a reset during the timed stage, in the result
+-- the reset penalty: +15 s a reset during the timed stage, in the result
 do
   settings.reset()
   local r5 = toTheLine(event)
@@ -1671,7 +1671,7 @@ do
   go(r5)
   T.check(runner.state() == 'running', 'running (reset penalty run)')
   T.check(runner.onReset(1) == true and r5.resets == 1, 'a reset on the stage: counted')
-  T.check(toastTitled('Reset: %+10 s') ~= nil, 'a toast says so')
+  T.check(toastTitled('Reset: %+15 s') ~= nil, 'a toast says so')
   T.check(not runner.onReset(1) and r5.resets == 1, 'the same reset heard twice: counted once')
   frames(10)
   moveAnchor(anchor.lat, anchor.lon, 'rebase')
@@ -1686,11 +1686,11 @@ do
   T.check(runner.state() == 'finished', 'finished (reset penalty run: ' .. runner.state() .. ')')
   local runs = events.results('test', 'hill').runs
   local last5 = runs[#runs]
-  T.check(last5.resets == 2 and last5.resetPenaltyS == 20 and last5.penaltyS == 20 and
-    math.abs(last5.timeS - last5.stageS - 20) < 1e-9, 'the resets in the result: +20 s in the time')
+  T.check(last5.resets == 2 and last5.resetPenaltyS == 30 and last5.penaltyS == 30 and
+    math.abs(last5.timeS - last5.stageS - 30) < 1e-9, 'the resets in the result: +30 s in the time')
   -- the results card: the HUD frame, Retry starts the stage again
   local rl, ours = runner.uiFrame()
-  T.check(rl.activeState == 'inactive' and ours.finish and ours.finish.penalties.resets == 20 and
+  T.check(rl.activeState == 'inactive' and ours.finish and ours.finish.penalties.resets == 30 and
     ours.finish.penalties.resetCount == 2, 'the HUD has the resets itemised')
   T.check(r5.resultsOpen and r5.sinceFinish ~= nil, 'the results card open at the flying finish (no stop control)')
   frames(50)
@@ -1788,7 +1788,7 @@ do
   settings.reset()
 end
 
--- recovery: back on the road (+10 s on the stage), flip upright (free); the stage layout held
+-- recovery: back on the road (+5 s on the stage), flip upright (free); the stage layout held
 do
   settings.reset()
   local teleports = {}
@@ -1807,12 +1807,14 @@ do
   local fx, fy = toGame(full[600][1], full[600][2])
   car.lat, car.lon = toGeo(fx + 30, fy)
   frames(1)
-  local before = r10.resets or 0
+  local before, penBefore = r10.resets or 0, r10.resetPenS or 0
   T.check(runner.backOnRoad() == true and #teleports == 1 and teleports[1].reset == false,
     'back on the road: moved as the game flips a car (damage kept)')
   local bx, by = toGame(car.lat, car.lon)
   T.check(math.abs(bx - fx) < 3 and math.abs(by - fy) < 15 and (r10.resets or 0) == before + 1,
     'back on the road: on the stage line where it had got to, +1 reset (' .. string.format('%.1f, %.1f', bx - fx, by - fy) .. ')')
+  T.check((r10.resetPenS or 0) == penBefore + 5 and toastTitled('Back on the road: %+5 s') ~= nil,
+    'back on the road: +5 s, not the reset\'s 15')
   frames(10)
   veh.getDirectionVector = function() return { x = 0, y = 1, z = 0 } end
   veh.getID = function() return 1 end

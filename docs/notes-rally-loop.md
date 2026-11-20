@@ -113,3 +113,9 @@ Not acted on:
   player's mode still comes back at the end.
 - A full game Lua reload mid-rally in Manual can give back the rally's hour as the player's time. Edge only.
 
+## Penalties for recovering (the owner, 2026-11-19)
+
+The game's full car reset costs 15 s, Back on the road 5 s, on the timed stage (setting Reset penalty); a Casual
+rally pays them too. A Realistic rally's stage still asks Recover? instead. Files: `runner.lua` (RESET_PENALTY_S,
+BACK_ON_ROAD_PENALTY_S, onReset), `hudFrame.lua`, `settings.lua`, the results card.
+

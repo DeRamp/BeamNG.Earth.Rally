@@ -1592,7 +1592,7 @@ function M.recoverKey()
   local r = runner.current()
   -- (Casual, and Realistic between the check-in and the start -- toAtc, toStart, waitStart: not timed yet, so free)
   if R.mode == 'casual' or r.state ~= 'running' then
-    runner.backOnRoad()           -- (free: no reset penalty in a rally run)
+    runner.backOnRoad()           -- (Casual on the timed stage: +5 s, runner.BACK_ON_ROAD_PENALTY_S; else free)
     return true
   end
   -- Realistic, on the stage: the question (#59: the game paused under it, answered on its card: no time-out, and the

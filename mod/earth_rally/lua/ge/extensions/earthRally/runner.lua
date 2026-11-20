@@ -115,7 +115,8 @@ M.ZONE_HOLD_S = 1.5            -- stopped on the start line this long before the
 M.FOLLOW_BACK_M = 150          -- the car's progress looked for this far behind ...
 M.FOLLOW_AHEAD_M = 600         -- ... and this far ahead of where it was along the stage line
 M.ROUTE_REFRESH_S = 5          -- the route arrows planned again this often (BeamNG.Earth's road map changes as you go)
-M.RESET_PENALTY_S = 10         -- each car reset during the timed stage (setting resetPenalty)
+M.RESET_PENALTY_S = 15         -- each of the game's car resets during the timed stage (setting resetPenalty)
+M.BACK_ON_ROAD_PENALTY_S = 5   -- each Back on the road during the timed stage (the owner, 2026-11-19)
 M.RESET_DEBOUNCE_S = 0.5       -- (one reset can be heard more than once)
 M.RESET_AFTER_MOVE_S = 2       -- (no reset counted this soon after the world's origin moved: not the player's)
 M.OFF_ROUTE_CLEAR_M = 40       -- (where the line is the organisers': off route from OFF_ROUTE_M, back within this)
@@ -1886,7 +1887,7 @@ local function stepRunning(dtSim)
     if not run.stopCtl then rallyA.notesOn(false) end
     run.offRoute, run.backBearing = false, nil
     run.stageTime = run.clock
-    local resetPen = (run.resets or 0) * M.RESET_PENALTY_S
+    local resetPen = run.resetPenS or 0
     run.penalty = (run.jumpStart and M.JUMP_START_PENALTY_S or 0) + (run.latePenalty or 0)
       + (run.missedAtc and M.MISSED_TC_PENALTY_S or 0) + resetPen
     local time = run.clock + run.penalty
@@ -2537,7 +2538,7 @@ end
 -- when pressed and again when let go: two resets for one, in game 2026-11-13): the player's car reset during the
 -- timed stage costs RESET_PENALTY_S each (setting resetPenalty), counted in the result. Not one heard again within
 -- RESET_DEBOUNCE_S, nor one just after the world's origin moved (BeamNG.Earth moving the car is not the player's).
-function M.onReset(vid)
+function M.onReset(vid, costS)
   if not (run and run.state == 'running') then return false end
   if run.online then pcall(online.runReset, run.online, run.clock) end
   if run.inRally and not run.casual then
@@ -2562,9 +2563,11 @@ function M.onReset(vid)
   if earth.rebasing() or (run.movedAt and t - run.movedAt < M.RESET_AFTER_MOVE_S) then return false end
   if run.resetAt and t - run.resetAt < M.RESET_DEBOUNCE_S then return false end
   run.resetAt = t
+  local cost = costS or M.RESET_PENALTY_S
   run.resets = (run.resets or 0) + 1
+  run.resetPenS = (run.resetPenS or 0) + cost
   say(string.format('%d reset%s on this stage.', run.resets, run.resets == 1 and '' or 's'), 3, 'warning',
-    string.format('Reset: +%d s', M.RESET_PENALTY_S))
+    string.format('%s: +%d s', costS and 'Back on the road' or 'Reset', cost))
   return true
 end
 
@@ -2598,7 +2601,8 @@ function M.backOnRoad()
   local pos = { x = at.x, y = at.y }
   pos.z = groundNear(pos.x, pos.y, at.z or p.z) + M.RECOVER_UP_M
   if not recoverTo(veh, pos, dir) then return false end
-  if run.state == 'running' and not run.inRally then M.onReset(nil) end
+  -- (BACK_ON_ROAD_PENALTY_S on the timed stage; a Casual rally's too, a Realistic rally's stage asks Recover? instead)
+  if run.state == 'running' and (not run.inRally or run.casual) then M.onReset(nil, M.BACK_ON_ROAD_PENALTY_S) end
   run.offRoute, run.backBearing = false, nil
   return true
 end

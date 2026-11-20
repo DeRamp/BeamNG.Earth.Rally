@@ -174,7 +174,7 @@ const penLines = computed(() => {
   return [
     { label: "Jump start", s: p.jumpStart || 0 },
     { label: p.lateMinutes ? `Late at the start (${p.lateMinutes} min)` : "Late at the start", s: p.late || 0 },
-    { label: p.resetCount ? `Resets (${p.resetCount} × 10 s)` : "Resets", s: p.resets || 0 },
+    { label: p.resetCount ? `Resets (${p.resetCount})` : "Resets", s: p.resets || 0 },
     { label: "Missed time control", s: p.missedAtc || 0 },
   ]
 })

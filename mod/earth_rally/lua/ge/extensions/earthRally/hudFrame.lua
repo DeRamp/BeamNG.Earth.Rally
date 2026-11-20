@@ -81,7 +81,7 @@ local function penalties(run, c)
   return {
     jumpStart = run.jumpStart and c.jumpStartS or 0,
     late = run.latePenalty or 0, lateMinutes = run.checks and run.checks.lateMinutes or 0,
-    resets = resets * c.resetS, resetCount = resets,
+    resets = run.resetPenS or resets * c.resetS, resetCount = resets,
     missedAtc = run.missedAtc and c.missedAtcS or 0,
   }
 end
