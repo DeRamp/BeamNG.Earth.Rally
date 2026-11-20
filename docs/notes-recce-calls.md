@@ -120,3 +120,23 @@ tiny left, not much of a corner, but you still need to know they are there."
 - **Plan:** a checker count of small kinks on fast straights (calls the pro makes that we miss, with the model's
   speed there); then the speed test in `pacenotes` replacing the fixed 12° / 20° limits; fixtures for a 6° kink at
   140 km/h (called) and at 50 km/h (not). Check against the pro: recall up, precision not down.
+
+### 3. Every corner you can see gets a call (owner, 2026-11-19)
+
+"Make sure that any corner that's visible to the player does get a call. Just because it's less than 12 degrees
+doesn't make it not important to know about, and it can be confusing not to hear a call when you visually see a
+corner."
+
+- **Rule (owner's):** a bend the driver can see is called, whatever its angle or speed. This sets the floor for
+  idea 2: speed can join or grade calls, never drop a visible bend.
+- **Today:** under 12° (`geo.corners`) or 20° over 500 m (kinks) is never called.
+- **"Visible", proposed:** the road's heading settles on a new line at least ~4-5° off the old one (steady for
+  ~30 m before and after), or the road leaves a straight line by more than a lane width within sight. Small
+  wobbles in the map line (a metre or two, no lasting heading change) are not corners and stay quiet.
+- **How it is said:** the smallest the game's voice has, six, with "long" where it is long; joined with "into" /
+  "and" when it sits close to the next call so twisty bits do not turn into a list. Open: whether a "slight" or
+  "flat" word exists in the enthusiast voice (the pro pack has "into flat right" once).
+- **Checker:** a "visible bend not called" rule (any settled heading change of 4° or more with no call of that
+  direction over it), tuned on the pro's own notes; fixtures with 5° and 8° kinks on a straight (called) and a
+  1.5 m map wobble (not called).
+- **Risk:** more calls per km. Watch notes/km against the pro and the "split bends" check (finding 1) together.
