@@ -4038,8 +4038,9 @@ do
       tState = 'spawning'
       rallyRun.quit()
       rallyRun.abandon('test19r')
-      T.check(deleted == 3, 'traffic: deleted while still spawning')
-      tState = 'on'
+      T.check(deleted == 3 and tState == 'spawning', 'traffic: deleted while still spawning, the state left to it')
+      rallyRun.update(0.1)
+      tState = 'on'                 -- (the spawning group arrives)
       rallyRun.update(0.1)
       T.check(deleted == 4 and tState == 'off', 'traffic: the cars that came after the delete taken away too')
       -- (Casual: the game's own reset and recovery open; the rest blocked. notes-rally-loop 3)

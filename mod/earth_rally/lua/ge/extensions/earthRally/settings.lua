@@ -42,8 +42,8 @@ M.SCHEMA = {
   -- (Traffic Off) the player's traffic amount while a rally holds it at 0, so a Lua reload cannot lose it; false: none
   rallyTrafficStash = { default = false, check = function(v) return v == false or type(v) == 'number' and v >= 0 end },
   -- (notes-rally-loop 2) traffic the rally started (Traffic On, none running): BeamNG.Earth's traffic choice before
-  -- it ('on' / 'off'), so a Lua reload mid-rally still takes it away at the end; false: none started
-  rallyTrafficSpawned = { default = false, options = { { false }, { 'on' }, { 'off' } } },
+  -- it ('on' / 'off'; 'none': the game's own traffic), so a Lua reload mid-rally still takes it away; false: none started
+  rallyTrafficSpawned = { default = false, options = { { false }, { 'on' }, { 'off' }, { 'none' } } },
   -- (plan G) the stage page's Weather pick (stageWeather.lua), the same on every stage until changed
   stageWeather = { default = 'current', options = { { 'current' }, { 'rallyday' }, { 'clear' }, { 'cloudy' }, { 'rain' },
     { 'storm' }, { 'snow' }, { 'fog' } } },

@@ -605,7 +605,7 @@ local function envTod()
 end
 -- (in Manual, the player's own weather: the core_environment values BeamNG.Earth's weather writes, put back with it)
 local ENV_WX = { 'CloudCover', 'CloudCirrusCoverage', 'CloudCirrusDensity', 'WindSpeed', 'FogDensity',
-  'FogAtmosphereHeight' }
+  'FogAtmosphereHeight', 'GroundWind', 'CloudWindDirection' }
 local function envWx()
   local ce = rawget(_G, 'core_environment')
   if type(ce) ~= 'table' then return nil end
@@ -614,7 +614,10 @@ local function envWx()
     local g = ce['get' .. k]
     if type(g) == 'function' then
       local ok, v = pcall(g)
-      if ok and type(v) == 'number' then out[k] = v end
+      if ok and type(v) == 'number' then out[k] = v
+      elseif ok and v ~= nil and tonumber(v.x) and tonumber(v.y) then        -- (a vector: the wind)
+        out[k] = { x = tonumber(v.x), y = tonumber(v.y), z = tonumber(v.z) or 0 }
+      end
     end
   end
   return next(out) and out or nil
@@ -627,7 +630,9 @@ local function modeBack(x, m, tod, env)
   if type(env) == 'table' and ce then
     for k, v in pairs(env) do
       local s = ce['set' .. k]
-      if type(s) == 'function' then pcall(s, v) end
+      if type(s) == 'function' then
+        if type(v) == 'table' then pcall(s, v.x, v.y, v.z) else pcall(s, v) end
+      end
     end
   end
 end

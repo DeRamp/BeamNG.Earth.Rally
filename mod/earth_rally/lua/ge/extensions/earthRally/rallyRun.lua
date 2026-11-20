@@ -484,52 +484,70 @@ local function trafficSpawn()
   local ok = pcall(g.setupTraffic, -1)
   return ok and M.worldTraffic(), nil
 end
--- (the game's deleteVehicles leaves its state 'on' until a frame later: onTrafficStopped at once, so a start straight
--- after, as on Continue, sees none. Still loading or spawning: the cars would arrive after the delete, so it is done
--- again once they are on, for up to TRAFFIC_LATE_S)
+-- (the game's deleteVehicles leaves its state 'on' until a frame later: its onTrafficStopped hook at once, so a start
+-- straight after, as on Continue, sees none. Still spawning: the cars would arrive after the delete, so the state is
+-- left as it is and the delete done again once they are on, for up to TRAFFIC_LATE_S; a rally starting meanwhile
+-- takes them as its own. Loading: stopped at once, nothing comes.)
 M.TRAFFIC_LATE_S = 30
-local lateDelete = nil
-local function trafficDelete()
+local lateDelete = nil    -- { t = seconds left, choiceWas }
+local function trafficState(g)
+  local okS, st = pcall(function() return g and g.getState and g.getState() end)
+  return okS and st or nil
+end
+local function trafficDelete(choiceWas)
   local g = rawget(_G, 'gameplay_traffic')
   if type(g) ~= 'table' then return end
-  local okS, st = pcall(function() return g.getState and g.getState() end)
-  if okS and (st == 'loading' or st == 'spawning') then lateDelete = M.TRAFFIC_LATE_S end
   if g.deleteVehicles then pcall(g.deleteVehicles) end
-  if g.onTrafficStopped then pcall(g.onTrafficStopped) end
+  if trafficState(g) == 'spawning' then
+    lateDelete = { t = M.TRAFFIC_LATE_S, choiceWas = choiceWas }
+    return
+  end
+  local ext = rawget(_G, 'extensions')
+  if type(ext) == 'table' and type(ext.hook) == 'function' then pcall(ext.hook, 'onTrafficStopped')
+  elseif g.onTrafficStopped then pcall(g.onTrafficStopped) end
 end
 local function trafficUnspawn(t)
   local ng = rawget(_G, 'beamngEarth_navgraph')
   if t.choiceWas ~= nil and type(ng) == 'table' and type(ng.choice) == 'table' then ng.choice.traffic = t.choiceWas end
-  trafficDelete()
+  trafficDelete(t.choiceWas)
 end
 local function lateDeleteTick(dt)
   if not lateDelete then return end
-  lateDelete = lateDelete - (dt or 0)
-  local g = rawget(_G, 'gameplay_traffic')
-  local okS, st = pcall(function() return g and g.getState and g.getState() end)
-  if okS and st == 'on' then
+  lateDelete.t = lateDelete.t - (dt or 0)
+  local st = trafficState(rawget(_G, 'gameplay_traffic'))
+  if st == 'on' then
     lateDelete = nil
     trafficDelete()
     log('I', logTag, 'rally: the traffic that finished spawning after the rally taken away')
-  elseif lateDelete <= 0 or not (okS and (st == 'loading' or st == 'spawning')) then
+  elseif lateDelete.t <= 0 or st ~= 'spawning' then
     lateDelete = nil
   end
 end
+local function spawnedWord(was) return was == true and 'on' or was == false and 'off' or 'none' end
 
 local function trafficStart()
   if not R or traffic then return end
   traffic = { mode = R.traffic == 'off' and 'off' or 'on', t = 0, stash = {} }
   if traffic.mode == 'on' then
     local kept = settings.get('rallyTrafficSpawned')
-    if (kept == 'on' or kept == 'off') and M.worldTraffic() then
+    if lateDelete and R.traffic == 'on' and M.worldTraffic() then
+      -- (Continue while the rally's traffic was still spawning: still the rally's)
+      traffic.spawned, traffic.choiceWas = true, lateDelete.choiceWas
+      lateDelete = nil
+      local ng = rawget(_G, 'beamngEarth_navgraph')
+      if traffic.choiceWas ~= nil and type(ng) == 'table' and type(ng.choice) == 'table' then ng.choice.traffic = true end
+      pcall(settings.set, 'rallyTrafficSpawned', spawnedWord(traffic.choiceWas))
+      log('I', logTag, 'rally: traffic on road sections: the one started for the rally, kept')
+    elseif kept ~= false and kept ~= nil and M.worldTraffic() then
       -- (started by this rally before a Lua reload: still ours to take away)
-      traffic.spawned, traffic.choiceWas = true, kept == 'on'
+      traffic.spawned = true
+      if kept == 'on' then traffic.choiceWas = true elseif kept == 'off' then traffic.choiceWas = false end
       log('I', logTag, 'rally: traffic on road sections: the one started for the rally, kept')
     elseif not M.worldTraffic() and R.traffic == 'on' then
       local ok, was = trafficSpawn()
       if ok then
         traffic.spawned, traffic.choiceWas = true, was
-        pcall(settings.set, 'rallyTrafficSpawned', was and 'on' or 'off')
+        pcall(settings.set, 'rallyTrafficSpawned', spawnedWord(was))
       else
         runner.say('Traffic could not be started for the rally.', 5, 'warning')
       end
@@ -552,8 +570,10 @@ local function trafficEnd()
   local t = traffic
   traffic = nil
   local kept = settings.get('rallyTrafficSpawned')
-  if (t and t.spawned) or kept == 'on' or kept == 'off' then
-    trafficUnspawn(t and t.spawned and t or { choiceWas = kept == 'on' })
+  if (t and t.spawned) or (kept ~= false and kept ~= nil) then
+    local was = nil
+    if kept == 'on' then was = true elseif kept == 'off' then was = false end
+    trafficUnspawn(t and t.spawned and t or { choiceWas = was })
     pcall(settings.set, 'rallyTrafficSpawned', false)
     log('I', logTag, 'rally: the traffic started for the rally taken away')
   end
