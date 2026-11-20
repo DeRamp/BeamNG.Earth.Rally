@@ -14,7 +14,8 @@ From an empty menu to a stage time.
 ## What the stage list tells you
 
 * **Ready**: the stage has a line; pacenotes follow the road all the way.
-* **Recce recommended**: part of the stage has no road on the map, so no notes there until you drive a recce.
+* **Missing road segments**: part of the stage has no road on the map, so no notes there until you drive a recce.
+* **Recce stops short**: your own recce ends before the finish. Drive it again.
 * **Recce needed**: no line yet. Press **Auto recce**, or **Recce** to drive it once yourself.
 * **Best** and **Place**: your best time, and where it ranks against the real crews.
 
