@@ -10,6 +10,7 @@
 * [[Driving a stage]]
 * [[Rally packs and leaderboards]]
 * [[Make your own stage map]]
+* [[Make a full rally]]
 * [[Stage dressing]]
 * [[Pacenotes]]
 
