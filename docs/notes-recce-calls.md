@@ -99,3 +99,24 @@ long or extra long, or maybe even a 5 or a 6 right", worst near the start of Cat
     turning that way and their grades are within one. Measure them as one corner (length "long" or "extra long",
     "tightens" or "opens" where the parts differ).
   - Watch that real "four right into two right" pairs stay apart: pro recall and precision must not drop.
+
+### 2. Idea: let the speed decide what is a corner (owner, 2026-11-19)
+
+"Can we account for the speed that somebody will be driving? ... a big straight with a tiny, tiny right and a tiny,
+tiny left, not much of a corner, but you still need to know they are there."
+
+- **Today:** the speed model (`pacenotes.speeds`: 8 m/s² grip, 144 km/h top) only sets cautions, jumps and how far
+  over a crest you can see. Which bends become calls is geometry only: `geo.corners` (12° or more, radius 200 m or
+  less), the sweepers and the kinks (20° or more within 500 m). The grade is the game's, from the corner's diameter.
+- **What speed would add:**
+  - **Small kinks on fast roads.** Call a direction change when, at the speed the car gets there, it takes the road
+    off a straight line by more than about half a lane within ~2 s of driving. At 140 km/h a 5-8° kink counts; at
+    60 km/h it does not. Those would be called as six (or "slight") with "long" where they are long.
+  - **Fewer calls on slow, twisty bits.** Same test: a wiggle you take at 50 km/h without steering need not be called.
+  - **Helps the split bends (finding 1).** Pieces of one bend are joined if, at that speed, you drive them as one
+    steering input (gap under ~1 s).
+- **Not changed:** grades stay the game's (from diameter). A speed-based grade ("flat", by gear) would mean
+  overriding what the game measures; it is a bigger change, left for later.
+- **Plan:** a checker count of small kinks on fast straights (calls the pro makes that we miss, with the model's
+  speed there); then the speed test in `pacenotes` replacing the fixed 12° / 20° limits; fixtures for a 6° kink at
+  140 km/h (called) and at 50 km/h (not). Check against the pro: recall up, precision not down.
