@@ -1800,10 +1800,10 @@ function M.uiStage(eventId, stageId, pass)
   for k, v in pairs(runSummary()) do out[k] = v end
   out.autoLine = autoLines[autoKey(eventId, stageId)]
   -- (plan G) the Weather row: Rally day's weather in a word (the shown pass's stored weather), nil with none
-  -- (only where it can show: the hooks there and BeamNG.Earth's weather following its real weather)
+  -- (only where it can be set: the hooks there; a Manual weather is put in Real while the pick holds it)
   local sw = require('earthRally/stageWeather')
   out.wxDay = rallyRun.weatherWord(sw.passWeather(e, sw.pagePass(eventId, stageId, out)))
-  out.wxCan = (earth.hasSceneHooks() and earth.weatherLive()) or nil
+  out.wxCan = earth.hasSceneHooks() or nil
   out.wxPresets = out.wxCan and sw.presets() or nil
   return out
 end

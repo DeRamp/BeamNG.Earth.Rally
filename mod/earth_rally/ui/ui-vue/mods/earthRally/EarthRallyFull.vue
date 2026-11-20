@@ -61,7 +61,6 @@
             <span tabindex="0" bng-nav-item :class="{ on: traffic === 'off' }" @click="traffic = 'off'" @keydown.enter="traffic = 'off'">Off</span>
           </div>
           <div class="er-muted er-small">{{ traffic === "on" ? "Traffic on the roads between stages. Each stage is closed to it." : "No traffic for the whole rally." }}</div>
-          <div v-if="traffic === 'on' && s.traffic && s.traffic.world === false" class="er-warn er-small">This world has no traffic. Start BeamNG.Earth with traffic on to have it on road sections.</div>
           <div class="er-foot">
             <div v-if="s.toRecce" class="er-muted er-small">{{ s.toRecce }} {{ s.toRecce === 1 ? "stage gets its" : "stages get their" }} line first: the auto recce takes you to each.</div>
             <div v-if="arr(s.heldOut).length" class="er-warn er-small">Held out: {{ arr(s.heldOut).map(h => h.why ? `${h.name} (${h.why})` : h.name).join(", ") }}</div>
@@ -273,11 +272,11 @@ function pen(v) {
   const t = Math.round(v || 0)
   return t < 60 ? `+${t} s` : `+${mmss(t)}`
 }
-// A control's Road column: nothing until checked in there, "on time", or the cost in amber, late or early as Lua
+// A control's Transit column: nothing until checked in there, "on time", or the cost in amber, late or early as Lua
 // checked it in (r.roadKind: "HH:MM" strings cannot tell over midnight)
 function road(r) {
-  // (additions B: early at a stop at no cost -- the event allows it there, or the early penalty is off)
-  if (!(r.roadPenaltyS > 0) && r.roadKind === "early") return { text: "early · free", cls: "er-dimc" }
+  // (additions B: early at a stop at no cost -- the event allows it there, or the early penalty is off -- reads
+  // "on time" too: notes-rally-loop 8)
   if (!(r.roadPenaltyS > 0)) return { text: r.timeIn ? "on time" : "", cls: "er-dimc" }
   return { text: `${pen(r.roadPenaltyS)} ${r.roadKind === "early" ? "early" : "late"}`, cls: "er-late" }
 }

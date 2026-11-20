@@ -55,6 +55,17 @@ M.BLOCKED = {
   'forceField', 'funBoom', 'funBreak', 'funExtinguish', 'funFire', 'funHinges', 'funTires', 'funRandomTire',
   'latchesOpen', 'latchesClose', 'funBoost', 'funBoostBackwards', 'funFling', 'funFlingDownward',
 }
+-- (notes-rally-loop 3) Casual: the game's own reset and recovery stay open (Casual lets you carry on); the rest as
+-- Realistic.
+M.CASUAL_OPEN = { reset_physics = true, reset_all_physics = true, recover_vehicle = true, recover_vehicle_alt = true,
+  recover_to_last_road = true }
+function M.blockedFor(mode)
+  local out = {}
+  for _, a in ipairs(M.BLOCKED) do
+    if not (mode == 'casual' and M.CASUAL_OPEN[a]) then out[#out + 1] = a end
+  end
+  return out
+end
 -- (#67) A stop driven to is checked in only once the car is stopped (runner.STOPPED_MS): within BOARD_ARRIVE_M of its
 -- board when its board and tent are down (#68), else within ARRIVE_NEAR_M of its point (the venue, not always on a
 -- road). Driven through, nothing happens: the GPS keeps pointing there, the HUD line says to stop.
@@ -280,7 +291,8 @@ local function transitDueNow()
     local ap = runner.approachInfo()
     label, distM = it.ss .. ' ' .. tostring(stageName(it)), ap and ap.distM or nil
   end
-  return { label = label, due = wt.hm(dueT), dueT = dueT, leftS = dueT - t,
+  -- (now: the rally's clock, notes-rally-loop 7)
+  return { label = label, now = wt.hm(t), due = wt.hm(dueT), dueT = dueT, leftS = dueT - t,
     distM = distM, late = late, penaltyS = late * (R.lateSPerMin or rally.LATE_S_PER_MIN), early = early }
 end
 -- (asked three or four times a frame -- the Messages line, the stream, the runner's frame and its keys: worked out
@@ -379,17 +391,35 @@ function M.block(on)
     blocked = false
     return false
   end
-  if on and blocked then return true end      -- (off is always sent: a reload must never leave it blocked)
+  local mode = R and R.mode or nil
+  if on and blocked == mode then return true end      -- (off is always sent: a reload must never leave it blocked)
   local ok, err = pcall(function()
-    af.setGroup(M.FILTER, M.BLOCKED)
+    af.setGroup(M.FILTER, M.blockedFor(mode))
     af.addAction(0, M.FILTER, on == true)
   end)
   if not ok then log('E', logTag, 'rally: action filter: ' .. tostring(err)) return false end
-  blocked = on == true
+  blocked = on == true and (mode or true) or false
+  -- (notes-rally-loop 4) the slow-motion keys are blocked: a rally started or resumed in slow motion runs at normal
+  -- speed, or the player could never leave it
+  if on then M.normalSpeed() end
   log('I', logTag, 'rally: BeamNG\'s own recovery ' .. (blocked and 'blocked' or 'back'))
   return true
 end
-function M.blocked() return blocked end
+function M.blocked() return blocked ~= false end
+
+function M.normalSpeed()
+  local sta = rawget(_G, 'simTimeAuthority')
+  if type(sta) == 'table' and sta.set then
+    local okG, cur = pcall(function() return sta.get and sta.get() end)
+    if okG and cur and math.abs(cur - 1) < 1e-6 then return false end
+    pcall(sta.set, 1)
+    log('I', logTag, 'rally: game speed back to normal')
+    return true
+  end
+  local be_ = rawget(_G, 'be')
+  if be_ and be_.setSimulationTimeScale then pcall(be_.setSimulationTimeScale, be_, 1) return true end
+  return false
+end
 
 ------------------------------------------------------------------------------------------ traffic on road sections
 
@@ -397,8 +427,9 @@ function M.blocked() return blocked end
 -- transits") The start screen's "Traffic on road sections": R.traffic = 'on' | 'off'.
 --   On   the world's traffic left exactly as it is on the road sections and at the stops: BeamNG.Earth spawns its own
 --        regional traffic and spawns it again as the region changes (the game's stock traffic set up here would be
---        the wrong cars, and a hitch). A world started with no traffic has none: the start screen says so. Each stage
---        still clears it and puts it back as it ends (runner trafficOff / trafficOn).
+--        the wrong cars, and a hitch). A world started with no traffic gets BeamNG.Earth's started for the rally
+--        and taken away after (trafficSpawn). Each stage still clears it and puts it back as it ends (runner
+--        trafficOff / trafficOn).
 --   Off  the game's traffic held at an active amount of 0 for the whole rally, transits included (runner's
 --        trafficHoldAt0, as it holds it for a stage: BeamNG.Earth's teleport hold and adaptive traffic both leave a 0
 --        set by someone else alone), the player's amount given back when the rally ends or is left. The amount is
@@ -436,12 +467,42 @@ local function trafficHold()
   if ok and kept and traffic.stash.traffic ~= nil then pcall(settings.set, 'rallyTrafficStash', traffic.stash.traffic) end
 end
 
+-- (notes-rally-loop 2) On with no traffic running: BeamNG.Earth's own regional traffic started for the rally, as its
+-- level start does with traffic on (its navgraph's choice.traffic and its start; the stock game's traffic only when
+-- BeamNG.Earth's is not there), and taken away when the rally ends. Returns true when started.
+local function trafficSpawn()
+  local g = rawget(_G, 'gameplay_traffic')
+  if type(g) ~= 'table' or not g.setupTraffic then return false end
+  local ng = rawget(_G, 'beamngEarth_navgraph')
+  if type(ng) == 'table' and type(ng.choice) == 'table' and type(ng._startTraffic) == 'function' then
+    local was = ng.choice.traffic
+    ng.choice.traffic = true
+    local ok = pcall(ng._startTraffic)
+    if ok and M.worldTraffic() then return true, was end
+    ng.choice.traffic = was
+  end
+  local ok = pcall(g.setupTraffic, -1)
+  return ok and M.worldTraffic(), nil
+end
+local function trafficUnspawn(t)
+  local ng = rawget(_G, 'beamngEarth_navgraph')
+  if t.choiceWas ~= nil and type(ng) == 'table' and type(ng.choice) == 'table' then ng.choice.traffic = t.choiceWas end
+  local g = rawget(_G, 'gameplay_traffic')
+  if type(g) == 'table' and g.deleteVehicles then pcall(g.deleteVehicles) end
+end
+
 local function trafficStart()
   if not R or traffic then return end
   traffic = { mode = R.traffic == 'off' and 'off' or 'on', t = 0, stash = {} }
   if traffic.mode == 'on' then
-    log('I', logTag, "rally: traffic on road sections: the world's own, left as it is" ..
-      (R.traffic == nil and ' (a save from before the choice)' or '') .. (M.worldTraffic() and '' or ' (none running)'))
+    if not M.worldTraffic() and R.traffic == 'on' then
+      local ok, was = trafficSpawn()
+      if ok then traffic.spawned, traffic.choiceWas = true, was end
+      log('I', logTag, 'rally: traffic on road sections: ' .. (ok and 'started for the rally' or 'could not be started'))
+    else
+      log('I', logTag, "rally: traffic on road sections: the world's own, left as it is" ..
+        (R.traffic == nil and ' (a save from before the choice)' or ''))
+    end
   else
     -- (a Lua reload during a rally left the player's amount here)
     traffic.stash.traffic = stashSaved()
@@ -455,6 +516,10 @@ end
 local function trafficEnd()
   local t = traffic
   traffic = nil
+  if t and t.spawned then
+    trafficUnspawn(t)
+    log('I', logTag, 'rally: the traffic started for the rally taken away')
+  end
   local amount = t and t.stash and t.stash.traffic
   if amount == nil then amount = stashSaved() end
   if amount ~= nil then
@@ -851,6 +916,7 @@ local function armTransit()
   -- (#45, #70) Into the ATC the right way: the GPS through a point a little before it on its own road, then to the
   -- ATC. The road map round the ATC is there only once the car is near: looked for again on the way (M.update).
   local okV, via0 = pcall(M.approachVia, stage, lat, lon, kind)
+  if not (okV and via0) then okV, via0 = pcall(M.straightVia, stage, lat, lon, kind) end
   local tg = { via = okV and via0 or nil }
   local function setGps()
     local via = tg.via
@@ -862,7 +928,7 @@ local function armTransit()
   -- (#42: armed at the flying finish, the stage's own arrows to its stop control clear the GPS: set again once that
   -- run has let them go, M.update)
   tg.set, tg.again = setGps, not runLive()
-  if not tg.via and kind == 'ATC' then tg.lookVia = { stage = stage, lat = lat, lon = lon, kind = kind, tries = 0 } end
+  if (not tg.via or tg.via.straight) and kind == 'ATC' then tg.lookVia = { stage = stage, lat = lat, lon = lon, kind = kind, tries = 0 } end
   transitGps = tg
   local ok = runner.armApproach(ev, stage, { sticky = true, title = title, rally = true,
     startOpts = { rally = true, ssLabel = it.ss, keepDamage = true },
@@ -926,7 +992,24 @@ end
 M.APPROACH_VIA_BACK_M = { 60, 45, 30 }
 M.APPROACH_VIA_LOOK_M = 1500      -- (the road map round the ATC looked at from this close)
 M.APPROACH_VIA_ON_ROAD_M = 4      -- (the walked point still this close to a road running the same way)
-M.APPROACH_VIA_TRIES = 5          -- (looked for at most this many times on the way in: M.update)
+M.APPROACH_VIA_TRIES = 20         -- (looked for at most this many times on the way in: M.update)
+M.APPROACH_VIA_EVERY_S = 2         -- (one look this often: the road map round the ATC comes in as the car nears it)
+M.APPROACH_STRAIGHT_M = 60         -- (no road map yet: a point this far back on the line from the start through the ATC)
+
+-- (notes-rally-loop 5) Before the road map round the ATC is in (on the official BeamNG.Earth only the roads near the car
+-- are in it, so the road-map point was never found and the GPS went straight in, often to the far side of the board):
+-- a point APPROACH_STRAIGHT_M back from the ATC on the line from the stage's start through it, which on the ATC's own
+-- road is the way in. Replaced by the road-map point once that is found.
+function M.straightVia(stage, lat, lon, kind)
+  if kind ~= 'ATC' then return nil end
+  local ctl = stage.controls or {}
+  local st = ctl.start or (stage.line and stage.line[1] and { lat = stage.line[1][1], lon = stage.line[1][2] })
+  if not st then return nil end
+  local d = geo.metres(st.lat, st.lon, lat, lon)
+  if not d or d < 20 then return nil end
+  local f = M.APPROACH_STRAIGHT_M / d
+  return { lat = lat + (lat - st.lat) * f, lon = lon + (lon - st.lon) * f, backM = M.APPROACH_STRAIGHT_M, straight = true }
+end
 function M.approachVia(stage, lat, lon, kind)
   local ctl = stage.controls or {}
   local line = stage.line
@@ -1527,10 +1610,13 @@ function M.update(dt, dtSim)
         local far = not (ap and ap.distM) or ap.distM > 300
         -- (#70: the road map round the ATC in now: its direction point on the road, and the GPS set through it)
         local lv = transitGps.lookVia
-        if lv and far and ap and ap.distM and ap.distM <= M.APPROACH_VIA_LOOK_M then
-          -- (a few looks once inside the radius, not one every poll for the whole approach: the road map round the
-          -- ATC is in by then or is not coming, and the walk along it is not free)
+        local due = lv and (lv.nextT or 0) <= (transitGps.clock or 0)
+        transitGps.clock = (transitGps.clock or 0) + M.ARRIVE_POLL_S
+        if lv and due and far and ap and ap.distM and ap.distM <= M.APPROACH_VIA_LOOK_M then
+          -- (a look every APPROACH_VIA_EVERY_S once inside the radius, at most APPROACH_VIA_TRIES: the road map round
+          -- the ATC comes in as the car nears it, and the walk along it is not free)
           lv.tries = (lv.tries or 0) + 1
+          lv.nextT = transitGps.clock + M.APPROACH_VIA_EVERY_S
           local okV, via = pcall(M.approachVia, lv.stage, lv.lat, lv.lon, lv.kind)
           if okV and via then
             transitGps.lookVia, transitGps.via = nil, via
@@ -1539,7 +1625,8 @@ function M.update(dt, dtSim)
               tostring(cur.ss), via.backM or 0))
           elseif lv.tries >= M.APPROACH_VIA_TRIES then
             transitGps.lookVia = nil
-            log('I', logTag, 'rally: no approach point found for ' .. tostring(cur.ss) .. ': the GPS goes straight in')
+            log('I', logTag, 'rally: no road-map approach point for ' .. tostring(cur.ss) .. (transitGps.via
+              and ': the GPS kept through the point on the line before its time control' or ': the GPS goes straight in'))
           end
         elseif lv and not far then
           transitGps.lookVia = nil

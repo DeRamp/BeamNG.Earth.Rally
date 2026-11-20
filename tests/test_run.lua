@@ -4013,11 +4013,44 @@ do
       tState = 'off'
       info = rallyRun.startInfo('test19r')
       T.check(info.traffic.pick == 'on' and info.traffic.world == false, 'traffic: On picked last, the world has none (the note)')
-      T.check(rallyRun.start('test19r', { mode = 'casual', class = 'L4WD', traffic = 'on' }) and setUp == 0,
-        "traffic On, none in the world: the game's stock traffic not set up")
+      -- (notes-rally-loop 2) On with none running: started for the rally (BeamNG.Earth's own, through its navgraph's
+      -- choice and start), taken away after, its choice put back
+      local ngStarts = 0
+      beamngEarth_navgraph = { choice = { traffic = false },
+        _startTraffic = function() ngStarts = ngStarts + 1 if beamngEarth_navgraph.choice.traffic then tState = 'on' end end }
+      T.check(rallyRun.start('test19r', { mode = 'casual', class = 'L4WD', traffic = 'on' }) and ngStarts == 1
+        and tState == 'on' and setUp == 0, "traffic On, none in the world: BeamNG.Earth's traffic started for the rally")
       rallyRun.quit()
       rallyRun.abandon('test19r')
-      T.check(deleted == 0 and setUp == 0, 'traffic On: left, nothing set up or taken away')
+      T.check(deleted == 1 and tState == 'off' and beamngEarth_navgraph.choice.traffic == false,
+        'traffic On: the rally left, the traffic it started taken away, the choice put back')
+      -- (no BeamNG.Earth navgraph: the game's own traffic)
+      beamngEarth_navgraph = nil
+      T.check(rallyRun.start('test19r', { mode = 'casual', class = 'L4WD', traffic = 'on' }) and setUp == 1,
+        "traffic On, none in the world, no BeamNG.Earth traffic: the game's set up")
+      rallyRun.quit()
+      rallyRun.abandon('test19r')
+      T.check(deleted == 2, 'traffic On: taken away after')
+      -- (Casual: the game's own reset and recovery open; the rest blocked. notes-rally-loop 3)
+      local casual = rallyRun.blockedFor('casual')
+      local has = function(l, x) for _, v in ipairs(l) do if v == x then return true end end return false end
+      T.check(not has(casual, 'reset_physics') and not has(casual, 'recover_vehicle') and has(casual, 'vehicle_selector')
+        and has(casual, 'toggle_slow_motion'), 'Casual: reset and recover open, vehicle swap and slow motion blocked')
+      local real = rallyRun.blockedFor('realistic')
+      T.check(has(real, 'reset_physics') and has(real, 'recover_vehicle'), 'Realistic: reset and recover blocked')
+      -- (notes-rally-loop 4) a rally started in slow motion runs at normal speed
+      local speed = 0.25
+      simTimeAuthority = { get = function() return speed end, set = function(v) speed = v end }
+      T.check(rallyRun.normalSpeed() and speed == 1, 'slow motion: back to normal speed')
+      T.check(rallyRun.normalSpeed() == false, 'normal speed already: nothing done')
+      simTimeAuthority = nil
+      -- (notes-rally-loop 5) no road map round the ATC yet: a point on the line from the start back through the ATC
+      local stg = { controls = { start = { lat = 47.0, lon = -119.0 } } }
+      local v = rallyRun.straightVia(stg, 47.0009, -119.0, 'ATC')      -- (the ATC 100 m north of the start)
+      local geo = require('earthRally/geo')
+      T.check(v and v.straight and v.lat > 47.0009 and math.abs(geo.metres(47.0009, -119.0, v.lat, v.lon) - 60) < 2,
+        'approach: 60 m back from the ATC, away from the start')
+      T.check(rallyRun.straightVia(stg, 47.0009, -119.0, 'start') == nil, 'approach: none for a stage with no ATC')
       -- (continued over itself while still under way, Off: the player's amount still given back after)
       tState, tAmt = 'on', 8
       rallyRun.start('test19r', { mode = 'casual', class = 'L4WD', traffic = 'off' })

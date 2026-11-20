@@ -197,7 +197,10 @@ end
 
 -- A timed road section as words: 'due 18:50 · 6:12 left · 4.2 km'; late: 'due 18:50 · 2 min late · +20 s · 4.2 km'.
 function M.transitText(tr, units)
-  local parts = { 'due ' .. tostring(tr.due) }
+  -- (notes-rally-loop 7: the rally's time first, then when you are due)
+  local parts = {}
+  if tr.now then parts[1] = 'time ' .. tostring(tr.now) end
+  parts[#parts + 1] = 'due ' .. tostring(tr.due)
   if (tr.late or 0) > 0 then
     parts[#parts + 1] = string.format('%d min late', tr.late)
     if (tr.penaltyS or 0) > 0 then parts[#parts + 1] = string.format('+%d s', tr.penaltyS) end
@@ -214,7 +217,7 @@ end
 -- (the transit's part of our stream key: the due minute, the seconds left, the minutes late)
 function M.transitKey(tr)
   if type(tr) ~= 'table' or not tr.due then return 'tr-' end
-  return 'tr' .. tostring(tr.due) .. '|' .. tostring(tr.leftS and math.floor(tr.leftS) or '-') .. '|' ..
+  return 'tr' .. tostring(tr.now) .. '|' .. tostring(tr.due) .. '|' .. tostring(tr.leftS and math.floor(tr.leftS) or '-') .. '|' ..
     tostring(tr.late) .. '|' .. tostring(tr.penaltyS) .. (tr.early and '|e' or '')
 end
 
@@ -224,7 +227,7 @@ function M.approachText(a, units, tr)
   local d = a.distM and (' · ' .. M.lengthText(a.distM, units) .. (units == 'mi' and ' mi' or ' km')) or ''
   -- (a timed road section, tr = rallyRun.transitDue: 'due 18:50 · 6:12 left' before the distance)
   if type(tr) == 'table' and tr.due and not a.waiting then
-    local t = { distM = nil, due = tr.due, leftS = tr.leftS, late = tr.late, penaltyS = tr.penaltyS, early = tr.early }
+    local t = { distM = nil, now = tr.now, due = tr.due, leftS = tr.leftS, late = tr.late, penaltyS = tr.penaltyS, early = tr.early }
     d = ' · ' .. M.transitText(t, units) .. d
   end
   -- (the HUD app is not on screen between stages: the Messages line carries the transit's controls, #27)

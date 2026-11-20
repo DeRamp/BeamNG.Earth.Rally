@@ -21,7 +21,7 @@
       <div class="er-title"><span class="er-accent">Earth</span> Rally</div>
       <div class="er-crumbs"><span v-for="(c, i) in crumbs" :key="i" :class="{ 'er-cgo': c.go }" @click="c.go && c.go()">{{ c.label }}</span></div>
       <div class="er-right">
-        <BngButton v-if="!mp && view !== 'settings' && view !== 'home'" :accent="ACCENTS.outlined" @click="go('settings')">Settings</BngButton>
+        <BngButton v-if="!mp && view !== 'settings' && view !== 'home'" :accent="ACCENTS.outlined" @click="openSettings">Settings</BngButton>
       </div>
     </div>
 
@@ -566,7 +566,8 @@ const crumbs = computed(() => {
     const from = resultsFrom.value === "pick" ? { label: "Drive rally", go: () => openPick(true) } : { label: "Time card", go: () => openCard() }
     return [home, from, { label: `${(rly.value && rly.value.name) || "Rally"} results` }]
   }
-  if (view.value === "settings") return [home, { label: "Settings" }]
+  if (view.value === "settings") return settingsFrom.value === "timecard"
+    ? [home, { label: "Time card", go: () => openCard() }, { label: "Settings" }] : [home, { label: "Settings" }]
   if (view.value === "timecard") return [home, { label: "Time card" }]
   if (view.value === "rallyStart") {
     if (startFrom.value === "pick") return [home, { label: "Drive rally", go: () => openPick(true) }, { label: "Start the rally" }]
@@ -765,7 +766,10 @@ const controlsLine = computed(() => {
   return parts.length ? parts.join(" · ") : "Start line and flying finish"
 })
 
-function go(v) { view.value = v; busyMsg.value = "" }
+function go(v) { if (v === "settings") settingsFrom.value = null; view.value = v; busyMsg.value = "" }
+// (notes-rally-loop 6) Settings opened from the time card goes back to it; from anywhere else, Home (#39)
+const settingsFrom = ref(null)
+function openSettings() { const from = view.value === "timecard" ? "timecard" : null; go("settings"); settingsFrom.value = from }
 // Where the menu was left, for the next time it opens with no page asked for (the pause menu's button, Ctrl+Alt+K):
 // the user, 2026-11-14, "the rally menu should also now remember where it was when you close and open it".
 // (not the leaderboard's pass: after another drive the board opens on the pass you place best on, as Lua picks it)
@@ -930,6 +934,7 @@ function back() {
   }
   // (#39: Drive rally, Drive stage and Settings go back to Home; so does the time card, where Home's Continue strip
   // is: the mock-up's homeSaved)
+  if (view.value === "settings" && settingsFrom.value === "timecard") { openCard(); return }
   if (["timecard", "pick", "rallies", "settings"].includes(view.value)) {
     openHome()
     return
