@@ -32,6 +32,7 @@ import fixtures  # noqa: E402
 import maps  # noqa: E402
 
 OUT = common.ROOT / 'out' / 'pacenote-check'
+MIN_KM = 0.5    # a stage shorter than this (start to finish) is left out
 
 
 def py_said(said):
@@ -41,7 +42,9 @@ def py_said(said):
         notes.append({'n': e.n, 's0': e.s0, 's1': e.s1, 'text': e.text or '', 'diameter': e.diameter,
                       'distAfterM': e.distAfterM, 'p': checks.parse(e.text or '')})
     pts = [(p.pos.x, p.pos.y, p.pos.z, p.s) for p in (said.spline[i] for i in range(1, len(said.spline) + 1))]
-    return {'notes': notes, 'startS': said.startS, 'finishS': said.finishS,
+    ov = said.overlaps
+    overlaps = [{'n': ov[i].n, 'next': ov[i].next, 'm': ov[i].m} for i in range(1, len(ov) + 1)]
+    return {'notes': notes, 'startS': said.startS, 'finishS': said.finishS, 'overlaps': overlaps,
             'errors': [said.errors[i] for i in range(1, len(said.errors) + 1)]}, pts
 
 
@@ -146,7 +149,7 @@ def main():
     opts = lua.table_from({'style': a.style})
     OUT.mkdir(parents=True, exist_ok=True)
     result = {'when': datetime.datetime.now().isoformat(timespec='seconds'), 'rev': git_rev(), 'label': a.label,
-              'style': a.style, 'fixtures': {}, 'pro': {}, 'mine': {}}
+              'style': a.style, 'fixtures': {}, 'pro': {}, 'mine': {}, 'skipped': {}}
 
     def speak(line, lms=(), startM=None, finishM=None):
         lt, lmt = common.to_lua(lua, line, lms)
@@ -178,6 +181,9 @@ def main():
     # ---- the game's stages with a pro's notes
     if a.only in (None, 'pro'):
         for name, nodes, nb, tr, start, finish in common.pro_stages(a.game, a.stage):
+            if not nb.get('pacenotes'):
+                result['skipped']['pro ' + name] = 'empty pro notebook'
+                continue
             line = [{'x': p['x'], 'y': p['y'], 'z': p['z']} for p in common.game_spline(nodes)]
             along = [0.0]
             for p, q in zip(line, line[1:]):
@@ -190,29 +196,42 @@ def main():
             said, pts = speak(line, (), startM, finishM)
             show('pro ' + name, said)
             pro = pro_notes(nb, tr, pts)
+            km = ((said['finishS'] or pts[-1][3]) - (said['startS'] or 0)) / 1000
+            if not pro or km < MIN_KM:
+                result['skipped']['pro ' + name] = 'no pro notes' if not pro else f'{km:.2f} km'
+                continue
             rules = checks.stage_rules(said, pts)
             vs = checks.versus_pro(said['notes'], pro, said['startS'] or 0)
             # the same rules over the pro's own notes: what a human co-driver "fails" -- the rules' false alarms
             selfRules = checks.stage_rules({'notes': pro, 'startS': said['startS'], 'finishS': said['finishS']}, pts)
-            result['pro'][name] = {'versus': vs, 'rules': rules, 'proRules': selfRules, 'km': (pts[-1][3]) / 1000}
+            result['pro'][name] = {'versus': vs, 'rules': rules, 'proRules': selfRules, 'km': km,
+                                   'overlaps': said['overlaps']}
             if a.maps:
                 maps.write(OUT / 'maps' / f"pro-{name.replace('/', '__')}.svg", 'pro ' + name, said, pts, rules,
                            pro=pro)
 
     # ---- the player's stages
     if a.only in (None, 'mine'):
-        for name, line, lms, junc, at in common.matched_stages(a.folder, a.stage):
+        for name, line, lms, junc, at in common.matched_stages(a.folder, a.stage, result['skipped']):
             said, pts = speak(line, lms + common.junction_landmarks(lua, junc, at))
+            st, fi = said['startS'] or 0, said['finishS'] or pts[-1][3]
+            if (fi - st) / 1000 < MIN_KM:
+                result['skipped'][name] = f'{(fi - st) / 1000:.2f} km'
+                continue
             said['mute'] = gaps_on(line, pts)
             show(name, said)
             rules = checks.stage_rules(said, pts)
-            st, fi = said['startS'] or 0, said['finishS'] or pts[-1][3]
-            result['mine'][name] = {'rules': rules, 'km': (fi - st) / 1000, 'notes': len(said['notes'])}
+            result['mine'][name] = {'rules': rules, 'km': (fi - st) / 1000, 'notes': len(said['notes']),
+                                    'overlaps': said['overlaps']}
             if a.maps:
                 maps.write(OUT / 'maps' / f'{name}.svg', name, said, pts, rules)
 
     summary = summarise(result)
     result['summary'] = summary
+    stages = sorted([f'fixture {n}' for n in result['fixtures']] + [f'pro {n}' for n in result['pro']] +
+                    list(result['mine']))
+    key = {'style': a.style, 'scope': scope(a), 'rules': checks.RULES_VERSION, 'stages': stages,
+           'game': str(Path(a.game).resolve()), 'folder': str(Path(a.folder).resolve()) if a.folder else None}
     last = OUT / 'last.json'
     prev = None
     hist = OUT / 'history.jsonl'
@@ -222,15 +241,14 @@ def main():
                 h = json.loads(ln)
             except ValueError:
                 continue
-            if (h.get('style') == a.style and h.get('scope') == scope(a) and
-                    h.get('rules') == checks.RULES_VERSION):
+            if all(h.get(k) == v for k, v in key.items()):
                 prev = h
     report(result, summary, prev)
     last.write_text(json.dumps(result, indent=1, default=str), encoding='utf-8')
     if not a.no_history:
         with hist.open('a', encoding='utf-8') as f:
-            f.write(json.dumps({'when': result['when'], 'rev': result['rev'], 'label': a.label, 'style': a.style,
-                                'scope': scope(a), 'rules': checks.RULES_VERSION, 'summary': summary}) + '\n')
+            f.write(json.dumps(dict({'when': result['when'], 'rev': result['rev'], 'label': a.label},
+                                    **key, summary=summary)) + '\n')
     return 0
 
 
@@ -258,7 +276,10 @@ def summarise(r):
         s['proLongSaid'] = t['longSaid'] / max(t['proLong'], 1)
         s['proCrestCornerSaid'] = t['crestCornerSaid'] / max(t['proCrestCorner'], 1)
         s['proCrestCornerCrestOnly'] = t['crestCornerCrestOnly']
-        s['proFirstToldDistance'] = sum(1 for v in r['pro'].values() if v['versus']['ourFirstLead'])
+        # the first call is heard at the line: is what it tells of within OPENING_M of it?
+        s['proFirstWithin80'] = sum(1 for v in r['pro'].values()
+                                    if v['versus']['ourFirstAtM'] is not None and
+                                    v['versus']['ourFirstAtM'] <= checks.OPENING_M)
         s['proStages'] = len(r['pro'])
     # proSelf: the rules over the pro's own notes -- how often a human co-driver "fails" them (false alarms)
     for key, src, field in (('pro', 'pro', 'rules'), ('proSelf', 'pro', 'proRules'), ('mine', 'mine', 'rules')):
@@ -269,15 +290,22 @@ def summarise(r):
         s[key + 'OpeningsSilent'] = sum(1 for x in rs if x['opening'] and not x['opening']['ok'])
         s[key + 'MissedBends'] = sum(len(x['bends']) for x in rs)
         s[key + 'MissedBendsPerKm'] = s[key + 'MissedBends'] / max(km, 1e-9)
-        s[key + 'HiddenCornersAfterCrest'] = sum(len(x['crests']) for x in rs)
+        s[key + 'HiddenCornersAfterCrest'] = sum(len(checks.crest_flags(x['crests'])) for x in rs)
+        s[key + 'CrestCases'] = sum(len(x['crests']) for x in rs)
+        for lo, hi in checks.CREST_GAP_BINS:
+            b = checks.gap_bin(lo)
+            s[key + 'CrestGap' + b] = sum(1 for x in rs for c in checks.crest_flags(x['crests'])
+                                          if checks.gap_bin(c['gapM']) == b)
         s[key + 'LongSilences'] = sum(len(x['silence']) for x in rs)
+        if key != 'proSelf':
+            s[key + 'Overlaps'] = sum(len(v.get('overlaps') or []) for v in r[src].values())
         s[key + 'Stages'] = len(rs)
         s[key + 'Km'] = km
     return s
 
 
 # lower is better for these; higher for the rest
-LOWER = ('OpeningsSilent', 'MissedBends', 'HiddenCornersAfterCrest', 'LongSilences', 'CrestOnly')
+LOWER = ('OpeningsSilent', 'MissedBends', 'HiddenCornersAfterCrest', 'LongSilences', 'CrestOnly', 'CrestGap', 'Overlaps')
 
 
 def report(r, s, prev):
@@ -298,6 +326,8 @@ def report(r, s, prev):
                 better = abs(v) < abs(old)
             mark = f"   was {fmt(k, old)}  {'better' if better else 'WORSE'}"
         print(f'  {k:30s} {fmt(k, v):>8s}{mark}')
+    for name, why in r.get('skipped', {}).items():
+        print(f'  skipped {name}: {why}')
     if r['mine']:
         print(f"  ({s.get('mineStages')} of your stages, {s.get('mineKm', 0):.0f} km; "
               f"{s.get('proStages', 0)} pro stages, {s.get('proKm', 0):.0f} km)")

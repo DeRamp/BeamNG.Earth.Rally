@@ -3,6 +3,8 @@
 says (the game's words, gamevoice.lua) and on the rules (checks.py). A fault's fixture fails until it is fixed."""
 import math
 
+import checks
+
 STEP = 4.0
 
 
@@ -78,9 +80,16 @@ def at(said, s):
 
 
 class OpeningStraight(Road):
+    """The rule passes, and the words themselves say a distance before the first corner ("300 four right", or
+    "crest 200" then the corner)."""
     def expect(self, said, rules):
         o = rules['opening']
-        return o['ok'], f"first call at the line: \"{o['first']}\"; first corner {o['gapM']:.0f} m in"
+        notes = said['notes']
+        k = next((k for k, n in enumerate(notes) if n['p']['corners']), len(notes) - 1)
+        told = any(n['p']['lead'] is not None for n in notes[:k + 1]) or \
+            any(n['p']['trail'] is not None for n in notes[:k])
+        return o['ok'] and told, (f"first call at the line: \"{o['first']}\"; first corner {o['gapM']:.0f} m in" +
+                                  ('' if told else '; no distance said'))
 
 
 class LongBend(Road):
@@ -91,9 +100,12 @@ class LongBend(Road):
     def expect(self, said, rules):
         hit = [n for n in corner_notes(said, self.d) if n['s1'] >= at(said, self.a) and n['s0'] <= at(said, self.b)]
         missed = [b for b in rules['bends']]
-        ok = bool(hit) and not missed
+        # a bend over 200 m is said long
+        long_ok = self.b - self.a <= 200 or any(n['p']['long'] for n in hit)
+        ok = bool(hit) and not missed and long_ok
         said_ = ' / '.join(n['text'] for n in hit) or 'nothing'
-        return ok, f"bend {self.a:.0f}-{self.b:.0f} m: {said_}" + (f"; {len(missed)} missed stretch(es)" if missed else '')
+        return ok, (f"bend {self.a:.0f}-{self.b:.0f} m: {said_}" +
+                    (f"; {len(missed)} missed stretch(es)" if missed else '') + ('' if long_ok else '; not said long'))
 
 
 class CornerOverCrest(Road):
@@ -109,8 +121,24 @@ class CornerOverCrest(Road):
         linked = any(notes[k]['p']['crest'] and not notes[k]['p']['corners'] and k + 1 < len(notes) and
                      notes[k + 1]['p']['corners'] and notes[k + 1]['p']['link'] in ('into', 'and')
                      for k in range(len(notes)) if notes[k] in near)
-        ok = (both or linked) and not rules['crests']
+        ok = (both or linked) and not checks.crest_flags(rules['crests'])
         return ok, 'heard: ' + (' / '.join(n['text'] for n in near) or 'nothing')
+
+
+class HiddenKink(Road):
+    """A turn just behind a sharp crest, small enough that the recce may not call it at all: it has to be called,
+    with the crest, and the crest rule must not flag it."""
+    def __init__(self, name, plan, turn_at, d, **k):
+        super().__init__(name, plan, **k)
+        self.turn_at, self.d = turn_at, d
+
+    def expect(self, said, rules):
+        near = [n for n in corner_notes(said, self.d) if n['s0'] - 40 <= at(said, self.turn_at) <= n['s1'] + 40]
+        flags = checks.crest_flags(rules['crests'])
+        seen = [c for c in rules['crests'] if abs(c['cornerAtM'] + (said['startS'] or 0) - at(said, self.turn_at)) <= 60]
+        ok = bool(near) and not flags
+        return ok, ('heard: ' + (' / '.join(n['text'] for n in near) or 'no call for the turn') +
+                    f"; crest rule: {len(seen)} case(s), {len(flags)} flagged")
 
 
 class Quiet(Road):
@@ -145,8 +173,24 @@ ALL = [
              250, 250 + 300 * math.radians(40), 'right', fault='long open corners'),
     LongBend('map-drawn-left-45deg-400m', [('straight', 250), ('kinks', 45, 5, 400, 'left'), ('straight', 250)],
              250, 650, 'left', fault='long open corners'),
+    # pieces of 100 m
     LongBend('map-drawn-right-35deg-500m', [('straight', 250), ('kinks', 35, 4, 500, 'right'), ('straight', 250)],
              250, 750, 'right', fault='long open corners'),
+    LongBend('map-drawn-right-35deg-kinks-60m', [('straight', 250), ('kinks', 35, 7, 480, 'right'),
+             ('straight', 250)], 250, 730, 'right', fault='long open corners'),
+    LongBend('map-drawn-right-35deg-kinks-80m', [('straight', 250), ('kinks', 35, 5, 480, 'right'),
+             ('straight', 250)], 250, 730, 'right', fault='long open corners'),
+    LongBend('map-drawn-right-35deg-kinks-120m', [('straight', 250), ('kinks', 35, 3, 480, 'right'),
+             ('straight', 250)], 250, 730, 'right', fault='long open corners'),
+    LongBend('map-drawn-left-20deg-400m', [('straight', 250), ('kinks', 20, 3, 400, 'left'), ('straight', 250)],
+             250, 650, 'left', fault='long open corners (under 25 degrees)'),
+    # a sharp 25 degree kink right behind a jump: the recce calls it, with the jump (a turn of 15 degrees or more in
+    # 40 m behind a crest always got a call in the trials); a gentler one, 20 degrees over 100 m in 25 m pieces, got
+    # none ("jump 400") -- below the crest rule's own turn (15 degrees in 40 m), so only this fixture sees it
+    HiddenKink('kink-behind-crest', [('straight', 320), ('kinks', 25, 1, 30, 'right'), ('straight', 300)],
+               335, 'right', crests=[(310, 14, 0.12, -0.12, 60)], fault='corner over crest'),
+    HiddenKink('gentle-bend-behind-jump', [('straight', 320), ('kinks', 20, 3, 100, 'right'), ('straight', 300)],
+               370, 'right', crests=[(310, 14, 0.12, -0.12, 60)], fault='corner over crest, not called'),
     CornerOverCrest('right-on-crest', [('straight', 300), ('arc', 45, 70, 'right'), ('straight', 300)],
                     300, 'right', crests=[(300, 50, 0.09, -0.09, 80)], fault='corner over crest'),
     CornerOverCrest('left-behind-crest', [('straight', 340), ('arc', 40, 80, 'left'), ('straight', 300)],

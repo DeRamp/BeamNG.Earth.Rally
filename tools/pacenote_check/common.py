@@ -74,12 +74,24 @@ def to_lua(lua, line, landmarks=()):
     return lt, lmt
 
 
-def matched_stages(folder=None, stage=None):
-    """The player's matched lines: (name, line, landmarks), each line once."""
+def _ground_m(a, b):
+    c = math.cos(math.radians((a[0] + b[0]) / 2))
+    return math.hypot(math.radians(a[0] - b[0]) * R_EARTH, math.radians(a[1] - b[1]) * R_EARTH * c)
+
+
+def _length_m(pts):
+    return sum(_ground_m(p, q) for p, q in zip(pts, pts[1:]))
+
+
+def matched_stages(folder=None, stage=None, skipped=None):
+    """The player's matched lines: (name, line, landmarks, junctions, at), each road once: a line that starts and
+    ends within 20 m of one already read, and is within 2 % of its length, is the same stage (another event's copy);
+    it goes in `skipped` (a dict) instead."""
     folder = Path(folder) if folder else user_folder()
     if (folder / 'matched').is_dir():
         folder = folder / 'matched'
-    seen = set()
+    seen = {}
+    kept = []
     for f in sorted(folder.glob('*.json')):
         if stage and stage not in f.name:
             continue
@@ -89,8 +101,18 @@ def matched_stages(folder=None, stage=None):
             continue
         key = (len(pts), tuple(round(x, 6) for x in pts[0][:2]), tuple(round(x, 6) for x in pts[-1][:2]))
         if key in seen:
+            if skipped is not None:
+                skipped[f.stem] = 'same line as ' + seen[key]
             continue
-        seen.add(key)
+        seen[key] = f.stem
+        length = _length_m(pts)
+        same = next((n for n, a, b, L in kept if _ground_m(a, pts[0]) <= 20 and _ground_m(b, pts[-1]) <= 20 and
+                     abs(L - length) <= 0.02 * max(L, length)), None)
+        if same:
+            if skipped is not None:
+                skipped[f.stem] = 'same road as ' + same
+            continue
+        kept.append((f.stem, pts[0], pts[-1], length))
         lat0, lon0 = pts[0][0], pts[0][1]
         c = math.cos(math.radians(lat0))
 

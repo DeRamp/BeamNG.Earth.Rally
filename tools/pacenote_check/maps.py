@@ -55,6 +55,8 @@ def write(path, title, said, pts, rules, pro=None):
         o.append(f'<polyline points="{seg(st + b["fromM"], st + b["toM"])}" fill="none" stroke="{FLAG["bend"]}" '
                  f'stroke-width="9" opacity=".6"/>')
     for c in rules.get('crests', []):
+        if not c.get('flagged', True):
+            continue
         o.append(f'<polyline points="{seg(st + c["atM"], st + c["cornerAtM"] + 20)}" fill="none" '
                  f'stroke="{FLAG["crest"]}" stroke-width="9" opacity=".7"/>')
     x0, y0 = P(*at(st)[:2])
@@ -86,6 +88,8 @@ def write(path, title, said, pts, rules, pro=None):
     o.append(f'<text x="{PAD}" y="{top + 16}" fill="#555">height ({zmin:.0f}-{zmax:.0f} m), '
              f'{(fi - st) / 1000:.2f} km</text>')
     for c in rules.get('crests', []):
+        if not c.get('flagged', True):
+            continue
         x1, _ = Q(st + c['atM'], 0)
         x2, _ = Q(st + c['cornerAtM'], 0)
         o.append(f'<rect x="{x1:.1f}" y="{top + 20}" width="{max(x2 - x1, 3):.1f}" height="{H_PROF - 50}" '

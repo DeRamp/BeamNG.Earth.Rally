@@ -5,8 +5,9 @@
 --     (drivelineV3: DrivelineUtil.minSplineSpacing; the same spline tools/pacenote_benchmark.py follows);
 --   - each corner's number: snaproad.updateHalfpoint + geoPacenotes.measurePartition (the circle through the
 --     corner start, the route half way between, and the corner end), then pacenote.structuredForProjection;
---   - the distance calls: path.autofillDistanceCalls (corner end to the next note's corner start, along the road;
---     "into" / "and" under 20 / 40 m, else "<n>" after the note);
+--   - the distance calls: path.autofillDistanceCalls (corner end, or start with distanceMeasureWaypoint 'cs', to the
+--     next non-isolated note's corner start, along the road either way round; "into" / "and" under 20 / 40 m, else
+--     "<n>" after the note; '#' in a field blocks it);
 --   - the words: compositorUtil.compositePhraseEntries with the style's config (english/enthusiast or casual).
 -- Only the pieces of the game that need the engine are stood in for here (vec3, a log, the road architect's
 -- circle through three points). Pure Lua otherwise: runs under lupa like the offline tests.
@@ -237,7 +238,7 @@ end
 -- built: stageWriter.build's result (Lua tables). opts.style 'enthusiast' (default) or 'casual'.
 -- Returns { notes = { { n, s0, s1 (along the driveline spline, corner start / end), sStart (the start line on the
 -- same spline), text (the words, one string), phrases ({...}), grade (the corner's number, or nil), diameter,
--- dir, firstTrigger } ... }, spline = pts, startS, finishS, errors }
+-- dir, firstTrigger, distAfterM, nextN } ... }, spline = pts, startS, finishS, errors, overlaps = { { n, next, m } } }
 function M.say(built, opts)
   opts = opts or {}
   local g = game()
@@ -311,26 +312,61 @@ function M.say(built, opts)
     list[#list + 1] = entry
   end
 
-  -- path.autofillDistanceCalls: from each note's corner end to the next note's corner start
+  -- path.autofillDistanceCalls, step by step: clear the before / after fields (a '#' -- the autofill blocker -- is
+  -- kept, and so is an isolated note's own link word), then from each note that is not isolated to the next note that
+  -- is not (findNextNonIsolated; not a missing one), measured from its corner end (its corner start when
+  -- distanceMeasureWaypoint is 'cs') to that note's corner start, as snaproad.distanceBetweenPositions does: the
+  -- distance along the road, either way round (math.abs)
+  local pns = built.notebook.pacenotes
+  local level1 = g.rallyUtil.autodist_internal_level1
+  local blocker = g.rallyUtil.autofill_blocker
+  local function field(pn, key)
+    -- the note's saved before / after field (any language: the co-driver's language is the only one written)
+    for _, lang in pairs(pn.notes or {}) do
+      if type(lang) == 'table' and lang[key] ~= nil then return lang[key] end
+    end
+    return ''
+  end
   for i, e in ipairs(list) do
-    e.before, e.after = '', ''
+    local pn = pns[i]
+    local b, a = field(pn, 'before'), field(pn, 'after')
+    e.before = (b == blocker or (pn.isolate and b == level1)) and b or ''
+    e.after = (a == blocker or (pn.isolate and a == level1)) and a or ''
+  end
+  local function nextNonIsolated(i)
+    for j = i + 1, #pns do
+      if not pns[j].isolate then return j end
+    end
+    return nil
   end
   if distanceCalls then
-    for i = 1, #list - 1 do
-      local e, nx = list[i], list[i + 1]
-      local pn, pnNext = built.notebook.pacenotes[i], built.notebook.pacenotes[i + 1]
-      if not pn.isolate and not pn.ignoreDistanceCalls then
-        local dist = math.max(0, nx.s0 - e.s1)
+    for i = 1, #list do
+      local e, pn = list[i], pns[i]
+      local j = nextNonIsolated(i)
+      local pnNext = j and pns[j]
+      if not pn.isolate and not pn.ignoreDistanceCalls and pnNext and not pnNext.missing then
+        local nx = list[j]
+        local from = pn.distanceMeasureWaypoint == 'cs' and e.s0 or e.s1
+        local dist = math.abs(nx.s0 - from)
         e.distAfterM = dist
+        e.nextN = j
         local short, has = shorthand(dist)
         if has then
-          nx.before = pnNext.includeLinkWord == false and g.rallyUtil.autodist_internal_level1 or
-                      (short or g.rallyUtil.autodist_internal_level1)
-        else
+          if nx.before ~= blocker then
+            nx.before = pnNext.includeLinkWord == false and level1 or (short or level1)
+          end
+        elseif e.after ~= blocker then
           e.after = toString(dist)
         end
       end
     end
+  end
+  -- notes whose corners overlap: the next note's corner start before this note's corner end (the game measures the
+  -- gap the other way round and says it as a distance)
+  local overlaps = {}
+  for i = 1, #list - 1 do
+    local e, nx = list[i], list[i + 1]
+    if nx.s0 < e.s1 then overlaps[#overlaps + 1] = { n = i, next = i + 1, m = e.s1 - nx.s0 } end
   end
 
   for i, e in ipairs(list) do
@@ -349,7 +385,7 @@ function M.say(built, opts)
   end
   local errs = logged
   logged = {}
-  return { notes = list, spline = pts, startS = startS, finishS = finishS, errors = errs }
+  return { notes = list, spline = pts, startS = startS, finishS = finishS, errors = errs, overlaps = overlaps }
 end
 
 return M

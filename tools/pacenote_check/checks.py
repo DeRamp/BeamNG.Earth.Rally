@@ -4,7 +4,7 @@ import math
 import re
 
 # Bump when a rule or its numbers change: runs are only compared with runs of the same rules (check.py).
-RULES_VERSION = 1
+RULES_VERSION = 2
 
 NUM = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6}
 GRADES = {'1', '2', '3', '4', '5', '6', 'flat', 'hairpin', 'square'}
@@ -12,11 +12,13 @@ GRADES = {'1', '2', '3', '4', '5', '6', 'flat', 'hairpin', 'square'}
 
 def parse(text):
     """A call's words -> { corners: [(dir, grade)], crest, jump, long, lead (a distance said before the first corner),
-    trail (a distance said after the last), link ('into' | 'and' | None) }. Reads both the game's words ("five right
+    trail (a distance said after the last), link ('into' | 'and' | None), keeps (directions of "keep right",
+    "rightish": a slight bend said without a number) }. Reads both the game's words ("five right
     long") and a co-driver's transcriptions ("4 left", "open hairpin right", "6 long")."""
     words = re.findall(r"[a-z']+|\d+(?:\.\d+)?", (text or '').lower())
     words = [str(NUM[w]) if w in NUM else w for w in words]
-    out = {'shapeOnly': False, 'corners': [], 'crest': False, 'jump': False, 'long': False, 'lead': None, 'trail': None, 'link': None,
+    words = _km(words)
+    out = {'shapeOnly': False, 'corners': [], 'keeps': [], 'crest': False, 'jump': False, 'long': False, 'lead': None, 'trail': None, 'link': None,
            'text': text or ''}
     for i, w in enumerate(words):
         if w in ('left', 'right'):
@@ -27,8 +29,12 @@ def parse(text):
                 g = words[i + 1]
             # "keep left", "stay right", "at junction left" are not corners
             if i > 0 and words[i - 1] in ('keep', 'stay', 'cut', 'tightish', 'junction', 'turn') and g is None:
+                if words[i - 1] in ('keep', 'stay'):
+                    out['keeps'].append(w)
                 continue
             out['corners'].append((w, g))
+        elif w in ('leftish', 'rightish'):
+            out['keeps'].append(w[:-3])   # "rightish over jump": a slight bend, said
         elif 'crest' in w:
             out['crest'] = True
         elif 'jump' in w:
@@ -45,11 +51,38 @@ def parse(text):
             and float(w) >= 20]
     first_corner = next((i for i, w in enumerate(words) if w in ('left', 'right')), None)
     for i, w in nums:
-        v = float(w) * (1000 if i + 1 < len(words) and words[i + 1] == 'km' else 1)
+        v = float(w)
         if first_corner is not None and i < first_corner:
             out['lead'] = out['lead'] or v
         else:
             out['trail'] = v
+    return out
+
+
+def _km(words):
+    """Kilometres said as the game says them ("1 km", "1 point 2 5 km", "7 point 7 5 km") or written ("1.5 km") ->
+    one word, in metres ("1250")."""
+    out, i = [], 0
+    digit = re.compile(r'\d+(?:\.\d+)?')
+    while i < len(words):
+        w = words[i]
+        if digit.fullmatch(w):
+            j, frac = i + 1, ''
+            if j < len(words) and words[j] == 'point':
+                k = j + 1
+                while k < len(words) and re.fullmatch(r'\d', words[k]):
+                    frac += words[k]
+                    k += 1
+                if frac and k < len(words) and words[k] == 'km':
+                    out.append('%g' % round(float(w + '.' + frac) * 1000))
+                    i = k + 1
+                    continue
+            if j < len(words) and words[j] == 'km':
+                out.append('%g' % round(float(w) * 1000))
+                i = j + 1
+                continue
+        out.append(w)
+        i += 1
     return out
 
 
@@ -98,16 +131,19 @@ BEND_COVER = 0.5        # ... has to turn at least this share of it inside corne
 BEND_PAD_BEFORE_M = 60  # a call covers the road this far before its corner start (the lead-in a driver is told of)
 BEND_PAD_AFTER_M = 40   # ... and this far past its corner end (where it opens out)
 SILENCE_M = 600         # a gap between calls longer than this is listed
-CREST_GAP_M = 60        # a corner further than this past a crest call may be its own call ("crest 80, 3 left": a pro
-                        # does that); nearer and out of sight, it belongs in the crest's call
+LINK_M = 40             # a call this close after the one before is heard as one with it
+TURN_DEG = 15           # a turn, for the crest rule: the heading changes this much ...
+TURN_WINDOW_M = 40      # ... within this much road
+CREST_REACH_M = 30      # a turn this far past where the road comes back into view is still a surprise
+CREST_GAP_BINS = ((0, 40), (40, 60), (60, 100), (100, None))   # the summary's histogram of crest-to-turn gaps
 EYE_M, TARGET_M = 1.1, 0.6   # driver's eye; what of the road has to be seen (pacenotes.SIGHT_TARGET_M)
 
 
 def rule_opening(said):
     """The first call is heard at the start line. The road up to the first corner is told when the first call says
     how far it is ("80 4 left", "200 crest into..."), or when it comes within OPENING_M of the line and each call
-    after it, up to the first corner, is tied on: a distance said at the end of the one before ("crest 100"), or
-    close enough to be linked ("into", "and")."""
+    after it, up to the first corner, is tied on: a distance said at the end of the one before ("crest 100"), a link
+    word ("into", "and"), or no more than LINK_M after it."""
     notes = said['notes']
     if not notes:
         return None
@@ -118,8 +154,8 @@ def rule_opening(said):
     told = first['p']['lead'] is not None or first['s0'] - start <= OPENING_M
     for k in range(1, (k_corner or 0) + 1):
         prev, n = notes[k - 1], notes[k]
-        tied = (prev['p']['trail'] is not None or prev.get('distAfterM') is not None or
-                n['p']['link'] in ('into', 'and') or n['s0'] - prev['s1'] <= 40 or n['p']['lead'] is not None)
+        tied = (prev['p']['trail'] is not None or n['p']['link'] in ('into', 'and') or
+                n['s0'] - prev['s1'] <= LINK_M)
         told = told and tied
     ok = gap is None or gap <= OPENING_M or told
     return {'ok': ok, 'gapM': gap, 'first': first['text'], 'firstAtM': first['s0'] - start}
@@ -220,29 +256,73 @@ def hidden_after(pts, s_top, ahead=200.0):
     return (lo, hi) if lo is not None else None
 
 
+def first_turn(pts, h, s_from, s_to):
+    """The first turn in the road starting between s_from and s_to: a heading change of TURN_DEG or more within
+    TURN_WINDOW_M. Returns (along where it starts, 'left' | 'right', degrees) or None."""
+    i = index_at(pts, s_from)
+    while i < len(pts) - 1 and pts[i][3] <= s_to:
+        j = index_at(pts, pts[i][3] + TURN_WINDOW_M)
+        turn = math.degrees(h[j] - h[i])
+        if abs(turn) >= TURN_DEG:
+            # where it starts: the first point of the window the heading has moved 3 degrees from
+            k = next((k for k in range(i, j + 1) if abs(math.degrees(h[k] - h[i])) >= 3), i)
+            return pts[k][3], ('left' if turn > 0 else 'right'), abs(turn)
+        i += 1
+    return None
+
+
 def rule_crests(said, pts):
-    """A crest or jump called on its own whose next corner starts out of sight behind it (or within 30 m of where
-    the road comes back into view): that corner has to be in the same breath -- "left 4 over crest" or "crest into
-    left 4" -- not a later call."""
+    """Every crest or jump called without a corner, with the road out of sight behind it (hidden_after): the first
+    turn in the road there (first_turn, up to CREST_REACH_M past where it comes back into view). Each case is listed
+    with its gap (the crest call's end to the turn). It is flagged unless a corner call of the turn's direction
+    covers it in the same breath (the next call, linked by "into" / "and"; or a "keep right" / "rightish" of its way
+    in the crest's call or that one) or the turn is a corner already being
+    driven (a corner call before the crest runs through it). Geometry, not the calls: a hidden turn the recce never
+    called is flagged too."""
     out = []
     notes = said['notes']
     start = said['startS'] or 0
+    if len(pts) < 10:
+        return out
+    h = headings(pts)
     for k, n in enumerate(notes):
         p = n['p']
         if not (p['crest'] or p['jump']) or p['corners'] or p['shapeOnly']:
             continue
-        nxt = next((m for m in notes[k + 1:] if m['p']['corners']), None)
-        if not nxt:
-            continue
         top = (n['s0'] + n['s1']) / 2
         hid = hidden_after(pts, top)
-        reach = (hid[1] + 30) if hid else top + 40
-        if nxt['s0'] <= reach and nxt['s0'] - n['s1'] <= CREST_GAP_M:
-            linked = nxt['p']['link'] in ('into', 'and') and notes.index(nxt) == k + 1
-            out.append({'atM': top - start, 'cornerAtM': nxt['s0'] - start, 'gapM': nxt['s0'] - n['s1'],
-                        'hidden': hid and (hid[0] - start, hid[1] - start), 'crestCall': n['text'],
-                        'cornerCall': nxt['text'], 'linked': linked})
-    return [o for o in out if not o['linked']]
+        if not hid:
+            continue
+        t = first_turn(pts, h, hid[0], hid[1] + CREST_REACH_M)
+        if not t:
+            continue
+        s_turn, d, deg = t
+
+        def spans(m, pad=20):
+            return (any(c[0] == d for c in m['p']['corners']) and
+                    m['s0'] - pad <= s_turn + TURN_WINDOW_M and m['s1'] + pad >= s_turn)
+        nxt = notes[k + 1] if k + 1 < len(notes) else None
+        linked = d in p['keeps'] or bool(nxt and nxt['p']['link'] in ('into', 'and') and
+                                          (spans(nxt) or d in nxt['p']['keeps']))
+        driving = any(spans(m, 0) for m in notes[:k])
+        called = next((m for m in notes[k + 1:] if spans(m)), None)
+        out.append({'atM': top - start, 'cornerAtM': s_turn - start, 'gapM': s_turn - n['s1'], 'dir': d,
+                    'deg': deg, 'hidden': (hid[0] - start, hid[1] - start), 'crestCall': n['text'],
+                    'cornerCall': called['text'] if called else None, 'linked': linked,
+                    'flagged': not (linked or driving)})
+    return out
+
+
+def crest_flags(crests):
+    return [c for c in crests if c['flagged']]
+
+
+def gap_bin(g):
+    """The histogram bin a crest-to-turn gap falls in: '0-40', '40-60', '60-100', '100+'."""
+    for lo, hi in CREST_GAP_BINS:
+        if hi is None or g < hi:
+            return f'{lo}-{hi}' if hi is not None else f'{lo}+'
+    return None
 
 
 def rule_silence(said):
@@ -266,40 +346,45 @@ MATCH_M = 40
 
 
 def versus_pro(ours, pro, start):
-    """ours / pro: [{ s0, s1, p }] along the same spline. Corner by corner (each pro corner call's start, matched to
-    the nearest of ours of the same direction within MATCH_M), the grades, the long calls, the crests said with a
+    """ours / pro: [{ s0, s1, p }] along the same spline. Corner by corner (pro corner calls paired one to one with
+    ours of the same direction within MATCH_M, nearest pairs first), the grades, the long calls, the crests said with a
     corner, and the first call."""
     r = {'proCorners': 0, 'ourCorners': 0, 'found': 0, 'sameGrade': 0, 'withinOne': 0, 'gradeDiff': 0,
          'graded': 0, 'proLong': 0, 'longFound': 0, 'longSaid': 0, 'proCrestCorner': 0, 'crestCornerSaid': 0,
          'crestCornerCrestOnly': 0, 'misses': [], 'crestMisses': [], 'longMisses': []}
     oc = [(n, d, g) for n in ours for d, g in n['p']['corners']]
     r['ourCorners'] = len(oc)
-    for n in pro:
-        for d, g in n['p']['corners']:
-            r['proCorners'] += 1
-            best, bd = None, MATCH_M
-            for m, d2, g2 in oc:
-                dist = abs(m['s0'] - n['s0'])
-                if d2 == d and dist <= bd:
-                    best, bd = (m, g2), dist
-            pg = grade_num(g)
+    pc = [(n, d, g) for n in pro for d, g in n['p']['corners']]
+    # one to one: the nearest pairs first, each of ours used once
+    pairs = sorted((abs(m['s0'] - n['s0']), a, b) for a, (n, d, _) in enumerate(pc)
+                   for b, (m, d2, _) in enumerate(oc) if d2 == d and abs(m['s0'] - n['s0']) <= MATCH_M)
+    match, used = {}, set()
+    for _, a, b in pairs:
+        if a not in match and b not in used:
+            match[a] = b
+            used.add(b)
+    for a, (n, d, g) in enumerate(pc):
+        r['proCorners'] += 1
+        best = (oc[match[a]][0], oc[match[a]][2]) if a in match else None
+        pg = grade_num(g)
+        if best:
+            r['found'] += 1
+            og = grade_num(best[1])
+            if pg is not None and og is not None:
+                r['graded'] += 1
+                r['sameGrade'] += og == pg
+                r['withinOne'] += abs(og - pg) <= 1
+                r['gradeDiff'] += og - pg
+        else:
+            r['misses'].append({'atM': n['s0'] - start, 'pro': n['text']})
+        if n['p']['long']:
+            r['proLong'] += 1
             if best:
-                r['found'] += 1
-                og = grade_num(best[1])
-                if pg is not None and og is not None:
-                    r['graded'] += 1
-                    r['sameGrade'] += og == pg
-                    r['withinOne'] += abs(og - pg) <= 1
-                    r['gradeDiff'] += og - pg
+                r['longFound'] += 1
+                r['longSaid'] += best[0]['p']['long']
             else:
-                r['misses'].append({'atM': n['s0'] - start, 'pro': n['text']})
-            if n['p']['long']:
-                r['proLong'] += 1
-                if best:
-                    r['longFound'] += 1
-                    r['longSaid'] += best[0]['p']['long']
-                else:
-                    r['longMisses'].append({'atM': n['s0'] - start, 'pro': n['text']})
+                r['longMisses'].append({'atM': n['s0'] - start, 'pro': n['text']})
+    for n in pro:
         if n['p']['corners'] and (n['p']['crest'] or n['p']['jump']):
             r['proCrestCorner'] += 1
             near = [m for m in ours if abs(m['s0'] - n['s0']) <= MATCH_M or
@@ -313,6 +398,6 @@ def versus_pro(ours, pro, start):
                                          'ours': ' / '.join(m['text'] for m in near) or '(nothing)'})
     r['proFirst'] = pro[0]['text'] if pro else None
     r['ourFirst'] = ours[0]['text'] if ours else None
-    r['proFirstLead'] = pro[0]['p']['lead'] if pro else None
-    r['ourFirstLead'] = ours[0]['p']['lead'] if ours else None
+    r['ourFirstAtM'] = ours[0]['s0'] - start if ours else None
+    r['proFirstAtM'] = pro[0]['s0'] - start if pro else None
     return r
