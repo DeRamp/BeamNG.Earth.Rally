@@ -7,7 +7,8 @@
 --     corner start, the route half way between, and the corner end), then pacenote.structuredForProjection;
 --   - the distance calls: path.autofillDistanceCalls (corner end, or start with distanceMeasureWaypoint 'cs', to the
 --     next non-isolated note's corner start, along the road either way round; "into" / "and" under 20 / 40 m, else
---     "<n>" after the note; '#' in a field blocks it);
+--     "<n>" after the note; '#' in a field blocks it), and the opening distance the mod sets on the first note
+--     after it (stageWriter.openingCall);
 --   - the words: compositorUtil.compositePhraseEntries with the style's config (english/enthusiast or casual).
 -- Only the pieces of the game that need the engine are stood in for here (vec3, a log, the road architect's
 -- circle through three points). Pure Lua otherwise: runs under lupa like the offline tests.
@@ -360,6 +361,14 @@ function M.say(built, opts)
         end
       end
     end
+  end
+  -- the opening distance the mod puts on the first note after the game's autofill (rallyAdapter.applyOpening,
+  -- stageWriter.openingCall: the same function), kept off a blocked field; a style with no distance calls drops it
+  -- in the words, as the game does
+  if distanceCalls and list[1] and list[1].before ~= blocker then
+    local okW, writer = pcall(require, 'earthRally/stageWriter')
+    local str = okW and writer.openingCall and writer.openingCall(built, cfg.distance) or nil
+    if str then list[1].before = str end
   end
   -- notes whose corners overlap: the next note's corner start before this note's corner end (the game measures the
   -- gap the other way round and says it as a distance)

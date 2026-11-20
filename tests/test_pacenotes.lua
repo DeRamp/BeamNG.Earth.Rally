@@ -615,4 +615,78 @@ do
   T.check(show(near) == show(pn0), 'a stop just past the finish: the notes as without one')
 end
 
+------------------------------------------------------------------------------------------ the opening distance
+do
+  -- the game's textCompositor:distanceToString, english rules
+  local ds = writer.distanceString
+  T.check(ds(83) == '80' and ds(86) == '90' and ds(124) == '100' and ds(594) == '600' and ds(976) == '1 km' and
+          ds(1000) == '1 km' and ds(1100) == '1 km' and ds(1260) == '1 point 2 5 km' and ds(1400) == '1 point 5 km',
+          'distanceString: 10 m, 50 m, then km in quarters with "point" (' .. ds(83) .. ', ' .. ds(594) .. ', ' ..
+          ds(976) .. ', ' .. ds(1260) .. ')')
+  T.check(ds(130, { units = { base = 'm', large = 'km', point = 'point' }, rounding = { small = 5, medium = 25,
+          mediumThreshold = 100, large = 500, largeThreshold = 1000 } }) == '125', 'distanceString: a style\'s own rules')
+  -- the first corner 600 m from the line: its distance first; 50 m: none
+  local far = build(road({ { 'straight', 600 }, { 'arc', 60, 60 }, { 'straight', 250 } }))
+  local str, m = writer.openingCall(far)
+  T.check(str == '600' and m and math.abs(m - 600) < 30, 'openingCall: a first corner 600 m in (' .. tostring(str) ..
+    ', ' .. tostring(m) .. ')')
+  local close = build(road({ { 'straight', 50 }, { 'arc', 60, 60 }, { 'straight', 250 } }))
+  T.check(writer.openingCall(close) == nil, 'openingCall: none for a first corner 50 m in (' ..
+    tostring(close.openingM) .. ')')
+  T.check(writer.openingCall({ openingM = 1300 }) == '1 point 2 5 km', 'openingCall: in km past 1000 m')
+  -- a stage that starts in a hairpin: called from just past the clear stretch, not left out; one over by then is
+  local hp = build(road({ { 'straight', 5 }, { 'arc', 15, 170 }, { 'straight', 400 } }))
+  local hpn = notes(hp)
+  T.check(hp.corners == 1 and hpn[1]:find('4:corner') and writer.openingCall(hp) == nil,
+    'a hairpin off the start line: called first, with no opening distance (' .. show(hpn) .. ')')
+  local kink = build(road({ { 'straight', 3 }, { 'arc', 20, 40 }, { 'straight', 400 } }))
+  T.check(kink.corners == 0, 'a kink over within the clear stretch off the line: none (' .. show(notes(kink)) .. ')')
+
+  -- rallyAdapter: put on the loaded notebook's first note after the game's autofill, again on a resync and at GO,
+  -- the note compiled again; left alone where the author blocked it or the voice says no distances
+  local ra = require('earthRally/rallyAdapter')
+  local function fakeNote()
+    local n = { before = '', compiled = 0, cleared = 0 }
+    function n:getNoteFieldBefore() return self.before end
+    function n:setNoteFieldBefore(v, meters) self.before, self.beforeM = v, meters end
+    function n:clearCachedFgData() self.cleared = self.cleared + 1 end
+    function n:asCompiled() self.compiled = self.compiled + 1 end
+    return n
+  end
+  local first, second = fakeNote(), fakeNote()
+  local callsOn = true
+  local comp = { distanceCallsEnabled = function() return callsOn end,
+                 getConfig = function() return { distance = writer.DISTANCE_RULES } end }
+  local rm = { notebook = { pacenotes = { sorted = { first, second } },
+                            getTextCompositor = function() return comp end },
+               resyncAfterTeleport = function() end, setPacenoteProcessingEnabled = function() end }
+  local savedRally = rawget(_G, 'gameplay_rally')
+  local savedLog = rawget(_G, 'log')
+  _G.log = _G.log or function() end
+  _G.gameplay_rally = { getRallyManager = function() return rm end }
+  T.check(ra.setOpening(612) and first.before == '600' and first.beforeM == 612 and first.compiled == 1 and
+          first.cleared == 1 and second.before == '', 'rallyAdapter: the first note opens with its distance, compiled again')
+  ra.resync()
+  T.check(first.compiled == 1, 'rallyAdapter: a resync with the distance still there leaves it')
+  first.before = ''   -- (the engine's autofill ran again: a voice pack change)
+  ra.resync()
+  T.check(first.before == '600' and first.compiled == 2, 'rallyAdapter: set again on a resync after an autofill')
+  first.before = ''
+  ra.notesOn(true)
+  T.check(first.before == '600', 'rallyAdapter: set again at GO')
+  first.before = '#'
+  ra.resync()
+  T.check(first.before == '#', 'rallyAdapter: a blocked field is left alone')
+  first.before = ''
+  callsOn = false
+  ra.resync()
+  T.check(first.before == '', 'rallyAdapter: a voice with no distance calls gets none')
+  callsOn = true
+  ra.setOpening(50)
+  T.check(first.before == '', 'rallyAdapter: none for a first corner in sight of the line')
+  ra.setOpening(nil)
+  _G.gameplay_rally = savedRally
+  _G.log = savedLog
+end
+
 T.done('test_pacenotes')

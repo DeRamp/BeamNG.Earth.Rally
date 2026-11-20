@@ -56,6 +56,10 @@ def parse(text):
             out['lead'] = out['lead'] or v
         else:
             out['trail'] = v
+            # (a call with no corner opens with its distance too: "150 small crest 250"; read as a lead as well, and
+            #  as the trail where it is the only number, as before)
+            if first_corner is None and i == 0 and len(words) > 1:
+                out['lead'] = v
     return out
 
 

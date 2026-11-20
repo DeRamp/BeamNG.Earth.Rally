@@ -89,6 +89,25 @@ function M.stageCorners(line, cum, o)
   local corners = {}
   -- (and the long sweepers geo.corners leaves out: pacenotes.sweepers)
   local found = geo.corners(stagePts, M.NOTE_STEP_M, o.corners)
+  -- (a corner the stage starts in -- a hairpin off the line -- is called from just past the clear stretch when
+  --  NOTE_CLEAR_M of it or more is still to come, measured from there; only a corner over by then is left out)
+  do
+    local turn, k = geo.curvature(stagePts, M.NOTE_STEP_M, o.corners and o.corners.smoothM)
+    local minAngle = (o.corners and o.corners.minAngleDeg) or 12
+    for ci, c in ipairs(found) do
+      if c.i0 <= clear and c.i1 >= 2 * clear + 1 then
+        local a, kMax = 0, 0
+        for j = clear + 1, c.i1 do
+          a = a + turn[j]
+          if math.abs(k[j]) > kMax then kMax = math.abs(k[j]) end
+        end
+        if math.abs(math.deg(a)) >= minAngle then
+          found[ci] = { i0 = clear + 1, i1 = c.i1, dir = c.dir, angleDeg = math.abs(math.deg(a)),
+                        minRadius = kMax > 0 and 1 / kMax or math.huge, fromStart = true }
+        end
+      end
+    end
+  end
   local sTurn, sK = geo.curvature(stagePts, M.NOTE_STEP_M, pacenotes.SWEEP_SMOOTH_M)
   for _, c in ipairs(pacenotes.sweepers(sTurn, sK, M.NOTE_STEP_M, found)) do
     if c.i0 > clear and c.i1 < #stagePts and (c.i1 < iF or c.i0 > iF + clear) and not muted(c.i0) and
@@ -98,6 +117,56 @@ function M.stageCorners(line, cum, o)
   end
   -- (a chicane, or a twisty run of fast corners, is one note: one entry here, so the count is still one per note)
   return pacenotes.group(corners, M.NOTE_STEP_M), stagePts, muted, iF
+end
+
+-- The opening distance (the owner, 2026-11-19: "caution two right" with the corner 600 m away). The first note
+-- plays at the start line (triggerType 15, when the car first moves) and the game says a distance only after a note
+-- (path.autofillDistanceCalls, which also clears every note's `before` field when the rally engine loads the
+-- notebook), so the straight up to the first note is never told. A pro opens with it: "80 4 left". So the first
+-- note's `before` field gets the distance from the start line to its corner start, set after the engine's own
+-- autofill (rallyAdapter.setOpening) -- spoken from the voice pack's audio for that distance, as one after a note is.
+-- Only past OPENING_MIN_M: a corner closer than that is in sight off the line.
+M.OPENING_MIN_M = 80
+-- the english styles' distance rules (gameplay/rally/compositors/styles/english/distance.lua), for when the game's
+-- own cannot be read
+M.DISTANCE_RULES = {
+  units = { base = 'm', large = 'km', point = 'point' },
+  rounding = { small = 10, medium = 50, mediumThreshold = 100, large = 250, largeThreshold = 1000 },
+}
+
+local function customRound(d, to) return math.floor(d / to + 0.5) * to end
+
+-- A distance (m) as the game's textCompositor:distanceToString says it, by a style's distance rules (its `distance`
+-- table; M.DISTANCE_RULES when nil): 10 m steps under 100 m, 50 m steps to 1000 m, then km in 250 m steps with
+-- "point" ("1 point 2 5 km").
+function M.distanceString(dist, rules)
+  rules = rules or M.DISTANCE_RULES
+  local r, u = rules.rounding or M.DISTANCE_RULES.rounding, rules.units or M.DISTANCE_RULES.units
+  dist = math.floor(dist)
+  local v, unit
+  if dist >= r.largeThreshold then
+    v, unit = customRound(dist, r.large) / r.largeThreshold, u.large
+  elseif dist >= r.mediumThreshold then
+    v, unit = customRound(dist, r.medium), u.base
+    if v == r.largeThreshold then v, unit = customRound(dist, r.large) / r.largeThreshold, u.large end
+  else
+    v, unit = customRound(dist, r.small), u.base
+  end
+  local s = tostring(v)
+  if unit == u.large then
+    local a, b = s:match('(%d+)%.(%d+)')
+    if a and b then s = a .. ' ' .. u.point .. ' ' .. (b:gsub('%d', '%0 '):gsub(' $', '')) end
+    s = s .. ' ' .. unit
+  end
+  return s
+end
+
+-- built: M.build's result. The first note's opening call: its words (rules: as M.distanceString) and the metres,
+-- or nil when its corner start is OPENING_MIN_M or less from the start line.
+function M.openingCall(built, rules)
+  local m = built and built.openingM
+  if not m or m <= M.OPENING_MIN_M then return nil end
+  return M.distanceString(m, rules), m
 end
 
 -- line: { {x, y, z}... } in game coordinates, the stage from (about) its start to (about) its finish.
@@ -559,9 +628,11 @@ function M.build(line, opts)
   -- (corners: the stage's own, start to finish -- the menu's Corners tile; those past the finish counted apart)
   local afterFinish = 0
   for _, c in ipairs(corners) do if c.i0 > iF then afterFinish = afterFinish + 1 end end
+  -- (the first note's corner start, from the start line: M.openingCall)
+  local openingM = entries[1] and (entries[1].i0 - 1) * step or nil
   return { race = race, driveline = driveline, notebook = notebook, nodes = nodes, corners = #corners - afterFinish,
            cornersAfterFinish = afterFinish, landmarks = landmarks, notes = #pacenotes_, calls = calls, startM = startM,
-           finishM = finishM, stopM = stopM, lengthM = finishM - startM, leadM = lead }
+           finishM = finishM, stopM = stopM, lengthM = finishM - startM, leadM = lead, openingM = openingM }
 end
 
 function M.write(dir, built)

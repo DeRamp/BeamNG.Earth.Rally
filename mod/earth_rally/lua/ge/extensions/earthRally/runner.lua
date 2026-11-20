@@ -790,6 +790,7 @@ local function stepBuild()
   writer.write(run.dir, built)
   run.built = built
   local ok, why = rallyA.load(run.id, run.dir)
+  if ok then rallyA.setOpening(built.openingM) end   -- (the first call says how far its corner is)
   rallyA.notesOn(false)        -- (no calls on the way to the start: on at GO)
   run.checks.rallyEngine = ok and 'loaded' or ('failed: ' .. tostring(why))
   run.checks.cornersFound = built.corners
