@@ -200,6 +200,24 @@ do
   T.check(has(bc, '2:crest,4:corner') or has(bc, '2:smallCrest,4:corner') or has(bc, '2:bigCrest,4:corner') or
           has(bc, '2:brakeOverCrest'),
     'a crest just before a corner: called before it (' .. show(bc) .. ')')
+  -- a crest 50 m before a corner that it hides: one breath, "crest three left" (2026-11-19: it was "crest 40",
+  -- then the corner); one 150 m before a corner the road climbs to in plain sight is a call of its own
+  local hid = build(road({ { 'straight', 520 }, { 'arc', 40, 80 }, { 'straight', 400 } }, hump(470, 60, 3)))
+  local hn = notes(hid)
+  local function crestOrJump(x) return x:find('[Cc]rest') or x:find('[Jj]ump') end
+  T.check(#hn == 2 and crestOrJump(hn[1]) and hn[1]:find('4:corner'), 'a corner 50 m behind a crest that hides ' ..
+    'it: the crest and the corner in one note (' .. show(hn) .. ')')
+  local far = notes(build(road({ { 'straight', 620 }, { 'arc', 40, 80 }, { 'straight', 400 } }, hump(470, 60, 3))))
+  T.check(#far == 3 and crestOrJump(far[1]) and not far[1]:find('corner'), 'a crest 150 m before a corner: ' ..
+    'a note of its own (' .. show(far) .. ')')
+  local zs = {}
+  for i = 1, 100 do zs[i] = hump(250, 60, 3)((i - 1) * 5) end
+  local ht = pn.hiddenAfter(zs, 5, 51)
+  T.check(ht and ht > 51 and ht <= 51 + pn.HIDDEN_AHEAD_M / 5, 'hiddenAfter: the road past a 3 m crest out of sight (' ..
+    tostring(ht) .. ')')
+  local flatZ = {}
+  for i = 1, 100 do flatZ[i] = 0 end
+  T.check(pn.hiddenAfter(flatZ, 5, 51) == nil, 'hiddenAfter: nothing hidden on flat road')
   -- up and down: a long steep hill after a corner
   local hill = notes(build(road({ { 'straight', 400 }, { 'arc', 60, 60 }, { 'straight', 600 } }, function(s)
     return s > 470 and (s - 470) * 0.12 or 0 end)))

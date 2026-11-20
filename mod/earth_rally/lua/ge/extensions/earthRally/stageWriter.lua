@@ -44,6 +44,9 @@ M.LANDMARKS = {
 M.LANDMARK_BEFORE_M = 20    -- a landmark this far before a corner's start, or in it, or ...
 M.LANDMARK_AFTER_M = 10     -- ... this far past its end, is called with the corner
 M.HEIGHT_BEFORE_M = 40      -- a crest, a jump or a dip this far before a corner's start ("crest, left 4") ...
+M.CREST_INTO_M = 60         -- (and a crest or a jump this far before it, or with the corner's start out of sight
+M.CREST_HIDDEN_M = 100      --  behind it -- pacenotes.hiddenAfter -- up to this far: "crest three left", the pro's
+                            --  "crest into 3 left"; a corner hidden behind a crest is never a call of its own)
 M.HEIGHT_AFTER_M = 30       -- ... or this far past its end ("left 4 into crest"), or a hill starting there, is
                             -- called with the corner; else on a note of its own, if it is big enough to be
 M.HILL_AHEAD_M = 60         -- "up" / "down" on a corner only with this much of the hill still ahead of its end
@@ -472,10 +475,15 @@ function M.build(line, opts)
       features[#features + 1] = f
     end
   end
+  local intoN, hiddenN = math.ceil(M.CREST_INTO_M / step), math.ceil(M.CREST_HIDDEN_M / step)
   for _, ev in ipairs(events) do
     if not ev.used and not rimSaid(ev) then
       local big = ev.size == 'big'
       local f = { i = ev.i, before = hb, after = ha, aloneSlot = 'pre' }
+      -- (a crest or a jump: on the corner that starts within CREST_INTO_M past it, or out of sight behind it)
+      if ev.kind ~= 'dip' then
+        f.before = math.max(hb, intoN, math.min(hiddenN, ev.hiddenTo and ev.hiddenTo - ev.i or 0))
+      end
       if ev.kind == 'jump' then
         f.prio = M.PRIORITY.jump
         f.pre = big and 'bigJump' or 'jump'

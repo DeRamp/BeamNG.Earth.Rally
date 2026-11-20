@@ -625,9 +625,29 @@ function M.blind(z, step, v, clean)
   return out
 end
 
+-- What a crest hides: from the driver's eye (SIGHT_EYE_M up) HIDDEN_EYE_BACK_M before its top, the road just past it
+-- that cannot be seen (SIGHT_TARGET_M of it), up to HIDDEN_AHEAD_M on. z: the heights (every `step` m); top: the
+-- crest's sample. Returns the last sample of that hidden stretch, or nil when nothing past the top is hidden.
+M.HIDDEN_EYE_BACK_M = 30
+M.HIDDEN_AHEAD_M = 150
+function M.hiddenAfter(z, step, top)
+  local n = #z
+  local ie = max(1, top - floor(M.HIDDEN_EYE_BACK_M / step + 0.5))
+  local eye = z[ie] + M.SIGHT_EYE_M
+  local best, last = -huge, nil
+  for j = ie + 1, min(n, top + floor(M.HIDDEN_AHEAD_M / step + 0.5)) do
+    local d = (j - ie) * step
+    local seen = (z[j] + M.SIGHT_TARGET_M - eye) / d >= best
+    if (z[j] - eye) / d > best then best = (z[j] - eye) / d end
+    if j > top and not seen then last = j
+    elseif last and seen then break end
+  end
+  return last
+end
+
 -- pts: the stage's samples (with z), v: M.speeds over them. Returns
 --   events  { { i, kind = 'crest' | 'jump' | 'dip', size = 'small' | 'big' | nil, alone = true when strong enough
---             to be called on its own }... } in order
+--             to be called on its own, hiddenTo (a crest's or a jump's: M.hiddenAfter) }... } in order
 --           (a crest at the top of a downhill from flat road has down = true: "down" where the voice says it)
 --   hills   { { i0, i1, kind = 'up' | 'down', fromCrest = that crest's event when it is one's descent }... }
 --   grade   the grade at each sample (fraction, over GRADE_OVER_M either side), or nil
@@ -730,6 +750,10 @@ function M.heights(pts, step, v)
     end
   end
   table.sort(events, function(a, b) return a.i < b.i end)
+  -- (how far past each crest and jump the road is out of sight: a corner starting there is called with it)
+  for _, ev in ipairs(events) do
+    if ev.kind ~= 'dip' then ev.hiddenTo = M.hiddenAfter(z, step, ev.i) end
+  end
   local hills, i = {}, 1
   local need = floor(M.HILL_M / step + 0.5)
   while i <= n do
