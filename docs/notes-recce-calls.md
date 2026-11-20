@@ -36,7 +36,7 @@ issues" (2026-11-19). Numbers before and after: [`pacenote-check.md`, Fixes](pac
 - **Now:** a crest within `stageWriter.CREST_INTO_M` (60 m) before a corner, or with the corner out of sight behind
   it (`pacenotes.hiddenAfter`, up to `CREST_HIDDEN_M`, 100 m), is said with it: "crest three left". A jump stays at
   40 m: the note plays before the corner, and a jump further back could come first.
-- No more crest calls: the same crests, 23 fewer notes over 415 km.
+- No more crest calls: the same crests, a few fewer notes (6.91 per km, was 6.96 before this fix).
 
 ## 4. Lines that double back (and the overlapping notes)
 
