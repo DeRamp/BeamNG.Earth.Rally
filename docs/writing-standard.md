@@ -110,6 +110,8 @@ old `docs/release-*.md` files stay as history.
 
 ## Release checklist
 
+0. The version number is confirmed with the owner: patch for fixes and small improvements, minor for a major new
+   feature (`CLAUDE.md`, Branches and releases).
 1. `CHANGELOG.md`: new entry at the top, within the word limit.
 2. `README.md`: no version number in it (it says alpha); update **Known issues** if they changed. Still under 600 words.
 3. Grep for the old version number (`M.VERSION` in `mod/`, versioned doc names like `pacenotes-X.Y.Z.md`) and

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Earth Rally · rally loop test</title>
-<!-- The owner's checklist for the rally-loop build (1.9.1-alpha+rallyloop) on the Warden Test Rally. Each item: Works /
+<!-- The owner's checklist for the rally-loop build (1.9.4-alpha+rallyloop) on the Warden Test Rally. Each item: Works /
      Broken / Skipped and a note; kept in this browser (localStorage) until Reset. "Copy report" puts the broken and
      skipped items, with their notes, on the clipboard to paste back. Self-contained: nothing fetched. -->
 <style>
@@ -53,7 +53,7 @@ textarea { width: 100%; margin-top: 10px; min-height: 54px; background: #0d0f12;
   <button id="reset">Reset</button>
 </header>
 <main>
-  <p class="intro">Build <b>1.9.1-alpha+rallyloop</b> on the <b>Warden Test Rally</b> (Sat 7 – Sun 8 Nov 2026). Mark each
+  <p class="intro">Build <b>1.9.4-alpha+rallyloop</b> on the <b>Warden Test Rally</b> (Sat 7 – Sun 8 Nov 2026). Mark each
     item <b>Works</b>, <b>Broken</b> or <b>Skip</b>; a Broken one opens a note for what you saw. Ticks are kept in this
     browser. When done, <b>Copy report</b> and paste it to me. <span class="flag">first try</span> marks what has never
     run in the game.</p>
@@ -194,7 +194,7 @@ document.querySelectorAll(".filters button").forEach(b => b.onclick = () => {
   paint();
 });
 function report() {
-  const out = ["Rally loop test (1.9.1-alpha+rallyloop, Warden Test Rally)", ""];
+  const out = ["Rally loop test (1.9.4-alpha+rallyloop, Warden Test Rally)", ""];
   const part = (st, title) => {
     const rows = [];
     for (const [name, , items] of SECTIONS) for (const [id, what] of items) {

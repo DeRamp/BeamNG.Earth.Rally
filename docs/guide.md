@@ -10,7 +10,8 @@ works on the **[official BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Eart
 It reads the roads round the car, so it takes the car along the stage, a stretch at a time, then brings it back
 where it was. You see the world load at each stop. A 30 km stage takes about five minutes on ground already on your
 computer; new ground takes longer. Where BeamNG.Earth's traffic or roads are switched off it cannot read them, and
-says so.
+says so. The roads it reads are kept on your computer
+(`earthRally/roadcache/`, for 30 days), so a second auto recce of the same ground does not move the car.
 
 ## Getting a stage to drive
 

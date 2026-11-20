@@ -1031,6 +1031,15 @@ do
   events.forget()
   local l3 = events.stageLine('test5', 'hill', st)
   T.check(l3 == nil, 'a matched line made from another version of the map: not used')
+  -- a recce stopping 40 m before the flying finish, with only that older matched line: driven on, and the pill says
+  -- "Recce stops short" ('short'), not "Missing road segments" ('recce') -- no road is missing
+  files['/earthRally/recce/test5__hill.json'] = { format = 1, points = recFrom, share = 0.95 }
+  events.forget()
+  local stS = require('earthRally/menu').stageStatus('test5', st)
+  T.check(stS.status == 'short' and stS.shortM and stS.note:find('before the flying finish'),
+    'a recce that stops short: its own status (' .. tostring(stS.status) .. ')')
+  files['/earthRally/recce/test5__hill.json'] = nil
+  events.forget()
 end
 
 ------------------------------------------------------------------------------------------ no notes where the map has no road

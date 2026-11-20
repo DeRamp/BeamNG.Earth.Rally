@@ -3,6 +3,45 @@
 Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/writing-standard.md). Downloads:
 [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
 
+## 1.9.4-alpha: missing road segments (2026-11-19)
+
+Works with BeamNG.drive 0.40.6 · [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+.
+
+A clearer name for stages with a gap in their road.
+
+### Changed
+* **Missing road segments** replaces **Recce recommended** on stages where part of the road isn't on the map.
+* **Recce stops short** replaces **Recce recommended** when your own recce ends before the finish.
+
+## 1.9.3-alpha: co-driver settings (2026-11-19)
+
+Works with BeamNG.drive 0.40.6 · [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+.
+
+Set up your co-driver from Earth Rally's settings page.
+
+### New
+* **Co-driver** settings: voice, Casual or Professional calls, call timing, spoken calls and calls on screen.
+* **Voice** and **Style** lock during a run and change between runs.
+
+### Changed
+* **Settings** page tidied: the old time controls note is gone, the Leaderboards text is shorter.
+
+### Fixed
+* **Co-driver style** on a new profile matched to the voice the game actually uses.
+
+## 1.9.2-alpha: roads remembered (2026-11-19)
+
+Works with BeamNG.drive 0.40.6 · [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+.
+
+**Auto recce** is quicker and finds more of the road on stages drawn with rough lines.
+
+### Changed
+* **Auto recce** keeps the roads it reads on disk. Recce the same ground again and the car doesn't move.
+* **Auto recce** stops less often along the stage: about 30% fewer stops.
+
+### Fixed
+* **Recce recommended** on stages that are road all the way, where the organisers' line cuts across bends.
+
 ## 1.9.1-alpha: play from the main menu (2026-11-19)
 
 Works with BeamNG.drive 0.40.6 · [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+.

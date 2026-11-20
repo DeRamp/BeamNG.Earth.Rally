@@ -391,7 +391,7 @@ do
   events.forget()
   local s2 = menu.stage('ev', 'b', 'ATC')
   T.check(s2.status == 'recce' and s2.note:find('1.2 km') and s2.atc and s2.stop,
-    'a stage with a gap: recce recommended')
+    'a stage with a gap: missing road segments')
   -- a line of two points 1.1 km apart, both at height 0: a straight with no corner, and no height to read (every
   -- point at one height is a line that was given none, not a flat road) -- so Gain and Loss are dashes
   T.check(s2.corners == 0 and s2.gainM == nil and s2.lossM == nil, 'a straight line with no heights: 0 corners, no climb')

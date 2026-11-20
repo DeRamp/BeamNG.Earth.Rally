@@ -285,6 +285,60 @@ do
     string.format('%.1f', lowest) .. ')')
 end
 
+------------------------------------------------------------------------ 2b: a winding road, a line of long straights
+
+do
+  reset()
+  -- The organisers' line is one straight 3 km; the road bows up to 180 m north of it between 900 and 2100 m (Bolster
+  -- Hollow: a 12-point line, the road up to 260 m off its straights). The waypoints on the bow miss it (past SNAP_M);
+  -- the line is one straight (past SPARSE_M), so the run is bridged along the road.
+  local pts = {}
+  for d = 0, 3000, 20 do
+    local off = 0
+    if d > 900 and d < 2100 then off = 180 * math.sin((d - 900) / 1200 * math.pi) end
+    pts[#pts + 1] = at(d, off, 100 + d * 0.01)
+  end
+  world.roads = { { name = 'w', pts = pts } }
+  local res = run(EVENT, stageOf(lineEast(3000, 1500)))
+  local m = matchedFile()
+  T.check(res.ok == true and m ~= nil, 'the winding road matched (' .. tostring(res.why) .. ')')
+  T.check(m and #m.gaps == 0 and m.gapM == 0, 'no stretch called no road where the road bows off the line (' ..
+    tostring(m and m.gapM) .. ' m)')
+  T.check(m and m.maxOffMapLineM > 170, 'the matched line follows the road out (' ..
+    tostring(m and m.maxOffMapLineM) .. ' m off at most)')
+end
+
+do
+  reset()
+  -- ... but a road that does not join the stage's road either side is not taken: road for the first and last 1 km,
+  -- and between them only a separate road 150 m north
+  world.roads = { eastRoadFrom('a', 0, 1000, 20, 0), eastRoadFrom('b', 2000, 3000, 20, 0),
+                  eastRoadFrom('p', 1100, 1900, 20, 150) }
+  run(EVENT, stageOf(lineEast(3000, 100)))
+  local m = matchedFile()
+  T.check(m and m.gapM > 600, 'a road off to the side that joins nothing is not the stage (' ..
+    tostring(m and m.gapM) .. ' m with no road)')
+end
+
+do
+  reset()
+  -- a well-drawn line (a point every 100 m) over a stretch with no road, beside a road 150 m north that does join
+  -- the stage's road at both ends: the line is not rough there, so the stage is not moved onto that road
+  local north = {}
+  for d = 1000, 2000, 20 do
+    local off = 150
+    if d < 1150 then off = (d - 1000) elseif d > 1850 then off = (2000 - d) end
+    north[#north + 1] = at(d, off, 100 + d * 0.01)
+  end
+  local road = { name = 'n', pts = north, names = {} }
+  road.names[1], road.names[#north] = 'a51', 'b1'
+  world.roads = { eastRoadFrom('a', 0, 1000, 20, 0), eastRoadFrom('b', 2000, 3000, 20, 0), road }
+  run(EVENT, stageOf(lineEast(3000, 100)))
+  local m = matchedFile()
+  T.check(m and m.gapM > 600, 'a well-drawn line keeps its gap beside a joined road off to the side (' ..
+    tostring(m and m.gapM) .. ' m with no road)')
+end
+
 ------------------------------------------------------------------------------------------ 3: coverage incomplete
 
 do

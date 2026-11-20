@@ -124,6 +124,8 @@ M.STYLES = '/lua/ge/extensions/gameplay/rally/compositors/styles/'
 function M.speaks()
   local okV, vp = pcall(require, M.VOICEPACK)
   if not okV or type(vp) ~= 'table' or type(vp.resolveEffectiveEntry) ~= 'function' then return nil end
+  -- (a new profile's empty voice list: the game's default voice put in first, as the game does on a rally load)
+  if type(vp.ensureSettingsInitialized) == 'function' then pcall(vp.ensureSettingsInitialized, {}) end
   local okE, _, entry = pcall(vp.resolveEffectiveEntry, nil, nil, { globalOnly = true, writeSettings = false })
   local style = okE and type(entry) == 'table' and entry.compositorStyle or nil
   if type(style) ~= 'string' or not style:match('^[%w_/]+$') then return nil end

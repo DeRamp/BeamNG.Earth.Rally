@@ -21,7 +21,8 @@ local function basename(f) return f and tostring(f):match('([^/\\]+)$') or nil e
 
 -- A stage's line and what it means for the player:
 --   status 'ready'  notes from the stage's own roads (matched, all on the map) or a recce
---          'recce'  recce recommended: part of the stage has no road on the map, or the recce stops short
+--          'recce'  missing road segments: part of the stage has no road on the map
+--          'short'  recce stops short: the player's own recce ends before the flying finish
 --          'none'   no line yet: a recce is needed before it can be driven
 --
 -- autoRecce: can this BeamNG.Earth run an auto recce (earthAdapter.hasRoadGraph, passed in -- no game calls here)?
@@ -35,7 +36,7 @@ function M.stageStatus(eventId, stage, autoRecce)
   if kind == 'recce' then
     local shortM = events.recceShortM(events.recce(eventId, stage.id), stage, events.matched(eventId, stage.id))
     if shortM >= events.RECCE_SHORT_OF_FF_M then
-      out.status, out.shortM = 'recce', shortM
+      out.status, out.shortM = 'short', shortM
       out.note = string.format('Your recce stops %d m before the flying finish: drive it again.', math.floor(shortM))
     else
       out.status, out.note = 'ready', 'Notes from your recce.'

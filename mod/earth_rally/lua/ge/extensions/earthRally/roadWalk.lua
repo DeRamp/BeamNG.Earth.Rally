@@ -16,11 +16,17 @@ local M = {}
 
 M.TIMEOUT_S = 180       -- a teleport, the world loaded and a graph built round the car, at most this long
 M.NO_GRAPH_S = 60      -- the world ready this long and no traffic graph at all: traffic or roads are off
-M.SETTLE_S = 1.0        -- once a fresh graph is there, held this long (a second one may follow the first)
-M.NEAR_M = 300          -- the car set down farther than this from the window's centre: the window is not trusted
-M.RADIUS_M = 800        -- the window the auto recce plans with: the graph reaches ~1100 m, less NEAR_M of slack
+M.SETTLE_S = 0.5        -- once a fresh graph is there, held this long (a second one may follow the first)
+M.NEAR_M = 75           -- the car set down farther than this from the window's centre: the window is not trusted
+                        -- (the graph, GRAPH_M round the car, must hold the window, RADIUS_M round its centre, with
+                        --  a margin: 1100 - 1000 - 25. BeamNG.Earth's teleport landed 0 m off in the first walks)
+M.GRAPH_M = 1100        -- BeamNG.Earth's traffic graph: a square this half size round the car (navgraph.WINDOW_M)
+M.KEEP_MARGIN_M = 25    -- a read is kept as covering GRAPH_M less this round the car
+M.RADIUS_M = 1000       -- the window the auto recce plans with: inside KEEP_M, so a window walked once is a cache hit
 M.NAME = 'Earth Rally auto recce'
 
+local walkCache = require('earthRally/walkCache')
+M._cache = walkCache
 local function api() return rawget(_G, 'beamngEarth_api') end
 local function core() return rawget(_G, 'beamngEarth_core') end
 local function wall() return os.clock() end
@@ -113,6 +119,12 @@ function M.request(lat, lon, opts, callback)
   local g = graph()
   req = { lat = lat, lon = lon, callback = callback, t0 = wall(), home = opts.home == true,
           serial = g and g.serial, anchor = g and g.anchor, waiting = true }
+  -- read before: answered from the cache next frame, the car not moved
+  local okC, hit = pcall(walkCache.covered, lat, lon, opts.radius or M.RADIUS_M)
+  if okC and hit then
+    req.cached, req.waiting = true, false
+    req.radius = opts.radius or M.RADIUS_M
+  end
   -- (always a teleport: the graph round a car that is already there may be centred up to 500 m from it, and the
   --  client does not keep its centre, so it cannot be trusted to cover the window. The teleport itself waits in
   --  M.update until the world is ready, so `home` is never read from a car still on its way somewhere)
@@ -154,6 +166,24 @@ function M.reset() req, home = nil, nil end
 function M.update()
   local q = req
   if not q then return end
+  if q.cached and not q.homing then
+    local okR, r = pcall(walkCache.read, q.lat, q.lon, q.radius, 200)
+    if not okR then
+      -- (a cache that cannot be read: walked instead)
+      q.cached, q.waiting = false, true
+      return
+    end
+    log('I', 'earthRally', 'auto recce walk: read from the cache, the car not moved')
+    if q.home and home then
+      local h = home
+      home = nil
+      pcall(teleport, h.lat, h.lon)
+      log('I', 'earthRally', 'auto recce walk: last window from the cache; the car taken back to where it was')
+      q.homing, q.homedAt, q.result = true, wall(), r
+      return
+    end
+    return answer(r)
+  end
   if q.waiting then
     if settled() then go(q) elseif wall() - q.t0 > M.TIMEOUT_S then return answer({ error = 'timed out' }) end
     return
@@ -194,22 +224,25 @@ function M.update()
   -- held SETTLE_S on the same graph, so a second build right behind the first is the one read
   if q.seenSerial ~= g.serial then q.seenSerial, q.seenAt = g.serial, wall() return end
   if wall() - q.seenAt < M.SETTLE_S then return end
-  local r = { nodes = g.nodes, edges = g.edges, complete = true, anchorLat = p.anchorLat, anchorLon = p.anchorLon }
-  log('I', 'earthRally', string.format('auto recce walk: graph %s read, %.0f m from the window\'s centre',
+  log('I', 'earthRally', string.format('auto recce walk: graph %s read, %.0f m from the window centre',
     tostring(g.serial), off))
-  if q.home and home then
-    -- the last window: its nodes to lat / lon now, in this frame, before the car leaves it
-    local a = api()
-    local geo = {}
-    for name, n in pairs(g.nodes) do
-      local x, y, z, rad
-      if type(n) == 'table' then x, y, z, rad = n[1] or n.x, n[2] or n.y, n[3] or n.z, n[4] or n.radius end
-      if x then
-        local ok, la, lo, al = pcall(a.toGeo, x, y, z or 0)
-        if ok and la then geo[name] = { lat = la, lon = lo, alt = al, radius = rad } end
-      end
+  -- its nodes to lat / lon now, in this frame (before the car can leave it), and kept for next time
+  local a = api()
+  local geo = {}
+  for name, n in pairs(g.nodes) do
+    local x, y, z, rad
+    if type(n) == 'table' then x, y, z, rad = n[1] or n.x, n[2] or n.y, n[3] or n.z, n[4] or n.radius end
+    if x then
+      local ok, la, lo, al = pcall(a.toGeo, x, y, z or 0)
+      if ok and la then geo[name] = { lat = la, lon = lo, alt = al, radius = rad } end
     end
-    r = { geoNodes = geo, edges = g.edges, complete = true }
+  end
+  local edges = {}
+  for _, e in ipairs(g.edges) do if type(e) == 'table' then edges[#edges + 1] = { e[1], e[2] } end end
+  local okS, err = pcall(walkCache.store, geo, edges, p.lat, p.lon, M.GRAPH_M - M.KEEP_MARGIN_M)
+  if not okS then log('W', 'earthRally', 'auto recce walk: not kept in the cache: ' .. tostring(err)) end
+  local r = { geoNodes = geo, edges = edges, complete = true }
+  if q.home and home then
     local h = home
     home = nil
     pcall(teleport, h.lat, h.lon)

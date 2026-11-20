@@ -34,11 +34,16 @@ BeamNG.drive 0.40.5 mod (Lua, `mod/earth_rally/`) that runs real rally stages on
 - Release = tag `vX.Y.Z-alpha` on `main` + GitHub **full** release (not pre-release: BeamNG.Earth's Add-ons page only sees full releases) with
   `dist/earth_rally-X.Y.Z-alpha.zip` as the only asset (the ARA 2026 pack is inside it; never attach another zip), only when
   the owner asks: `/release` (`tools/release.py`).
+- **Confirm the number with the owner before every release** (the owner, 2026-11-19): say the number you propose
+  and why, and wait for a yes before tagging. Size decides it, not the branch name:
+  - **Patch** (`1.9.1` -> `1.9.2`): fixes and small improvements to what is already there, even several at once.
+  - **Minor** (`1.9.x` -> `1.10.0`): a major new feature or system.
+  - When unsure, propose the patch and ask.
 - **Feature builds carry no version number of their own.** One is named after the release it is built on, plus a
   short feature name: `1.6.2-alpha+stats` ("built on 1.6.2, the stats feature"). That goes in `M.VERSION`, the zip
-  name and the docs header (`Built on 1.6.2 · lands as the next minor`). The real number is given only when the
-  owner says to merge and release it: the next minor after whatever `main` holds then (on 1.6.2 → 1.7.0; if 1.7.0
-  shipped meanwhile → 1.8.0). Fix branches land as the next patch the same way. Branch: `feature/<name>`.
+  name and the docs header (`Built on 1.6.2`). The real number is given only when the owner says to merge and
+  release it, counted from whatever `main` holds then, by the size rule above and confirmed with the owner (a big
+  feature on 1.6.2 → 1.7.0; a fix or small improvement → 1.6.3). Branch: `feature/<name>`.
 - Rally data (events, recces, matched lines, times, `Rally Docs/`, KML) is organisers' material: never in git.
 
 ## Checking work

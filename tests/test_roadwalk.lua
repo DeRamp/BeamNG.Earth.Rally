@@ -13,6 +13,7 @@ package.loaded['beamngEarth/navgraph'] = { currentGraph = function() return g en
 _G.beamngEarth_core = { _state = function() return st end }
 _G.beamngEarth_api = {
   version = function() return 1, 8 end,
+  earthVersion = function() return '1.10.1-beta' end,
   has = function(n) return n == 'transform' end,
   ready = function() return ready end,
   rebasing = function() return false end,
@@ -45,7 +46,7 @@ g = { anchor = 2, serial = 7, nodes = { b = { 10, 10, 0, 4 } }, edges = { { 'a',
 walk.update()
 T.check(got == nil, 'held SETTLE_S on a fresh graph first')
 now = now + 2; walk.update()
-T.check(got and got.nodes.b and got.complete and got.anchorLat == -34.05, 'the fresh graph handed over, its frame named')
+T.check(got and got.geoNodes and got.geoNodes.b and got.complete, 'the fresh graph handed over, in lat / lon')
 
 -- the last window: the car goes home before it is answered, the nodes already lat / lon
 got = nil
@@ -83,6 +84,71 @@ earth.roadGraph(-34.6, 117.0, {}, function(r) got = r end)
 ready = false
 now = now + walk.TIMEOUT_S + 1; walk.update()
 T.check(got and got.error == 'timed out', 'no graph in TIMEOUT_S: timed out (the auto recce waits and asks again)')
+
+-- walkCache: the first window again is read from the cache, the car not moved
+got = nil
+local tp = #teleports
+earth.roadGraph(-34.05, 117.0, { radius = 1000 }, function(r) got = r end)
+ready = true; walk.update()
+T.check(got and got.geoNodes and got.geoNodes.b and #teleports == tp, 'read before: from the cache, no teleport')
+T.check(walk._cache.covered(-34.05, 117.0, 1000) and not walk._cache.covered(-34.05, 117.0, 1100),
+  'covered: the kept square, not past it')
+T.check(not walk._cache.covered(-34.2, 117.0, 500), 'ground never read is not covered')
+-- too old: not trusted
+local realNow = os.time
+os.time = function() return realNow() + 31 * 86400 end
+T.check(not walk._cache.covered(-34.05, 117.0, 1000), 'older than MAX_AGE_DAYS: walked again')
+os.time = realNow
+-- another BeamNG.Earth: thrown away
+_G.beamngEarth_api.earthVersion = function() return '1.10.2-beta' end
+T.check(not walk._cache.covered(-34.05, 117.0, 1000), 'another BeamNG.Earth version: walked again')
+_G.beamngEarth_api.earthVersion = function() return '1.10.1-beta' end
+
+-- a later read overlapping an earlier one: an edge across the later read's edge (one node inside its square, the
+-- other past its graph) stays, since that read could not have it; an edge the read has both nodes of and not the
+-- edge is gone. (Bolster Hollow: a 44 m link of the stage's road lost this way, the road cut in two)
+do
+  local C = walk._cache
+  local K = 111320
+  local function at(n, e) return { lat = 10 + n / K, lon = 20 + e / (K * math.cos(math.rad(10))) } end
+  C.forget()
+  -- first read round (0, 0): a chain p - q - r along the north, at 900, 1050, 1200 m east; and s - t
+  local n1 = { p = at(0, 900), q = at(0, 1050), r = at(0, 1200), s = at(0, 0), t = at(10, 0) }
+  T.check(C.store(n1, { { 'p', 'q' }, { 'q', 'r' }, { 's', 't' } }, 10, 20, 1500), 'first read kept')
+  -- second read round 2150 m east (square 1075): q (1100 m west of it) is past its graph, r (950 m) inside it;
+  -- it has s? no. It has r, and a road u near the car. s - t untouched. Then a read that has p and q but no p - q.
+  local c2 = at(0, 2150)
+  T.check(C.store({ r = at(0, 1200), u = at(0, 2150) }, {}, c2.lat, c2.lon, 1075), 'second read kept')
+  local r = C.read(10, 20, 1500, 0)
+  local has = {}
+  for _, e in ipairs(r.edges) do has[e[1] .. e[2]] = true end
+  T.check(has.qr, 'an edge across the new read edge is kept (q - r)')
+  T.check(has.pq and has.st, 'edges away from it untouched')
+  local c3 = at(0, 975)
+  T.check(C.store({ p = at(0, 900), q = at(0, 1050), v = at(0, 975) }, {}, c3.lat, c3.lon, 1075), 'third read kept')
+  r = C.read(10, 20, 1500, 0)
+  has = {}
+  for _, e in ipairs(r.edges) do has[e[1] .. e[2]] = true end
+  T.check(not has.pq, 'a read with both nodes and not the edge: the edge is gone')
+  C.forget()
+end
+
+-- a read across a 0.1 degree tile line: a node gone from one tile takes its edge kept in the other tile with it
+do
+  local C = walk._cache
+  C.forget()
+  local K = 111320
+  local function at(n, e) return { lat = 10.1 + n / K, lon = 20.05 + e / (K * math.cos(math.rad(10))) } end
+  -- x just south of the tile line, y just north; the edge x - y lives in x's tile
+  T.check(C.store({ x = at(-20, 0), y = at(20, 0), z = at(0, 30) }, { { 'x', 'y' } }, 10.1, 20.05, 1000), 'kept')
+  -- a later read here without y (the road moved): y goes, and so does x - y
+  T.check(C.store({ x = at(-20, 0), z = at(0, 30) }, {}, 10.1, 20.05, 1000), 'read again')
+  local r = C.read(10.1, 20.05, 1000, 0)
+  local has = false
+  for _, e in ipairs(r.edges) do if (e[1] == 'x' and e[2] == 'y') or (e[1] == 'y' and e[2] == 'x') then has = true end end
+  T.check(not has and r.geoNodes.y == nil, 'across a tile line: the gone node and its edge both gone')
+  C.forget()
+end
 
 -- a level teardown: forgotten, the car not moved
 earth.roadGraph(-34.7, 117.0, {}, function() end)

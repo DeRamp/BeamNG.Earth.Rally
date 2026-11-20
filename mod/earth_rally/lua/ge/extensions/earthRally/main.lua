@@ -28,6 +28,7 @@ local rallyRun = require('earthRally/rallyRun')       -- ... and driving it in t
 local loadScreen = require('earthRally/loadScreen')   -- the page's loading screen (1.7.0, #49)
 local cardInput = require('earthRally/cardInput')     -- the pad and the keys on the HUD's cards (cardInput.lua says why)
 local online = require('earthRally/online')         -- the online leaderboard (prototype): via the companion
+local codriver = require('earthRally/codriver')       -- the game's co-driver settings, on our settings page
 local gameTile = require('earthRally/gameTile')       -- the tile on the game's own Rally page
 menuPause.holding = earth.holding                    -- (BeamNG.Earth's own holds: our request waits for them)
 -- (#63: the run moving the world's origin needs the physics on: the page's pause waits for it, the screen shows it.
@@ -40,7 +41,7 @@ loadScreen.moving = function() return runner.originMoving() or earth.rebasing() 
 local M = {}
 local logTag = 'earthRally'
 local logPausedSim         -- (below, by onUpdate)
-M.VERSION = '1.9.1-alpha+rallyloop'
+M.VERSION = '1.9.4-alpha+rallyloop'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_FLOOR_S = 1             -- the HUD's streams sent when what they show changes, and at least this often
 M.STREAM_GAP_S = 0.1              -- ... the stock stream at most this often outside waitStart / running
@@ -1583,6 +1584,13 @@ end
 
 ------------------------------------------------------------------------------------------ the menu page's data
 
+-- Voice and style locked while a run is under way: the game takes a new voice at once, but the run's notes were built
+-- for the old one's calls (rallyAdapter.speaks), so a casual voice would go silent on the rest.
+local function codriverLocked()
+  local r = runner.current()
+  return r ~= nil and r.state ~= 'finished' and r.state ~= 'failed'
+end
+
 local function runSummary()
   local r = runner.current()
   local out = {}
@@ -1666,6 +1674,7 @@ function M.uiState()
   -- what changed under the mod since it was built (versions.lua): nothing to show in the normal case
   s.versionNotes = versions.notes()
   s.settings = settings.uiState()
+  s.codriver = codriver.uiState(codriverLocked())
   s.stats = stats.uiState()
   s.rallies = menu.rallies(importer.lastReports)
   -- the Rallies page: seasons, loose rallies and single stages (menu.home); `rallies` above stays for the pause
@@ -1800,6 +1809,7 @@ function M.uiStage(eventId, stageId, pass)
 end
 
 function M.uiSet(key, value) return settings.set(key, value) end
+function M.uiCodriverSet(key, value) return codriver.set(key, value, codriverLocked()) end
 
 ------------------------------------------------------------------------------------------ the online board
 

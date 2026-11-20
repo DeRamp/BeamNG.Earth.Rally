@@ -48,9 +48,12 @@ local R_EARTH = 6371008.8
 
 ------------------------------------------------------------------------------------------ constants
 
--- (tools/auto_recce.py's own, at the same values: a line matched here and one matched there should agree)
+-- (tools/auto_recce.py's own, at the same values: a line matched here and one matched there should agree -- except
+--  where the organisers' line is rough: the bridge over missed waypoints (SPARSE_M) is the mod's only)
 M.WAYPOINT_M = 400.0        -- the organisers' line is followed through a point every this many metres
 M.SNAP_M = 60.0             -- a waypoint this close to a road is on it (else that stretch has no road on the map)
+M.SPARSE_M = 300.0          -- the organisers' line this long between two of its points is rough there: a run of
+                            -- waypoints that miss the road is bridged along the roads (M.match)
 M.NEAR_M = 15.0             -- a road this far from the organisers' line costs double per metre (quadratic beyond)
 M.CORRIDOR_M = 300.0        -- roads further than this from the line are not used
 M.DETOUR_MAX = 1.4          -- a route between two waypoints longer than this times their distance along the line
@@ -102,6 +105,7 @@ function M.windowErrorWhy(what)
   end
   if what == 'timed out' or what == 'no answer' or what == 'no roads in the answer'
      or what:find('could not be read', 1, true) or what:find('world moved on', 1, true)
+     or what:find('set down', 1, true)     -- (the walk's car landed off the window: teleported again)
      or what:match('^[%a_][%w_%.]*Error$') or what:match('^[%a_][%w_%.]*Exception$')
      or what:match('^[%a_][%w_%.]*Timeout$') or what:match('^%u[%l%d]+%u%w*$') then
     return nil
@@ -425,7 +429,7 @@ function M.snap(g, p, direction)
   end
   if not bi or bd > M.SNAP_M then return nil end
   local a, b = g.xy[g.ea[bi]], g.xy[g.eb[bi]]
-  return { a = g.ea[bi], b = g.eb[bi], t = bt,
+  return { a = g.ea[bi], b = g.eb[bi], t = bt, off = bd,
            x = a.x + (b.x - a.x) * bt, y = a.y + (b.y - a.y) * bt,
            z = (a.z and b.z) and (a.z + (b.z - a.z) * bt) or a.z or b.z,
            w = (a.w and b.w) and (a.w + (b.w - a.w) * bt) or a.w or b.w }
@@ -681,6 +685,13 @@ end
 --   stage: the event's stage ({ id, line = { { lat, lon }... } })
 --   graph: { nodes = { [name] = { lat, lon, alt, radius } }, edges = { { a, b } | { inNode =, outNode = } ... } }
 -- Returns the matched file's table (the same keys tools/auto_recce.py writes), or nil and why.
+-- The longest road route accepted between two snapped waypoints `span` apart along the organisers' line. It grows
+-- with how far each snap is off the line, since a road that far out runs that much further (out and back) than the
+-- line between them.
+function M.detourLimit(span, s, t)
+  return M.DETOUR_MAX * (span + (s and s.off or 0) + (t and t.off or 0)) + 100
+end
+
 function M.match(stage, graph, info)
   info = info or {}
   local line = stage.line
@@ -717,6 +728,39 @@ function M.match(stage, graph, info)
   -- each waypoint on a road beside it, aligned with the line there
   local snaps = {}
   for i, p in ipairs(wps) do snaps[i] = M.snap(gr, p, tangent(along[i])) end
+
+  -- Where the organisers' line is a long straight (SPARSE_M or more between two of its own points), the road it
+  -- stands for can wander far off it and the waypoints there miss it. A run of missed waypoints there is bridged
+  -- by routing from the matched road before it to the matched road after it, where that route is within the
+  -- detour limit: the shortest way along the roads, so never out along a spur and back. A well-drawn line keeps its
+  -- gaps (a stage on a track that is not on the map is not moved onto a road beside it).
+  local kmlAlong = { 0 }
+  for k = 2, #kml do kmlAlong[k] = kmlAlong[k - 1] + dist(kml[k - 1], kml[k]) end
+  local function sparse(s0, s1)
+    for k = 2, #kml do
+      if kmlAlong[k] > s0 and kmlAlong[k - 1] < s1 and kmlAlong[k] - kmlAlong[k - 1] >= M.SPARSE_M then return true end
+    end
+    return false
+  end
+  local bridged = {}     -- [i] = the route from waypoint i over the missed run to the next one on a road
+  do
+    local i = 1
+    while i < #wps do
+      if snaps[i] ~= nil and snaps[i + 1] == nil then
+        local j = i + 1
+        while j <= #wps and snaps[j] == nil do j = j + 1 end
+        if j <= #wps and sparse(along[i], along[j]) then
+          local pts, length = M.route(gr, snaps[i], snaps[j])
+          if pts ~= nil and length <= M.detourLimit(along[j] - along[i], snaps[i], snaps[j]) then
+            bridged[i] = { j = j, pts = pts }
+          end
+        end
+        i = j
+      else
+        i = i + 1
+      end
+    end
+  end
 
   local out, gaps, gapIdx = {}, {}, {}
 
@@ -766,6 +810,9 @@ function M.match(stage, graph, info)
       gaps[#gaps + 1] = { along[i], along[j] }
       addGap(along[i], along[j], out[#out], snaps[j])
       i = j
+    elseif bridged[i] then
+      add(bridged[i].pts)
+      i = bridged[i].j
     elseif snaps[i + 1] == nil then
       -- (the next one has no road: go straight on along the organisers' line from here)
       local k = i + 1
@@ -778,7 +825,7 @@ function M.match(stage, graph, info)
       local j = i + 1
       local pts, length = M.route(gr, snaps[i], snaps[j])
       local span = along[j] - along[i]
-      if pts == nil or length > M.DETOUR_MAX * span + 100 then
+      if pts == nil or length > M.detourLimit(span, snaps[i], snaps[j]) then
         gaps[#gaps + 1] = { along[i], along[j] }
         add({ snaps[i] })
         addGap(along[i], along[j], snaps[i], snaps[j])
