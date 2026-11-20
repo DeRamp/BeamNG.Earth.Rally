@@ -39,6 +39,7 @@
 local earth = require('earthRally/earthAdapter')
 local events = require('earthRally/events')
 local junctions = require('earthRally/junctions')
+local geo = require('earthRally/geo')
 local lineStats = require('earthRally/lineStats')
 
 local M = {}
@@ -836,6 +837,22 @@ function M.match(stage, graph, info)
     end
   end
   if #out < 2 then return nil, 'no roads found near the stage' end
+  -- (a waypoint's road point on a spur beside the stage's road, a few metres past a junction or behind the one
+  --  before it: the routes either side of it go out to it and back the same way, which the co-driver would call as
+  --  hairpins. The out-and-back dropped (geo.foldBacks), the gaps' indices moved with it)
+  do
+    local keep, dropped = geo.foldBacks(out)
+    if dropped > 0 then
+      local newIdx, kept, k = {}, {}, 1
+      for idx = 1, #out do
+        while keep[k + 1] and keep[k + 1] <= idx do k = k + 1 end
+        newIdx[idx] = k
+      end
+      for m, idx in ipairs(keep) do kept[m] = out[idx] end
+      out = kept
+      for _, gi in ipairs(gapIdx) do gi[1], gi[2] = newIdx[gi[1]], newIdx[gi[2]] end
+    end
+  end
 
   local outCum = { 0 }
   for k = 1, #out - 1 do outCum[k + 1] = outCum[k] + dist(out[k], out[k + 1]) end

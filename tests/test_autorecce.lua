@@ -195,6 +195,32 @@ do  -- the resample keeps the line's own end, at an even step before it (the out
   T.near(out[#out].x, 10.5, 1e-9, "the line's own end kept")
 end
 
+------------------------------------------------------------------------------------------ 0: out along a spur and back
+
+do
+  reset()
+  -- the organisers' line bulges 28 m north over 1150-1250 m, beside a dead-end spur off the stage's road there: a
+  -- waypoint lands on the spur, and the routes either side of it go out along it and back (geo.foldBacks drops that)
+  world.roads = { eastRoad('r', 3200, 20, 0),
+                  { name = 's', pts = { at(1100, 0), at(1150, 30), at(1200, 30), at(1250, 30) }, names = { 'r56' } } }
+  local line = {}
+  for _, p in ipairs({ { 0, 0 }, { 1000, 0 }, { 1150, 28 }, { 1250, 28 }, { 1400, 0 }, { 3000, 0 } }) do
+    local q = at(p[1], p[2])
+    line[#line + 1] = { q[1], q[2] }
+  end
+  local res = run(EVENT, stageOf(line))
+  local m = matchedFile()
+  T.check(res.ok == true and m ~= nil, 'a line beside a spur: matched (' .. tostring(res.why) .. ')')
+  local north = 0
+  for _, q in ipairs(m and m.points or {}) do
+    local n = geo.metres(LAT, q[2], q[1], q[2]) * (q[1] < LAT and -1 or 1)
+    if n > north then north = n end
+  end
+  T.check(m and north < 5, 'the spur is not driven out and back (' .. string.format('%.1f', north) .. ' m north at most)')
+  T.near(m and m.lengthM or 0, 3000, 30, 'the matched line is the stage\'s road, no spur in it')
+  T.check(m and #m.gaps == 0, 'no gaps')
+end
+
 ------------------------------------------------------------------------------------------ 1: two windows stitched
 
 do

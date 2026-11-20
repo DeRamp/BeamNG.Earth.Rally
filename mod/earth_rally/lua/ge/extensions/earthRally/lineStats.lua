@@ -51,6 +51,8 @@ end
 function M.of(points, stage)
   -- (two points are a line and measure as one: a straight, with no corners on it)
   if type(points) ~= 'table' or #points < 2 then return nil end
+  -- (as the run reads it: a line doubling back on itself has the excursion dropped, runner.lua stageLatLon)
+  points = geo.dropFoldBacks(points)
   local xy = frameAt(points[1][1], points[1][2])
   local line = {}
   for i, p in ipairs(points) do

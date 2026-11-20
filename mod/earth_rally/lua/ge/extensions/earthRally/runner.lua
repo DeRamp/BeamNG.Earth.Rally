@@ -194,7 +194,9 @@ end
 -- The stage line (a recce, or the map line matched to the roads: { points = { {lat, lon, alt}... } }) cut round the
 -- stage: from a little before the start control to the end.
 local function stageLatLon(stage, source)
-  local pts = source.points
+  -- (a matched line that doubles back on itself -- out along a spur and back -- has the excursion dropped: geo.foldBacks)
+  local pts, folds = geo.dropFoldBacks(source.points)
+  if folds > 0 then log('I', logTag, string.format('stage line: %d points of out-and-back dropped', folds)) end
   local o = pts[1]
   local function flat(lat, lon)
     return { x = geo.metres(o[1], o[2], o[1], lon) * (lon < o[2] and -1 or 1),

@@ -294,4 +294,110 @@ function M.corners(pts, step, opts)
   return out
 end
 
+-- A matched line doubling back on itself: the auto recce routes from each waypoint's road point to the next one's, and
+-- a waypoint put on a spur beside the stage's road (or a few metres past a junction, or behind the one before it)
+-- makes the route go out to it and back along the same road. On the owner's lines: out and back along a dead end of
+-- 280 m, stubs of 4 to 25 m at junctions. The co-driver hears each fold as a hairpin and the bends either side as
+-- corners that are not there. FOLD_DEG at one point is a fold (no road turns that much in one point of a line); the
+-- out-and-back round it is dropped: from the last point before it that the line comes back to (within FOLD_TOL_M,
+-- FOLD_MAX_M or less either side of the fold), the way back retracing the way out (each of its points within
+-- FOLD_RETRACE_M of it), to that point of return. A sharp turn at a junction that does not retrace keeps its road;
+-- only the one point of its apex can go.
+M.FOLD_DEG = 150
+M.FOLD_TOL_M = 4
+M.FOLD_RETRACE_M = 8
+M.FOLD_MAX_M = 600
+
+local function segDist(p, a, b)
+  local dx, dy = b.x - a.x, b.y - a.y
+  local l2 = dx * dx + dy * dy
+  local t = l2 > 1e-12 and ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2 or 0
+  if t < 0 then t = 0 elseif t > 1 then t = 1 end
+  local qx, qy = a.x + dx * t - p.x, a.y + dy * t - p.y
+  return sqrt(qx * qx + qy * qy)
+end
+
+-- pts: { {x, y}... }. Returns the indices of the points kept, in order, and how many were dropped.
+function M.foldBacks(pts)
+  local n = #pts
+  local out = {}
+  if n < 3 then
+    for k = 1, n do out[k] = k end
+    return out, 0
+  end
+  out[1] = 1
+  local cum = M.cumulative(pts)
+  local cosF = math.cos(math.rad(M.FOLD_DEG))
+  -- (the way back, k0..k1, within FOLD_RETRACE_M of the way out, out[oi]..i)
+  local function retraces(oi, i, k0, k1)
+    for k = k0, k1 do
+      local best = math.huge
+      local prev = pts[out[oi]]
+      for m = oi + 1, #out + 1 do
+        local q = m <= #out and pts[out[m]] or pts[i]
+        local d = segDist(pts[k], prev, q)
+        if d < best then best = d end
+        prev = q
+      end
+      if best > M.FOLD_RETRACE_M then return false end
+    end
+    return true
+  end
+  local i = 2
+  while i <= n do
+    local jumped = false
+    if i < n then
+      -- (from the last point kept that is not on top of this one)
+      local p = pts[out[#out]]
+      for oi = #out, 1, -1 do
+        if d2(pts[out[oi]], pts[i]) > 0.05 then p = pts[out[oi]] break end
+      end
+      local ax, ay = pts[i].x - p.x, pts[i].y - p.y
+      local bx, by = pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y
+      local la, lb = sqrt(ax * ax + ay * ay), sqrt(bx * bx + by * by)
+      if la > 0.05 and lb > 0.05 and (ax * bx + ay * by) / (la * lb) <= cosF then
+        local bi, bj = nil, nil
+        for oi = #out, 1, -1 do
+          local a = out[oi]
+          if cum[i] - cum[a] > M.FOLD_MAX_M then break end
+          local bestD, bestJ = M.FOLD_TOL_M, nil
+          for j = i + 1, n do
+            if cum[j] - cum[i] > M.FOLD_MAX_M then break end
+            local d = d2(pts[a], pts[j])
+            if d <= bestD then bestD, bestJ = d, j end
+          end
+          if bestJ and retraces(oi, i, i + 1, bestJ - 1) then bi, bj = oi, bestJ end
+        end
+        if bi then
+          for k = #out, bi + 1, -1 do out[k] = nil end
+          i = bj
+          jumped = true
+        end
+      end
+    end
+    if not jumped then
+      out[#out + 1] = i
+      i = i + 1
+    end
+  end
+  return out, n - #out
+end
+
+-- The same over a line of { lat, lon, ... } points (a matched or recce file's own shape): the points kept (the same
+-- tables), and how many were dropped.
+function M.dropFoldBacks(points)
+  if type(points) ~= 'table' or #points < 3 then return points, 0 end
+  local o = points[1]
+  local xy = {}
+  for i, p in ipairs(points) do
+    xy[i] = { x = M.metres(o[1], o[2], o[1], p[2]) * (p[2] < o[2] and -1 or 1),
+              y = M.metres(o[1], o[2], p[1], o[2]) * (p[1] < o[1] and -1 or 1) }
+  end
+  local keep, dropped = M.foldBacks(xy)
+  if dropped == 0 then return points, 0 end
+  local out = {}
+  for k, i in ipairs(keep) do out[k] = points[i] end
+  return out, dropped
+end
+
 return M

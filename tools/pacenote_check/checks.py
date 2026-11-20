@@ -33,6 +33,9 @@ def parse(text):
                     out['keeps'].append(w)
                 continue
             out['corners'].append((w, g))
+            # ("chicane right entry": a right, then a left -- both of its corners are called)
+            if i > 0 and words[i - 1] == 'chicane':
+                out['corners'].append(('left' if w == 'right' else 'right', g))
         elif w in ('leftish', 'rightish'):
             out['keeps'].append(w[:-3])   # "rightish over jump": a slight bend, said
         elif 'crest' in w:

@@ -128,4 +128,48 @@ do
   T.near((geo.alongBetween(U, uc, { x = 0, y = 150 }, 0, 100)), 100, 1e-6, 'alongBetween: clamped to toM')
 end
 
+-- foldBacks: a line out along a spur and back the same way (the auto recce's glitch) loses the excursion; a stub of a
+-- few metres past a junction too; a real sharp turn, a hairpin and a plain line keep every point
+do
+  local function line(parts)
+    local out = {}
+    for _, p in ipairs(parts) do out[#out + 1] = { x = p[1], y = p[2] } end
+    return out
+  end
+  local spur = {}
+  for y = 0, 200, 4 do spur[#spur + 1] = { 0, y } end           -- up the road to 200
+  for y = 196, 100, -4 do spur[#spur + 1] = { 0.6, y } end     -- back down the same road (0.6 m off)
+  spur[#spur + 1] = { 1.0, 100 }                                -- and on along the stage's road, east
+  for x = 4, 300, 4 do spur[#spur + 1] = { x, 100 } end
+  local pts = line(spur)
+  local keep, dropped = geo.foldBacks(pts)
+  local okSpur = dropped > 0
+  for _, i in ipairs(keep) do if pts[i].y > 104 then okSpur = false end end
+  T.check(okSpur, 'foldBacks: an out-and-back along a spur is dropped (' .. dropped .. ' points)')
+  local stub = line({ { 0, 0 }, { 0, 4 }, { 0, 8 }, { 0, 12 }, { 3, 13.5 }, { 7, 13.7 }, { 3, 13.6 }, { 0.4, 12.6 },
+                      { 0.6, 16 }, { 0.6, 20 }, { 0.6, 24 } })
+  local k2, d2n = geo.foldBacks(stub)
+  local okStub = d2n > 0
+  for _, i in ipairs(k2) do if stub[i].x > 2 then okStub = false end end
+  T.check(okStub, 'foldBacks: a stub past a junction and back is dropped')
+  local hp = {}
+  for y = 0, 100, 4 do hp[#hp + 1] = { 0, y } end
+  for a = 10, 170, 10 do hp[#hp + 1] = { 12 - 12 * math.cos(math.rad(a)), 100 + 12 * math.sin(math.rad(a)) } end
+  for y = 100, 0, -4 do hp[#hp + 1] = { 24, y } end
+  local _, d3 = geo.foldBacks(line(hp))
+  T.check(d3 == 0, 'foldBacks: a hairpin keeps every point')
+  local sharp = {}
+  for y = 0, 100, 4 do sharp[#sharp + 1] = { 0, y } end
+  for k = 1, 30 do sharp[#sharp + 1] = { k * 4 * math.sin(math.rad(20)), 100 - k * 4 * math.cos(math.rad(20)) } end
+  local k4, d4 = geo.foldBacks(line(sharp))
+  T.check(d4 <= 3 and #k4 == #sharp - d4 and k4[#k4] == #sharp, 'foldBacks: a 160 degree turn at a junction keeps ' ..
+    'its roads, at most its apex cut (' .. d4 .. ' points)')
+  -- the lat / lon form: the same tables back, fewer of them
+  local ll = {}
+  for i, p in ipairs(spur) do ll[i] = { 45 + p[2] / 111195, 7 + p[1] / (111195 * math.cos(math.rad(45))), 100, i == 3 and 1 or nil } end
+  local kept, n = geo.dropFoldBacks(ll)
+  T.check(n == dropped and kept[1] == ll[1] and kept[3][4] == 1 and #kept == #ll - n,
+    'dropFoldBacks: lat / lon points, the same dropped, the rest as they were')
+end
+
 T.done('test_geo')
