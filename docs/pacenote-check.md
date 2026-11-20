@@ -77,6 +77,9 @@ Gaps: crest call to turn, 0-40 / 40-60 / 60-100 / 100+ m. 15 pro stages (77 km),
    *after* a note (`path.autofillDistanceCalls`), so the straight before the first corner is never told: "care four
    left" with the corner 594 m away. The pro opens with the distance ("80 4 left"). The composer does say a
    distance before a note when the note's `before` field holds one, but autofill clears that field on load.
+   Checked in game (2026-11-19, Warden Hillside, hooks on the rally manager): the first call fires when the car
+   first moves (at launch, or on the roll up to the line, then held and played at GO right after "go"). It is
+   never lost, and always said with no distance ("caution two right", corner 614 m away).
 2. **Long open corners.** A clean arc is called ("six left extra long"). A bend drawn the way a map draws it is
    not: a few straight pieces meeting at small kinks (fixture `map-drawn-right-35deg-500m`, 35° over 500 m: nothing
    called). Between kinks the smoothed curvature drops to zero for longer than `pacenotes.SWEEP_GAP_M` (30 m), so the
