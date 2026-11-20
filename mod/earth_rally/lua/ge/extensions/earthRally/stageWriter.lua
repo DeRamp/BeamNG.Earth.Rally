@@ -135,6 +135,7 @@ M.OPENING_MIN_M = 80
 M.DISTANCE_RULES = {
   units = { base = 'm', large = 'km', point = 'point' },
   rounding = { small = 10, medium = 50, mediumThreshold = 100, large = 250, largeThreshold = 1000 },
+  max = 2000,
 }
 
 local function customRound(d, to) return math.floor(d / to + 0.5) * to end
@@ -165,10 +166,12 @@ function M.distanceString(dist, rules)
 end
 
 -- built: M.build's result. The first note's opening call: its words (rules: as M.distanceString) and the metres,
--- or nil when its corner start is OPENING_MIN_M or less from the start line.
+-- or nil when its corner start is OPENING_MIN_M or less from the start line, or further than the style's `max`
+-- (the voice packs have distance clips up to that only: textCompositor.enumerateDistanceEntries).
 function M.openingCall(built, rules)
   local m = built and built.openingM
   if not m or m <= M.OPENING_MIN_M then return nil end
+  if m > ((rules and rules.max) or M.DISTANCE_RULES.max) then return nil end
   return M.distanceString(m, rules), m
 end
 
@@ -480,8 +483,10 @@ function M.build(line, opts)
     if not ev.used and not rimSaid(ev) then
       local big = ev.size == 'big'
       local f = { i = ev.i, before = hb, after = ha, aloneSlot = 'pre' }
-      -- (a crest or a jump: on the corner that starts within CREST_INTO_M past it, or out of sight behind it)
-      if ev.kind ~= 'dip' then
+      -- (a crest: on the corner that starts within CREST_INTO_M past it, or out of sight behind it up to
+      --  CREST_HIDDEN_M. A jump stays within HEIGHT_BEFORE_M: its note plays before the corner's start, and a jump
+      --  further back than that could come before the call does)
+      if ev.kind == 'crest' then
         f.before = math.max(hb, intoN, math.min(hiddenN, ev.hiddenTo and ev.hiddenTo - ev.i or 0))
       end
       if ev.kind == 'jump' then

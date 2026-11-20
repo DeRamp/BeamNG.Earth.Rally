@@ -12,7 +12,8 @@ issues" (2026-11-19). Numbers before and after: [`pacenote-check.md`, Fixes](pac
   50 m from 100 m, km from 1000 m: "1 point 2 5 km"). `rallyAdapter.setOpening` puts it on the first note after the
   game's own autofill, and again on every resync and at GO. Said from the voice pack's distance clips, as one after a
   note is.
-- Only when the first corner is over `stageWriter.OPENING_MIN_M` (80 m) from the line. Casual voices say no
+- Only when the first corner is over `stageWriter.OPENING_MIN_M` (80 m) from the line, and not over 2 km (the
+  voices have no clip past that). Worded by the game's own compositor where it can. Casual voices say no
   distances, so none here either.
 - **Also:** a corner the stage starts in (a hairpin off the line) was left out by `NOTE_CLEAR_M` (25 m). It is now
   called from 25 m on, when 25 m of it or more is left. Several of the owner's stages start in one (Cathedral,
@@ -25,14 +26,16 @@ issues" (2026-11-19). Numbers before and after: [`pacenote-check.md`, Fixes](pac
 - **Now:** `pacenotes.kinkSweepers` reads the heading. A stretch of up to `KINK_WINDOW_M` (500 m) turning
   `KINK_DEG` (20°) or more one way is a sweeper, from its first kink to its last. Kinks no more than `KINK_GAP_M`
   (320 m) apart, turning back no more than `KINK_BACK` (25%) of it, not within `KINK_CLEAR_M` (10 m) of a corner.
+  The turn is the heading's own change, so a line's noise either way cancels out.
 - Smooth bends too: a 22° bend at 600 m radius was left out on purpose before (1.6.2); now it is a six.
 - `lineStats.VERSION` 5: the stage page counts corners again.
 
 ## 3. A corner behind a crest
 
 - **Was:** a crest went on a corner's note only within 40 m of it. "crest 40", then "care three left".
-- **Now:** a crest or jump within `stageWriter.CREST_INTO_M` (60 m) before a corner, or with the corner out of sight
-  behind it (`pacenotes.hiddenAfter`, up to `CREST_HIDDEN_M`, 100 m), is said with it: "crest three left".
+- **Now:** a crest within `stageWriter.CREST_INTO_M` (60 m) before a corner, or with the corner out of sight behind
+  it (`pacenotes.hiddenAfter`, up to `CREST_HIDDEN_M`, 100 m), is said with it: "crest three left". A jump stays at
+  40 m: the note plays before the corner, and a jump further back could come first.
 - No more crest calls: the same crests, 23 fewer notes over 415 km.
 
 ## 4. Lines that double back (and the overlapping notes)
@@ -44,8 +47,8 @@ issues" (2026-11-19). Numbers before and after: [`pacenote-check.md`, Fixes](pac
   recce follows it. The other three: the recce routes waypoint to waypoint, and a waypoint put on a spur or just
   past a junction sends the route out and back.
 - **Now:** `geo.foldBacks` drops an out-and-back: a point turning 150° or more, the way back within 8 m of the way
-  out, to where the line comes back within 4 m. In the auto recce (new lines), the runner and the stage page
-  (existing lines), `tools/auto_recce.py`, and the check. The owner's files are not changed.
+  out, to where the line comes back within 4 m. In the auto recce (new lines), the runner, the stage page and the
+  timed length (existing lines), `tools/auto_recce.py`, and the check. The owner's files are not changed.
 
 ## Listen for in game
 
@@ -58,8 +61,13 @@ issues" (2026-11-19). Numbers before and after: [`pacenote-check.md`, Fixes](pac
 ## Open questions
 
 - **Bolster Hollow, Nahwatzel:** the organisers' line goes out and back. Taken as a drawing slip, not a real
-  turnaround. Times there may differ from runs on the old line (online boards).
+  turnaround. If it is real, `geo.FOLD_MAX_M` could be cut to about 40 m (recce stubs only).
+- **Times on the 5 folded stages:** the timed length changes (Bolster Hollow by about 560 m). Saved times there
+  read as another line, and the online board key (it holds the length) is new for them.
 - **The opening distance in game:** set after the rally engine's own fill; not yet heard.
-- **More sweepers:** pro precision 85% to 84%. Some of the new bends are ones the pro does not call.
+- **More sweepers:** pro precision 85% to 84%. Some of the new bends are ones the pro does not call. No radius cap:
+  20 degrees over 500 m is a 1400 m radius; the game calls it a six. Not checked on driven recces (GPS noise).
+- **The check confirms some fixes by itself:** it puts on the same opening distance and drops the same folds. The
+  opening is simulated, not heard.
 - **Crests over 100 m:** 13 hidden turns on the owner's stages are still called apart, all 100 m or more past the
   crest (the pro has 4 of those).

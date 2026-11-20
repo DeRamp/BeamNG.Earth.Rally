@@ -850,7 +850,12 @@ function M.match(stage, graph, info)
       end
       for m, idx in ipairs(keep) do kept[m] = out[idx] end
       out = kept
-      for _, gi in ipairs(gapIdx) do gi[1], gi[2] = newIdx[gi[1]], newIdx[gi[2]] end
+      -- (a gap wholly inside the stretch dropped is gone with it)
+      local moved = {}
+      for _, gi in ipairs(gapIdx) do
+        if newIdx[gi[2]] > newIdx[gi[1]] then moved[#moved + 1] = { newIdx[gi[1]], newIdx[gi[2]] } end
+      end
+      gapIdx = moved
     end
   end
 

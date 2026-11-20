@@ -219,6 +219,15 @@ do
   T.check(m and north < 5, 'the spur is not driven out and back (' .. string.format('%.1f', north) .. ' m north at most)')
   T.near(m and m.lengthM or 0, 3000, 30, 'the matched line is the stage\'s road, no spur in it')
   T.check(m and #m.gaps == 0, 'no gaps')
+  -- an old line saved with the out-and-back in it: timed as the runner reads it, without (events.timedSpan)
+  local pts = {}
+  for x = 0, 1000, 4 do pts[#pts + 1] = at(x, 0) end
+  for y = 4, 200, 4 do pts[#pts + 1] = at(1000, y) end
+  for y = 196, 4, -4 do pts[#pts + 1] = at(1000.5, y) end
+  for x = 1004, 2000, 4 do pts[#pts + 1] = at(x, 0) end
+  local span = events.timedSpan({ points = pts }, stageOf(line))
+  T.near(span and span.lengthM or 0, 2000, 15, 'timedSpan: an out-and-back in an old line is not timed (' ..
+    tostring(span and span.lengthM) .. ')')
 end
 
 ------------------------------------------------------------------------------------------ 1: two windows stitched

@@ -107,9 +107,9 @@ What changed is in [`notes-recce-calls.md`](notes-recce-calls.md). The check, ru
 | Pro crest-with-corner said as a crest alone | 8 | 1 | |
 | Silent openings, pro / owner's stages | 10 / 17 | 0 / 0 | 0 |
 | Missed bends, pro stages | 0.25/km | 0.13/km | 0.10/km |
-| Missed bends, owner's stages | 93 (0.22/km) | 44 (0.11/km) | |
-| Hidden turn after a crest, pro stages | 14 | 2 | 6 |
-| Hidden turn after a crest, owner's (gaps) | 35 (0 / 7 / 13 / 15) | 14 (0 / 0 / 1 / 13) | |
+| Missed bends, owner's stages | 93 (0.22/km) | 47 (0.11/km) | |
+| Hidden turn after a crest, pro stages | 14 | 3 | 6 |
+| Hidden turn after a crest, owner's (gaps) | 35 (0 / 7 / 13 / 15) | 16 (0 / 1 / 2 / 13) | |
 | Overlapping notes, owner's stages | 6 | 0 | |
 | Long silences, owner's stages | 42 | 32 | |
 | Notes per km, owner's stages | 6.85 | 6.91 | |

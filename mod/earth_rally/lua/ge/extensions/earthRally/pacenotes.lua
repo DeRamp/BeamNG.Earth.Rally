@@ -326,18 +326,23 @@ function M.kinkSweepers(turn, step, taken)
       i = i + 1
     else
       local sign = t > 0 and 1 or -1
-      local pos, neg, last, best = 0, 0, i, nil
+      -- (a kink the 5 m samples split in two: the part of it in the sample before counted too, and the part in
+      --  the sample after the last turning point)
+      local lead = (not blocked[i - 1] and (turn[i - 1] or 0) * sign > 0) and (turn[i - 1] or 0) * sign or 0
+      local net, pos, neg, last, best = lead, 0, 0, i, nil
       local j = i
       while j < n and j - i <= winN and not blocked[j] and j - last <= gapN do
         local tj = (turn[j] or 0) * sign
-        -- (all of its turn counted, its turning points where it turns KINK_POINT_DEG at least; the turn back
-        --  only where it is that much, not the line's own noise)
-        if tj > 0 then pos = pos + tj end
-        if tj >= pointT then last = j
+        -- (its turn: the heading's own change, so a line's noise either way cancels out; its turning points where
+        --  it turns KINK_POINT_DEG at least, and its turn back counted where it turns that much the other way)
+        net = net + tj
+        if tj >= pointT then last, pos = j, pos + tj
         elseif -tj >= pointT then neg = neg + -tj end
         if neg > M.KINK_BACK * pos then break end
         -- (the furthest turning point that keeps it a bend of KINK_DEG one way)
-        if tj >= pointT and pos - neg >= needT then best = { i1 = j, angle = pos - neg } end
+        local tail = (turn[j + 1] or 0) * sign
+        tail = (tail > 0 and tail < pointT and not blocked[j + 1]) and tail or 0
+        if tj >= pointT and net + tail >= needT then best = { i1 = j, angle = net + tail } end
         j = j + 1
       end
       if best and (best.i1 - i) * step >= M.KINK_MIN_M then

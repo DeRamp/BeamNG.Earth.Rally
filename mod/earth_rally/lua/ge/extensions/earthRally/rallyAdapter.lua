@@ -177,7 +177,7 @@ function M.applyOpening()
   local m = M.openingM
   if not m then return false end
   local writer = require('earthRally/stageWriter')
-  if not writer.openingCall({ openingM = m }) then return false end
+  if not (m > writer.OPENING_MIN_M) then return false end
   local rm = M.manager()
   local nb = rm and rm.notebook
   local ok, pn = pcall(function() return nb.pacenotes.sorted[1] end)
@@ -199,7 +199,14 @@ function M.applyOpening()
     end
   end
   local okS, str = pcall(writer.openingCall, { openingM = m }, rules)
-  if not okS or not str then str = writer.openingCall({ openingM = m }) end
+  if not okS then str = writer.openingCall({ openingM = m }) end
+  if not str then return false end
+  -- (the words as the game's own compositor rounds them, where it can: the same as ours today, and not left behind
+  --  if a game update changes them)
+  if okC and type(comp) == 'table' and type(comp.distanceToString) == 'function' then
+    local okD, s = pcall(comp.distanceToString, comp, m)
+    if okD and type(s) == 'string' and s ~= '' then str = s end
+  end
   local okB, cur = pcall(pn.getNoteFieldBefore, pn)
   if okB and cur == M.BLOCKER then return false end
   if okB and cur == str then return true end

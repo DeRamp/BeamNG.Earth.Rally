@@ -202,12 +202,12 @@ do
     'a crest just before a corner: called before it (' .. show(bc) .. ')')
   -- a crest 50 m before a corner that it hides: one breath, "crest three left" (2026-11-19: it was "crest 40",
   -- then the corner); one 150 m before a corner the road climbs to in plain sight is a call of its own
-  local hid = build(road({ { 'straight', 520 }, { 'arc', 40, 80 }, { 'straight', 400 } }, hump(470, 60, 3)))
+  local hid = build(road({ { 'straight', 520 }, { 'arc', 40, 80 }, { 'straight', 400 } }, hump(470, 120, 3)))
   local hn = notes(hid)
   local function crestOrJump(x) return x:find('[Cc]rest') or x:find('[Jj]ump') end
   T.check(#hn == 2 and crestOrJump(hn[1]) and hn[1]:find('4:corner'), 'a corner 50 m behind a crest that hides ' ..
     'it: the crest and the corner in one note (' .. show(hn) .. ')')
-  local far = notes(build(road({ { 'straight', 620 }, { 'arc', 40, 80 }, { 'straight', 400 } }, hump(470, 60, 3))))
+  local far = notes(build(road({ { 'straight', 620 }, { 'arc', 40, 80 }, { 'straight', 400 } }, hump(470, 120, 3))))
   T.check(#far == 3 and crestOrJump(far[1]) and not far[1]:find('corner'), 'a crest 150 m before a corner: ' ..
     'a note of its own (' .. show(far) .. ')')
   local zs = {}
@@ -691,6 +691,7 @@ do
   T.check(writer.openingCall(close) == nil, 'openingCall: none for a first corner 50 m in (' ..
     tostring(close.openingM) .. ')')
   T.check(writer.openingCall({ openingM = 1300 }) == '1 point 2 5 km', 'openingCall: in km past 1000 m')
+  T.check(writer.openingCall({ openingM = 2600 }) == nil, 'openingCall: none past the style max, 2 km (no clip for it)')
   -- a stage that starts in a hairpin: called from just past the clear stretch, not left out; one over by then is
   local hp = build(road({ { 'straight', 5 }, { 'arc', 15, 170 }, { 'straight', 400 } }))
   local hpn = notes(hp)
