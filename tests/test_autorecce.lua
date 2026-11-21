@@ -1057,45 +1057,62 @@ do
 end
 
 -- The road's heights between the graph's nodes (the pacenote rebuild, step 4): the ground under a road near the
--- stage read with a ray every RAY_STEP_M while its window is loaded, and the matched line's points take it -- not a
--- ground far off the graph's own height (the valley under a bridge), and none where nothing was hit
+-- stage read with rays while its window is loaded; the road's ground told by the road itself (a 6 m crest over the
+-- graph's straight line is kept, the valley under a bridge and a treetop are not), and the line eased onto it
 do
   vec3 = vec3 or function(x, y, z) return { x = x, y = y, z = z } end
   local wasRay = rawget(_G, 'castRayStatic')
-  -- a 200 m edge north from lat 47.0, level at 100 m on the graph, with a 2 m crest in its middle; a bridge's
-  -- valley (20 m down) past 150 m
-  local function ground(y)
-    if y > 150 and y < 170 then return 80 end
-    return 100 + 2 * math.max(0, 1 - math.abs(y - 100) / 40)
-  end
+  -- a 300 m edge north from lat 47.0, at 100 m at both nodes; a 6 m crest round 100 m; a bridge with no collision
+  -- over a valley 20 m down from 200 to 230 m; a tree over the road at 60 m (a hit 8 m up, from rays above it)
+  local function ground(y) if y > 200 and y < 230 then return 80 end
+    return 100 + 6 * math.max(0, 1 - math.abs(y - 100) / 60) end
   castRayStatic = function(pos, dir, len)
-    local d = pos.z - ground(pos.y)
+    local g = ground(pos.y)
+    if pos.y > 58 and pos.y < 62 and pos.z > g + 8 then g = g + 8 end
+    local d = pos.z - g
     if d >= 0 and d <= len then return d end
     return len + 1
   end
-  local lat1 = 47.0 + 200 / (math.rad(1) * 6371008.8)
+  local M1 = math.rad(1) * 6371008.8
+  local lat1 = 47.0 + 300 / M1
   local j = { stage = { line = { { 47.0, -123.0 }, { lat1, -123.0 } } },
               graph = { nodes = { a = { lat = 47.0, lon = -123.0, alt = 100 }, b = { lat = lat1, lon = -123.0, alt = 100 },
-                                  c = { lat = 47.0, lon = -122.99, alt = 100 }, d = { lat = lat1, lon = -122.99, alt = 100 } },
+                                  c = { lat = 47.0, lon = -122.99, alt = 100 }, d = { lat = lat1, lon = -122.99, alt = 100 },
+                                  [7] = { lat = 47.0, lon = -123.0, alt = 100 } },
                         edges = { { 'a', 'b' }, { 'c', 'd' } } } }
-  local found = auto.sampleRays(j, { 'a|b', 'c|d' })
-  T.check(found > 30 and found < 50, 'rays: the ground under the stage road every 4 m, not the road 760 m off (' ..
-    found .. ')')
+  local kept = auto.sampleRays(j, { { 'a', 'b' }, { 'c', 'd' } })
+  T.check(kept > 50 and kept < 74, 'rays: the ground under the stage road, less the bridge, not the road 760 m off (' ..
+    kept .. ')')
   local fr = auto.frame(47.0, -123.0)
-  local res, flags = {}, {}
-  for s = 0, 200, 4 do
-    local p = fr.xy(47.0 + s / (math.rad(1) * 6371008.8), -123.0)
-    res[#res + 1] = { x = p.x, y = p.y, z = 100 }
-    flags[#flags + 1] = 0
+  local function line()
+    local res, flags = {}, {}
+    for s = 0, 300, 4 do
+      local p = fr.xy(47.0 + s / M1, -123.0)
+      res[#res + 1] = { x = p.x, y = p.y, z = 100 }
+      flags[#flags + 1] = 0
+    end
+    return res, flags
   end
-  flags[26] = 1            -- (100 m: a stretch with no road keeps its height)
+  local res, flags = line()
   local n = auto.rayHeights(res, flags, j.graph.rays, fr)
-  T.near(res[25].z, 101.9, 0.15, 'rays: the crest between two nodes is on the line')
-  T.check(res[26].z == 100, 'rays: not on a stretch with no road')
-  T.check(res[41].z == 100, 'rays: the valley under a bridge is not the road: the graph\'s height stays')
-  T.check(res[1].z == 100 and n > 30, 'rays: ' .. n .. ' points took a ground height')
+  T.near(res[26].z, 105.6, 0.5, 'rays: a 6 m crest between two nodes is on the line (' .. res[26].z .. ')')
+  T.near(res[16].z, 102, 0.3, 'rays: the ground under a tree, not the tree (' .. res[16].z .. ')')
+  T.near(res[55].z, 100, 0.3, 'rays: the valley under a bridge is not the road (' .. res[55].z .. ')')
+  T.check(n > 50, 'rays: ' .. n .. ' points took a ground height')
+  -- mixed coverage: rays on the first half of the crest only; the line eases back to the graph, no step
+  local half = {}
+  for _, r in ipairs(j.graph.rays) do if (r[1] - 47.0) * M1 < 90 then half[#half + 1] = r end end
+  res, flags = line()
+  auto.rayHeights(res, flags, half, fr)
+  local worst = 0
+  for k = 2, #res do worst = math.max(worst, math.abs(res[k].z - res[k - 1].z)) end
+  T.check(worst < 1.2, string.format('rays: where they stop, no step (worst %.2f m over 4 m)', worst))
+  -- a node named by a number, and one with a '|' in its name
+  j.graph.nodes['x|y'] = { lat = 47.0, lon = -123.0, alt = 100 }
+  j.graph.rays = nil
+  T.check(auto.sampleRays(j, { { 7, 'b' }, { 'x|y', 'b' } }) > 50, 'rays: any node names')
   castRayStatic = nil
-  T.check(auto.sampleRays({ stage = j.stage, graph = { nodes = j.graph.nodes } }, { 'a|b' }) == 0,
+  T.check(auto.sampleRays({ stage = j.stage, graph = { nodes = j.graph.nodes } }, { { 'a', 'b' } }) == 0,
     'rays: no ray to cast, nothing found')
   castRayStatic = wasRay
 end

@@ -75,6 +75,95 @@ def degrade(line, tol=TOL_M):
     return out
 
 
+# autoRecce.lua's ground rays (M.RAY_*), as shipped: the same spacing, pick and blend
+RAY_STEP_M = 4.0
+RAY_SNAP_M = 3.0
+RAY_GRADE = 0.3
+RAY_AGREE_M = 0.5
+RAY_BLEND_N = 4
+RAY_MAX_OFF_M = 15
+
+
+def pick_rays(cands, za, zb, ds):
+    """autoRecce.pickRays: the road's ground along an edge, walked from both ends."""
+    n = len(cands)
+
+    def walk(order, z0):
+        out, prev, gap = {}, z0, 1
+        for i in order:
+            best = min(cands[i], key=lambda z: abs(z - prev)) if cands[i] else None
+            if best is not None and abs(best - prev) <= RAY_GRADE * ds * gap:
+                out[i], prev, gap = best, best, 1
+            else:
+                gap += 1
+        return out
+    f, b = walk(range(n), za), walk(range(n - 1, -1, -1), zb)
+    return {i: f[i] for i in f if i in b and abs(f[i] - b[i]) <= RAY_AGREE_M}
+
+
+def degrade_rays(line, tol=TOL_M):
+    """The map-like line with its heights as the auto recce's ground rays give them in game: rays every RAY_STEP_M
+    along each map edge (the clean line's height under each), kept by autoRecce.pickRays, then graph + the smoothed
+    offset (autoRecce.rayHeights). The clean line has no trees or bridges, so this models coverage and blending."""
+    pts = [(p['x'], p['y'], p['z']) for p in line]
+    keep = dp(pts, tol)
+    cum = [0.0]
+    for a, b in zip(pts, pts[1:]):
+        cum.append(cum[-1] + math.dist(a[:2], b[:2]))
+
+    def z_at(i0, i1, t):
+        # the clean line's height at fraction t along the map edge from kept point i0 to i1 (by distance along)
+        target = cum[i0] + (cum[i1] - cum[i0]) * t
+        k = i0
+        while k < i1 and cum[k + 1] < target:
+            k += 1
+        if k >= i1:
+            return pts[i1][2]
+        seg = cum[k + 1] - cum[k]
+        u = (target - cum[k]) / seg if seg > 1e-9 else 0
+        return pts[k][2] + (pts[k + 1][2] - pts[k][2]) * u
+    rays = []
+    for i0, i1 in zip(keep, keep[1:]):
+        a, b = pts[i0], pts[i1]
+        L = math.dist(a[:2], b[:2])
+        n = int(L // RAY_STEP_M)
+        if n < 2:
+            continue
+        at = [(a[0] + (b[0] - a[0]) * q / n, a[1] + (b[1] - a[1]) * q / n) for q in range(1, n)]
+        cands = [[z_at(i0, i1, q / n)] for q in range(1, n)]
+        for q, z in pick_rays(cands, a[2], b[2], L / n).items():
+            rays.append((at[q][0], at[q][1], z))
+    m = degrade(line, tol)
+    cell = RAY_SNAP_M
+    grid = {}
+    for x, y, z in rays:
+        grid.setdefault((math.floor(x / cell), math.floor(y / cell)), []).append((x, y, z))
+    off = {}
+    for k, p in enumerate(m):
+        cx, cy = math.floor(p['x'] / cell), math.floor(p['y'] / cell)
+        best, bz = RAY_SNAP_M ** 2, None
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for x, y, z in grid.get((cx + dx, cy + dy), ()):
+                    d = (x - p['x']) ** 2 + (y - p['y']) ** 2
+                    if d <= best:
+                        best, bz = d, z
+        if bz is not None and abs(bz - p['z']) <= RAY_MAX_OFF_M:
+            off[k] = bz - p['z']
+    w, sigma = RAY_BLEND_N, max(0.5, RAY_BLEND_N / 2)
+    new = []
+    for k, p in enumerate(m):
+        s_, ws = 0.0, 0.0
+        for d in range(-w, w + 1):
+            if 0 <= k + d < len(m):
+                wt = math.exp(-0.5 * (d / sigma) ** 2)
+                s_, ws = s_ + wt * off.get(k + d, 0.0), ws + wt
+        new.append(p['z'] + s_ / ws)
+    for p, z in zip(m, new):
+        p['z'] = round(z / ROUND_Z_M) * ROUND_Z_M
+    return m
+
+
 def degrade_xy_only(line, tol=TOL_M):
     """The map's plan, but the heights of the clean line (as a ground ray every few metres would give them)."""
     m = degrade(line, tol)
