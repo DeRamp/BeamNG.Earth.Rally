@@ -166,6 +166,20 @@ Before (the mod at 128210a) and after (2927536), the same checker:
 - Precision is lower because every bend of 6° or more is called (the owner's rule). The pro leaves some of those
   out.
 
+After review (2026-11-20):
+
+- **Ray heights as shipped** (`--ray-heights` now models `autoRecce.pickRays` and `rayHeights`): map-like crests
+  found 27% -> 37% (precision 68% -> 73%). The clean line's own heights give 40%.
+- **Casual voices:** the step is worked out on their own hard / medium / easy ladder. Said in the casual grade of
+  ours, pro stages: 81% -> 99%.
+- **Grade ladder held out** (`ladder_fit.py`): same grade 0.60 on stages it was not fitted on (3 folds), 0.62 in
+  sample, 0.575 with the game's ladder unfitted.
+- **Map trace wiggle** (`--trace-m`): the owner's matched lines flip turn direction between close points as often as
+  map-like lines do (8.1% vs 8.8%). Wiggle of 0.25 m barely moves the scores, so it does not explain the extra calls.
+- **Driven lines** (`--driven`): 5-15 cm of jitter adds 0.2-0.6 notes per km. A car weaving 0.8 m adds 4. A wider
+  smoothing costs 2 points of same grade, so it stays.
+- **Chicanes:** 5 called on the clean pro stages, 9 map-like (pro 2, game 2).
+
 ## Limits
 
 - The harness has not yet been checked against the game itself. The pro stages show it lines up note by note, but a
