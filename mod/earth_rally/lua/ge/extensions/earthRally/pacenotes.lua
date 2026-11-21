@@ -152,9 +152,58 @@ local function measuredRadius(c, pts)
   return circleRadius(pts[c.i0], pts[mid], pts[c.i1])
 end
 
+M.measuredRadius = measuredRadius
+
 -- The grade (1 one .. 6 six) the game will call a corner, before any riskIntensity.
 function M.measuredGrade(c, pts)
   return gradeOf(2 * measuredRadius(c, pts))
+end
+
+-- The length word ("short", -, "half long", "long", "extra long") the game picks by the note's measured grade (not the
+-- stepped one) and its length (english/numbering/one_to_six.lua lengthsByIntensity: the upper ends, m, of short,
+-- plain, half long and long per grade). A note can move it one word either way (lengthMode 'shorter' / 'longer').
+M.LENGTH_BOUNDS = { { 6, 35, 47, 60 }, { 6, 55, 65, 75 }, { 28, 60, 77, 95 }, { 37, 85, 107, 130 },
+                    { 42, 100, 125, 150 }, { 50, 100, 140, 180 } }
+local function lengthWord(g, arcM)
+  local b = M.LENGTH_BOUNDS[math.max(1, math.min(6, g))]
+  for w, lim in ipairs(b) do if arcM < lim then return w end end
+  return #b + 1
+end
+M.lengthWord = lengthWord
+
+-- The lengthMode that makes the game say the length word of our grade G over the corner's own length arcM, when the
+-- note is measured at grade g over placedM; nil when it says it already. ("skip" where it would be more than one off
+-- and ours is the plain word.)
+function M.lengthMode(G, arcM, g, placedM)
+  local want, got = lengthWord(G, arcM), lengthWord(g, placedM)
+  if want == got then return nil end
+  if want == got + 1 then return 'longer' end
+  if want == got - 1 then return 'shorter' end
+  if want == 2 then return 'skip' end
+  return want > got and 'longer' or 'shorter'
+end
+
+function M.placeForGrade(c, pts, G, a, b, lo, hi)
+  local function graded(i0, i1) return gradeOf(2 * measuredRadius({ i0 = i0, i1 = i1 }, pts)) end
+  local g = graded(c.i0, c.i1)
+  local i0, i1 = c.i0, c.i1
+  if abs(g - G) >= 2 then
+    local best = nil
+    local from0, to1 = max(lo or 1, c.i0 - M.PLACE_OUT), min(hi or #pts, c.i1 + M.PLACE_OUT)
+    for x0 = from0, max(from0, min(a, c.i1 - 2)) do
+      for x1 = min(to1, max(b, x0 + 2)), to1 do
+        if x1 - x0 >= 2 then
+          local gg = graded(x0, x1)
+          local cost = (abs(gg - G) >= 2 and 1000 or 0) + abs(gg - G) * 10 + abs(x0 - c.i0) + abs(x1 - c.i1)
+          if not best or cost < best.cost then best = { cost = cost, i0 = x0, i1 = x1, g = gg } end
+        end
+      end
+    end
+    if best and abs(best.g - G) < abs(g - G) then i0, i1, g = best.i0, best.i1, best.g end
+  end
+  local risk = nil
+  if g > G then risk = 1 elseif g < G then risk = -1 end
+  return i0, i1, risk, g
 end
 
 -- c: a corner over pts (every `step` m); before, after: m of road with no corner either side of it. Returns true when
@@ -173,6 +222,45 @@ function M.racingOpen(c, pts, step, before, after)
   local gl = gradeOf(2 * line)
   return gl > g, g, gl
 end
+
+------------------------------------------------------------------------------------------ the corner's own grade
+
+-- (the pacenote rebuild, 2026-11-20, step 2) The road's radius where the corner is tightest, held over GRADE_HOLD_M
+-- (or the whole corner, when shorter): the most of the fitted curvature k (geo.curvature) over any stretch that long
+-- inside the corner, as a radius. Not the circle through the note's ends, which reads where the ends fall.
+-- The ladder over that radius (as a diameter, m: one under the first, six from the last) is set from the game's own
+-- stages (tools/pacenote_check, 2026-11-20: the pro's grades and the game's written notes on their clean lines, 1126
+-- corners): close to the game's own ladder for its circle (GRADE_DIAMETERS), a little tighter in the middle.
+M.GRADE_HOLD_M = 30
+M.GRADE_FIT_DIAMETERS = { 35, 58, 111, 178, 262 }
+
+-- returns the radius, and the samples a, b of the stretch it was read over
+function M.fitRadius(c, k, step)
+  local w = math.max(1, math.min(c.i1 - c.i0 + 1, floor(M.GRADE_HOLD_M / step + 0.5)))
+  local best, ba = 0, c.i0
+  for a = c.i0, c.i1 - w + 1 do
+    local s = 0
+    for i = a, a + w - 1 do s = s + abs(k[i] or 0) end
+    if s / w > best then best, ba = s / w, a end
+  end
+  return best > 0 and 1 / best or huge, ba, ba + w - 1
+end
+
+-- The grade (1 .. 6) of a fitted radius.
+function M.fitGrade(r)
+  if r == huge then return #M.GRADE_FIT_DIAMETERS + 1 end
+  for g, lim in ipairs(M.GRADE_FIT_DIAMETERS) do if 2 * r < lim then return g end end
+  return #M.GRADE_FIT_DIAMETERS + 1
+end
+
+-- Making the game say our grade. The game grades a note by the circle through its two waypoints and the road half way
+-- between (measuredRadius below) and lets a note move that one step either way (the corner's riskIntensity: +1 one
+-- tighter, -1 one more open; compositorUtil.lookupRiskAdjustedIntensityEntry, checked offline with
+-- tools/pacenote_check/gamevoice.lua). So: where the circle is within one of ours, the ends stay and the step makes up
+-- the rest; where it is two or more out, the note's ends move -- in towards the tight part (a, b: fitRadius's
+-- stretch) or out by up to PLACE_OUT samples, never past lo / hi -- to the placing nearest the corner's own whose
+-- circle is within one, and the step does the rest. Returns i0, i1, riskIntensity (or nil).
+M.PLACE_OUT = 4
 
 ------------------------------------------------------------------------------------------ chicanes and twisty bits
 

@@ -491,6 +491,8 @@ def versus_pro(ours, pro, start):
             r['found'] += 1
             og = grade_num(best[1])
             if pg is not None and og is not None:
+                r.setdefault('pairs', []).append((best[0].get('fitR'), og, pg, best[0].get('mg'),
+                                                  best[0]['s1'] - best[0]['s0'], best[0].get('circleR')))
                 r['graded'] += 1
                 r['sameGrade'] += og == pg
                 r['withinOne'] += abs(og - pg) <= 1

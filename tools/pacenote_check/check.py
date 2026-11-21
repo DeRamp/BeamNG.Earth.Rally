@@ -41,7 +41,10 @@ def py_said(said):
     for i in range(1, len(said.notes) + 1):
         e = said.notes[i]
         notes.append({'n': e.n, 's0': e.s0, 's1': e.s1, 'text': e.text or '', 'diameter': e.diameter,
-                      'distAfterM': e.distAfterM, 'p': checks.parse(e.text or '')})
+                      'distAfterM': e.distAfterM, 'p': checks.parse(e.text or ''),
+                      'fitR': e.meta and e.meta.earthRally and e.meta.earthRally.fitR,
+                      'mg': e.meta and e.meta.earthRally and e.meta.earthRally.grade,
+                      'circleR': e.meta and e.meta.earthRally and e.meta.earthRally.circleR})
     pts = [(p.pos.x, p.pos.y, p.pos.z, p.s) for p in (said.spline[i] for i in range(1, len(said.spline) + 1))]
     ov = said.overlaps
     overlaps = [{'n': ov[i].n, 'next': ov[i].next, 'm': ov[i].m} for i in range(1, len(ov) + 1)]

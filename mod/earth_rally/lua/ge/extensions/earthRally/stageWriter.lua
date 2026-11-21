@@ -327,39 +327,45 @@ function M.build(line, opts)
     end
     corners = out
   end
-  -- (each corner's call, ahead of the notes: whether its number is said a grade more open -- pacenotes.racingOpen,
-  --  the room for the line either side measured to the next real corner, not to a sweeper: the open bend a short
-  --  corner sits in is room for the line -- and whether it is called tighter than a six. A corner the driver hears as
-  --  a six is taken flat: the straight before a caution runs back past it, as past a sweeper)
-  local opened, slows = {}, {}
+  -- (each corner's call, ahead of the notes: its grade, our own -- pacenotes.fitRadius, the road's radius where it is
+  --  tightest -- and the note's ends and step that make the game say it, pacenotes.placeForGrade; and whether it is
+  --  called tighter than a six. A corner the driver hears as a six is taken flat: the straight before a caution runs
+  --  back past it, as past a sweeper)
+  local placed, slows = {}, {}
   do
-    local function realNext(ci, d)
-      local j = ci + d
-      while corners[j] and corners[j].sweeper do j = j + d end
-      return corners[j]
-    end
     for ci, c in ipairs(corners) do
-      if c.group ~= 'chicane' and not c.sweeper and not pacenotes.descriptor(c, step) then
-        local p, n = realNext(ci, -1), realNext(ci, 1)
-        local before = p and (c.i0 - p.i1) * step or (c.i0 - 1) * step
-        local after = n and (n.i0 - c.i1) * step or (np - c.i1) * step
-        opened[ci] = pacenotes.racingOpen(c, stagePts, step, before, after) or nil
+      local G
+      if c.group ~= 'chicane' then
+        local r, a, b = pacenotes.fitRadius(c, k, step)
+        G = pacenotes.fitGrade(r)
+        c.fitR = r ~= math.huge and r or nil
+        local cr = pacenotes.measuredRadius(c, stagePts)
+        c.circleR = cr ~= math.huge and cr or nil
+        if not pacenotes.descriptor(c, step) then
+          local p, n = corners[ci - 1], corners[ci + 1]
+          -- (never over the corner either side, as placed)
+          local pEnd = p and ((placed[ci - 1] and placed[ci - 1].i1) or p.i1)
+          local i0, i1, risk, g = pacenotes.placeForGrade(c, stagePts, G, a, b, pEnd and pEnd + 1 or clear + 1,
+                                                           n and n.i0 - 1 or np - 1)
+          placed[ci] = { i0 = i0, i1 = i1, risk = risk,
+                         length = pacenotes.lengthMode(G, (c.i1 - c.i0) * step, g, (i1 - i0) * step) }
+        end
       end
-      local g = pacenotes.measuredGrade(c, stagePts) + (opened[ci] and 1 or 0)
-      slows[ci] = not c.sweeper and (c.group == 'chicane' or g < #pacenotes.GRADE_DIAMETERS + 1)
+      slows[ci] = not c.sweeper and (c.group == 'chicane' or (G or 1) < #pacenotes.GRADE_FIT_DIAMETERS + 1)
+      c.grade = G
     end
   end
   local entries = {}
   for ci, c in ipairs(corners) do
-    local e = { i0 = c.i0, i1 = c.i1, corner = c, pre = {}, post = {} }
+    local e = { i0 = placed[ci] and placed[ci].i0 or c.i0, i1 = placed[ci] and placed[ci].i1 or c.i1, corner = c,
+                pre = {}, post = {} }
     if c.group == 'chicane' then
       e.pre[1] = { type = c.dir == 'left' and 'chicaneLeftEntry' or 'chicaneRightEntry', i = c.i0, prio = M.PRIORITY.group }
     else
       local item = { type = 'corner' }
       item.descriptor = pacenotes.descriptor(c, step)
-      -- (a short corner the driven line takes a grade more open than the game measures it off the road's middle:
-      --  one grade more open -- the number only, so not where a descriptor takes its place)
-      if opened[ci] then item.riskIntensity = -1 end
+      -- (the step that makes the game's circle say our grade: pacenotes.placeForGrade)
+      if placed[ci] then item.riskIntensity, item.lengthMode = placed[ci].risk, placed[ci].length end
       local shape = pacenotes.shape(c, k, step)
       -- (a crest inside the corner is part of its shape: "over crest", "tightens over crest", "opens over crest" --
       --  when the voice says corner shapes; one that does not (the casual ones) hears "over crest" after the corner)
@@ -626,7 +632,8 @@ function M.build(line, opts)
       audioMode = 1, distanceBeforeModifier = false, ignoreDistanceCalls = false, includeLinkWord = e.item ~= nil,
       isolate = false,
       metadata = { earthRally = c and { dir = c.dir, angleDeg = c.angleDeg, minRadius = c.minRadius, group = c.group,
-                                        sweeper = c.sweeper }
+                                        sweeper = c.sweeper, fitR = c.fitR, grade = c.grade,
+                                        circleR = c.circleR }
                    or { landmark = true } },
       name = 'Pacenote ' .. n, oldId = noteId,
       pacenoteWaypoints = { wp('corner start', 'cornerStart', e.i0), wp('corner end', 'cornerEnd', e.i1) },
