@@ -195,6 +195,8 @@ def main():
     ap.add_argument('--label', default='')
     ap.add_argument('--stage')
     ap.add_argument('--maps', action='store_true')
+    ap.add_argument('--ray-heights', action='store_true',
+                    help='map-like lines keep the clean heights (what a ground ray every few metres gives)')
     ap.add_argument('--only', choices=['fixtures', 'pro', 'mine'])
     ap.add_argument('--style', default='enthusiast', choices=['enthusiast', 'casual'])
     ap.add_argument('--game', default=common.DEFAULT_GAME)
@@ -261,7 +263,7 @@ def main():
                                            pts) if game else None
             # the same road as a map draws it (maplike.py), through the whole pipeline; its notes put back on the
             # clean road, and scored there against the same notes
-            mline = maplike.degrade(line)
+            mline = maplike.degrade_xy_only(line) if a.ray_heights else maplike.degrade(line)
             mStart, mFinish = ends_on(mline, start, finish)
             msaid, mpts = speak(mline, (), mStart, mFinish)
             mnotes = remap(msaid['notes'], mpts, pts)
@@ -347,6 +349,8 @@ def _versus_summary(s, key, vlist):
     s[key + 'FalseLong'] = t.get('falseLong', 0)
     s[key + 'CrestCornerSaid'] = t['crestCornerSaid'] / max(t['proCrestCorner'], 1)
     s[key + 'CrestCornerCrestOnly'] = t['crestCornerCrestOnly']
+    s[key + 'CrestRecall'] = t.get('crestFound', 0) / max(t.get('proCrests', 0), 1)
+    s[key + 'CrestPrecision'] = t.get('crestTrue', 0) / max(t.get('ourCrests', 0), 1)
 
 
 def _rules_summary(s, key, rs, km, overlaps=None):

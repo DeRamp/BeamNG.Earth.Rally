@@ -522,6 +522,16 @@ def versus_pro(ours, pro, start):
                     r['crestCornerCrestOnly'] += 1
                 r['crestMisses'].append({'atM': n['s0'] - start, 'pro': n['text'],
                                          'ours': ' / '.join(m['text'] for m in near) or '(nothing)'})
+    # (every crest or jump the pro calls, with a corner or not, against ours of either kind nearby: heights only)
+    def crested(n):
+        return n['p']['crest'] or n['p']['jump']
+    pcr = [n for n in pro if crested(n)]
+    ocr = [m for m in ours if crested(m)]
+    near = lambda m, n: abs(m['s0'] - n['s0']) <= MATCH_M or (m['s0'] <= n['s1'] + 10 and m['s1'] >= n['s0'] - 10)
+    r['proCrests'] = len(pcr)
+    r['ourCrests'] = len(ocr)
+    r['crestFound'] = sum(1 for n in pcr if any(near(m, n) for m in ocr))
+    r['crestTrue'] = sum(1 for m in ocr if any(near(m, n) for n in pcr))
     r['proFirst'] = pro[0]['text'] if pro else None
     r['ourFirst'] = ours[0]['text'] if ours else None
     r['ourFirstAtM'] = ours[0]['s0'] - start if ours else None

@@ -1056,4 +1056,48 @@ do
     far .. ' far, ' .. wrong .. ' wrong)')
 end
 
+-- The road's heights between the graph's nodes (the pacenote rebuild, step 4): the ground under a road near the
+-- stage read with a ray every RAY_STEP_M while its window is loaded, and the matched line's points take it -- not a
+-- ground far off the graph's own height (the valley under a bridge), and none where nothing was hit
+do
+  vec3 = vec3 or function(x, y, z) return { x = x, y = y, z = z } end
+  local wasRay = rawget(_G, 'castRayStatic')
+  -- a 200 m edge north from lat 47.0, level at 100 m on the graph, with a 2 m crest in its middle; a bridge's
+  -- valley (20 m down) past 150 m
+  local function ground(y)
+    if y > 150 and y < 170 then return 80 end
+    return 100 + 2 * math.max(0, 1 - math.abs(y - 100) / 40)
+  end
+  castRayStatic = function(pos, dir, len)
+    local d = pos.z - ground(pos.y)
+    if d >= 0 and d <= len then return d end
+    return len + 1
+  end
+  local lat1 = 47.0 + 200 / (math.rad(1) * 6371008.8)
+  local j = { stage = { line = { { 47.0, -123.0 }, { lat1, -123.0 } } },
+              graph = { nodes = { a = { lat = 47.0, lon = -123.0, alt = 100 }, b = { lat = lat1, lon = -123.0, alt = 100 },
+                                  c = { lat = 47.0, lon = -122.99, alt = 100 }, d = { lat = lat1, lon = -122.99, alt = 100 } },
+                        edges = { { 'a', 'b' }, { 'c', 'd' } } } }
+  local found = auto.sampleRays(j, { 'a|b', 'c|d' })
+  T.check(found > 30 and found < 50, 'rays: the ground under the stage road every 4 m, not the road 760 m off (' ..
+    found .. ')')
+  local fr = auto.frame(47.0, -123.0)
+  local res, flags = {}, {}
+  for s = 0, 200, 4 do
+    local p = fr.xy(47.0 + s / (math.rad(1) * 6371008.8), -123.0)
+    res[#res + 1] = { x = p.x, y = p.y, z = 100 }
+    flags[#flags + 1] = 0
+  end
+  flags[26] = 1            -- (100 m: a stretch with no road keeps its height)
+  local n = auto.rayHeights(res, flags, j.graph.rays, fr)
+  T.near(res[25].z, 101.9, 0.15, 'rays: the crest between two nodes is on the line')
+  T.check(res[26].z == 100, 'rays: not on a stretch with no road')
+  T.check(res[41].z == 100, 'rays: the valley under a bridge is not the road: the graph\'s height stays')
+  T.check(res[1].z == 100 and n > 30, 'rays: ' .. n .. ' points took a ground height')
+  castRayStatic = nil
+  T.check(auto.sampleRays({ stage = j.stage, graph = { nodes = j.graph.nodes } }, { 'a|b' }) == 0,
+    'rays: no ray to cast, nothing found')
+  castRayStatic = wasRay
+end
+
 T.done('test_autorecce')
