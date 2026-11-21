@@ -224,4 +224,41 @@ function M.applyOpening()
   return true
 end
 
+-- The pacenote rebuild's self-check (2026-11-20, step 6). Each corner's grade is ours (pacenotes.fitRadius), and the
+-- note carries the step that makes the game's own measurement say it -- worked out offline against the game's
+-- rally Lua of 0.40.5 (the circle through the note's ends and the road half way, on its one to six ladder). If a
+-- game update measures differently, every corner is called a grade or more out and nothing else shows it. So after
+-- the load, each corner note's measurement is read back from the engine (its structuredForProjection, what its
+-- compositors say the note from) and graded as we graded the circle: { checked, same }, or nil when the engine's
+-- notes cannot be read. Fewer than GRADE_CHECK_SHARE the same, over GRADE_CHECK_MIN or more, is a mismatch.
+M.GRADE_CHECK_MIN = 5
+M.GRADE_CHECK_SHARE = 0.7
+function M.gradeCheck()
+  local rm = M.manager()
+  local nb = rm and rm.notebook
+  local ok, list = pcall(function() return nb.pacenotes.sorted end)
+  if not ok or type(list) ~= 'table' then return nil end
+  local pacenotes = require('earthRally/pacenotes')
+  local checked, same = 0, 0
+  for _, note in ipairs(list) do
+    local m = type(note) == 'table' and type(note.metadata) == 'table' and note.metadata.earthRally
+    if type(m) == 'table' and type(m.circleR) == 'number' and m.grade and
+       type(note.structuredForProjection) == 'function' then
+      local okP, proj = pcall(note.structuredForProjection, note)
+      local corner = nil
+      if okP and type(proj) == 'table' and type(proj.items) == 'table' then
+        for _, it in pairs(proj.items) do
+          if type(it) == 'table' and it.type == 'corner' then corner = it break end
+        end
+      end
+      if corner and type(corner.intensity) == 'number' then
+        checked = checked + 1
+        if pacenotes.gradeOf(corner.intensity) == pacenotes.gradeOf(2 * m.circleR) then same = same + 1 end
+      end
+    end
+  end
+  return { checked = checked, same = same,
+           mismatch = checked >= M.GRADE_CHECK_MIN and same < M.GRADE_CHECK_SHARE * checked }
+end
+
 return M

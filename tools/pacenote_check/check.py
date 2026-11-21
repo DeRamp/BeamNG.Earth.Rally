@@ -270,6 +270,7 @@ def main():
             mview = {'notes': mnotes, 'startS': said['startS'], 'finishS': said['finishS']}
             show('map-like ' + name, mview)
             result['pro'][name] = {
+                'selfCheck': self_check(said['notes']) + self_check(msaid['notes']),
                 'versus': vs, 'versusGame': vg, 'rules': rules, 'proRules': selfRules, 'gameRules': gameRules,
                 'km': km, 'overlaps': said['overlaps'],
                 'map': {'versus': checks.versus_pro(mnotes, pro, said['startS'] or 0),
@@ -370,6 +371,17 @@ def _rules_summary(s, key, rs, km, overlaps=None):
         s[key + 'Overlaps'] = overlaps
 
 
+GAME_LADDER = (35, 65, 116, 190, 260)   # the game's one to six by diameter (styles/english/numbering/one_to_six)
+
+
+def self_check(notes):
+    """rallyAdapter.gradeCheck's test over our notes, on the game's measurement here: (same, checked)."""
+    def grade(d):
+        return next((i + 1 for i, lim in enumerate(GAME_LADDER) if d < lim), len(GAME_LADDER) + 1)
+    pairs = [(n['diameter'], n['circleR']) for n in notes if n.get('diameter') and n.get('circleR')]
+    return (sum(1 for d, r in pairs if grade(d) == grade(2 * r)), len(pairs))
+
+
 def summarise(r):
     s = {}
     if r['fixtures']:
@@ -396,6 +408,9 @@ def summarise(r):
         # the rules over the pro's own notes, and the game's: how often a human co-driver "fails" them (false alarms)
         _rules_summary(s, 'proSelf', [v['proRules'] for v in P], km)
         _rules_summary(s, 'gameSelf', [v['gameRules'] for v in P if v['gameRules']], km)
+        same = sum(v['selfCheck'][0] + v['selfCheck'][2] for v in P if v.get('selfCheck'))
+        checked = sum(v['selfCheck'][1] + v['selfCheck'][3] for v in P if v.get('selfCheck'))
+        s['selfCheckSame'] = same / max(checked, 1)
         s['proStages'] = len(P)
         s['proKm'] = km
     if r['mine']:

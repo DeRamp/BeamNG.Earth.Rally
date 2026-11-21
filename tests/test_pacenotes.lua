@@ -738,6 +738,24 @@ do
   ra.setOpening(50)
   T.check(first.before == '', 'rallyAdapter: none for a first corner in sight of the line')
   ra.setOpening(nil)
+  -- (step 6 of the rebuild: each corner's measurement read back from the engine, graded as we graded the circle)
+  local function graded(circleR, diameter)
+    return { metadata = { earthRally = { circleR = circleR, grade = 3 } },
+             structuredForProjection = function() return { items = { ['4'] = { type = 'corner', intensity = diameter } } } end }
+  end
+  local notesList = {}
+  for k = 1, 6 do notesList[k] = graded(50, 100) end      -- (a 100 m diameter, a three, both ways)
+  notesList[7] = { metadata = { earthRally = { landmark = true } } }
+  rm.notebook.pacenotes.sorted = notesList
+  local gc = ra.gradeCheck()
+  T.check(gc and gc.checked == 6 and gc.same == 6 and not gc.mismatch, 'gradeCheck: the game measures our corners ' ..
+    'as we did')
+  for k = 1, 4 do notesList[k] = graded(50, 200) end      -- (measured a five)
+  gc = ra.gradeCheck()
+  T.check(gc and gc.same == 2 and gc.mismatch, 'gradeCheck: measured differently: a mismatch')
+  for k = 1, 6 do notesList[k] = graded(50, nil) end
+  gc = ra.gradeCheck()
+  T.check(gc and gc.checked == 0 and not gc.mismatch, 'gradeCheck: nothing measured, nothing said')
   _G.gameplay_rally = savedRally
   _G.log = savedLog
 end
