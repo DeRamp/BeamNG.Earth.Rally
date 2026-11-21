@@ -189,7 +189,7 @@ function M.applyOpening()
   local m = M.openingM
   if not m then return false end
   local writer = require('earthRally/stageWriter')
-  if not (m > writer.OPENING_MIN_M) then return false end
+  if not (m >= writer.OPENING_MIN_M) then return false end   -- (as openingCall: one at 80 m is said)
   local rm = M.manager()
   local nb = rm and rm.notebook
   local ok, pn = pcall(function() return nb.pacenotes.sorted[1] end)

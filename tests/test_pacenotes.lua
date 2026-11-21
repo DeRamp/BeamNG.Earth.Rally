@@ -767,6 +767,11 @@ do
   ra.resync()
   T.check(first.before == '', 'rallyAdapter: a voice with no distance calls gets none')
   callsOn = true
+  first.before = ''
+  T.check(ra.setOpening(writer.OPENING_MIN_M) and first.before ~= '' and
+          writer.openingCall({ openingM = writer.OPENING_MIN_M }) ~= nil,
+    'rallyAdapter: a first corner at OPENING_MIN_M is said with its distance, as openingCall says it')
+  first.before = ''
   ra.setOpening(50)
   T.check(first.before == '', 'rallyAdapter: none for a first corner in sight of the line')
   ra.setOpening(nil)
