@@ -48,7 +48,7 @@ flag, every call), `history.jsonl` (one summary per run), `maps/*.svg` (open in 
 - **Fixtures** for long bends also need the word "long" on bends over 200 m; the opening fixtures need the words to
   say the distance.
 - **History:** each run is compared with the last run with the same stages, scope, style, rules
-  (`checks.RULES_VERSION`, now 2; bump it when a rule changes) and `--game` / `--folder`; every number is marked
+  (`checks.RULES_VERSION`, now 3; bump it when a rule changes) and `--game` / `--folder`; every number is marked
   better or WORSE.
 
 ## Baseline (main, 1.9.3-alpha, rules v2)
@@ -120,6 +120,51 @@ Three fixes to the check itself, each a bug, none a rule change (`RULES_VERSION`
   were counted silent.
 - "chicane right entry" counts as a right and a left. Its left was counted as a missed bend (3 owner's, 2 pro).
 - Lines are built as the mod reads them: out-and-backs dropped (`geo.foldBacks`).
+
+## Pacenote rebuild (rules v3, 2026-11-20)
+
+The checker before the rebuild (step 0 of [`plan-pacenote-rebuild.md`](plan-pacenote-rebuild.md)):
+
+- **Two truths.** The pro's voice (`pro`) and the game's own written notes on the same 15 stages,
+  `structured.notebook.json` graded by the game (`game`).
+- **Map-like pro stages** (`maplike.py`). Each clean line is thinned to map points (Douglas-Peucker 0.6 m), with
+  heights at those points only, resampled every 4 m and rounded as a matched file. Scored against both truths
+  (`mapPro`, `mapGame`). `--ray-heights` keeps the real heights, as ground rays would give them.
+- **Map point spacing**, measured on the owner's 31 matched stages (kept out of git). By length, at the
+  10/25/50/75/90th percentile: 4/4/8/28/68 m in bends, 4/16/28/60/124 m elsewhere. Height breaks 12/20/32/44/76 m.
+  A 0.6 m thinning is the nearest match.
+- **Rules set from the pro data** (`calibrate.py`), not the code:
+  - Missed bends: 18° or more over 60-360 m.
+  - Hidden corner: eye 1.2 m, 0.8 m of road.
+  - Split bend: two calls one way, both 30 m or shorter, 50 m apart or less.
+  - Visible bend: 5° or more, seen within 250 m.
+- **New scores:** crest recall and precision, wrong direction, false "long", and `selfCheckSame` (the in-game
+  self-check run offline).
+
+Before (the mod at 128210a) and after (2927536), the same checker:
+
+| | Before | After | Pro's own |
+|---|---|---|---|
+| Fixtures passed | 19 of 19 | 19 of 19 | |
+| Pro corners found (precision) | 72% (84%) | 78% (77%) | |
+| Same grade, pro / game | 52% / 57% | 56% / 62% | |
+| Same grade, map-like: pro / game | 49% / 55% | 55% / 59% | |
+| Within one grade, pro | 90% | 90% | |
+| Game corners found (precision) | 78% (94%) | 83% (85%) | |
+| Long said: pro / game | 57% / 69% | 63% / 63% | |
+| Crests found, map-like pro (precision) | 25% (66%) | 27% (68%) | |
+| Missed bends, pro / map-like / owner's (per km) | 0.27 / 0.34 / 0.31 | 0.03 / 0.04 / 0.03 | |
+| Visible bends missed, pro / owner's (per km) | 0.30 / 0.71 | 0.05 / 0.10 | |
+| Hidden corner after a crest, pro / owner's | 3 / 14 | 3 / 8 | |
+| Notes per km, pro stages / owner's | 8.3 / 6.9 | 9.7 / 8.2 | 9.2 |
+| Long silences, owner's | 32 | 21 | |
+| Overlaps, silent openings | 0, 0 | 0, 0 | |
+| Self-check same | | 97% | |
+
+- With real heights (`--ray-heights`), map-like crests found rise from 27% to 39% (precision 76%). The game's clean
+  line gives 40%.
+- Precision is lower because every bend of 6° or more is called (the owner's rule). The pro leaves some of those
+  out.
 
 ## Limits
 
