@@ -2,7 +2,7 @@
 -- coordinates (made at the start of each run, in the world's frame of that moment):
 --   race.race.json                       start line, stop control, a pathnode every ~1 km and one at the finish
 --   rally/drivelineSpline.json           the line the co-driver measures along (with our heights)
---   rally/notebooks/structured.notebook.json   one pacenote per corner (geo.corners) with what pacenotes.lua reads
+--   rally/notebooks/structured.notebook.json   one pacenote per corner (pacenotes.findCorners) with what pacenotes.lua reads
 --                                        off the line about it (hairpin, tightens, over crest, caution...), and
 --                                        notes of their own for crests, jumps, dips and landmarks between corners,
 --                                        and the finish; the game works out each corner's severity, direction,
@@ -62,7 +62,7 @@ M.PRIORITY = {
 }
 
 -- The corners the stage's notebook gets, in order, and the samples they index into (the stage's own stretch of the
--- line, every M.NOTE_STEP_M): geo.corners over that stretch, less the ones too close to either end of the stage to
+-- line, every M.NOTE_STEP_M): pacenotes.findCorners over that stretch, less the ones too close to either end of the stage to
 -- be called and the ones on a stretch with no road on the map, with chicanes and twisty runs made one each
 -- (pacenotes.group). build() writes one pacenote per entry this returns and reports their number, and lineStats.lua
 -- calls this over a line as it is saved -- so the number the menu's Corners tile shows is the co-driver's own count
@@ -75,7 +75,7 @@ M.PRIORITY = {
 --   o.lead                of line extended in before startM, if any: mute is read in the coordinates of the line
 --                         as it came, which is where its gaps were measured
 --   o.mute                { { fromM, toM }... }: no notes along there
---   o.corners             geo.corners options
+--   o.corners             { smoothM }: geo.curvature's smoothing
 -- Also returns muted(i), the test it used, for the landmarks that go on these notes, and iF, the finish's sample.
 function M.stageCorners(line, cum, o)
   local endM = math.max(o.finishM, o.stopM or o.finishM)
@@ -90,13 +90,13 @@ function M.stageCorners(line, cum, o)
     return false
   end
   local corners = {}
-  -- (and the long sweepers geo.corners leaves out: pacenotes.sweepers)
-  local found = geo.corners(stagePts, M.NOTE_STEP_M, o.corners)
+  -- (one corner finder over the fitted curvature: pacenotes.findCorners)
+  local turn, k = geo.curvature(stagePts, M.NOTE_STEP_M, o.corners and o.corners.smoothM)
+  local found = pacenotes.findCorners(turn, k, M.NOTE_STEP_M)
   -- (a corner the stage starts in -- a hairpin off the line -- is called from just past the clear stretch when
   --  NOTE_CLEAR_M of it or more is still to come, measured from there; only a corner over by then is left out)
   do
-    local turn, k = geo.curvature(stagePts, M.NOTE_STEP_M, o.corners and o.corners.smoothM)
-    local minAngle = (o.corners and o.corners.minAngleDeg) or 12
+    local minAngle = pacenotes.FIND_CALL_DEG
     for ci, c in ipairs(found) do
       if c.i0 <= clear and c.i1 >= 2 * clear + 1 then
         local a, kMax = 0, 0
@@ -106,13 +106,12 @@ function M.stageCorners(line, cum, o)
         end
         if math.abs(math.deg(a)) >= minAngle then
           found[ci] = { i0 = clear + 1, i1 = c.i1, dir = c.dir, angleDeg = math.abs(math.deg(a)),
-                        minRadius = kMax > 0 and 1 / kMax or math.huge, fromStart = true }
+                        minRadius = kMax > 0 and 1 / kMax or math.huge, fromStart = true, sweeper = c.sweeper }
         end
       end
     end
   end
-  local sTurn, sK = geo.curvature(stagePts, M.NOTE_STEP_M, pacenotes.SWEEP_SMOOTH_M)
-  for _, c in ipairs(pacenotes.sweepers(sTurn, sK, M.NOTE_STEP_M, found)) do
+  for _, c in ipairs(found) do
     if c.i0 > clear and c.i1 < #stagePts and (c.i1 < iF or c.i0 > iF + clear) and not muted(c.i0) and
        not muted(c.i1) then
       corners[#corners + 1] = c
@@ -166,11 +165,11 @@ function M.distanceString(dist, rules)
 end
 
 -- built: M.build's result. The first note's opening call: its words (rules: as M.distanceString) and the metres,
--- or nil when its corner start is OPENING_MIN_M or less from the start line, or further than the style's `max`
+-- or nil when its corner start is under OPENING_MIN_M from the start line (a corner on it is said with its 80), or further than the style's `max`
 -- (the voice packs have distance clips up to that only: textCompositor.enumerateDistanceEntries).
 function M.openingCall(built, rules)
   local m = built and built.openingM
-  if not m or m <= M.OPENING_MIN_M then return nil end
+  if not m or m < M.OPENING_MIN_M then return nil end
   if m > ((rules and rules.max) or M.DISTANCE_RULES.max) then return nil end
   return M.distanceString(m, rules), m
 end
@@ -336,17 +335,13 @@ function M.build(line, opts)
     for ci, c in ipairs(corners) do
       local G
       if c.group ~= 'chicane' then
-        local r, a, b = pacenotes.fitRadius(c, k, step)
+        local r = pacenotes.fitRadius(c, k, step)
         G = pacenotes.fitGrade(r)
         c.fitR = r ~= math.huge and r or nil
         local cr = pacenotes.measuredRadius(c, stagePts)
         c.circleR = cr ~= math.huge and cr or nil
         if not pacenotes.descriptor(c, step) then
-          local p, n = corners[ci - 1], corners[ci + 1]
-          -- (never over the corner either side, as placed)
-          local pEnd = p and ((placed[ci - 1] and placed[ci - 1].i1) or p.i1)
-          local i0, i1, risk, g = pacenotes.placeForGrade(c, stagePts, G, a, b, pEnd and pEnd + 1 or clear + 1,
-                                                           n and n.i0 - 1 or np - 1)
+          local i0, i1, risk, g = pacenotes.placeForGrade(c, stagePts, G)
           placed[ci] = { i0 = i0, i1 = i1, risk = risk,
                          length = pacenotes.lengthMode(G, (c.i1 - c.i0) * step, g, (i1 - i0) * step) }
         end

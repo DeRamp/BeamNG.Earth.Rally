@@ -27,8 +27,12 @@ def parse(text):
                 g = words[i - 1]
             elif i + 1 < len(words) and words[i + 1] in GRADES:
                 g = words[i + 1]
-            # "keep left", "stay right", "at junction left" are not corners
-            if i > 0 and words[i - 1] in ('keep', 'stay', 'cut', 'tightish', 'junction', 'turn') and g is None:
+            # "keep left", "stay right", "at junction left" are not corners (nor is "keep left" in "keep left three
+            # right": the number after it is the corner's)
+            if i > 0 and words[i - 1] in ('keep', 'stay'):
+                out['keeps'].append(w)
+                continue
+            if i > 0 and words[i - 1] in ('cut', 'tightish', 'junction', 'turn') and g is None:
                 if words[i - 1] in ('keep', 'stay'):
                     out['keeps'].append(w)
                 continue

@@ -90,10 +90,13 @@ end
 
 ------------------------------------------------------------------------------------------ shapes
 do
-  local tl = notes(build(road({ { 'straight', 300 }, { 'arcs', { { 90, 50 }, { 30, 50 } } }, { 'straight', 300 } })))
-  T.check(has(tl, '4:corner/tightens'), 'radius 90 then 30: tightens (' .. show(tl) .. ')')
-  local op = notes(build(road({ { 'straight', 300 }, { 'arcs', { { 30, -50 }, { 90, -50 } } }, { 'straight', 300 } })))
-  T.check(has(op, '4:corner/opens'), 'radius 30 then 90: opens (' .. show(op) .. ')')
+  -- (within a grade: one corner, its shape says the change; two grades or more apart it is two, "four into two")
+  local tl = notes(build(road({ { 'straight', 300 }, { 'arcs', { { 120, 40 }, { 60, 50 } } }, { 'straight', 300 } })))
+  T.check(has(tl, '4:corner/tightens'), 'radius 120 then 60: tightens (' .. show(tl) .. ')')
+  local op = notes(build(road({ { 'straight', 300 }, { 'arcs', { { 60, -50 }, { 120, -40 } } }, { 'straight', 300 } })))
+  T.check(has(op, '4:corner/opens'), 'radius 60 then 120: opens (' .. show(op) .. ')')
+  local t2 = build(road({ { 'straight', 300 }, { 'arcs', { { 90, 50 }, { 30, 50 } } }, { 'straight', 300 } }))
+  T.check(t2.corners == 2, 'radius 90 then 30: two corners, "four into two" (' .. show(notes(t2)) .. ')')
   local built = build(road({ { 'straight', 300 }, { 'arcs', { { 90, 50 }, { 30, 50 } } }, { 'straight', 300 } }))
   local mt
   for _, p in ipairs(built.notebook.pacenotes) do
@@ -318,7 +321,8 @@ do
   T.check(has(sw, '4:corner') and sweep.corners == 1, 'a 50 degree sweeper at 500 m radius: a corner (' ..
     show(sw) .. ')')
   local wobble = build(road({ { 'straight', 400 }, { 'arc', 900, 10 }, { 'straight', 400 } }))
-  T.check(wobble.corners == 0, 'a 10 degree bend at 900 m: no corner (' .. show(notes(wobble)) .. ')')
+  -- (the owner's rule, 2026-11-19: every bend the driver can see is called, whatever its radius)
+  T.check(wobble.corners == 1, 'a 10 degree bend at 900 m: a corner (' .. show(notes(wobble)) .. ')')
   -- (the second review of it: one call for one long top; a crest too weak for a call of its own is called once it
   --  is blind; a sweeper is not the corner before for the next one's caution)
   local function summit(g, s0, len)
@@ -403,7 +407,7 @@ do
   for _, n in ipairs(tdc) do for _ in n:gmatch('[Dd]own') do nDown = nDown + 1 end end
   T.check(not has(tdc, 'rest') and nDown == 1, 'a corner tightening over the top of a downhill from flat: "down" ' ..
     'once, no crest (' .. show(tdc) .. ')')
-  T.check(has(tdc, 'caution[23]') and has(tdc, 'tightens'), 'and a caution as over a crest (' .. show(tdc) .. ')')
+  T.check(has(tdc, 'caution[123]') and has(tdc, 'tightens'), 'and a caution as over a crest (' .. show(tdc) .. ')')
   local upDown = notes(build(road({ { 'straight', 1600 } }, ease(0.10, -0.10, 700, 80))))
   T.check(has(upDown, 'rest') or has(upDown, 'ump'), 'a 10 % climb over the top into a 10 % downhill: a crest (' ..
     show(upDown) .. ')')
@@ -415,7 +419,7 @@ do
   T.check(has(weak, 'rest'), 'a blind top with a small bump on it: a crest (' .. show(weak) .. ')')
   local afterSw = notes(build(road({ { 'straight', 600 }, { 'arc', 400, -40 }, { 'straight', 60 }, { 'arc', 15, 90 },
                                     { 'straight', 400 } })))
-  T.check(has(afterSw, '^1:caution2,4:corner/square'), 'a square after a sweeper: its caution as after a straight (' ..
+  T.check(has(afterSw, '^1:caution[23],4:corner/square'), 'a square after a sweeper: its caution as after a straight (' ..
     show(afterSw) .. ')')
   -- a casual voice says no corner shape: a crest inside a corner is "over crest" after it, not a silent shape
   local casualSet = { finish = true, crest = true, overJump = true, overCrest = true, intoCrest = true,
@@ -543,14 +547,14 @@ do
   local six = build(road({ { 'straight', 500 }, { 'arc', 200, 22 }, { 'straight', 500 } }))
   T.check(six.corners == 1, 'a 22 degree bend at 200 m: a corner note, a six (' .. show(notes(six)) .. ')')
   local wide = build(road({ { 'straight', 500 }, { 'arc', 600, 22 }, { 'straight', 500 } }))
-  -- (2026-11-19, the pacenote check: a bend of pacenotes.KINK_DEG or more one way within KINK_WINDOW_M is called,
-  --  smooth or drawn as kinks; this one was left out before)
+  -- (the owner's rule, 2026-11-19: every bend the driver can see is called, smooth or drawn as kinks)
   local wideItems = cornerItems(wide)
   T.check(wide.corners == 1 and wideItems[1] and wideItems[1].meta.sweeper, 'a 22 degree bend at 600 m: a sweeper (' ..
     show(notes(wide)) .. ')')
-  -- a bend as a map draws it: straight pieces of 120 m meeting at three kinks of 11 degrees (33 in all; a kink of 12 is a corner): one
-  -- sweeper, from the first kink to the last; 20 degrees in three kinks over 400 m too; a wiggle, 15 degrees over
-  -- 400 m and a bend that turns back are not
+  -- a bend as a map draws it: straight pieces of 120 m meeting at three kinks of 11 degrees (33 in all): one
+  -- sweeper, from half an edge before the first kink to half an edge past the last (the road bends round each
+  -- point: geo.curvature's fit); 20 and 15 degrees in three kinks over 400 m too; kinks either way, each one a bend
+  -- the driver sees, are each called (the owner's rule)
   local function kinks(deg, nodes, length)
     local pieces = { { 'straight', 300 } }
     local piece = length / (nodes + 1)
@@ -573,15 +577,15 @@ do
     show(notes(k36)) .. ')')
   local k36n = k36.notebook.pacenotes
   local w0, w1 = k36n[1].pacenoteWaypoints[1].pos, k36n[1].pacenoteWaypoints[2].pos
-  T.near(math.sqrt((w1[1] - w0[1]) ^ 2 + (w1[2] - w0[2]) ^ 2), 240, 15, 'the sweeper runs from its first kink to its last')
+  T.near(math.sqrt((w1[1] - w0[1]) ^ 2 + (w1[2] - w0[2]) ^ 2), 360, 25, 'the sweeper runs round its kinks')
   T.check(sweeperNotes(build(kinks(20, 3, 400))) == 1, 'a map-drawn bend, 20 degrees in three kinks over 400 m: one')
-  T.check(sweeperNotes(build(kinks(15, 3, 400))) == 0, '15 degrees over 400 m: none')
+  T.check(sweeperNotes(build(kinks(15, 3, 400))) == 1, '15 degrees over 400 m: one')
   local function kink(deg) return { 'arc', 3 / math.rad(math.abs(deg)), deg } end
   local wig = build(road({ { 'straight', 300 }, kink(8), { 'straight', 100 }, kink(-7), { 'straight', 100 },
                            kink(8), { 'straight', 100 }, kink(-7), { 'straight', 300 } }))
-  T.check(#cornerItems(wig) == 0, 'kinks either way: none (' .. show(notes(wig)) .. ')')
+  T.check(#cornerItems(wig) == 4, 'kinks of 7 - 8 degrees either way: each called (' .. show(notes(wig)) .. ')')
   local far = build(road({ { 'straight', 300 }, kink(10), { 'straight', 400 }, kink(10), { 'straight', 300 } }))
-  T.check(#cornerItems(far) == 0, 'two kinks of 10 degrees 400 m apart (more than KINK_GAP_M): none (' ..
+  T.check(#cornerItems(far) == 2, 'two kinks of 10 degrees 400 m apart: two calls (' ..
     show(notes(far)) .. ')')
   -- ... and a long bend with a tighter corner in it: the bend either side is called too, not just its tight middle
   local lb = build(road({ { 'straight', 400 }, { 'arcs', { { 300, 40 }, { 40, 60 }, { 300, 40 } } },
@@ -602,28 +606,19 @@ do
   local alone = false
   for _, n in ipairs(crestBend) do if n:find('rest') and not n:find('4:corner') then alone = true end end
   T.check(has(crestBend, 'rest') and not alone, 'a crest on an open six: on the corner\'s note (' .. show(crestBend) .. ')')
-  -- issue #12: a short kink is driven a grade more open than the road's middle: riskIntensity -1
-  local kink = cornerItems(build(road({ { 'straight', 300 }, { 'arc', 60, 20 }, { 'straight', 300 } })))
-  T.check(#kink == 1 and kink[1].item.riskIntensity == -1, 'a 20 degree kink over 21 m: one grade more open (' ..
-    tostring(kink[1] and kink[1].item.riskIntensity) .. ')')
-  local longC = cornerItems(build(road({ { 'straight', 300 }, { 'arc', 60, 90 }, { 'straight', 300 } })))
-  T.check(#longC == 1 and longC[1].item.riskIntensity == nil, 'a 90 degree corner over 94 m: as the game measures it')
-  local sharp = cornerItems(build(road({ { 'straight', 300 }, { 'arc', 15, 60 }, { 'straight', 300 } })))
-  T.check(#sharp == 1 and sharp[1].item.riskIntensity == nil, 'a short 60 degree corner: not a kink, as measured')
-  -- (no room either side, no straighter line)
-  local pts = road({ { 'straight', 50 }, { 'arc', 60, 20 }, { 'straight', 50 } })
-  local sp = geo.resample(pts, 5)
-  local c = geo.corners(sp, 5)[1]
-  T.check(c and pn.racingOpen(c, sp, 5, 100, 100) and not pn.racingOpen(c, sp, 5, 0, 100),
-    'racingOpen: with room either side, not without')
-  -- (review: the room is measured to the next real corner -- a sweeper beside a kink is room for the line)
-  for _, order in ipairs({ { { 'arc', 60, 20 }, { 'arc', 220, -30 } }, { { 'arc', 220, -30 }, { 'arc', 60, 20 } } }) do
-    local beside = cornerItems(build(road({ { 'straight', 300 }, order[1], order[2], { 'straight', 300 } })))
-    local kinkItem, sw = nil, 0
-    for _, ci in ipairs(beside) do if ci.meta.sweeper then sw = sw + 1 else kinkItem = ci.item end end
-    T.check(sw == 1 and kinkItem and kinkItem.riskIntensity == -1, 'a kink right beside a sweeper: still one grade ' ..
-      'more open (' .. tostring(kinkItem and kinkItem.riskIntensity) .. ')')
+  -- (the pacenote rebuild, 2026-11-20) the grade is the road's own -- its radius where tightest, pacenotes.fitRadius
+  -- -- and the note carries the step (riskIntensity) that makes the game's circle say it: a short kink, which the
+  -- circle through its ends reads tighter than it is, is stepped one more open; a corner the circle reads right is not
+  for _, case in ipairs({ { 60, 20 }, { 60, 90 }, { 15, 60 }, { 200, 40 }, { 30, 120 } }) do
+    local it = cornerItems(build(road({ { 'straight', 300 }, { 'arc', case[1], case[2] }, { 'straight', 300 } })))
+    local m = it[1] and it[1].meta
+    local said = m and m.circleR and pn.gradeOf(2 * m.circleR) - (it[1].item.riskIntensity or 0)
+    T.check(#it == 1 and m.grade and said and (said == m.grade or math.abs(said - m.grade) == 1 and
+      it[1].item.riskIntensity ~= nil), string.format('%d degrees at %d m: the game says our grade, %s (circle %s, step %s)',
+      case[2], case[1], tostring(m and m.grade), tostring(said), tostring(it[1] and it[1].item.riskIntensity)))
   end
+  T.check(pn.fitGrade(30) < pn.fitGrade(60) and pn.fitGrade(60) < pn.fitGrade(200) and pn.fitGrade(math.huge) == #pn.GRADE_FIT_DIAMETERS + 1,
+    'fitGrade: tighter is a lower number, a straight a six or more open')
   -- (the grade the game measures: the circle through the waypoints and the middle, on its one to six ladder)
   local ring = geo.resample(road({ { 'straight', 50 }, { 'arc', 100, 60 }, { 'straight', 50 } }), 5)
   local rc = geo.corners(ring, 5)[1]

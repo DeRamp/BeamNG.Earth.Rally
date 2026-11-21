@@ -106,26 +106,11 @@ function M.shape(c, k, step)
   return nil
 end
 
------------------------------------------------------------------------------------------- short corners on the line
+------------------------------------------------------------------------------------------ the game's measurement
 
--- (1.6.2, issue #12: "really short corners are often called tighter than they drive. A very short kink that's called
--- a 4 now drives more like a 5 or a 6") The game grades a corner by the circle through its note's two waypoints and
--- the route half way between (geoPacenotes buildSingleFit), off our driveline: the road's middle. Its own stages'
--- drivelines are driven ones. On a short corner the line a driver takes is far straighter than the road: across the
--- road's width from the outside, to the inside at the apex, and out again -- for a corner of angle a, a radius of
--- RACING_SWING_M / (1 - cos(a / 2)) more than the road's (the textbook line), as far as the straight either side
--- leaves room for it (its tangent points (R - r) tan(a / 2) further out, RACING_ROOM_M at most). Where that line is a
--- grade more open on the game's ladder (GRADE_DIAMETERS), the corner is called one grade more open: the note's
--- corner `riskIntensity = -1`, the one step the game's notes allow (compositorUtil lookupRiskAdjustedIntensityEntry:
--- the style's ladder runs one to six, and -1 moves one entry towards six, for every note, whatever the settings; a
--- six stays a six. The length ("long") is still read off the measured grade).
--- Only a corner RACING_ARC_M long or shorter, start to end, and RACING_MAX_DEG or less: a kink. On a longer or sharper
--- one the line gains less, and the game's number is what it measured (a tight corner called too open is the worse
--- mistake).
-M.RACING_ARC_M = 30
-M.RACING_MAX_DEG = 45
-M.RACING_SWING_M = 3.0     -- of the road's width the line uses (a car on a narrow gravel road)
-M.RACING_ROOM_M = 60
+-- The game grades a corner by the circle through its note's two waypoints and the route half way between
+-- (geoPacenotes buildSingleFit), on its own one to six ladder by diameter. (Until the rebuild, 2026-11-20, a short
+-- kink was called a grade more open than that -- racingOpen -- for the driven line; our own grade replaces it.)
 M.GRADE_DIAMETERS = { 35, 65, 116, 190, 260 }   -- the game's one to six (english/numbering/one_to_six.lua)
 
 local function gradeOf(d)
@@ -183,44 +168,12 @@ function M.lengthMode(G, arcM, g, placedM)
   return want > got and 'longer' or 'shorter'
 end
 
-function M.placeForGrade(c, pts, G, a, b, lo, hi)
-  local function graded(i0, i1) return gradeOf(2 * measuredRadius({ i0 = i0, i1 = i1 }, pts)) end
-  local g = graded(c.i0, c.i1)
+function M.placeForGrade(c, pts, G)
+  local g = gradeOf(2 * measuredRadius(c, pts))
   local i0, i1 = c.i0, c.i1
-  if abs(g - G) >= 2 then
-    local best = nil
-    local from0, to1 = max(lo or 1, c.i0 - M.PLACE_OUT), min(hi or #pts, c.i1 + M.PLACE_OUT)
-    for x0 = from0, max(from0, min(a, c.i1 - 2)) do
-      for x1 = min(to1, max(b, x0 + 2)), to1 do
-        if x1 - x0 >= 2 then
-          local gg = graded(x0, x1)
-          local cost = (abs(gg - G) >= 2 and 1000 or 0) + abs(gg - G) * 10 + abs(x0 - c.i0) + abs(x1 - c.i1)
-          if not best or cost < best.cost then best = { cost = cost, i0 = x0, i1 = x1, g = gg } end
-        end
-      end
-    end
-    if best and abs(best.g - G) < abs(g - G) then i0, i1, g = best.i0, best.i1, best.g end
-  end
   local risk = nil
   if g > G then risk = 1 elseif g < G then risk = -1 end
   return i0, i1, risk, g
-end
-
--- c: a corner over pts (every `step` m); before, after: m of road with no corner either side of it. Returns true when
--- the line through it is a grade more open than the game will measure it, and the two grades.
-function M.racingOpen(c, pts, step, before, after)
-  if (c.i1 - c.i0) * step > M.RACING_ARC_M or (c.angleDeg or 0) > M.RACING_MAX_DEG then return false end
-  local a = math.rad(c.angleDeg or 0)
-  if a <= 0 or a >= math.pi then return false end
-  local r = measuredRadius(c, pts)
-  if r == huge then return false end
-  local g = gradeOf(2 * r)
-  if g > #M.GRADE_DIAMETERS then return false end
-  local line = r + M.RACING_SWING_M / (1 - math.cos(a / 2)) - M.RACING_SWING_M / 2
-  local room = max(0, min(before or 0, after or 0, M.RACING_ROOM_M))
-  line = max(r, min(line, r + room / math.tan(a / 2)))
-  local gl = gradeOf(2 * line)
-  return gl > g, g, gl
 end
 
 ------------------------------------------------------------------------------------------ the corner's own grade
@@ -236,6 +189,7 @@ M.GRADE_FIT_DIAMETERS = { 35, 58, 111, 178, 262 }
 
 -- returns the radius, and the samples a, b of the stretch it was read over
 function M.fitRadius(c, k, step)
+  if c.avgR then return c.avgR, c.i0, c.i1 end
   local w = math.max(1, math.min(c.i1 - c.i0 + 1, floor(M.GRADE_HOLD_M / step + 0.5)))
   local best, ba = 0, c.i0
   for a = c.i0, c.i1 - w + 1 do
@@ -256,11 +210,223 @@ end
 -- Making the game say our grade. The game grades a note by the circle through its two waypoints and the road half way
 -- between (measuredRadius below) and lets a note move that one step either way (the corner's riskIntensity: +1 one
 -- tighter, -1 one more open; compositorUtil.lookupRiskAdjustedIntensityEntry, checked offline with
--- tools/pacenote_check/gamevoice.lua). So: where the circle is within one of ours, the ends stay and the step makes up
--- the rest; where it is two or more out, the note's ends move -- in towards the tight part (a, b: fitRadius's
--- stretch) or out by up to PLACE_OUT samples, never past lo / hi -- to the placing nearest the corner's own whose
--- circle is within one, and the step does the rest. Returns i0, i1, riskIntensity (or nil).
-M.PLACE_OUT = 4
+-- tools/pacenote_check/gamevoice.lua). So the step makes up the difference, one grade at most. (Moving the note's ends
+-- in towards the tight part as well, where the circle is two or more out, was tried: a little more of the grades
+-- right, but the notes then cover a part of their bend only -- missed bends on the pro stages 0.26 -> 0.38 / km.)
+-- Returns the note's ends (the corner's own), riskIntensity (or nil) and the grade the game measures.
+
+------------------------------------------------------------------------------------------ the corner finder
+
+-- (the pacenote rebuild, 2026-11-20, step 3) One finder over the fitted curvature (geo.curvature), in place of the
+-- four stacked before it (geo.corners, the sweepers, the open sixes, the map-drawn kinks), each with its own hard
+-- cut-off. A bend is a run of one direction: it starts where the curvature reaches FIND_K_IN and goes on while it
+-- stays over FIND_K_OUT (the hysteresis: a bend that opens out for a moment is not ended by it), and a dip under that
+-- of FIND_JOIN_M or less, still turning its way, does not end it either. What gets called is the owner's rule
+-- (2026-11-19): every bend the driver can see -- turning FIND_CALL_DEG or more -- whatever its radius.
+-- Its ends: where the curvature is FIND_TRIM of its tightest or more (the smoothing's tails are the approach, not the
+-- corner). A run is split where its curvature dips (under FIND_VALLEY of the parts either side), or steps (FIND_STEP_M
+-- either side, FIND_STEP_RATIO times tighter on one, both bends -- FIND_STEP_K), between two parts
+-- two grades or more apart, each FIND_CALL_DEG or more: "six long into four". Parts closer than that are one corner
+-- (the owner's drive, 2026-11-19: "a 5 right, a 5 right, a 5 right short, when really it's like a 5 right long").
+M.FIND_K_IN = 1 / 1500
+M.FIND_K_OUT = 1 / 2500
+M.FIND_JOIN_M = 25
+M.FIND_CALL_DEG = 6
+M.FIND_TRIM = 0.2
+M.FIND_VALLEY = 0.3
+M.FIND_JOIN_GAP_M = 50
+M.FIND_STEP_M = 30
+M.FIND_STEP_RATIO = 2.5
+M.FIND_STEP_K = 1 / 600
+M.FIND_PIECE_M = 60
+
+local function bendOf(turn, k, i0, i1, sign)
+  local a, kMax = 0, 0
+  for j = i0, i1 do
+    a = a + (turn[j] or 0)
+    if abs(k[j]) > kMax then kMax = abs(k[j]) end
+  end
+  return { i0 = i0, i1 = i1, dir = sign > 0 and 'left' or 'right', angleDeg = abs(math.deg(a)),
+           minRadius = kMax > 0 and 1 / kMax or huge }
+end
+
+-- turn, k: geo.curvature's; returns the corners in order ({ i0, i1, dir, angleDeg, minRadius, sweeper }).
+function M.findCorners(turn, k, step)
+  local n = #k
+  local joinN = max(1, floor(M.FIND_JOIN_M / step + 0.5))
+  local runs, i = {}, 1
+  while i <= n do
+    if abs(k[i]) >= M.FIND_K_IN then
+      local sign = k[i] > 0 and 1 or -1
+      local a, b = i, i
+      while a > 1 and k[a - 1] * sign >= M.FIND_K_OUT do a = a - 1 end
+      local j = i
+      while true do
+        while j + 1 <= n and k[j + 1] * sign >= M.FIND_K_OUT do j = j + 1 end
+        b = j
+        -- (a short dip under K_OUT, still turning this way, and the bend going on past it)
+        local m = j + 1
+        while m <= n and m - j <= joinN and k[m] * sign >= 0 and k[m] * sign < M.FIND_K_OUT do m = m + 1 end
+        if m <= n and m - j <= joinN + 1 and k[m] * sign >= M.FIND_K_OUT then j = m else break end
+      end
+      local last = runs[#runs]
+      if last and last.sign == sign and a <= last.i1 + 1 then last.i1 = b
+      else runs[#runs + 1] = { i0 = a, i1 = b, sign = sign } end
+      i = b + 1
+    else
+      i = i + 1
+    end
+  end
+  local out = {}
+  local function gradeOver(x0, x1, sign)
+    return M.fitGrade((M.fitRadius(bendOf(turn, k, x0, x1, sign), k, step)))
+  end
+  -- (a run split where its curvature dips -- under FIND_VALLEY of the parts either side -- into parts; then the
+  --  neighbouring parts within a grade of each other joined again, the closest first, and a part turning less than
+  --  FIND_CALL_DEG joined to its neighbour nearer its grade: what is left are corners two grades or more apart,
+  --  "six long into four". Parts within a grade are one corner -- its shape says the change)
+  local function emit(c0, c1, sign, trimL, trimR)
+    local kMax = 0
+    for j = c0, c1 do if abs(k[j]) > kMax then kMax = abs(k[j]) end end
+    if kMax <= 0 then return end
+    -- (the corner proper: where it turns FIND_TRIM of its tightest or more; the run's own ends only)
+    local lim = max(M.FIND_K_OUT, M.FIND_TRIM * kMax)
+    if trimL then while c0 < c1 and abs(k[c0]) < lim do c0 = c0 + 1 end end
+    if trimR then while c1 > c0 and abs(k[c1]) < lim do c1 = c1 - 1 end end
+    local c = bendOf(turn, k, c0, c1, sign)
+    if c.angleDeg >= M.FIND_CALL_DEG and c1 > c0 then
+      c.sweeper = M.fitGrade((M.fitRadius(c, k, step))) > #M.GRADE_FIT_DIAMETERS or nil
+      out[#out + 1] = c
+    end
+  end
+  local function add(i0, i1, sign)
+    if i1 <= i0 then return end
+    -- the cuts: every dip in the curvature, kept while it is deep against the parts either side
+    local cuts = {}
+    for v = i0 + 1, i1 - 1 do
+      local kv = abs(k[v])
+      if kv < abs(k[v - 1]) and kv <= abs(k[v + 1]) then cuts[#cuts + 1] = v end
+    end
+    local function peak(x0, x1)
+      local m = 0
+      for j = x0, x1 do if abs(k[j]) > m then m = abs(k[j]) end end
+      return m
+    end
+    local changed = true
+    while changed and #cuts > 0 do
+      changed = false
+      local worst, wr = nil, -1
+      for ci, v in ipairs(cuts) do
+        local l0, r1 = cuts[ci - 1] or i0, cuts[ci + 1] or i1
+        local r = abs(k[v]) / math.max(1e-12, min(peak(l0, v), peak(v, r1)))
+        if r >= M.FIND_VALLEY and r > wr then worst, wr = ci, r end
+      end
+      if worst then table.remove(cuts, worst) changed = true end
+    end
+    -- (and where it steps from open to tight or back with no dip between: the curvature over FIND_STEP_M either
+    --  side FIND_STEP_RATIO times the other, at the sharpest step)
+    local w = max(2, floor(M.FIND_STEP_M / step + 0.5))
+    local ratio, stepCut = {}, {}
+    for v = i0 + w, i1 - w do
+      local A, B = 0, 0
+      for j = v - w, v - 1 do A = A + abs(k[j]) end
+      for j = v + 1, v + w do B = B + abs(k[j]) end
+      -- (both sides a bend of their own -- FIND_STEP_K at least -- not a corner's run-in off the straight)
+      ratio[v] = min(A, B) / w >= M.FIND_STEP_K and max(A, B) / min(A, B) or 0
+    end
+    for v = i0 + w, i1 - w do
+      local r = ratio[v]
+      if r >= M.FIND_STEP_RATIO then
+        local top = true
+        for d = -floor(w / 2), floor(w / 2) do
+          local o = ratio[v + d]
+          if d ~= 0 and o and (o > r or (o == r and d < 0)) then top = false break end
+        end
+        if top then
+          local near = false
+          for _, c in ipairs(cuts) do if abs(c - v) <= 2 then near = true break end end
+          if not near then cuts[#cuts + 1] = v stepCut[v] = true end
+        end
+      end
+    end
+    table.sort(cuts)
+    -- the parts, then joined back while two next to each other are within a grade (or one is too small to call)
+    local parts = {}
+    local from = i0
+    local prevStep = false
+    for _, v in ipairs(cuts) do
+      parts[#parts + 1] = { a = from, b = v, stepL = prevStep, stepR = stepCut[v] }
+      prevStep = stepCut[v]
+      from = v + 1
+    end
+    parts[#parts + 1] = { a = from, b = i1, stepL = prevStep }
+    local pieceN = floor(M.FIND_PIECE_M / step + 0.5)
+    local function info(p)
+      local c = bendOf(turn, k, p.a, p.b, sign)
+      p.deg, p.g = c.angleDeg, M.fitGrade((M.fitRadius(c, k, step)))
+    end
+    for _, p in ipairs(parts) do info(p) end
+    -- (a part too small to call: under FIND_CALL_DEG; or short and cut off by a step on its tight side -- the open
+    --  flanks every corner's smoothed curvature has are its run-in and run-out. A short tight part is a corner of its
+    --  own, "four into two", and the tight middle of a long bend too, with the bend either side: issue #6. Joining a
+    --  short tight end into its corner as "tightens" instead lost on the check, 2026-11-20: same grade 0.557 -> 0.545
+    --  and missed bends 0.03 -> 0.08 / km on the pro stages)
+    local function small(pi)
+      local p, l, r = parts[pi], parts[pi - 1], parts[pi + 1]
+      if p.deg < M.FIND_CALL_DEG then return true end
+      if p.b - p.a >= pieceN then return false end
+      return (p.stepL and l and p.g > l.g) or (p.stepR and r and p.g > r.g) or false
+    end
+    while #parts > 1 do
+      local bi, bc = nil, nil
+      for pi = 1, #parts - 1 do
+        local x, y = parts[pi], parts[pi + 1]
+        local d = abs(x.g - y.g)
+        local sm = small(pi) or small(pi + 1)
+        if d <= 1 or sm then
+          local cost = (sm and 0 or 10) + d
+          if not bc or cost < bc then bi, bc = pi, cost end
+        end
+      end
+      if not bi then break end
+      parts[bi] = { a = parts[bi].a, b = parts[bi + 1].b, stepL = parts[bi].stepL, stepR = parts[bi + 1].stepR }
+      table.remove(parts, bi + 1)
+      info(parts[bi])
+    end
+    for pi, p in ipairs(parts) do emit(p.a, p.b, sign, pi == 1, pi == #parts) end
+  end
+  for _, r in ipairs(runs) do add(r.i0, r.i1, r.sign) end
+  table.sort(out, function(x, y) return x.i0 < y.i0 end)
+  -- (one bend a map draws as pieces with short straight edges between them -- the owner's Cathedral Westbound,
+  --  "a 5 right, a 5 right, a 5 right short": pieces of one direction FIND_JOIN_GAP_M or less apart, within a grade
+  --  of each other, the road between not turning back, are one corner, graded at the radius it averages over the
+  --  whole -- what the driver takes it as)
+  local gapN = floor(M.FIND_JOIN_GAP_M / step + 0.5)
+  local joined = {}
+  for _, c in ipairs(out) do
+    local p = joined[#joined]
+    local ok = false
+    if p and p.dir == c.dir and c.i0 - p.i1 <= gapN then
+      local between = 0
+      for j = p.i1 + 1, c.i0 - 1 do between = between + (turn[j] or 0) end
+      local sign = c.dir == 'left' and 1 or -1
+      ok = between * sign >= 0 and abs(M.fitGrade((M.fitRadius(p, k, step))) -
+                                       M.fitGrade((M.fitRadius(c, k, step)))) <= 1
+    end
+    if ok then
+      local m = bendOf(turn, k, p.i0, c.i1, p.dir == 'left' and 1 or -1)
+      local rad = math.rad(m.angleDeg)
+      m.avgR = rad > 0 and (m.i1 - m.i0) * step / rad or huge
+      -- (never more open than its own tightest part held over the whole of a piece)
+      m.joinedFrom = (p.joinedFrom or 1) + 1
+      m.sweeper = M.fitGrade((M.fitRadius(m, k, step))) > #M.GRADE_FIT_DIAMETERS or nil
+      joined[#joined] = m
+    else
+      joined[#joined + 1] = c
+    end
+  end
+  return joined
+end
 
 ------------------------------------------------------------------------------------------ chicanes and twisty bits
 
@@ -278,176 +444,6 @@ M.TWISTY_R = 60          -- m, at least, each corner's tightest (a four or faste
 M.TWISTY_DEG = 60        -- degrees, at most, each
 
 local function mild(c) return c.minRadius >= M.TWISTY_R and c.angleDeg <= M.TWISTY_DEG end
------------------------------------------------------------------------------------------- long sweepers
-
--- A long sweeping bend too open for geo.corners (which keeps a radius of maxRadius, 200 m, or less): a run of one
--- direction gentler than that but tighter than SWEEP_R, over SWEEP_MIN_M or more and SWEEP_DEG or more in all, on
--- curvature smoothed over SWEEP_SMOOTH_M (geo.curvature's turn, k at that smoothing), with gaps of SWEEP_GAP_M joined.
--- Only where no corner was found: a sweeper is a note of its own, never laid over a corner. The game measures its
--- number and length as for any corner ("six long"). (The user, 2026-11-14: the long sweeper at the start of
--- otr24 shadow buck -- 45 degrees over 500 m at 300 to 900 m radius -- was not in the notes.)
-M.SWEEP_R = 1000
-M.SWEEP_DEG = 30
-M.SWEEP_MIN_M = 100
-M.SWEEP_GAP_M = 30
-M.SWEEP_SMOOTH_M = 40
--- (1.6.2, issue #6: "very open lefts and rights (right 6, left 6) don't come up in the notes. Some pretty obvious but
---  long corners aren't called at all") Two gaps closed:
---  - an open six: a bend of SWEEP_OPEN_DEG or more over SWEEP_OPEN_MIN_M, its tightest SWEEP_OPEN_R or less (the
---    game's six is a diameter of 260 m or more), fell between geo.corners (the part of it tighter than 200 m turns
---    under 12 degrees) and the 30 degrees a sweeper needed;
---  - a long bend with a tighter corner inside it was left to that corner alone, so the note (and the game's
---    measurement) covered only its tight part, a third of the bend or less: now the rest of the bend either side of
---    the corner is a sweeper of its own when it qualifies by itself ("six long into four"). Its end next to the
---    corner is cut back by half the smoothing, where the corner's own curvature is smeared into it.
-M.SWEEP_OPEN_DEG = 20
-M.SWEEP_OPEN_MIN_M = 60
-M.SWEEP_OPEN_R = 250
-
--- turn, k: geo.curvature at SWEEP_SMOOTH_M; corners: geo.corners' list. Returns the corners and the sweepers in one
--- list in order (a sweeper: { i0, i1, dir, angleDeg, minRadius, sweeper = true }).
-function M.sweepers(turn, k, step, corners)
-  local n = #k
-  local covered = {}
-  for _, c in ipairs(corners) do for i = c.i0, c.i1 do covered[i] = true end end
-  local trimN = max(1, floor(M.SWEEP_SMOOTH_M / 2 / step + 0.5))
-  -- (a corner within trimN of i, on the side given: its curvature is smeared over i)
-  local function nearCorner(i, dirn)
-    for d = 1, trimN do if covered[i + d * dirn] then return true end end
-    return false
-  end
-  local kMin, gapN = 1 / M.SWEEP_R, max(1, floor(M.SWEEP_GAP_M / step + 0.5))
-  local runs, i = {}, 1
-  while i <= n do
-    if abs(k[i]) >= kMin then
-      local sign = k[i] > 0 and 1 or -1
-      local j = i
-      while j + 1 <= n and k[j + 1] * sign >= kMin do j = j + 1 end
-      local last = runs[#runs]
-      if last and last.sign == sign and i - last.i1 <= gapN then last.i1 = j
-      else runs[#runs + 1] = { i0 = i, i1 = j, sign = sign } end
-      i = j + 1
-    else
-      i = i + 1
-    end
-  end
-  local out = {}
-  for _, c in ipairs(corners) do out[#out + 1] = c end
-  -- (a piece of a bend: a sweeper when it is long and turns enough, or is an open six)
-  local function piece(a, b, sign)
-    if b <= a then return end
-    local len = (b - a) * step
-    if len < min(M.SWEEP_MIN_M, M.SWEEP_OPEN_MIN_M) then return end
-    local angle, kMax = 0, 0
-    for j = a, b do
-      angle = angle + turn[j]
-      if abs(k[j]) > kMax then kMax = abs(k[j]) end
-    end
-    local deg = abs(math.deg(angle))
-    local r = kMax > 0 and 1 / kMax or huge
-    if (len >= M.SWEEP_MIN_M and deg >= M.SWEEP_DEG) or
-       (len >= M.SWEEP_OPEN_MIN_M and deg >= M.SWEEP_OPEN_DEG and r <= M.SWEEP_OPEN_R) then
-      out[#out + 1] = { i0 = a, i1 = b, dir = sign > 0 and 'left' or 'right', angleDeg = deg, minRadius = r,
-                        sweeper = true }
-    end
-  end
-  for _, r in ipairs(runs) do
-    -- each stretch of the bend no corner covers, cut back where a corner's curvature is smeared into it
-    local j = r.i0
-    while j <= r.i1 do
-      if covered[j] then
-        j = j + 1
-      else
-        local a = j
-        while j + 1 <= r.i1 and not covered[j + 1] do j = j + 1 end
-        local b = j
-        if nearCorner(a, -1) then a = a + trimN end
-        if nearCorner(b, 1) then b = b - trimN end
-        piece(a, b, r.sign)
-        j = j + 1
-      end
-    end
-  end
-  -- (the bends a map draws as kinks: M.kinkSweepers, where nothing above is)
-  local taken = {}
-  for _, c in ipairs(out) do for i = c.i0, c.i1 do taken[i] = true end end
-  for _, c in ipairs(M.kinkSweepers(turn, step, taken)) do out[#out + 1] = c end
-  table.sort(out, function(a, b) return a.i0 < b.i0 end)
-  return out
-end
-
--- (the owner's stages, 2026-11-19, the pacenote check: a long bend as a map draws it is two to four kinks of 5 to 22
---  degrees with 130 to 300 m of nearly straight road between them. Between two kinks the smoothed curvature is nil
---  for far longer than SWEEP_GAP_M, so the sweeper finder above saw each kink alone, too small to call.) Read
--- instead off the heading itself, as a road atlas's bend finder does: a stretch of KINK_WINDOW_M or less whose
--- heading turns KINK_DEG or more one way, its turning points (a sample turning KINK_POINT_DEG or more) no further
--- than KINK_GAP_M apart, and turning back the other way by no more than KINK_BACK of what it turns (a wiggle is no
--- bend), where no corner or sweeper is (nor within KINK_CLEAR_M of one). The sweeper runs from its first turning
--- point to its last; the game measures its number and length off the road between them, as for any note.
-M.KINK_DEG = 20
-M.KINK_WINDOW_M = 500
-M.KINK_GAP_M = 320
-M.KINK_POINT_DEG = 0.3
-M.KINK_BACK = 0.25
-M.KINK_CLEAR_M = 10
-M.KINK_MIN_M = 40
-
--- turn: geo.curvature's turn at each sample (radians, + left); taken: { [i] = true } where a note already is.
--- Returns sweepers ({ i0, i1, dir, angleDeg, minRadius, sweeper = true, kinks = true }) in order.
-function M.kinkSweepers(turn, step, taken)
-  local n = #turn
-  local clearN = max(0, floor(M.KINK_CLEAR_M / step + 0.5))
-  local blocked = {}
-  for i = 1, n do
-    if taken[i] then
-      for d = -clearN, clearN do blocked[i + d] = true end
-    end
-  end
-  local winN = floor(M.KINK_WINDOW_M / step + 0.5)
-  local gapN = floor(M.KINK_GAP_M / step + 0.5)
-  local pointT, needT = math.rad(M.KINK_POINT_DEG), math.rad(M.KINK_DEG)
-  local out = {}
-  local i = 2
-  while i < n do
-    local t = turn[i] or 0
-    if blocked[i] or abs(t) < pointT then
-      i = i + 1
-    else
-      local sign = t > 0 and 1 or -1
-      -- (a kink the 5 m samples split in two: the part of it in the sample before counted too, and the part in
-      --  the sample after the last turning point)
-      local lead = (not blocked[i - 1] and (turn[i - 1] or 0) * sign > 0) and (turn[i - 1] or 0) * sign or 0
-      local net, pos, neg, last, best = lead, 0, 0, i, nil
-      local j = i
-      while j < n and j - i <= winN and not blocked[j] and j - last <= gapN do
-        local tj = (turn[j] or 0) * sign
-        -- (its turn: the heading's own change, so a line's noise either way cancels out; its turning points where
-        --  it turns KINK_POINT_DEG at least, and its turn back counted where it turns that much the other way)
-        net = net + tj
-        if tj >= pointT then last, pos = j, pos + tj
-        elseif -tj >= pointT then neg = neg + -tj end
-        if neg > M.KINK_BACK * pos then break end
-        -- (the furthest turning point that keeps it a bend of KINK_DEG one way)
-        local tail = (turn[j + 1] or 0) * sign
-        tail = (tail > 0 and tail < pointT and not blocked[j + 1]) and tail or 0
-        if tj >= pointT and net + tail >= needT then best = { i1 = j, angle = net + tail } end
-        j = j + 1
-      end
-      if best and (best.i1 - i) * step >= M.KINK_MIN_M then
-        local deg = math.deg(best.angle)
-        -- (the radius of an arc turning that much over that length: what a driver takes it as)
-        local r = (best.i1 - i) * step / best.angle
-        out[#out + 1] = { i0 = i, i1 = best.i1, dir = sign > 0 and 'left' or 'right', angleDeg = deg, minRadius = r,
-                          sweeper = true, kinks = true }
-        i = best.i1 + 1
-      else
-        i = i + 1
-      end
-    end
-  end
-  return out
-end
-
 local function tightish(c)
   return c.minRadius <= M.CHICANE_R and c.angleDeg >= M.CHICANE_DEG[1] and c.angleDeg <= M.CHICANE_DEG[2]
 end
@@ -461,7 +457,7 @@ local function merged(cs, a, b, group)
            count = b - a + 1, parts = parts }
 end
 
--- corners: geo.corners' list in order. Returns the list with each chicane made one entry ({ ..., group = 'chicane',
+-- corners: the corners in order (findCorners). Returns the list with each chicane made one entry ({ ..., group = 'chicane',
 -- count = 2, parts = its two corners }) and the first corner of each twisty run marked (twisty = how many corners the run has).
 function M.group(corners, step)
   local out, n, i = {}, #corners, 1

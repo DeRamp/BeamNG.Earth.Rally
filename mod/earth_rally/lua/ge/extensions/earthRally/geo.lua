@@ -235,8 +235,8 @@ end
 -- few metres in a bend and one edge apart on a straight, and are resampled every 4 m. Smoothing the turn over a fixed
 -- 15 m turns each point of a sparse bend into a spike of its own (fake short corners, a bend split where it looks
 -- straight between two points) and a long bend drawn as a few kinks into nothing at all. So the line is fitted first:
--- each map point's turn is spread over the road it stands for -- half way back to the point before and on to the
--- point after (FIT_SPREAD_MAX_M at most either side) -- and only then smoothed over smoothM (a Gaussian, smoothM wide).
+-- each map point's turn is spread over the road it stands for -- either side of it, half the shorter of its two
+-- edges (FIT_SPREAD_MAX_M at most) -- and only then smoothed over smoothM (a Gaussian, smoothM wide).
 -- On a dense line (a driven or a game's line: a turn at every sample) that is the plain smoothing. A map point is a
 -- sample turning FIT_POINT_DEG or more (under it, the 1 cm rounding of a matched file); points next to each other are
 -- one, two at most (a map point falls between two samples).
@@ -270,8 +270,12 @@ local function fitTurns(turn, step, smoothM)
   for k = 1, n do if abs(turn[k]) < thr then spread[k] = turn[k] end end
   for m, p in ipairs(pts_) do
     local prev, nxt = pts_[m - 1], pts_[m + 1]
+    -- (as far each way as the shorter of its two edges allows: a curve fitted to both edges has to fit on both, so
+    --  the first point of a bend after a long straight is turned at the bend, not spread back along the straight)
     local back = math.min(maxN, math.max(0.5, (p.c - (prev and prev.c or 1)) / 2))
     local fwd = math.min(maxN, math.max(0.5, ((nxt and nxt.c or n) - p.c) / 2))
+    back = math.min(back, fwd)
+    fwd = back
     -- (uniform over [c - back, c + fwd], in samples, the ends taking their share)
     local lo, hi = p.c - back, p.c + fwd
     local len = hi - lo

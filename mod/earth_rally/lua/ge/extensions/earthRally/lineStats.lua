@@ -26,9 +26,10 @@ local M = {}
 -- this version, and worked out again otherwise (events.lineFigures). 2: chicanes counted as one corner, as they are
 -- one note (1.5.0). 3: long sweepers counted (pacenotes.sweepers). 4: open sixes, and the rest of a long bend
 -- either side of a corner in it, counted as sweepers (1.6.2). 5: map-drawn bends (pacenotes.kinkSweepers), a corner
--- the stage starts in, and a line's out-and-backs dropped (geo.foldBacks). A line saved before has no `figures` and
+-- the stage starts in, and a line's out-and-backs dropped (geo.foldBacks). 6: one corner finder over the fitted
+-- curvature (pacenotes.findCorners, the pacenote rebuild). A line saved before has no `figures` and
 -- is counted again on its first look.
-M.VERSION = 5
+M.VERSION = 6
 
 M.CONTROL_OFF_LINE_M = 200  -- a start or finish control further than this from the line is not on it (runner.lua's
                             -- own rule where it cuts a line round a stage: stageLatLon)
