@@ -515,6 +515,28 @@ do
       return 'x', { compositorStyle = 'english/shapetest' }, {} end }
     local sp2 = ra.speaks()
     T.check(sp2 and sp2['shape:overCrest'], 'speaks: a style\'s corner shapes')
+    -- the style's ladder: casual's shape (the last grade only a min), and a last grade with a max too
+    package.loaded[ra.STYLES .. 'english/laddertest'] = { componentTypes = { modifiers = {}, corner = { numbering = {
+      intensity = { { name = 'hard', diameter = { max = 65 } }, { name = 'medium', diameter = { min = 65, max = 190 } },
+                    { name = 'easy', diameter = { min = 190 } } } } } } }
+    package.loaded[ra.VOICEPACK] = { resolveEffectiveEntry = function()
+      return 'x', { compositorStyle = 'english/laddertest' }, {} end }
+    local _, _, lad = ra.speaks()
+    T.check(lad and #lad == 2 and lad[1] == 65 and lad[2] == 190, 'speaks: the style\'s ladder (casual shape)')
+    package.loaded[ra.STYLES .. 'english/laddertest'].componentTypes.corner.numbering.intensity[3].diameter.max = 9999
+    _, _, lad = ra.speaks()
+    T.check(lad and #lad == 2 and lad[2] == 190, 'speaks: a last grade with a max: the same ladder')
+    package.loaded[ra.STYLES .. 'english/laddertest'] = nil
+    local pn = require('earthRally/pacenotes')
+    local six = {}
+    for i, mx in ipairs({ 10, 20, 40, 80, 160 }) do six[i] = { diameter = { max = mx } } end
+    six[6] = { diameter = { min = 160 } }
+    local l6 = pn.ladderOf(six)
+    T.check(l6 and #l6 == 5 and l6[5] == 160, 'ladderOf: one to six, five steps')
+    T.check(pn.ladderOf({ { diameter = { max = 80 } }, { diameter = { max = 40 } }, { diameter = {} } }) == nil,
+            'ladderOf: not ascending: none')
+    T.check(pn.ladderOf({ { diameter = { min = 1 } }, { diameter = {} } }) == nil and pn.ladderOf({ {} }) == nil and
+            pn.ladderOf(nil) == nil, 'ladderOf: a grade with no max, one grade, none: none')
     package.loaded[ra.VOICEPACK] = nil
   end
   -- every call written is one the game's english style knows

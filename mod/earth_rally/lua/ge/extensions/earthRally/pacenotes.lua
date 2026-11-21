@@ -172,6 +172,21 @@ end
 -- which the step moves along by one: the casual voices' hard / medium / easy is { 65, 190 }. Our grade G is placed on
 -- it by the middle of the game's one to six range it is (GRADE_MID_D). nil: the one to six ladder itself.
 M.GRADE_MID_D = { 17.5, 50, 90.5, 153, 225, 300 }
+
+-- A style's corner ladder (its numbering.intensity: { { diameter = { min, max } }... }, tightest first) as the most
+-- diameter of each grade but the last; nil when it is not one: fewer than two grades, a grade with no max before the
+-- last, or not ascending. The last grade's max, if it has one, is its end, not a step.
+function M.ladderOf(intensity)
+  if type(intensity) ~= 'table' or #intensity < 2 then return nil end
+  local out = {}
+  for i = 1, #intensity - 1 do
+    local e = intensity[i]
+    local mx = type(e) == 'table' and type(e.diameter) == 'table' and e.diameter.max
+    if type(mx) ~= 'number' or (out[#out] and mx <= out[#out]) then return nil end
+    out[#out + 1] = mx
+  end
+  return out
+end
 local function ladderIndex(d, ladder)
   for i, lim in ipairs(ladder) do if d < lim then return i end end
   return #ladder + 1

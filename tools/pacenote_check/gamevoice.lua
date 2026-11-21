@@ -240,11 +240,8 @@ end
 function M.ladder(style)
   local cfg = styleConfig(style)
   local num = cfg.componentTypes and cfg.componentTypes.corner and cfg.componentTypes.corner.numbering
-  local out = {}
-  for _, e in ipairs(num and num.intensity or {}) do
-    if e.diameter and e.diameter.max then out[#out + 1] = e.diameter.max end
-  end
-  return out
+  -- (the mod's own reading of it, as rallyAdapter.speaks does in game)
+  return require('earthRally/pacenotes').ladderOf(num and num.intensity)
 end
 
 -- built: stageWriter.build's result (Lua tables). opts.style 'enthusiast' (default) or 'casual'.

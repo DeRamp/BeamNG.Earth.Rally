@@ -140,6 +140,10 @@ M.RAY_SNAP_M = 3.0
 M.RAY_ABOVE_M = { 15, 6, 2 }  -- m above the graph's height the rays start
 M.RAY_DOWN_M = 45
 M.RAY_GRADE = 0.3             -- a road climbs at most this between two grounds kept (per metre along)
+M.RAY_GAP_MAX = 3             -- ... counted over this many points at most since the last kept (a long bridge with no
+                              -- collision, or canopy: the valley floor or the treetops never come within reach)
+M.RAY_BUDGET = 400            -- rays cast a frame at most: the rest of a window's next frame (M.update), the car
+                              -- still there
 M.RAY_AGREE_M = 0.5           -- the walks from either end keep the same ground, to this
 M.RAY_NEAR_M = 80.0           -- only roads this near the organisers' line (the stage's own, within SNAP_M or so)
 M.RAY_BLEND_N = 4             -- the offset smoothed over this many points either side (sigma half of it)
@@ -669,8 +673,8 @@ end
 
 -- The matched line's heights (res, in the stage's frame fr; flags: 1 on a stretch with no road) from the ground the
 -- windows' rays kept (rays: { lat, lon, alt }, M.sampleRays): each point on a road has the offset of the nearest
--- within RAY_SNAP_M from its graph height (none: 0), and takes that offset smoothed over RAY_BLEND_N points either
--- side. Returns how many points had a ray.
+-- within RAY_SNAP_M from its graph height, and takes that offset smoothed over RAY_BLEND_N points either side.
+-- Returns how many points had a ray.
 function M.rayHeights(res, flags, rays, fr)
   if type(rays) ~= 'table' or #rays == 0 then return 0 end
   local cell, grid = M.RAY_SNAP_M, {}
@@ -700,14 +704,35 @@ function M.rayHeights(res, flags, rays, fr)
       end
     end
   end
+  -- (inside a run of rays, a point with none -- a ray on both sides within RAY_BLEND_N -- takes the offset between
+  --  theirs; then smoothed, the points with none counted as 0: past a run's last ray the offset fades to 0)
   local w, sigma = M.RAY_BLEND_N, math.max(0.5, M.RAY_BLEND_N / 2)
+  local function usable(m) return res[m] and flags[m] == 0 and res[m].z end
+  local fill = {}
+  for k in ipairs(res) do
+    if usable(k) and not off[k] then
+      local kl, kr
+      for d = 1, w do
+        local m = k - d
+        if not usable(m) then break end
+        if off[m] then kl = m break end
+      end
+      for d = 1, w do
+        local m = k + d
+        if not usable(m) then break end
+        if off[m] then kr = m break end
+      end
+      if kl and kr then fill[k] = off[kl] + (off[kr] - off[kl]) * (k - kl) / (kr - kl) end
+    end
+  end
+  for k, o in pairs(fill) do off[k] = o end
   local new = {}
   for k, p in ipairs(res) do
-    if flags[k] == 0 and p.z then
+    if usable(k) then
       local s, ws = 0, 0
       for d = -w, w do
         local m = k + d
-        if res[m] and flags[m] == 0 and res[m].z then
+        if usable(m) then
           local wt = math.exp(-0.5 * (d / sigma) ^ 2)
           s, ws = s + wt * (off[m] or 0), ws + wt
         end
@@ -1157,6 +1182,11 @@ end
 function M.update()
   if job and earth.roadGraphUpdate then earth.roadGraphUpdate() end
   local j = job
+  -- (a window's rays, RAY_BUDGET a frame, then on)
+  if j and j.rayWait then
+    if M.rayStep(j, M.RAY_BUDGET) then M.windowDone(j) end
+    return
+  end
   if not (j and j.retryAt) or M.wall() < j.retryAt then return end
   j.retryAt = nil
   M.ask(j.i)
@@ -1250,7 +1280,7 @@ end
 -- The road's ground along one edge (M.RAY_HEIGHTS): cands[i], every ground the rays hit at its i-th point (ds m
 -- apart, ds from the ends too), za / zb the graph's heights at its two ends. Returns z[i] for the points whose ground
 -- is the road's: the walk from each end keeps the ground nearest the last one kept, if it climbs RAY_GRADE or less
--- per metre since; kept by both walks, to RAY_AGREE_M.
+-- per metre since (over RAY_GAP_MAX points at most); kept by both walks, to RAY_AGREE_M.
 function M.pickRays(cands, za, zb, ds)
   local n = #cands
   local function walk(from, to, dir, z0)
@@ -1260,7 +1290,7 @@ function M.pickRays(cands, za, zb, ds)
       for _, z in ipairs(cands[i] or {}) do
         if not best or abs(z - prev) < abs(best - prev) then best = z end
       end
-      if best and abs(best - prev) <= M.RAY_GRADE * ds * gap then
+      if best and abs(best - prev) <= M.RAY_GRADE * ds * math.min(gap, M.RAY_GAP_MAX) then
         out[i], prev, gap = best, best, 1
       else
         gap = gap + 1
@@ -1276,12 +1306,7 @@ function M.pickRays(cands, za, zb, ds)
   return z
 end
 
--- The ground under the edges this window brought (pairs: { a, b } node names), near the stage, while its cells are
--- loaded round the car: j.graph.rays, { lat, lon, alt } every RAY_STEP_M (see M.RAY_HEIGHTS). Returns how many points
--- were kept, and how many rays hit at all.
-function M.sampleRays(j, pairs)
-  local ray = rawget(_G, 'castRayStatic')
-  if not (M.RAY_HEIGHTS and ray and earth.toGame and earth.toGeo) or #pairs == 0 then return 0, 0 end
+local function rayPrep(j)
   if not j.rayFrame then
     local line = j.stage.line
     j.rayFrame = M.frame(line[1][1], line[1][2])
@@ -1290,48 +1315,83 @@ function M.sampleRays(j, pairs)
     j.rayGrid = M.NEAR_GRID and segGrid(j.rayKml, M.NEAR_CELL_M) or nil
   end
   j.graph.rays = j.graph.rays or {}
-  local kept, hits = 0, 0
-  for _, e in ipairs(pairs) do
-    local na, nb = j.graph.nodes[e[1]], j.graph.nodes[e[2]]
-    if na and nb and na.lat and nb.lat and na.alt and nb.alt then
-      local fa, fb = j.rayFrame.xy(na.lat, na.lon), j.rayFrame.xy(nb.lat, nb.lon)
-      local mid = { x = (fa.x + fb.x) / 2, y = (fa.y + fb.y) / 2 }
-      if lineDist(j.rayGrid, mid, j.rayKml, M.CORRIDOR_M) <= M.RAY_NEAR_M then
-        local xa, ya, za = earth.toGame(na.lat, na.lon, na.alt)
-        local xb, yb, zb = earth.toGame(nb.lat, nb.lon, nb.alt)
-        if xa and xb then
-          za, zb = za or na.alt, zb or nb.alt
-          local len = sqrt((xb - xa) ^ 2 + (yb - ya) ^ 2)
-          local n = floor(len / M.RAY_STEP_M)
-          if n >= 2 then
-            local cands, at = {}, {}
-            for q = 1, n - 1 do
-              local t = q / n
-              local x, y, zg = xa + (xb - xa) * t, ya + (yb - ya) * t, za + (zb - za) * t
-              local c = {}
-              for _, above in ipairs(M.RAY_ABOVE_M) do
-                local top = zg + above
-                local d = ray(vec3(x, y, top), vec3(0, 0, -1), M.RAY_DOWN_M)
-                if d and d < M.RAY_DOWN_M then c[#c + 1] = top - d hits = hits + 1 end
-              end
-              cands[q], at[q] = c, { x, y }
-            end
-            local z = M.pickRays(cands, za, zb, len / n)
-            for q = 1, n - 1 do
-              if z[q] then
-                local lat, lon, alt = earth.toGeo(at[q][1], at[q][2], z[q])
-                if lat then
-                  j.graph.rays[#j.graph.rays + 1] = { lat, lon, alt }
-                  kept = kept + 1
-                end
-              end
-            end
-          end
-        end
+end
+
+-- One edge's ground (e: { a, b } node names) into j.graph.rays, if it is near the stage; c: the counts so far
+-- ({ kept, hits, near, rays }).
+local function rayEdge(j, e, ray, c)
+  local na, nb = j.graph.nodes[e[1]], j.graph.nodes[e[2]]
+  if not (na and nb and na.lat and nb.lat and na.alt and nb.alt) then return end
+  local fa, fb = j.rayFrame.xy(na.lat, na.lon), j.rayFrame.xy(nb.lat, nb.lon)
+  local mid = { x = (fa.x + fb.x) / 2, y = (fa.y + fb.y) / 2 }
+  if lineDist(j.rayGrid, mid, j.rayKml, M.CORRIDOR_M) > M.RAY_NEAR_M then return end
+  c.near = c.near + 1
+  local xa, ya, za = earth.toGame(na.lat, na.lon, na.alt)
+  local xb, yb, zb = earth.toGame(nb.lat, nb.lon, nb.alt)
+  if not (xa and xb) then return end
+  za, zb = za or na.alt, zb or nb.alt
+  local len = sqrt((xb - xa) ^ 2 + (yb - ya) ^ 2)
+  local n = floor(len / M.RAY_STEP_M)
+  if n < 2 then return end
+  local cands, at = {}, {}
+  for q = 1, n - 1 do
+    local t = q / n
+    local x, y, zg = xa + (xb - xa) * t, ya + (yb - ya) * t, za + (zb - za) * t
+    local cq = {}
+    for _, above in ipairs(M.RAY_ABOVE_M) do
+      local top = zg + above
+      local d = ray(vec3(x, y, top), vec3(0, 0, -1), M.RAY_DOWN_M)
+      c.rays = c.rays + 1
+      if d and d < M.RAY_DOWN_M then cq[#cq + 1] = top - d c.hits = c.hits + 1 end
+    end
+    cands[q], at[q] = cq, { x, y }
+  end
+  local z = M.pickRays(cands, za, zb, len / n)
+  for q = 1, n - 1 do
+    if z[q] then
+      local lat, lon, alt = earth.toGeo(at[q][1], at[q][2], z[q])
+      if lat then
+        j.graph.rays[#j.graph.rays + 1] = { lat, lon, alt }
+        c.kept = c.kept + 1
       end
     end
   end
-  return kept, hits
+end
+
+local function rayFn()
+  local ray = rawget(_G, 'castRayStatic')
+  if M.RAY_HEIGHTS and ray and earth.toGame and earth.toGeo then return ray end
+  return nil
+end
+
+-- The ground under edges (pairs: { a, b } node names), near the stage, while its cells are loaded round the car:
+-- j.graph.rays, { lat, lon, alt } every RAY_STEP_M (see M.RAY_HEIGHTS). From the queue j.rayQueue (M.rayQueue), at
+-- most `budget` rays this call (nil: all). Returns true when the queue is done. An edge that throws is logged and
+-- left out; the rest go on.
+function M.rayQueue(j, pairs)
+  j.rayQueue = { pairs = pairs, at = 1, c = { kept = 0, hits = 0, near = 0, rays = 0 } }
+  return j.rayQueue
+end
+function M.rayStep(j, budget)
+  local q, ray = j.rayQueue, rayFn()
+  if not q then return true end
+  if not ray then q.at = #q.pairs + 1 return true end
+  rayPrep(j)
+  local start = q.c.rays
+  while q.at <= #q.pairs and (not budget or q.c.rays - start < budget) do
+    local ok, err = pcall(rayEdge, j, q.pairs[q.at], ray, q.c)
+    if not ok then log('W', 'earthRally', 'auto recce: ground heights on one road: ' .. tostring(err)) end
+    q.at = q.at + 1
+  end
+  return q.at > #q.pairs
+end
+
+-- All at once: how many points were kept, how many rays hit, how many edges were near the stage.
+function M.sampleRays(j, pairs)
+  local q = M.rayQueue(j, pairs)
+  M.rayStep(j, nil)
+  j.rayQueue = nil
+  return q.c.kept, q.c.hits, q.c.near
 end
 
 -- One window's answer: its nodes into the accumulation as lat / lon, then the next window.
@@ -1429,21 +1489,35 @@ local function onWindow(myGen, token, i, r)
         end
       end
     end
-    -- (the ground under them, while it is loaded: a ray that fails is only a height not improved)
-    local okRay, rays, hits = pcall(M.sampleRays, j, newPairs)
-    if not okRay then
-      log('W', 'earthRally', 'auto recce: ground heights: ' .. tostring(rays))
-    elseif rays == 0 and #newPairs > 0 and M.RAY_HEIGHTS and rawget(_G, 'castRayStatic') then
-      log('I', 'earthRally', string.format('auto recce: window %d: no ground heights kept (%d ray hit(s) on %d road(s))',
-        i, hits or 0, #newPairs))
-    end
+    -- (the ground under them, while it is loaded: RAY_BUDGET rays a frame, the next window asked for once they are
+    --  all cast; a ray that fails is only a height not improved)
     w.complete = (r.complete ~= false)
-    log('I', 'earthRally', string.format('auto recce: window %d of %d: %d new node(s)%s%s', i, #j.plan, added,
-      okRay and rays > 0 and string.format(', %d ground height(s)', rays) or '',
+    j.rayWin = { i = i, added = added }
+    M.rayQueue(j, newPairs)
+    if not M.rayStep(j, M.RAY_BUDGET) then
+      j.rayWait = true
+      return true
+    end
+  end
+  return M.windowDone(j)
+end
+
+-- A window's rays all cast (or none to cast): logged, then the next window.
+function M.windowDone(j)
+  local rw, q = j.rayWin, j.rayQueue
+  j.rayWin, j.rayQueue, j.rayWait = nil, nil, nil
+  if rw then
+    local i, w, c = rw.i, j.plan[rw.i], q and q.c
+    if c and c.kept == 0 and c.near > 0 and rayFn() then
+      log('I', 'earthRally', string.format('auto recce: window %d: no ground heights kept (%d ray hit(s) on %d road(s) ' ..
+        'near the stage)', i, c.hits, c.near))
+    end
+    log('I', 'earthRally', string.format('auto recce: window %d of %d: %d new node(s)%s%s', i, #j.plan, rw.added,
+      c and c.kept > 0 and string.format(', %d ground height(s)', c.kept) or '',
       w.complete and '' or ', incomplete (map cells not on this computer)'))
   end
   j.errTries = 0
-  j.i = i + 1
+  j.i = j.i + 1
   if j.i > #j.plan then return matchAndWrite(j) end
   return M.ask(j.i)
 end

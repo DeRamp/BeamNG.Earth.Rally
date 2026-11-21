@@ -79,6 +79,7 @@ def degrade(line, tol=TOL_M):
 RAY_STEP_M = 4.0
 RAY_SNAP_M = 3.0
 RAY_GRADE = 0.3
+RAY_GAP_MAX = 3
 RAY_AGREE_M = 0.5
 RAY_BLEND_N = 4
 RAY_MAX_OFF_M = 15
@@ -92,7 +93,7 @@ def pick_rays(cands, za, zb, ds):
         out, prev, gap = {}, z0, 1
         for i in order:
             best = min(cands[i], key=lambda z: abs(z - prev)) if cands[i] else None
-            if best is not None and abs(best - prev) <= RAY_GRADE * ds * gap:
+            if best is not None and abs(best - prev) <= RAY_GRADE * ds * min(gap, RAY_GAP_MAX):
                 out[i], prev, gap = best, best, 1
             else:
                 gap += 1
@@ -151,6 +152,16 @@ def degrade_rays(line, tol=TOL_M):
         if bz is not None and abs(bz - p['z']) <= RAY_MAX_OFF_M:
             off[k] = bz - p['z']
     w, sigma = RAY_BLEND_N, max(0.5, RAY_BLEND_N / 2)
+    # inside a run: a point with none takes the offset between its neighbours'; then smoothed, none counted as 0
+    fill = {}
+    for k in range(len(m)):
+        if k in off:
+            continue
+        kl = next((k - d for d in range(1, w + 1) if k - d >= 0 and k - d in off), None)
+        kr = next((k + d for d in range(1, w + 1) if k + d < len(m) and k + d in off), None)
+        if kl is not None and kr is not None:
+            fill[k] = off[kl] + (off[kr] - off[kl]) * (k - kl) / (kr - kl)
+    off.update(fill)
     new = []
     for k, p in enumerate(m):
         s_, ws = 0.0, 0.0
@@ -158,7 +169,7 @@ def degrade_rays(line, tol=TOL_M):
             if 0 <= k + d < len(m):
                 wt = math.exp(-0.5 * (d / sigma) ** 2)
                 s_, ws = s_ + wt * off.get(k + d, 0.0), ws + wt
-        new.append(p['z'] + s_ / ws)
+        new.append(p['z'] + (s_ / ws if ws > 0 else 0.0))
     for p, z in zip(m, new):
         p['z'] = round(z / ROUND_Z_M) * ROUND_Z_M
     return m

@@ -1064,7 +1064,8 @@ do
   local wasRay = rawget(_G, 'castRayStatic')
   -- a 300 m edge north from lat 47.0, at 100 m at both nodes; a 6 m crest round 100 m; a bridge with no collision
   -- over a valley 20 m down from 200 to 230 m; a tree over the road at 60 m (a hit 8 m up, from rays above it)
-  local function ground(y) if y > 200 and y < 230 then return 80 end
+  local ground
+  ground = function(y) if y > 200 and y < 230 then return 80 end
     return 100 + 6 * math.max(0, 1 - math.abs(y - 100) / 60) end
   castRayStatic = function(pos, dir, len)
     local g = ground(pos.y)
@@ -1111,6 +1112,44 @@ do
   j.graph.nodes['x|y'] = { lat = 47.0, lon = -123.0, alt = 100 }
   j.graph.rays = nil
   T.check(auto.sampleRays(j, { { 7, 'b' }, { 'x|y', 'b' } }) > 50, 'rays: any node names')
+  -- a long bridge with no deck collision: 80 m over a valley 8 m down -- neither walk ever reaches the valley floor
+  local wasGround = ground
+  ground = function(y) if y > 20 and y < 100 then return 92 end return 100 end
+  local lat2 = 47.0 + 120 / M1
+  local jb = { stage = { line = { { 47.0, -123.0 }, { lat2, -123.0 } } },
+               graph = { nodes = { a = { lat = 47.0, lon = -123.0, alt = 100 }, b = { lat = lat2, lon = -123.0, alt = 100 } } } }
+  auto.sampleRays(jb, { { 'a', 'b' } })
+  local low = 0
+  for _, r in ipairs(jb.graph.rays) do if r[3] < 99 then low = low + 1 end end
+  T.check(low == 0 and #jb.graph.rays > 0, 'rays: a long bridge with no collision: the valley floor never kept (' ..
+    low .. ' of ' .. #jb.graph.rays .. ')')
+  ground = wasGround
+  -- the rays a frame at a time (RAY_BUDGET) keep the same ground as all at once
+  local jq = { stage = j.stage, graph = { nodes = j.graph.nodes } }
+  auto.rayQueue(jq, { { 'a', 'b' }, { 'c', 'd' } })
+  local frames = 1
+  while not auto.rayStep(jq, 7) do frames = frames + 1 end
+  local ja = { stage = j.stage, graph = { nodes = j.graph.nodes } }
+  auto.sampleRays(ja, { { 'a', 'b' }, { 'c', 'd' } })
+  local sameRays = #jq.graph.rays == #ja.graph.rays
+  for k, r in ipairs(ja.graph.rays) do
+    local q = jq.graph.rays[k]
+    if not (q and q[1] == r[1] and q[2] == r[2] and q[3] == r[3]) then sameRays = false end
+  end
+  T.check(frames == 2 and sameRays, 'rays: a few a frame (' .. frames .. ' frames), the same ground as all at once')
+  -- a point with no ray inside a run of them takes its neighbours' offset: no dip on a 3 m crest
+  local crestRays, resC, flagsC = {}, {}, {}
+  for k = 0, 50 do
+    local sm = k * 4
+    local p = fr.xy(47.0 + sm / M1, -123.0)
+    resC[#resC + 1] = { x = p.x, y = p.y, z = 100 }
+    flagsC[#flagsC + 1] = 0
+    if k % 3 ~= 0 then crestRays[#crestRays + 1] = { 47.0 + sm / M1, -123.0, 103 } end
+  end
+  auto.rayHeights(resC, flagsC, crestRays, fr)
+  local dip = 0
+  for k = 6, 46 do dip = math.max(dip, 103 - resC[k].z) end
+  T.check(dip < 0.05, string.format('rays: a point with none inside a run: no dip (%.2f m)', dip))
   castRayStatic = nil
   T.check(auto.sampleRays({ stage = j.stage, graph = { nodes = j.graph.nodes } }, { { 'a', 'b' } }) == 0,
     'rays: no ray to cast, nothing found')
