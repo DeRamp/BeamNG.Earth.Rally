@@ -850,15 +850,15 @@ local function stepBuild()
     run.checks.heightKeptM = worst
     run.checks.lowestDrivelineZ = lowest
     -- (the corners' grades as the game measures them, against ours: a game update that measures differently would
-    --  have every corner called a grade out. Told once a session; the details in the log)
+    --  have every corner called a grade out. In the log only, until it has been checked in game)
     local okG, gc = pcall(rallyA.gradeCheck)
     if okG and gc then
       run.checks.gradeCheck = string.format('%d of %d', gc.same, gc.checked)
-      log(gc.mismatch and 'W' or 'I', logTag, string.format('co-driver: %d of %d corner grades measured as ours%s',
-        gc.same, gc.checked, gc.mismatch and ': this game version measures corners differently' or ''))
-      if gc.mismatch and not M.gradeWarned then
-        M.gradeWarned = true
-        say('The co-driver may call some corners wrong on this version of BeamNG.drive.', 8, 'warning')
+      log(gc.mismatch and 'W' or 'I', logTag, string.format('co-driver: %d of %d corner grades match%s',
+        gc.same, gc.checked, gc.mismatch and ' (this game version may measure corners differently)' or ''))
+      for _, f in ipairs(gc.far or {}) do
+        log('W', logTag, string.format('co-driver: note %d graded %d by the game, %d by us: called a grade out', f[1],
+          f[3], f[2]))
       end
     end
   end

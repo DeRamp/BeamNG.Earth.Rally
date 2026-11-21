@@ -785,6 +785,7 @@ do
   for k = 1, 4 do notesList[k] = graded(50, 200) end      -- (measured a five)
   gc = ra.gradeCheck()
   T.check(gc and gc.same == 2 and gc.mismatch, 'gradeCheck: measured differently: a mismatch')
+  T.check(#gc.far == 4 and gc.far[1][2] == 3 and gc.far[1][3] == 5, 'gradeCheck: the corners two grades out listed')
   for k = 1, 6 do notesList[k] = graded(50, nil) end
   gc = ra.gradeCheck()
   T.check(gc and gc.checked == 0 and not gc.mismatch, 'gradeCheck: nothing measured, nothing said')
