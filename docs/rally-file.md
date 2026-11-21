@@ -75,8 +75,9 @@ file's `event.dates`.
 
 ### Event file (`event`)
 
-Only these fields (and, for the full rally, `locations`, `service` and the non-SS rows: below) are read; everything
-else in it (the ARA files carry schedule, free-text time rules and penalties) is ignored. Rules are **not** read from it: they come from the manifests only (Rules).
+Only these fields (and, for the full rally, `locations`, `service`, the non-SS rows and the schedule: below) are read;
+everything else in it (the ARA files carry a schedule block, free-text time rules and penalties) is ignored. Rules are
+**not** read from it: they come from the manifests only (Rules).
 
 ```jsonc
 { "event": { "dates": { "from": "...", "to": "..." },     // when the manifest has no dates
@@ -117,6 +118,63 @@ For the full rally (1.7.0, **Drive rally**), these are read too:
   last stage.
 - A rally is offered in **Drive rally** when its event file has at least one `SS` row that matches a map line
   (`rallyStops` written, even empty). With no event file, or none matching, there is no full rally.
+
+**Timed road sections** (the rally-loop plan) read the schedule from the same rows:
+
+```jsonc
+{ "event": { "timezone": "America/Chicago" },          // IANA name; the rally's clock is its local time
+  "itinerary": [
+    { "type": "MTC_OUT", "control": "TC0", "date": "2031-02-07", "first_car": "08:00" },
+    { "type": "ATC", "control": "TC1", "date": "2031-02-07", "target_min": 20, "first_car": "08:20" },
+    { "type": "SS", "control": "SS1", "stage": "A", "date": "2031-02-07", "first_car": "08:23",
+      "lateness_min": 10 },                            // the stage's lateness ("bogey") time
+    { "type": "SVC_OUT", "control": "TC2C", "date": "2031-02-07", "target_min": 30, "first_car": "09:40",
+      "classes": ["national", "regional"] } ] }
+```
+
+- Each pass gets `date`, `firstCar` (its SS row's `first_car`) and `latenessMin`, and `targetMin`: the `target_min` of
+  every row from the pass before up to this pass's time control, added up (regroups, refuels and services feed it).
+- The last `MTC_OUT` / `SVC_OUT` / `RGC_OUT` / `PE_OUT` row with a `first_car` in that stretch is its scheduled out time:
+  the pass gets `outDate`, `outAt` and `outTargetMin` (the targets after it), and a service or overnight there gets
+  `outDate`, `outAt`. Before the first pass, the first row with a `first_car` stands in when there is no out row: the
+  rally's start.
+- A row whose `classes` list leaves out `national` (a regional crew's own control) is not on our road: its target is
+  not counted.
+- A rally is **timed** when any pass has a target time and the start is known: the event gets `timing`
+  `{ timezone, start = { date, time } }`. Untimed (no targets, or no event file): road sections untimed, as before.
+- In Drive rally: due at a stage's time control = the time its road section starts from + its target. It starts from
+  the stop or start before it (its out time: lateness never carries past a service), else from the last stage's time
+  out = its start + its lateness time, or its finish to the minute down when it took longer (RCR 5.3.9). Late costs
+  `lateSPerMin` per minute (default 10 s), early `earlySPerMin` (default 60 s) only with the Early check-in penalty
+  setting on; there is no maximum lateness. A zone not in worldTime.lua's list is put at its longitude's hour.
+
+**Weather** (plan E) is stored in the pack, never fetched by the game. `tools/pack_weather.py <pack folder>` writes it
+once, when the pack is made:
+
+```jsonc
+{ "weather_source": "Open-Meteo.com, archive, fetched 2026-11-19",   // where it came from (the tool writes it)
+  "itinerary": [
+    { "type": "SS", "control": "SS1", "stage": "A", "date": "2031-02-07", "first_car": "08:23",
+      "weather": { "code": 3, "isDay": true,                       // WMO weather code; daylight at that hour
+                   "cover": { "total": 90, "low": 80, "mid": 40, "high": 10 },   // cloud cover, %
+                   "wind": { "ms": 4.0, "gustMs": 9.0, "fromDeg": 250 },
+                   "visM": 20000,                                  // visibility, m (missing: BeamNG.Earth's default)
+                   "rainMmH": 0, "snowCmH": 0, "fog": false, "thunder": false,
+                   "tempC": 12.3, "slTempC": 13.6, "dewC": 8.1, "elevM": 200,
+                   "baseM": 950, "baseAglM": 750, "pressureHpa": 1004 } } ] }
+```
+
+- `weather` on an SS row: the hour of its start (`date` + `first_car`, the event's `timezone`) at the stage's start
+  (its start control in the map, else its line's first point), from Open-Meteo's historical archive (the historical
+  forecast for the last few days). It is BeamNG.Earth's own weather message (its `server/weather.py`), so any field
+  its weather reads can be given; a hand-made one needs only `code`, `cover`, `wind` and `slTempC`.
+- Read from the first row of each control, as the rest of the pass. A row with no `weather`: the player's own
+  weather on that stage. A rally still in the future gets none from the tool.
+- In Drive rally, with **Rally's real time and weather** on (default): BeamNG.Earth's clock shows the rally clock's
+  hour (not its date: the sun is where it is today at that hour) and its weather is the stage's: the road section
+  before a stage has that stage's weather, a stop the next stage's. Given back when the rally ends or is left. Not in
+  a BeamMP session.
+- The tool leaves rows that have `weather` alone (`--force` fetches them again).
 
 The itinerary is the running order. A row whose `stage` names no line in the map is an import warning and is left
 out. With no event file (or no SS row that matches), the stages run once each in map order, SS1, SS2..., each its
@@ -207,7 +265,8 @@ them.
 ## What the mod writes from a pack (internal, not part of the format)
 
 - `earthRally/events/<rallyId>.json`: as today (format 1), plus `season` `{ id, name, round }` when it came from a
-  season, `dates`, `place`, `itinerary` `[{ ss, stage, run, km, cancelled, day, powerStage }]`, `rules`, `media`
+  season, `dates`, `place`, `itinerary` `[{ ss, stage, run, km, cancelled, day, powerStage, date, firstCar,
+  latenessMin, targetMin, outDate, outAt, outTargetMin }]`, `timing` (a timed rally), `rules`, `media`
   `{ cover, logo, photo }`, `boards` (a boards file name, or missing), and `pack` `{ file, fingerprint }`. A round
   its season no longer lists (taken out, one that could not be read this time, or its id changed) is kept with
   `retired` `{ season, date }`: not shown on the Rallies page, its times kept; put back under its id, it is written
@@ -218,7 +277,9 @@ them.
 - `earthRally/results/<rallyId>__<stageId>.json`: each finished run also records the line it was driven on:
   `line` (`recce` / `matched`), `lineM` (start to flying finish on it, as timed), `lineStart` and `lineFinish`
   (`[lat, lon]` of the start and the flying finish on it), and `lineKey` (that line in short: kind, point count,
-  first, middle and last points; a record only, not compared). Times saved before that have none.
+  first, middle and last points; a record only, not compared). Times saved before that have none. Since the rally
+  loop: `splits` `[s1, s2, s3]` (stage clock at a quarter, half and three quarters), and `rallyPasses`
+  `[{ timeS, splits, date }]` (a full rally's passes, kept for their splits only: not runs, not on the boards).
 - `earthRally/boards/<rallyId>.json`: the results, trimmed: `{ format: 1, fingerprint, passes: [{ ss, stage, run,
   km, cancelled, field: [[seconds, driver, car, class, championship, notional]...] }] }`, fastest first. Removed
   when the pack no longer names results.

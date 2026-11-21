@@ -12,7 +12,15 @@ M.SCHEMA = {
   units = { default = 'km', label = 'Units', desc = 'Stage lengths and distances on the HUD',
     options = { { 'km', 'km' }, { 'mi', 'miles' } } },
   resetPenalty = { default = true, label = 'Reset penalty',
-    desc = '+10 s for each car reset during the timed stage', options = { { true, 'On' }, { false, 'Off' } } },
+    desc = '+15 s for each car reset, +5 s for Back on the road, during the timed stage', options = { { true, 'On' }, { false, 'Off' } } },
+  -- (the rally-loop plan, interface 6) a timed rally's time controls: early check-ins cost the rally's early penalty
+  earlyPenalty = { default = false, label = 'Early check-in penalty',
+    desc = "Checking in before your minute costs the rally's early penalty. Off: you wait for your minute.",
+    options = { { true, 'On' }, { false, 'Off' } } },
+  -- (the owner, 2026-11-18) a timed rally's sky and weather of its real day, or the player's own
+  realWorld = { default = true, label = "Rally's real time and weather",
+    desc = "A rally runs at its real time of day, each stage in the weather it really had (stored in the rally's "
+      .. 'pack). Off: your own sky and weather.', options = { { true, 'On' }, { false, 'Off' } } },
   zoneBrake = { default = true, label = 'Control-zone brake',
     desc = "The brakes ease on in a control's zone, so you stop at its board", options = { { true, 'On' }, { false, 'Off' } } },
   clockView = { default = 'right', label = 'Start clock view',
@@ -27,8 +35,21 @@ M.SCHEMA = {
     options = { { true, 'On' }, { false, 'Off' } } },
   devPanel = { default = false, label = 'Developer panel',
     desc = "The old Earth Rally window with each run's checks", options = { { true, 'On' }, { false, 'Off' } } },
+  -- Kept, not shown (not in ORDER, so not on the Settings page):
+  -- (the owner, 2026-11-19) the full rally start screen's last "Traffic on road sections" pick, its default next
+  -- time; 'world' (none picked yet): On when the world's traffic is running, else Off (rallyRun.trafficChoice)
+  rallyTraffic = { default = 'world', options = { { 'world' }, { 'on' }, { 'off' } } },
+  -- (Traffic Off) the player's traffic amount while a rally holds it at 0, so a Lua reload cannot lose it; false: none
+  rallyTrafficStash = { default = false, check = function(v) return v == false or type(v) == 'number' and v >= 0 end },
+  -- (notes-rally-loop 2) traffic the rally started (Traffic On, none running): BeamNG.Earth's traffic choice before
+  -- it ('on' / 'off'; 'none': the game's own traffic), so a Lua reload mid-rally still takes it away; false: none started
+  rallyTrafficSpawned = { default = false, options = { { false }, { 'on' }, { 'off' }, { 'none' } } },
+  -- (plan G) the stage page's Weather pick (stageWeather.lua), the same on every stage until changed
+  stageWeather = { default = 'current', options = { { 'current' }, { 'rallyday' }, { 'clear' }, { 'cloudy' }, { 'rain' },
+    { 'storm' }, { 'snow' }, { 'fog' } } },
 }
-M.ORDER = { 'units', 'resetPenalty', 'zoneBrake', 'clockView', 'worldLoaded', 'onlineBoard', 'devPanel' }
+M.ORDER = { 'units', 'resetPenalty', 'earlyPenalty', 'realWorld', 'zoneBrake', 'clockView', 'worldLoaded', 'onlineBoard',
+  'devPanel' }
 
 local values = nil
 -- Settings that were here and are not any more. A saved file still carrying one is not a mistake the player
@@ -53,6 +74,10 @@ end
 function M.validate(key, v)
   local s = M.SCHEMA[key]
   if not s then return nil, 'unknown setting ' .. tostring(key) end
+  if s.check then
+    if s.check(v) then return v end
+    return nil, tostring(key) .. ': not a value it takes (' .. tostring(v) .. ')'
+  end
   for _, o in ipairs(s.options) do
     if o[1] == v then return v end
   end

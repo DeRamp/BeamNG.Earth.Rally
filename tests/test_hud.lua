@@ -50,6 +50,11 @@ do
   local ui = settings.uiState()
   T.check(#ui.schema == #settings.ORDER and ui.schema[1].id == 'units' and ui.schema[1].options[2].value == 'mi' and
     ui.schema[1].options[2].label == 'miles' and ui.settings.units == 'km', 'the page gets the schema in order and the values')
+  -- (the rally loop, interface 6) the early check-in penalty: off by default, after Reset penalty
+  local ids = {}
+  for k, row in ipairs(ui.schema) do ids[row.id] = k end
+  T.check(settings.SCHEMA.earlyPenalty.default == false and ids.earlyPenalty == ids.resetPenalty + 1
+    and settings.SCHEMA.earlyPenalty.label == 'Early check-in penalty', 'Early check-in penalty: off, after Reset penalty')
   settings.reset()
   files[settings.FILE] = nil
 end
@@ -555,4 +560,21 @@ do
   T.check(not hid.show.loadAsk and hid.rally == nil, 'a menu up: not drawn')
 end
 
+do
+  -- (the rally loop) a timed transit's line: time left, then due now inside the due minute, then late
+  T.check(hud.transitText({ due = '18:50', leftS = 372, late = 0 }, 'km'):find('6:12 left', 1, true) ~= nil, 'time left')
+  local now = hud.transitText({ due = '18:50', leftS = -30, late = 0 }, 'km')
+  T.check(now == 'due 18:50 · due now', 'inside the due minute: due now (' .. now .. ')')
+  T.check(hud.transitText({ due = '18:50', leftS = -90, late = 1, penaltyS = 10 }, 'km') == 'due 18:50 · 1 min late · +10 s',
+    'a minute late')
+end
+
+-- (notes-rally-loop 7) the rally's time first on a road section's line
+do
+  local hf = require('earthRally/hudFrame')
+  local t = hf.transitText({ now = '16:04', due = '16:05', leftS = 52, late = 0, distM = 1200 }, 'km')
+  T.check(t:find('^16:04 · due 16:05') ~= nil, 'transit line: the rally time, then due (' .. t .. ')')
+  T.check(hf.transitKey({ now = '16:04', due = '16:05' }) ~= hf.transitKey({ now = '16:05', due = '16:05' }),
+    'transit key: a new minute sends the line again')
+end
 T.done('test_hud')

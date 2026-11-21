@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Rally: rally loop additions (mock-ups)</title>
+<!-- Mock-ups for docs/plan-rally-loop.md, "Additions (2026-11-19)": results that show road penalties and your best
+     splits, and time controls at services, regroups and the finish. Not built. 1920x1080, the look of rally-loop.html
+     and the built Vue (EarthRally.vue, EarthRallyResults.vue, EarthRallyFull.vue). Self-contained: nothing fetched.
+     Names are made up: real event data never goes in git. -->
+<style>
+:root { --orange: #f26b1d; --orange-d: #c75b1e; --muted: #b8bcc6; --dim: #8a909a; --blue: #1f8fff; --amber: #ffd36b; --green: #3ccf7e; --red: #e5533d;
+  --pink: rgb(225, 123, 225); --dash: rgba(66, 70, 81, .8); --black-80: rgba(0, 0, 0, .8); --go: rgb(0, 255, 0); --hud-amber: #ffb000; --hud-red: #ff4d4d;
+  --mono: "Overpass Mono", ui-monospace, Consolas, monospace; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto Sans", system-ui, sans-serif; }
+.mock-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 16px; background: #1a1d22; border-bottom: 1px solid #2a2e35; position: sticky; top: 0; z-index: 10; }
+.mock-bar b { margin-right: 8px; }
+.mock-bar button, .vbar button { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 4px; border: 1px solid #3a3f48; background: #23272e; color: #ddd; cursor: pointer; }
+.mock-bar button.on, .vbar button.on { background: var(--orange-d); border-color: var(--orange-d); color: #fff; }
+.mock-bar .sep, .vbar .sep { width: 1px; height: 22px; background: #3a3f48; margin: 0 6px; }
+.vbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 16px; }
+.vbar .g { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); margin-right: 2px; }
+.vbar .only { font-size: 14px; color: var(--amber); }
+#who { padding: 12px 16px 24px; color: var(--muted); font-size: 15px; max-width: 1400px; line-height: 1.5; margin: 0 auto; }
+#who b { color: #fff; }
+.wrap { padding: 0 16px; }
+.box { position: relative; width: 100%; max-width: 1920px; margin: 0 auto; aspect-ratio: 16/9; overflow: hidden; border-radius: 6px; box-shadow: 0 0 0 1px #2a2e35; }
+.screen { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-size: 16px; overflow: hidden;
+  background: linear-gradient(180deg, #8fb3cf 0%, #b9c9d2 40%, #6f7f55 41%, #55633d 70%, #3d4630 100%); }
+.screen.dusk { background: linear-gradient(180deg, #1c2338 0%, #4a4660 22%, #c07a52 40%, #3c4230 41%, #2c3324 70%, #1f2419 100%); }
+.road { position: absolute; left: 50%; bottom: 0; width: 1400px; height: 640px; transform: translateX(-50%); background: linear-gradient(180deg, #8c7a5e, #a38e6c); clip-path: polygon(47% 0, 53% 0, 100% 100%, 0 100%); }
+.dusk .road { background: linear-gradient(180deg, #4e4434, #7a6a50); }
+.hud-ex { position: absolute; border: 2px dashed rgba(255,255,255,.3); border-radius: 6px; color: rgba(255,255,255,.55); font-size: 14px; display: flex; align-items: center; justify-content: center; }
+.dimmer { position: absolute; inset: 0; background: rgba(10,12,16,.82); }
+.solid { position: absolute; inset: 0; background: radial-gradient(ellipse at 70% 30%, #2a2219 0%, #121418 60%, #0b0c0f 100%); }
+.page { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.top { height: 84px; flex: none; display: flex; align-items: center; gap: 20px; padding: 0 64px; background: linear-gradient(180deg, rgba(0,0,0,.8), rgba(0,0,0,.35)); }
+.back { font-size: 20px; color: var(--muted); margin-right: 10px; }
+.title { font-size: 30px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; } .title span { color: var(--orange); }
+.crumbs { font-size: 18px; color: var(--muted); } .crumbs b { color: #fff; font-weight: 400; } .crumbs i { font-style: normal; color: #6f7480; margin: 0 10px; }
+.content { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 28px 64px; position: relative; }
+.content.tl { align-items: flex-start; justify-content: flex-start; }
+.prompts { height: 56px; flex: none; display: flex; align-items: center; gap: 30px; padding: 0 64px; background: rgba(0,0,0,.6); color: var(--muted); font-size: 17px; }
+.k { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; font: 700 14px "Noto Sans", system-ui, sans-serif; color: #111; margin-right: 8px; }
+.k.a { background: #6cc24a; } .k.b { background: var(--red); } .k.x { background: #3b8beb; color: #fff; } .k.y { background: #f0c419; }
+.kbd { display: inline-block; font: 700 15px var(--mono); padding: 1px 8px; border-radius: 4px; background: #fff; color: #111; margin-right: 8px; }
+.paused { margin-left: auto; font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+.card { background: rgba(0,0,0,.6); border-radius: 10px; }
+.pad { padding: 30px 34px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; padding: 14px 28px; border-radius: 4px; font-size: 20px; font-weight: 600; background: var(--orange-d); color: #fff; }
+.btn.out { background: transparent; border: 1px solid #6f7480; color: #ddd; font-weight: 500; }
+.btn.off { background: #3a3f48; color: #8a909a; }
+.btn.huge { font-size: 30px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; padding: 22px 56px; min-width: 520px; flex-direction: column; }
+.btn.huge small { display: block; font-size: 17px; font-weight: 500; text-transform: none; letter-spacing: 0; opacity: .85; margin-top: 2px; }
+.sel { outline: 4px solid var(--orange); outline-offset: 3px; }
+.cornerbtn { position: absolute; right: 64px; bottom: 34px; display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
+.warn { color: var(--amber); font-size: 17px; }
+.muted { color: var(--muted); } .dim { color: var(--dim); } .mono { font-family: var(--mono); }
+.lbl { font-size: 15px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); font-weight: 600; margin: 22px 0 10px; }
+h2 { margin: 0; font-size: 40px; text-transform: uppercase; line-height: 1.1; }
+h3.sec { margin: 0 0 4px; font-size: 18px; letter-spacing: .16em; text-transform: uppercase; color: var(--orange); font-weight: 700; }
+.seg { display: inline-flex; flex-shrink: 0; border-radius: 4px; overflow: hidden; box-shadow: inset 0 0 0 1px #5a6070; }
+.seg span { padding: 11px 20px; color: var(--muted); font-size: 18px; white-space: nowrap; } .seg span.on { background: var(--orange-d); color: #fff; font-weight: 600; }
+.boxv { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-radius: 6px; background: rgba(255,255,255,.06); font-size: 20px; }
+.newtag { font-size: 12px; font-weight: 700; letter-spacing: .1em; color: var(--orange); margin-left: 10px; vertical-align: middle; }
+.ok { color: var(--green); } .late { color: var(--amber); } .over { color: var(--red); }
+
+/* ===== 1 time card (EarthRallyFull.vue's er-tc) ===== */
+.tcg { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 24px; width: 100%; align-items: start; }
+.col { display: flex; flex-direction: column; gap: 20px; }
+.cpad { padding: 22px 26px; }
+.tchead { display: flex; align-items: baseline; gap: 16px; }
+.tchead h4 { margin: 0 0 6px; font-size: 30px; }
+.tchead .mode { margin-left: auto; color: var(--muted); font-size: 17px; }
+.clockchip { font: 700 22px var(--mono); color: var(--pink); text-shadow: 0 0 10px rgba(225,123,225,.4); }
+.day { margin: 14px 0 4px; font-size: 14px; text-transform: uppercase; letter-spacing: .1em; color: var(--orange); font-weight: 700; }
+.tr { display: grid; grid-template-columns: 136px minmax(0, 1fr) 120px 100px; gap: 10px; padding: 7px 10px; font-size: 18px; border-bottom: 1px solid rgba(255,255,255,.06); align-items: center; }
+.tr .r { text-align: right; }
+.tr.next { background: #2a6df4; color: #fff; font-weight: 600; border-radius: 3px; }
+.tr.svc { background: rgba(120, 50, 40, .35); }
+.tr.dimr { color: var(--dim); }
+.tr.hd { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; border-bottom-color: rgba(255,255,255,.14); padding-top: 4px; padding-bottom: 4px; }
+.t2 .tr { grid-template-columns: 116px minmax(0, 1fr) 74px 74px 140px 100px 84px; }
+.tr > span:first-child { white-space: nowrap; }
+.tr .nm small { display: block; font-size: 14px; font-weight: 600; }
+.tr.lim { background: rgba(229, 83, 61, .12); box-shadow: inset 4px 0 0 var(--red); }
+.tr.next .late, .tr.next .dim { color: #fff; }
+.tsum { display: flex; gap: 28px; margin-top: 12px; padding: 0 10px; font-size: 16px; color: var(--muted); }
+.tsum b { font-family: var(--mono); color: #fff; font-weight: 700; }
+.tsum b.late { color: var(--amber); } .tsum b.over { color: var(--red); }
+h5 { margin: 0 0 10px; font-size: 20px; letter-spacing: .04em; }
+.row2 { display: flex; justify-content: space-between; padding: 6px 0; font-size: 18px; }
+.row2 b { font-family: var(--mono); }
+.btns { display: flex; gap: 12px; }
+.banner { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 12px 16px; border-radius: 6px; background: rgba(42, 109, 244, .18); box-shadow: inset 4px 0 0 #2a6df4; font-size: 21px; font-weight: 600; }
+.banner .mono { font-weight: 700; }
+.banner i { font-style: normal; color: #6f7480; }
+.small { font-size: 15px; margin-top: 8px; line-height: 1.5; }
+
+.tcrow { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,.08); font-size: 20px; }
+.tcrow span { color: var(--muted); white-space: nowrap; } .tcrow b { font-family: var(--mono); font-size: 26px; text-align: right; }
+.tcrow b.sm { font-family: "Noto Sans", system-ui, sans-serif; font-size: 20px; font-weight: 600; }
+.tcrow.new { background: rgba(242,107,29,.08); box-shadow: -10px 0 0 rgba(242,107,29,.08), 10px 0 0 rgba(242,107,29,.08); }
+
+/* ===== additions ===== */
+.t2 .tr { grid-template-columns: 146px minmax(0, 1fr) 132px 74px 140px 100px 84px; }
+.tgt { font-family: "Noto Sans", system-ui, sans-serif; font-size: 15px; color: var(--dim); white-space: nowrap; }
+.tr.next .tgt { color: #dfe6ff; }
+.tr .free { color: var(--muted); }
+.tr.svc.next { background: #2a6df4; }
+.newcell { box-shadow: inset 0 0 0 2px rgba(242,107,29,.55); border-radius: 3px; padding-right: 6px; }
+.tr.svc.chk { box-shadow: inset 4px 0 0 var(--orange); }
+.tcrow.cmp { padding: 9px 0; font-size: 18px; } .tcrow.cmp b { font-size: 22px; }
+.cikind { font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: var(--orange); font-weight: 700; margin: 4px 0 6px; }
+.cikind span { color: var(--muted); letter-spacing: .04em; text-transform: none; font-weight: 500; margin-left: 8px; }
+.cibox { margin-top: 10px; padding: 6px 16px 4px; border-radius: 8px; background: rgba(255,255,255,.05); }
+.cibox.new { outline: 2px solid rgba(242,107,29,.55); }
+.cinext { margin-top: 14px; font-size: 18px; }
+
+/* Results tab (EarthRally.vue's rally page, EarthRallyResults.vue) */
+.rhead { display: flex; align-items: flex-end; gap: 24px; margin-bottom: 14px; }
+.rhead h2 { font-size: 44px; }
+.rhead .sub { color: var(--muted); font-size: 18px; margin-bottom: 4px; }
+.rtabs { display: flex; gap: 6px; margin-bottom: 14px; }
+.rtabs span { padding: 9px 20px; border-radius: 4px; font-size: 18px; color: var(--muted); background: rgba(0,0,0,.45); }
+.rtabs span.on { background: var(--orange-d); color: #fff; font-weight: 600; }
+.yourfull { padding: 14px 20px; margin-bottom: 14px; font-size: 18px; border-left: 4px solid var(--orange); background: rgba(0,0,0,.6); border-radius: 0 10px 10px 0; width: 100%; }
+.yourfull .rp { color: var(--amber); font-family: var(--mono); font-weight: 700; }
+.yourfull .rp0 { color: var(--green); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.chip { font-size: 16px; padding: 5px 12px; border-radius: 999px; background: rgba(40, 140, 80, .4); color: #d9ffe6; white-space: nowrap; }
+.chip .mono { margin-left: 6px; }
+.chip i { font-style: normal; font-family: var(--mono); font-weight: 700; color: var(--amber); margin-left: 8px; }
+.chip.stop { background: rgba(255, 211, 107, .14); color: #ffe7ad; }
+.chip.stop i { margin-left: 6px; }
+.chip.sr { background: rgba(229, 83, 61, .25); color: #ffd0c8; }
+.chipsnew { outline: 2px dashed rgba(242,107,29,.5); outline-offset: 6px; border-radius: 6px; }
+.resgrid { display: grid; grid-template-columns: 440px minmax(0, 1fr); gap: 28px; align-items: start; width: 100%; }
+.yourc { padding: 30px 32px; }
+.yourc h3 { margin: 0 0 10px; font-size: 14px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.big { font: 700 52px var(--mono); line-height: 1.05; } .big small { font-size: 22px; color: var(--muted); margin-left: 6px; font-weight: 600; }
+.rtot { font: 700 30px var(--mono); margin-top: 14px; }
+.fnote { margin-top: 14px; font-size: 15px; color: var(--muted); }
+.rt { padding: 6px 0; }
+.rrow { display: grid; grid-template-columns: 76px minmax(0, 1fr) 110px 170px 140px; align-items: center; height: 44px; padding: 0 26px; font-size: 19px; border-left: 4px solid transparent; }
+.rrow + .rrow { border-top: 1px solid rgba(255,255,255,.06); }
+.rrow.hd { height: 36px; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.rrow.me { background: rgba(199, 91, 30, .26); border-left-color: var(--orange); font-weight: 700; }
+.rrow.gp { height: 24px; color: #6f7480; font-size: 18px; line-height: 1; }
+.rrow .r { text-align: right; } .rrow .p { font-family: var(--mono); font-weight: 700; color: var(--muted); } .rrow.me .p { color: #fff; }
+.rrow .c { font-size: 14px; font-weight: 600; color: var(--muted); }
+.rrow .t { font-family: var(--mono); font-weight: 600; text-align: right; } .rrow .g { font-family: var(--mono); text-align: right; color: var(--muted); font-size: 17px; }
+
+/* stage page (EarthRally.vue's er-stage-page) */
+.spage { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 28px; align-items: start; width: 100%; }
+.sss { font: 700 20px var(--mono); color: var(--orange); letter-spacing: .05em; }
+.sname { font-size: 52px; font-weight: 700; line-height: 1.1; }
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 26px 0; }
+.tile { padding: 18px 20px; } .tile .v { font: 700 40px var(--mono); line-height: 1.1; } .tile .v small { font-size: 18px; margin-left: 4px; color: var(--muted); }
+.tile .l { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.sbtns { display: flex; gap: 12px; } .shelp { margin-top: 22px; font-size: 16px; color: var(--muted); line-height: 1.6; max-width: 900px; } .shelp b { color: #fff; }
+.runs { padding: 22px 26px; } .runs h3 { margin: 0 0 12px; font-size: 20px; }
+.bestbox { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; } .bestbox .t { font: 700 44px var(--mono); }
+.badge { background: rgb(0, 200, 0); color: #002a00; font-weight: 800; padding: 2px 10px; border-radius: 6px; }
+.bsplits { margin: 0 0 14px; padding: 10px 14px 12px; border-radius: 8px; background: rgba(255,255,255,.05); }
+.bsplits.new { outline: 2px solid rgba(242,107,29,.55); }
+.bsplits .h { display: flex; justify-content: space-between; font-size: 14px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.bsplits .h span:last-child { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.sg4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.bsplits .sg4 { margin-top: 6px; }
+.bsplits .sg4 div { font: 700 22px var(--mono); } .bsplits .sg4 small { display: block; font: 600 12px "Noto Sans", system-ui, sans-serif; color: var(--dim); letter-spacing: .1em; }
+.run { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; padding: 9px 0 6px; border-top: 1px solid rgba(255,255,255,.07); font-size: 17px; }
+.run .pen { color: #ffd36b; text-align: right; } .run .cl { color: #6fd39a; text-align: right; }
+.rsp { margin: 0 0 8px; font-size: 14px; color: var(--muted); }
+.rsp div { font-family: var(--mono); white-space: nowrap; }
+.rsp .a { color: var(--green); margin-left: 6px; } .rsp .b { color: var(--amber); margin-left: 6px; } .rsp .z { color: var(--dim); margin-left: 6px; font-family: "Noto Sans", system-ui, sans-serif; }
+.rsp.new { box-shadow: -10px 0 0 rgba(242,107,29,.10), 10px 0 0 rgba(242,107,29,.10); background: rgba(242,107,29,.10); }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="mock-bar">
+  <b>Rally loop additions · mock-ups</b>
+  <button data-s="res">a · Results tab</button>
+  <button data-s="stage">b · Stage page</button>
+  <button data-s="tc">c · Time card</button>
+  <button data-s="ci">d · Check-in at a stop</button>
+</div>
+<div class="vbar" id="vbar"></div>
+<div class="wrap"><div class="box" id="box"><div class="screen" id="screen">
+  <div class="road"></div>
+  <div class="dimmer"></div>
+  <div class="page">
+    <div class="top">
+      <span class="back">‹ Back</span>
+      <div class="title"><span>Earth</span> Rally</div>
+      <div class="crumbs" id="crumbs"></div>
+    </div>
+
+    <!-- ================= a Results tab ================= -->
+    <div class="content tl" data-m="res.now res.prop">
+      <div style="width:100%">
+        <div class="rhead"><h2>Pine Ridge Rally</h2><div class="sub">6-7 Feb 2026 · Pine Ridge · 9 stages</div></div>
+        <div class="rtabs"><span>Stages</span><span class="on">Results</span><span>Rules</span></div>
+        <div class="yourfull">
+          <b>Your full rally</b> · <span class="mono">1:12:31.4</span><span data-m="res.prop"> · incl. transit penalties <span class="rp">+1:10</span></span> · P16 of 38 National · O4WD 6th of 14 · Realistic · Rallye 2.0 Gravel
+          <div class="chips chipsnew" data-m="res.prop">
+            <span class="chip">SS1<span class="mono">6:48.2</span><i>+20 s</i></span>
+            <span class="chip">SS2<span class="mono">8:31.7</span></span>
+            <span class="chip">SS3<span class="mono">5:12.9</span></span>
+            <span class="chip stop">Service A<i>+20 s</i></span>
+            <span class="chip">SS4<span class="mono">7:40.3</span></span>
+            <span class="chip">SS5<span class="mono">6:55.0</span><i>+30 s</i></span>
+            <span class="chip">SS6<span class="mono">9:02.4</span></span>
+            <span class="chip">SS7<span class="mono">7:21.8</span></span>
+            <span class="chip">SS8<span class="mono">7:58.1</span></span>
+            <span class="chip">SS9<span class="mono">6:44.5</span></span>
+          </div>
+        </div>
+        <div class="resgrid">
+          <div class="card yourc">
+            <h3>Your rally</h3>
+            <div class="big">14th<small>of 38</small></div>
+            <div class="rtot">1:08:12.6</div>
+            <div class="muted" style="font-size:18px">+4:31.0 to the winner</div>
+            <div class="fnote">Your best on each stage, against the 38 crews with a time on every stage.</div>
+          </div>
+          <div class="card rt">
+            <div class="rrow hd"><span>Pos</span><span>Driver</span><span>Class</span><span class="r">Total</span><span class="r">Gap</span></div>
+            <div class="rrow"><span class="p">1</span><span>A. Hartley</span><span class="c">RC2</span><span class="t">1:03:41.6</span><span class="g"></span></div>
+            <div class="rrow"><span class="p">2</span><span>J. Okafor</span><span class="c">RC2</span><span class="t">1:04:02.9</span><span class="g">+21.3</span></div>
+            <div class="rrow"><span class="p">3</span><span>M. Lindqvist</span><span class="c">O4WD</span><span class="t">1:04:55.0</span><span class="g">+1:13.4</span></div>
+            <div class="rrow"><span class="p">4</span><span>S. Brennan</span><span class="c">RC2</span><span class="t">1:05:20.7</span><span class="g">+1:39.1</span></div>
+            <div class="rrow"><span class="p">5</span><span>T. Novak</span><span class="c">O4WD</span><span class="t">1:05:48.3</span><span class="g">+2:06.7</span></div>
+            <div class="rrow"><span class="p">6</span><span>R. Castillo</span><span class="c">L4WD</span><span class="t">1:06:03.1</span><span class="g">+2:21.5</span></div>
+            <div class="rrow"><span class="p">7</span><span>K. Whitford</span><span class="c">O4WD</span><span class="t">1:06:30.8</span><span class="g">+2:49.2</span></div>
+            <div class="rrow"><span class="p">8</span><span>D. Marsh</span><span class="c">RC2</span><span class="t">1:06:44.2</span><span class="g">+3:02.6</span></div>
+            <div class="rrow"><span class="p">9</span><span>L. Ferreira</span><span class="c">O2WD</span><span class="t">1:07:15.9</span><span class="g">+3:34.3</span></div>
+            <div class="rrow"><span class="p">10</span><span>P. Gallagher</span><span class="c">O4WD</span><span class="t">1:07:29.4</span><span class="g">+3:47.8</span></div>
+            <div class="rrow gp"><span>⋮</span></div>
+            <div class="rrow"><span class="p">13</span><span>H. Ishikawa</span><span class="c">L4WD</span><span class="t">1:08:05.0</span><span class="g">+4:23.4</span></div>
+            <div class="rrow me"><span class="p">14</span><span>You</span><span class="c"></span><span class="t">1:08:12.6</span><span class="g">+4:31.0</span></div>
+            <div class="rrow"><span class="p">15</span><span>C. Duval</span><span class="c">O4WD</span><span class="t">1:08:40.2</span><span class="g">+4:58.6</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= b stage page ================= -->
+    <div class="content tl" data-m="stage.now stage.prop">
+      <div class="spage">
+        <div>
+          <div class="sss">SS2 · OF 9 · PINE RIDGE RALLY</div>
+          <div class="sname">Hillside Rd</div>
+          <div class="muted" style="font-size:18px">Time control, start, flying finish, stop control</div>
+          <div class="tiles">
+            <div class="card tile"><div class="v">12.1<small>km</small></div><div class="l">Length</div></div>
+            <div class="card tile"><div class="v">84</div><div class="l">Corners</div></div>
+            <div class="card tile"><div class="v">312<small>m</small></div><div class="l">Gain</div></div>
+            <div class="card tile"><div class="v">298<small>m</small></div><div class="l">Loss</div></div>
+          </div>
+          <div class="sbtns"><div class="btn sel">Drive stage</div><div class="btn out">Recce</div><div class="btn out">Reset</div></div>
+          <div class="shelp"><b>Drive stage</b>: takes you to the time control before the start, then through the stage as in a real rally.<br><b>Reset</b>: removes this stage's line, so you can make it again. Your times are kept.<br><b>Recce</b>: drive the stage once at your own pace; the line you drive gives the notes.</div>
+        </div>
+        <div class="card runs">
+          <h3>Your runs</h3>
+          <div class="bestbox"><span class="t">6:31.7</span><span class="badge">BEST</span></div>
+          <div class="bsplits new" data-m="stage.prop">
+            <div class="h"><span>Best splits</span><span>your run of 16 Nov</span></div>
+            <div class="sg4"><div><small>1/4</small>1:34.2</div><div><small>1/2</small>3:12.4</div><div><small>3/4</small>4:51.0</div><div><small>Finish</small>6:31.7</div></div>
+          </div>
+          <div class="run"><span>18 Nov <span class="dim">· last</span></span><span class="mono">6:35.9</span><span class="cl">clean</span></div>
+          <div class="rsp sg4 new" data-m="stage.prop"><div>1:33.9<span class="a">−0.3</span></div><div>3:13.0<span class="b">+0.6</span></div><div>4:53.1<span class="b">+2.1</span></div><div>6:35.9<span class="b">+4.2</span></div></div>
+          <div class="run"><span>16 Nov</span><span class="mono">6:31.7</span><span class="cl">clean</span></div>
+          <div class="rsp sg4 new" data-m="stage.prop"><div>1:34.2<span class="z">best</span></div><div>3:12.4</div><div>4:51.0</div><div>6:31.7</div></div>
+          <div class="run"><span>15 Nov</span><span class="mono">6:44.0</span><span class="pen">+10 s · 1 reset</span></div>
+          <div class="rsp sg4 new" data-m="stage.prop"><div>1:36.0<span class="b">+1.8</span></div><div>3:15.2<span class="b">+2.8</span></div><div>5:01.7<span class="b">+10.7</span></div><div>6:44.0<span class="b">+12.3</span></div></div>
+          <div class="run"><span>12 Nov</span><span class="mono">6:58.4</span><span class="cl">clean</span></div>
+          <div class="run"><span>10 Nov</span><span class="mono">7:10.2</span><span class="cl">clean</span></div>
+          <div class="muted" style="font-size:15px;margin-top:8px">Times include penalties.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= c time card / d check-in ================= -->
+    <div class="content tl" data-m="tc.now tc.prop ci.now ci.svc ci.rgc">
+      <div class="tcg">
+        <!-- c: 20:51 on the way to TC5, Service A behind -->
+        <div class="card cpad t2" data-m="tc.now tc.prop">
+          <div class="tchead"><h4>Pine Ridge Rally</h4><span class="clockchip">Fri 6 Feb · 20:51</span><span class="mode">Realistic · O4WD</span></div>
+          <div class="tr hd"><span></span><span></span><span class="r">Due</span><span class="r">In</span><span class="r">Transit</span><span class="r">Stage</span><span class="r">Pos</span></div>
+          <div class="day">Day 1</div>
+          <div class="tr dimr"><span class="mono">Start</span><span>Pine Ridge town hall</span><span class="mono r">18:00</span><span class="mono r">18:00</span><span class="r">on time</span><span></span><span></span></div>
+          <div class="tr"><span class="mono">SS1</span><span>Quarry Loop</span><span class="mono r">18:22</span><span class="mono r">18:24</span><span class="r late">+20 s late</span><span class="mono r">6:48.2</span><span class="mono r">12 / 38</span></div>
+          <div class="tr"><span class="mono">SS2</span><span>Hillside Rd</span><span class="mono r">18:50</span><span class="mono r">18:50</span><span class="r dim">on time</span><span class="mono r">8:31.7</span><span class="mono r">9 / 38</span></div>
+          <div class="tr"><span class="mono">SS3</span><span>Cedar Flats</span><span class="mono r">19:21</span><span class="mono r">19:21</span><span class="r dim">on time</span><span class="mono r">5:12.9</span><span class="mono r">15 / 38</span></div>
+          <div class="tr svc" data-m="tc.now"><span class="mono">Service A</span><span class="nm">Ridge service park<small class="dim">out 20:05</small></span><span class="mono r dim"></span><span></span><span></span><span></span><span></span></div>
+          <div class="tr svc" data-m="tc.prop"><span class="mono">Service A</span><span class="nm">Ridge service park<small class="dim">service in · out 20:05</small></span><span class="mono r newcell">19:40</span><span class="mono r newcell">19:42</span><span class="r late newcell">+20 s late</span><span></span><span></span></div>
+          <div class="tr"><span class="mono">SS4</span><span>Gum Creek</span><span class="mono r">20:20</span><span class="mono r">20:20</span><span class="r dim">on time</span><span class="mono r">7:40.3</span><span class="mono r">18 / 38</span></div>
+          <div class="tr next"><span class="mono">SS5</span><span>Quarry Loop 2</span><span class="mono r">21:02</span><span class="mono r"></span><span></span><span class="mono r">next</span><span></span></div>
+          <div class="tr svc" data-m="tc.now"><span class="mono">Overnight</span><span class="nm">Ridge service park<small class="dim">out Sat 08:30</small></span><span class="mono r dim">–</span><span></span><span></span><span></span><span></span></div>
+          <div class="tr svc" data-m="tc.prop"><span class="mono">Overnight</span><span class="nm">Ridge service park<small class="dim">regroup in · out Sat 08:30</small></span><span class="r newcell"><span class="tgt">target 9 min</span></span><span></span><span></span><span></span><span></span></div>
+          <div class="day">Day 2</div>
+          <div class="tr"><span class="mono">SS6</span><span>Long Gully</span><span class="mono r">08:42</span><span></span><span></span><span></span><span></span></div>
+          <div class="tr" data-m="tc.now"><span class="mono">SS7</span><span>Saddle Back</span><span class="mono r dim">–</span><span></span><span></span><span></span><span></span></div>
+          <div class="tr" data-m="tc.prop"><span class="mono">SS7</span><span>Saddle Back</span><span class="r newcell"><span class="tgt">target 14 min</span></span><span></span><span></span><span></span><span></span></div>
+          <div class="tr svc"><span class="mono">Service B</span><span class="nm">Ridge service park<small class="dim">out 11:10</small></span><span class="mono r dim" data-m="tc.now">–</span><span class="r newcell" data-m="tc.prop"><span class="tgt">target 8 min</span></span><span></span><span></span><span></span><span></span></div>
+          <div class="tr dimr"><span class="mono">⋮</span><span>2 more</span><span></span><span></span><span></span><span></span><span></span></div>
+          <div class="tr svc" data-m="tc.now"><span class="mono">Final service</span><span>Pine Ridge town hall</span><span class="mono r dim">–</span><span></span><span></span><span></span><span></span></div>
+          <div class="tr svc" data-m="tc.prop"><span class="mono">Final service</span><span class="nm">Pine Ridge town hall<small class="dim">finish (MTC in)</small></span><span class="r newcell"><span class="tgt">target 6 min</span></span><span></span><span></span><span></span><span></span></div>
+          <div class="tsum"><span>Transit penalties <b class="late" data-m="tc.now">+20 s</b><b class="late" data-m="tc.prop">+40 s</b></span></div>
+        </div>
+
+        <!-- d: at Service A (19:42) or at the overnight's regroup (21:24) -->
+        <div class="card cpad t2" data-m="ci.now ci.svc ci.rgc">
+          <div class="tchead"><h4>Pine Ridge Rally</h4><span class="clockchip" data-m="ci.now ci.svc">Fri 6 Feb · 19:42</span><span class="clockchip" data-m="ci.rgc">Fri 6 Feb · 21:24</span><span class="mode">Realistic · O4WD</span></div>
+          <div class="tr hd"><span></span><span></span><span class="r">Due</span><span class="r">In</span><span class="r">Transit</span><span class="r">Stage</span><span class="r">Pos</span></div>
+          <div class="day">Day 1</div>
+          <div class="tr dimr"><span class="mono">Start</span><span>Pine Ridge town hall</span><span class="mono r">18:00</span><span class="mono r">18:00</span><span class="r">on time</span><span></span><span></span></div>
+          <div class="tr"><span class="mono">SS1</span><span>Quarry Loop</span><span class="mono r">18:22</span><span class="mono r">18:24</span><span class="r late">+20 s late</span><span class="mono r">6:48.2</span><span class="mono r">12 / 38</span></div>
+          <div class="tr"><span class="mono">SS2</span><span>Hillside Rd</span><span class="mono r">18:50</span><span class="mono r">18:50</span><span class="r dim">on time</span><span class="mono r">8:31.7</span><span class="mono r">9 / 38</span></div>
+          <div class="tr"><span class="mono">SS3</span><span>Cedar Flats</span><span class="mono r">19:21</span><span class="mono r">19:21</span><span class="r dim">on time</span><span class="mono r">5:12.9</span><span class="mono r">15 / 38</span></div>
+          <div class="tr svc next" data-m="ci.now"><span class="mono">Service A</span><span class="nm">Ridge service park<small>out 20:05</small></span><span class="mono r"></span><span></span><span></span><span></span><span></span></div>
+          <div class="tr svc next" data-m="ci.svc"><span class="mono">Service A</span><span class="nm">Ridge service park<small>service in · out 20:05</small></span><span class="mono r">19:40</span><span class="mono r">19:42</span><span class="r">+20 s late</span><span></span><span></span></div>
+          <div class="tr svc" data-m="ci.rgc"><span class="mono">Service A</span><span class="nm">Ridge service park<small class="dim">service in · out 20:05</small></span><span class="mono r">19:40</span><span class="mono r">19:42</span><span class="r late">+20 s late</span><span></span><span></span></div>
+          <div class="tr" data-m="ci.now ci.svc"><span class="mono">SS4</span><span>Gum Creek</span><span class="mono r">20:20</span><span></span><span></span><span></span><span></span></div>
+          <div class="tr" data-m="ci.now"><span class="mono">SS5</span><span>Quarry Loop 2</span><span class="mono r dim">–</span><span></span><span></span><span></span><span></span></div>
+          <div class="tr" data-m="ci.svc"><span class="mono">SS5</span><span>Quarry Loop 2</span><span class="r"><span class="tgt">target 12 min</span></span><span></span><span></span><span></span><span></span></div>
+          <div class="tr svc" data-m="ci.now"><span class="mono">Overnight</span><span class="nm">Ridge service park<small class="dim">out Sat 08:30</small></span><span class="mono r dim">–</span><span></span><span></span><span></span><span></span></div>
+          <div class="tr svc" data-m="ci.svc"><span class="mono">Overnight</span><span class="nm">Ridge service park<small class="dim">regroup in · out Sat 08:30</small></span><span class="r"><span class="tgt">target 9 min</span></span><span></span><span></span><span></span><span></span></div>
+          <div class="tr" data-m="ci.rgc"><span class="mono">SS4</span><span>Gum Creek</span><span class="mono r">20:20</span><span class="mono r">20:20</span><span class="r dim">on time</span><span class="mono r">7:40.3</span><span class="mono r">18 / 38</span></div>
+          <div class="tr" data-m="ci.rgc"><span class="mono">SS5</span><span>Quarry Loop 2</span><span class="mono r">21:02</span><span class="mono r">21:02</span><span class="r dim">on time</span><span class="mono r">6:55.0</span><span class="mono r">14 / 38</span></div>
+          <div class="tr svc next" data-m="ci.rgc"><span class="mono">Overnight</span><span class="nm">Ridge service park<small>regroup in · out Sat 08:30</small></span><span class="mono r">21:27</span><span class="mono r">21:24</span><span class="r">early · free</span><span></span><span></span></div>
+          <div class="day">Day 2</div>
+          <div class="tr"><span class="mono">SS6</span><span>Long Gully</span><span class="mono r">08:42</span><span></span><span></span><span></span><span></span></div>
+          <div class="tr dimr"><span class="mono">⋮</span><span>4 more</span><span></span><span></span><span></span><span></span><span></span></div>
+          <div class="tsum"><span>Transit penalties <b class="late" data-m="ci.now">+20 s</b><b class="late" data-m="ci.svc ci.rgc">+40 s</b></span></div>
+        </div>
+
+        <div class="col">
+          <!-- c: on the road section -->
+          <div class="card cpad" data-m="tc.now tc.prop">
+            <h5>TRANSIT</h5>
+            <div class="banner"><span>To TC5</span><i>·</i><span>due <span class="mono">21:02</span></span><i>·</i><span class="mono">11:04</span><span>left</span><i>·</i><span class="mono">9.6 km</span></div>
+            <div class="muted small">Follow the arrows. Late costs a transit penalty for each minute.</div>
+          </div>
+          <!-- d: at the stop -->
+          <div class="card cpad" data-m="ci.now">
+            <h5>SERVICE A · RIDGE SERVICE PARK</h5>
+            <div class="cinext">Next: SS4 Gum Creek · 9.3 km</div>
+          </div>
+          <div class="card cpad" data-m="ci.svc">
+            <h5>SERVICE A · RIDGE SERVICE PARK</h5>
+            <div class="cibox new">
+              <div class="cikind">Service in</div>
+              <div class="tcrow cmp"><span>Time in</span><b>19:42:31</b></div>
+              <div class="tcrow cmp"><span>Due</span><b>19:40</b></div>
+              <div class="tcrow cmp"><span>Result</span><b class="late">2 min late · +20 s</b></div>
+              <div class="tcrow cmp" style="border-bottom:0"><span>Out</span><b>20:05</b></div>
+            </div>
+            <div class="cinext">Next: SS4 Gum Creek · 9.3 km · due 20:20</div>
+          </div>
+          <div class="card cpad" data-m="ci.rgc">
+            <h5>OVERNIGHT · RIDGE SERVICE PARK</h5>
+            <div class="cibox new">
+              <div class="cikind">Regroup in<span>early check-in allowed</span></div>
+              <div class="tcrow cmp"><span>Time in</span><b>21:24:08</b></div>
+              <div class="tcrow cmp"><span>Due</span><b>21:27</b></div>
+              <div class="tcrow cmp"><span>Result</span><b class="ok">3 min early · no penalty</b></div>
+              <div class="tcrow cmp" style="border-bottom:0"><span>Out</span><b>Sat 08:30</b></div>
+            </div>
+            <div class="cinext">Next: SS6 Long Gully · 14.2 km · due Sat 08:42</div>
+          </div>
+          <div class="card cpad">
+            <h5>OVERALL</h5>
+            <div class="row2"><span>Position</span><b data-m="tc.now tc.prop ci.rgc">P14 / 38</b><b data-m="ci.now ci.svc">P15 / 38</b></div>
+            <div class="row2"><span>Transit penalties</span><span class="mono late" data-m="tc.now ci.now">+20 s</span><span class="mono late" data-m="tc.prop ci.svc ci.rgc">+40 s</span></div>
+            <div class="row2"><span>Your total</span><span class="mono" data-m="tc.now">28:33.1</span><span class="mono" data-m="tc.prop">28:53.1</span><span class="mono" data-m="ci.now">20:52.8</span><span class="mono" data-m="ci.svc">21:12.8</span><span class="mono" data-m="ci.rgc">35:48.1</span></div>
+          </div>
+          <div class="card cpad"><div class="btns"><div class="btn out">Save and quit</div><div class="btn out">Retire</div></div></div>
+        </div>
+      </div>
+      <div class="cornerbtn">
+        <div class="btn huge sel" data-m="tc.now tc.prop">Back to the transit<small>to SS5 Quarry Loop 2</small></div>
+        <div class="btn huge sel" data-m="ci.now ci.svc">Out of service<small>to SS4 Gum Creek</small></div>
+        <div class="btn huge sel" data-m="ci.rgc">Out of the overnight<small>to SS6 Long Gully</small></div>
+      </div>
+    </div>
+
+    <div class="prompts">
+      <span><span class="k a">A</span>Select</span>
+      <span><span class="k b">B</span>Back</span>
+      <span class="paused">Game paused</span>
+    </div>
+  </div>
+</div></div></div>
+<div id="who"></div>
+
+<script>
+// each screen: its variants (now / proposed), its trail and its note
+const SCREENS = {
+  res: { crumbs: "Home<i>›</i>Drive rally<i>›</i><b>Pine Ridge Rally</b>", v: [["now", "Now", "n"], ["prop", "Proposed · finished, timed", "p"]],
+    note: {
+      now: "<b>Now.</b> A finished full rally is one line above the results: its total, place, mode and car. Nothing says what the road sections cost, though the total includes it.",
+      prop: "<b>The full rally, all of it.</b> The line says how much of the total is road penalties (amber; <i>no transit penalties</i> in green when none). A row of chips follows: each stage's time, with the road penalty taken getting to its time control in amber, and a chip for a stop only where you were late at it. An untimed rally or one finished before this: as now. The \"Your rally\" card beside the top 10 is built from single-stage bests, so it stays as it is."
+    } },
+  stage: { crumbs: "Home<i>›</i>Drive stage<i>›</i>Pine Ridge Rally<i>›</i><b>SS2 Hillside Rd</b>", v: [["now", "Now", "n"], ["prop", "Proposed", "p"]],
+    note: {
+      now: "<b>Now.</b> Your runs: the best time and each run's time and penalties. Splits are saved with each run since this build, but the page doesn't show them.",
+      prop: "<b>Your best splits and each run's.</b> Under BEST, the four splits (1/4, 1/2, 3/4, finish) of your fastest run with splits on the line the stage runs on now, and which run they came from (a full-rally pass can be it). Each run with splits gets a small second line: its splits with the gap to those, ahead green, slower amber. Runs from before splits, or on an earlier line, look as now. With real results, the Leaderboard sits above and Your runs shows the last two, as now."
+    } },
+  tc: { crumbs: "Pine Ridge Rally<i>›</i><b>Time card</b>", v: [["now", "Now (this build)", "n"], ["prop", "Proposed", "p"]],
+    note: {
+      now: "<b>Now (this build).</b> Only stage time controls are checked in: Service A has no due, in or road penalty. Rows ahead whose due time isn't known show \"–\".",
+      prop: "<b>Every control timed.</b> Service A's row has its due, your time in and its road penalty, like a stage's. Rows ahead whose due depends on a stage not yet driven show their road section's target instead of \"–\" (<i>target 14 min</i>, dim); rows the schedule fixes (SS6, after the overnight's out time) keep their due time. Each stop says which control you check in at: service in, regroup in, finish."
+    } },
+  ci: { crumbs: "Pine Ridge Rally<i>›</i><b>Time card</b>", v: [["now", "Now (this build)", "n"], ["svc", "Service · late", "p"], ["rgc", "Regroup · early, free", "p"]],
+    note: {
+      now: "<b>Now (this build).</b> Stopped at the service board, the time card opens with the stop's name and what's next. Nothing is checked in.",
+      svc: "<b>Late at a service.</b> The stop card carries the check-in: time in, due, the result and the out time the clock jumps to as you leave. Late costs 10 s a minute, as at a stage's time control. Early at a service follows the Early check-in penalty setting: off (the default), \"early · no penalty\".",
+      rgc: "<b>Early at a regroup.</b> Here the overnight is checked in at its regroup; the event file allows early check-in there (and at the finish), so early is free whatever the setting. No wait at a stop: the clock jumps to the out time anyway."
+    } },
+};
+let cur = "res", curV = {};
+function go(s, v) {
+  const S = SCREENS[s];
+  v = v || curV[s] || (S.v.find(x => x[2] === "p") || S.v[0])[0];
+  cur = s; curV[s] = v;
+  const m = s + "." + v;
+  document.querySelectorAll("#screen [data-m]").forEach(e => e.classList.toggle("hidden", !e.dataset.m.split(" ").includes(m)));
+  document.querySelectorAll(".mock-bar button").forEach(b => b.classList.toggle("on", b.dataset.s === s));
+  const vb = document.getElementById("vbar");
+  const nows = S.v.filter(x => x[2] === "n"), props = S.v.filter(x => x[2] === "p");
+  const btn = x => `<button data-v="${x[0]}" class="${x[0] === v ? "on" : ""}">${x[1]}</button>`;
+  vb.innerHTML = (nows.length ? `<span class="g">Now</span>${nows.map(btn).join("")}<span class="sep"></span>` : `<span class="only">New screen: proposed only.</span><span class="sep"></span>`)
+    + `<span class="g">Proposed</span>${props.map(btn).join("")}`;
+  vb.querySelectorAll("button").forEach(b => b.onclick = () => go(cur, b.dataset.v));
+  document.getElementById("crumbs").innerHTML = S.crumbs || "";
+  document.getElementById("who").innerHTML = S.note[v];
+  history.replaceState(null, "", "#" + m);
+  fit();
+}
+document.querySelectorAll(".mock-bar button").forEach(b => b.onclick = () => go(b.dataset.s));
+function fit() { document.getElementById("screen").style.transform = "scale(" + (document.getElementById("box").clientWidth / 1920) + ")"; }
+addEventListener("resize", fit);
+const h = location.hash.slice(1).split(".");
+go(SCREENS[h[0]] ? h[0] : "res", SCREENS[h[0]] && SCREENS[h[0]].v.some(x => x[0] === h[1]) ? h[1] : null);
+</script>
+</body>
+</html>

@@ -19,6 +19,15 @@
 --              has no line yet (main.lua drives it: M.prep*), then holds out of the rally every stage whose line
 --              has stretches with no road on the map.
 --   the menu   main.lua sets M.ui = { openCard(), closeMenu() }.
+--   the clock  (the rally-loop plan, item 1) a timed rally (rally.lua, R.timed) keeps its own clock, R.clock.t (local
+--              time, worldTime.lua): it runs with game time (main.lua's dtSim), stops under a loading screen or a menu
+--              (M.clockPaused), runs on real time while you wait at a time control for your minute, and jumps to a
+--              stop's scheduled out time (rally.serviceOut). The runner's clock is this one during a timed rally
+--              (runner.rallyClock). Due times at the time controls, late and early check-ins, road penalties: below.
+--   the sky    (plan E) BeamNG.Earth's clock follows the rally clock's local hour and its weather the stage's stored
+--              weather (the road section before a stage: that stage's; a stop: the next stage's), through
+--              earthAdapter.setScene: at the start, out of each stop, at each stage's load and after each jump of
+--              the clock; given back when the rally ends or is left.
 local runner = require('earthRally/runner')
 local rally = require('earthRally/rally')
 local events = require('earthRally/events')
@@ -26,6 +35,8 @@ local menu = require('earthRally/menu')
 local earth = require('earthRally/earthAdapter')
 local geo = require('earthRally/geo')
 local props = require('earthRally/props')
+local wt = require('earthRally/worldTime')
+local settings = require('earthRally/settings')
 
 local M = {}
 local logTag = 'earthRally'
@@ -44,6 +55,17 @@ M.BLOCKED = {
   'forceField', 'funBoom', 'funBreak', 'funExtinguish', 'funFire', 'funHinges', 'funTires', 'funRandomTire',
   'latchesOpen', 'latchesClose', 'funBoost', 'funBoostBackwards', 'funFling', 'funFlingDownward',
 }
+-- (notes-rally-loop 3) Casual: the game's own reset (the player's car only: not reset_all_physics, which resets
+-- the traffic too) and recovery stay open, so a broken car can carry on; a reset on a stage costs the stage's reset
+-- penalty as on Drive stage (runner.onReset, run.casual). The rest as Realistic.
+M.CASUAL_OPEN = { reset_physics = true, recover_vehicle = true, recover_vehicle_alt = true, recover_to_last_road = true }
+function M.blockedFor(mode)
+  local out = {}
+  for _, a in ipairs(M.BLOCKED) do
+    if not (mode == 'casual' and M.CASUAL_OPEN[a]) then out[#out + 1] = a end
+  end
+  return out
+end
 -- (#67) A stop driven to is checked in only once the car is stopped (runner.STOPPED_MS): within BOARD_ARRIVE_M of its
 -- board when its board and tent are down (#68), else within ARRIVE_NEAR_M of its point (the venue, not always on a
 -- road). Driven through, nothing happens: the GPS keeps pointing there, the HUD line says to stop.
@@ -68,8 +90,220 @@ local move = nil       -- the car on its way to a stop by teleport: { item, t, r
 local toStop = nil     -- a service being driven to: { item, lat, lon, t, distM }
 local transitGps = nil -- the next stage's GPS, to set again once the stage before has let the arrows go (#42)
 local prep = nil       -- the stages being got ready: { list = [stage], i, then = fn, done = {}, current }
+local wait = nil       -- (a timed rally) at a time control before your minute: { item, dueT, tc }
+local world = nil      -- the sky last set to the rally clock: { t (rally clock then), real (realT then) }
+local worldDue = false -- (a jump of the clock made while it was paused: the sky set as it runs again)
+local worldFailed = false -- (BeamNG.Earth said no: not asked again until the clock's next real jump)
+local realT = 0        -- (real seconds, for the sky's drift from the rally clock)
+local wasPaused = false
+local skippedAt = nil  -- (realT of the last skip of a wait: the same key press's Interact swallowed, M.interactHeld)
+-- (main.lua) the rally clock stops while this says so: a loading screen or a menu up
+M.clockPaused = function() return false end
 
 local function say(text, s, kind, title) pcall(runner.say, text, s or 4, kind or 'info', title) end
+local stageName                  -- (below)
+-- (a run of the rally loaded and not over: no road section being driven)
+local function runLiveAny()
+  local r = runner.current()
+  return r ~= nil and r.inRally == true and r.state ~= 'finished' and r.state ~= 'failed'
+end
+
+------------------------------------------------------------------------------------------ the rally clock
+
+local function timed()
+  return R ~= nil and R.timed == true and type(R.clock) == 'table' and type(R.clock.t) == 'number'
+end
+function M.clockNow() return timed() and R.clock.t or nil end
+
+-- (the runner's clock during a timed rally's run: runner.rallyClock)
+runner.rallyClock = {
+  now = function() return timed() and R.clock.t or nil end,
+  shift = function(sec) if timed() and type(sec) == 'number' then R.clock.t = R.clock.t + sec end end,
+}
+
+-- Where the rally is, for its sky and its zone's offset: the start's place, else nil.
+local function placeOf(r)
+  local st = r and r.order and r.order[1]
+  return st and st.place or nil
+end
+
+local function clockPausedNow()
+  local ok, p = pcall(M.clockPaused)
+  return ok and p == true
+end
+
+-- (E) The stored weather a place in the rally has: the road section before a stage and the stage itself, that
+-- stage's; a stop, the next stage's. nil: none stored (the player's own weather), or the rally over.
+local function weatherItem(r)
+  if not r or rally.over(r) then return nil end
+  for i = r.pos or 1, #(r.order or {}) do
+    local it = r.order[i]
+    if it.kind == 'stage' then return it end
+  end
+  return nil
+end
+local function weatherOf(it)
+  if not it then return nil end
+  if type(it.weather) == 'table' then return it.weather end
+  -- (a rally saved before its pack had weather: the event's pass)
+  local e = ev or (R and menu.findEvent(R.eventId))
+  for _, p in ipairs(e and type(e.itinerary) == 'table' and e.itinerary or {}) do
+    if tostring(p.ss) == tostring(it.ss) and type(p.weather) == 'table' then return p.weather end
+  end
+  return nil
+end
+M._weatherOf = weatherOf
+
+-- (the time card's word for a stage's weather: { text, tempC, icon, night }, nil with none stored)
+local WX_TEXT = { [0] = 'clear', [1] = 'mainly clear', [2] = 'partly cloudy', [3] = 'overcast', [45] = 'fog',
+  [48] = 'fog' }
+function M.weatherWord(w)
+  if type(w) ~= 'table' then return nil end
+  local code = tonumber(w.code) or -1
+  local night = w.isDay == false
+  local text, icon = WX_TEXT[code], nil
+  if code >= 95 then text, icon = 'thunderstorm', 'storm'
+  elseif code >= 85 and code <= 86 then text, icon = 'snow showers', 'snow'
+  elseif code >= 80 and code <= 82 then text, icon = 'showers', 'rain'
+  elseif code >= 71 and code <= 77 then text, icon = 'snow', 'snow'
+  elseif code >= 61 and code <= 67 then text, icon = 'rain', 'rain'
+  elseif code >= 51 and code <= 57 then text, icon = 'drizzle', 'rain'
+  elseif code == 45 or code == 48 then icon = 'fog'
+  elseif code == 2 or code == 3 then icon = 'cloud'
+  elseif code == 0 or code == 1 then icon = night and 'moon' or 'sun' end
+  if w.fog == true and not icon then text, icon = 'fog', 'fog' end
+  if not text then return nil end
+  local t = tonumber(w.tempC) or tonumber(w.slTempC)
+  return { text = text, tempC = t and math.floor(t + 0.5) or nil, icon = icon or 'cloud', night = night }
+end
+
+-- BeamNG.Earth's clock and weather set for where the rally is (plan E, earthAdapter.setScene): the clock to the rally
+-- clock's local hour (a timed rally), the weather to the stage's stored weather (weatherOf). off: given back (also
+-- what a Lua reload left set). resync: only to catch up with drift or a pause, not a jump of the clock: not tried
+-- again once BeamNG.Earth has said no. Never while the clock is paused (BeamNG.Earth's clock would run on from it under
+-- the menu): put off until it runs. Without the hooks, or a clock or weather someone else set (a BeamMP server's), the
+-- player's own sky and weather are left alone.
+local function realWorldOn() return settings.get('realWorld') ~= false end
+local hooksSaid = false
+
+local function mpOff()
+  local ok, on = pcall(earth.inMultiplayer)
+  return ok and on == true
+end
+
+local function setWorld(off, resync)
+  local w = (not off and R and realWorldOn() and not mpOff()) and weatherOf(weatherItem(R)) or nil
+  if off or not R or not realWorldOn() or mpOff() or not (timed() or w) then
+    -- (ours given back: earthAdapter never touches a clock or weather it did not set)
+    if world or off then pcall(earth.clearScene) end
+    world, worldDue, worldFailed = nil, false, false
+    return
+  end
+  local okH, why = earth.hasSceneHooks()
+  if not okH then
+    if not hooksSaid then
+      hooksSaid = true
+      log('W', logTag, "rally: BeamNG.Earth's clock and weather hooks are not there (" .. tostring(why)
+        .. "): the player's own sky and weather")
+    end
+    return
+  end
+  if resync and worldFailed then return end
+  if timed() and clockPausedNow() then worldDue = true return end
+  worldDue = false
+  local hours = timed() and (R.clock.t % 86400) / 3600 or nil
+  local okC, set, no = pcall(earth.setScene, hours and { hours = hours } or nil, w)
+  world = { t = timed() and R.clock.t or nil, real = realT }
+  if okC and set then
+    worldFailed = false
+    local ww = M.weatherWord(w)
+    log('I', logTag, string.format("rally: BeamNG.Earth's clock %s, weather %s",
+      timed() and wt.hm(R.clock.t) or 'its own', ww and (ww.text .. (ww.tempC and (', ' .. ww.tempC .. ' C') or ''))
+      or "the player's own"))
+  elseif not worldFailed then
+    worldFailed = true
+    log('W', logTag, "rally: BeamNG.Earth's clock and weather not set (" .. tostring(okC and no or set)
+      .. "); tried again at the clock's next jump")
+  end
+end
+M._setWorld = setWorld
+
+-- (the mod loaded or the level started with no rally running: a clock or weather of ours left set -- a crash, a
+-- reload mid-rally -- given back to the player's own)
+function M.clearStrayWorld()
+  if R then return false end
+  -- (a single stage's weather pick, plan G: set on purpose, given back by the runner)
+  local sw = package.loaded['earthRally/stageWeather']
+  if sw and sw.isOn() then return false end
+  local okS, set = pcall(earth.sceneSet)
+  if not (okS and set) then return false end
+  pcall(earth.clearScene)
+  world, worldDue, worldFailed = nil, false, false
+  log('I', logTag, "rally: BeamNG.Earth's clock or weather left set with no rally running: given back")
+  return true
+end
+
+-- The due time at the next stage's time control (local), or nil. Ahead of the next stage, only a due time the
+-- schedule fixes (from a stop's out time): one counted from a stage's time out is not known until that stage is done.
+-- (additions B) The stop the rally is at, not yet checked in: due at its "in" control from the stage just done.
+local function dueAt(i)
+  if not timed() then return nil end
+  if i < R.pos then return nil end
+  local here = R.order[i]
+  if here and here.kind ~= 'stage' then
+    if i ~= R.pos or rally.isServiced(R) then return nil end
+    return rally.dueFor(R, i)
+  end
+  local nx = select(2, rally.nextStage(R))
+  if i ~= nx then
+    local it, prev = R.order[i], R.order[i - 1]
+    if not (it and prev and prev.kind ~= 'stage' and prev.outT and it.outT == prev.outT) then return nil end
+  end
+  return rally.dueFor(R, i)
+end
+M._dueAt = function(i) return dueAt(i) end
+
+-- (interface 4) The road section being driven: { label, due, leftS, distM, late, penaltyS }, nil when none is timed.
+-- leftS: to the start of the due minute (negative once in it or past it); late: whole minutes past it.
+local tdCache = { key = nil, v = nil }
+local frameN = 0
+local function transitDueNow()
+  if not timed() or prep or move or R.done or rally.over(R) then return nil end
+  local it, i = rally.current(R), R.pos
+  -- (additions B: driving to a stop is a road section too, timed to its "in" control)
+  if toStop then
+    if not (it and it.kind ~= 'stage' and toStop.item == it) or runLiveAny() then return nil end
+  elseif not (it and it.kind == 'stage') or runLiveAny() then
+    return nil
+  end
+  local dueT = dueAt(i)
+  if not dueT then return nil end
+  local t = R.clock.t
+  local late = math.max(0, math.floor(t / 60) - math.floor(dueT / 60))
+  -- (additions B, choice 3) driving to a stop that charges early, the car early: the line says to wait short of the
+  -- board (no wait card at a stop)
+  local early = toStop ~= nil and math.floor(t / 60) < math.floor(dueT / 60) and settings.get('earlyPenalty') == true
+    and not rally.earlyFree(R, it) and type(toStop.distM) == 'number' and toStop.distM <= runner.STOP_HINT_M or nil
+  local label, distM
+  if toStop then
+    label, distM = it.label .. (it.name and (' · ' .. it.name) or ''), toStop.distM
+  else
+    local ap = runner.approachInfo()
+    label, distM = it.ss .. ' ' .. tostring(stageName(it)), ap and ap.distM or nil
+  end
+  -- (now: the rally's clock, notes-rally-loop 7)
+  return { label = label, now = wt.hm(t), due = wt.hm(dueT), dueT = dueT, leftS = dueT - t,
+    distM = distM, late = late, penaltyS = late * (R.lateSPerMin or rally.LATE_S_PER_MIN), early = early }
+end
+-- (asked three or four times a frame -- the Messages line, the stream, the runner's frame and its keys: worked out
+-- once a frame, again only if the clock or where the rally is moved in between)
+function M.transitDue()
+  local key = string.format('%d|%s|%s|%s|%s|%s|%s', frameN, tostring(R), tostring(R and R.pos),
+    tostring(R and R.clock and R.clock.t), tostring(prep), tostring(move), tostring(toStop))
+  if tdCache.key ~= key then tdCache.key, tdCache.v = key, transitDueNow() end
+  return tdCache.v
+end
+runner.transitDueSource = function() return M.transitDue() end
 
 ------------------------------------------------------------------------------------------ the save
 
@@ -129,6 +363,8 @@ local function saveLoop()
   if not (R and R.mode == 'realistic' and loop) then return end
   local t = M.readFile(R.eventId)
   t.loop = copy(loop)
+  -- (a timed rally: the road penalties and the clock since the save, so a leave mid-loop keeps them)
+  if timed() then t.loop.road, t.loop.clock, t.loop.lastOut = copy(R.road), R.clock.t, R.lastOut end
   writeFile(R.eventId, t)
 end
 
@@ -155,17 +391,201 @@ function M.block(on)
     blocked = false
     return false
   end
-  if on and blocked then return true end      -- (off is always sent: a reload must never leave it blocked)
+  local mode = R and R.mode or nil
+  if on and blocked == mode then return true end      -- (off is always sent: a reload must never leave it blocked)
   local ok, err = pcall(function()
-    af.setGroup(M.FILTER, M.BLOCKED)
+    af.setGroup(M.FILTER, M.blockedFor(mode))
     af.addAction(0, M.FILTER, on == true)
   end)
   if not ok then log('E', logTag, 'rally: action filter: ' .. tostring(err)) return false end
-  blocked = on == true
+  blocked = on == true and (mode or true) or false
+  -- (notes-rally-loop 4) the slow-motion keys are blocked: a rally started or resumed in slow motion runs at normal
+  -- speed, or the player could never leave it
+  if on then M.normalSpeed() end
   log('I', logTag, 'rally: BeamNG\'s own recovery ' .. (blocked and 'blocked' or 'back'))
   return true
 end
-function M.blocked() return blocked end
+function M.blocked() return blocked ~= false end
+
+function M.normalSpeed()
+  local sta = rawget(_G, 'simTimeAuthority')
+  if type(sta) == 'table' and sta.set then
+    local okG, cur = pcall(function() return sta.get and sta.get() end)
+    if okG and cur and math.abs(cur - 1) < 1e-6 then return false end
+    pcall(sta.set, 1)
+    log('I', logTag, 'rally: game speed back to normal')
+    return true
+  end
+  local be_ = rawget(_G, 'be')
+  if be_ and be_.setSimulationTimeScale then pcall(be_.setSimulationTimeScale, be_, 1) return true end
+  return false
+end
+
+------------------------------------------------------------------------------------------ traffic on road sections
+
+-- (the owner, 2026-11-19: "an option that lets you enable traffic or not before you start a rally ... just for during
+-- transits") The start screen's "Traffic on road sections": R.traffic = 'on' | 'off'.
+--   On   the world's traffic left exactly as it is on the road sections and at the stops: BeamNG.Earth spawns its own
+--        regional traffic and spawns it again as the region changes (the game's stock traffic set up here would be
+--        the wrong cars, and a hitch). A world started with no traffic gets BeamNG.Earth's started for the rally
+--        and taken away after (trafficSpawn). Each stage still clears it and puts it back as it ends (runner
+--        trafficOff / trafficOn).
+--   Off  the game's traffic held at an active amount of 0 for the whole rally, transits included (runner's
+--        trafficHoldAt0, as it holds it for a stage: BeamNG.Earth's teleport hold and adaptive traffic both leave a 0
+--        set by someone else alone), the player's amount given back when the rally ends or is left. The amount is
+--        also kept in the settings (rallyTrafficStash) until it is given back, so a Lua reload does not lose it.
+--   nil  a save from before the choice: the world left alone, as On (as it was before).
+-- The start screen's default is the player's last pick (settings rallyTraffic), else the world's: On when its
+-- traffic is running. Parked cars are not traffic: as before, cleared for each stage only.
+M.TRAFFIC_HOLD_S = 1
+local traffic = nil    -- the rally's traffic: { mode = 'on' | 'off', t, stash = { traffic = the player's amount } }
+local TRAFFIC_ONLY = { traffic = true }
+
+-- Is the world's traffic running (on, or on its way)?
+function M.worldTraffic()
+  local g = rawget(_G, 'gameplay_traffic')
+  if type(g) ~= 'table' or not g.getState then return false end
+  local ok, st = pcall(g.getState)
+  return ok and st ~= nil and st ~= 'off'
+end
+
+-- The start screen's pick: the player's last, else the world's.
+function M.trafficChoice()
+  local last = settings.get('rallyTraffic')
+  if last == 'on' or last == 'off' then return last end
+  return M.worldTraffic() and 'on' or 'off'
+end
+
+local function stashSaved()
+  local v = settings.get('rallyTrafficStash')
+  return type(v) == 'number' and v or nil
+end
+
+local function trafficHold()
+  if not (traffic and traffic.mode == 'off') then return end
+  local ok, kept = pcall(runner.trafficHoldAt0, traffic.stash, TRAFFIC_ONLY, 'off for the rally')
+  if ok and kept and traffic.stash.traffic ~= nil then pcall(settings.set, 'rallyTrafficStash', traffic.stash.traffic) end
+end
+
+-- (notes-rally-loop 2) On with no traffic running: BeamNG.Earth's own regional traffic started for the rally, as its
+-- level start does with traffic on (its navgraph's choice.traffic and its start; the stock game's traffic only when
+-- BeamNG.Earth's is not there), and taken away when the rally ends. Returns true when started.
+local function trafficSpawn()
+  local g = rawget(_G, 'gameplay_traffic')
+  if type(g) ~= 'table' or not g.setupTraffic then return false end
+  local ng = rawget(_G, 'beamngEarth_navgraph')
+  if type(ng) == 'table' and type(ng.choice) == 'table' and type(ng._startTraffic) == 'function' then
+    local was = ng.choice.traffic
+    ng.choice.traffic = true
+    local ok = pcall(ng._startTraffic)
+    if ok and M.worldTraffic() then return true, was end
+    ng.choice.traffic = was
+  end
+  local ok = pcall(g.setupTraffic, -1)
+  return ok and M.worldTraffic(), nil
+end
+-- (the game's deleteVehicles leaves its state 'on' until a frame later: its onTrafficStopped hook at once, so a start
+-- straight after, as on Continue, sees none. Still spawning: the cars would arrive after the delete, so the state is
+-- left as it is and the delete done again once they are on, for up to TRAFFIC_LATE_S; a rally starting meanwhile
+-- takes them as its own. Loading: stopped at once, nothing comes.)
+M.TRAFFIC_LATE_S = 30
+local lateDelete = nil    -- { t = seconds left, choiceWas }
+local function trafficState(g)
+  local okS, st = pcall(function() return g and g.getState and g.getState() end)
+  return okS and st or nil
+end
+local function trafficDelete(choiceWas)
+  local g = rawget(_G, 'gameplay_traffic')
+  if type(g) ~= 'table' then return end
+  if g.deleteVehicles then pcall(g.deleteVehicles) end
+  if trafficState(g) == 'spawning' then
+    lateDelete = { t = M.TRAFFIC_LATE_S, choiceWas = choiceWas }
+    return
+  end
+  local ext = rawget(_G, 'extensions')
+  if type(ext) == 'table' and type(ext.hook) == 'function' then pcall(ext.hook, 'onTrafficStopped')
+  elseif g.onTrafficStopped then pcall(g.onTrafficStopped) end
+end
+local function trafficUnspawn(t)
+  local ng = rawget(_G, 'beamngEarth_navgraph')
+  if t.choiceWas ~= nil and type(ng) == 'table' and type(ng.choice) == 'table' then ng.choice.traffic = t.choiceWas end
+  trafficDelete(t.choiceWas)
+end
+local function lateDeleteTick(dt)
+  if not lateDelete then return end
+  lateDelete.t = lateDelete.t - (dt or 0)
+  local st = trafficState(rawget(_G, 'gameplay_traffic'))
+  if st == 'on' then
+    lateDelete = nil
+    trafficDelete()
+    log('I', logTag, 'rally: the traffic that finished spawning after the rally taken away')
+  elseif lateDelete.t <= 0 or st ~= 'spawning' then
+    lateDelete = nil
+  end
+end
+local function spawnedWord(was) return was == true and 'on' or was == false and 'off' or 'none' end
+
+local function trafficStart()
+  if not R or traffic then return end
+  traffic = { mode = R.traffic == 'off' and 'off' or 'on', t = 0, stash = {} }
+  if traffic.mode == 'on' then
+    local kept = settings.get('rallyTrafficSpawned')
+    if lateDelete and R.traffic == 'on' and M.worldTraffic() then
+      -- (Continue while the rally's traffic was still spawning: still the rally's)
+      traffic.spawned, traffic.choiceWas = true, lateDelete.choiceWas
+      lateDelete = nil
+      local ng = rawget(_G, 'beamngEarth_navgraph')
+      if traffic.choiceWas ~= nil and type(ng) == 'table' and type(ng.choice) == 'table' then ng.choice.traffic = true end
+      pcall(settings.set, 'rallyTrafficSpawned', spawnedWord(traffic.choiceWas))
+      log('I', logTag, 'rally: traffic on road sections: the one started for the rally, kept')
+    elseif kept ~= false and kept ~= nil and M.worldTraffic() then
+      -- (started by this rally before a Lua reload: still ours to take away)
+      traffic.spawned = true
+      if kept == 'on' then traffic.choiceWas = true elseif kept == 'off' then traffic.choiceWas = false end
+      log('I', logTag, 'rally: traffic on road sections: the one started for the rally, kept')
+    elseif not M.worldTraffic() and R.traffic == 'on' then
+      local ok, was = trafficSpawn()
+      if ok then
+        traffic.spawned, traffic.choiceWas = true, was
+        pcall(settings.set, 'rallyTrafficSpawned', spawnedWord(was))
+      else
+        runner.say('Traffic could not be started for the rally.', 5, 'warning')
+      end
+      log('I', logTag, 'rally: traffic on road sections: ' .. (ok and 'started for the rally' or 'could not be started'))
+    else
+      log('I', logTag, "rally: traffic on road sections: the world's own, left as it is" ..
+        (R.traffic == nil and ' (a save from before the choice)' or ''))
+    end
+  else
+    -- (a Lua reload during a rally left the player's amount here)
+    traffic.stash.traffic = stashSaved()
+    log('I', logTag, 'rally: no traffic for the rally')
+    trafficHold()
+  end
+end
+
+-- The player's traffic as it was: the amount back (only where it is still our 0). Also with none under way, for an
+-- amount a Lua reload left in the settings.
+local function trafficEnd()
+  local t = traffic
+  traffic = nil
+  local kept = settings.get('rallyTrafficSpawned')
+  if (t and t.spawned) or (kept ~= false and kept ~= nil) then
+    local was = nil
+    if kept == 'on' then was = true elseif kept == 'off' then was = false end
+    trafficUnspawn(t and t.spawned and t or { choiceWas = was })
+    pcall(settings.set, 'rallyTrafficSpawned', false)
+    log('I', logTag, 'rally: the traffic started for the rally taken away')
+  end
+  local amount = t and t.stash and t.stash.traffic
+  if amount == nil then amount = stashSaved() end
+  if amount ~= nil then
+    pcall(runner.trafficGiveBack, { traffic = amount })
+    log('I', logTag, "rally: the player's traffic back (" .. tostring(amount) .. ')')
+  end
+  if stashSaved() ~= nil then pcall(settings.set, 'rallyTrafficStash', false) end
+end
+function M.trafficState() return traffic end
 
 ------------------------------------------------------------------------------------------ the car
 
@@ -241,6 +661,8 @@ end
 ------------------------------------------------------------------------------------------ the rally
 
 function M.active() return R end
+-- (tests only: a rally put in place as it would be after a start or a continue)
+function M._setRally(r) R, wait, world, worldDue, worldFailed, skippedAt = r, nil, nil, false, false, nil end
 function M.inRun()
   local r = runner.current()
   return R ~= nil and r ~= nil and r.inRally == true
@@ -257,7 +679,7 @@ local function load(id)
 end
 
 local function stageOf(item) return item and select(2, menu.findStage(R and R.eventId or (ev and ev.id), item.stageId)) end
-local function stageName(item)
+stageName = function(item)
   local s = R and stageOf(item)
   return s and s.name or item.stageId
 end
@@ -312,12 +734,35 @@ function M.startInfo(id)
   end
   local nCrews = 0
   for _ in pairs(crews) do nCrews = nCrews + 1 end
+  -- (plan E, the start screen's note: 'stored' (the stages' weather is in the pack), 'none' (no stored weather: the
+  -- player's own), 'noHooks' (this BeamNG.Earth cannot set the time and weather); nil: nothing to say -- the setting
+  -- off, or an untimed rally with no stored weather)
+  local weather = nil
+  local stored = false
+  for _, it in ipairs(r and r.order or {}) do
+    if it.kind == 'stage' and type(it.weather) == 'table' then stored = true break end
+  end
+  if r and settings.get('realWorld') ~= false and (r.timed or stored) then
+    if not earth.hasSceneHooks() then weather = 'noHooks' elseif stored then weather = 'stored' else weather = 'none' end
+  end
   return { id = id, name = e.name, canRun = r ~= nil, why = (not r) and 'This rally has no event file, so it ' ..
       'cannot be run as a full rally.' or nil,
     car = car, class = car and rally.guessClass(car.drivetrain) or 'L4WD', classes = rally.CLASSES,
     cancelled = rally.cancelledPasses(e), stages = stages, days = nd, services = svc, crews = nCrews,
     start = type(e.rallyStart) == 'table' and e.rallyStart.name or nil, toRecce = toRecce, heldOut = held,
-    saved = M.saved(id), inProgress = R and R.eventId or nil }
+    saved = M.saved(id), inProgress = R and R.eventId or nil,
+    -- (interface 7: a timed rally's real start; plan E: its weather note)
+    startsAt = M.startsAt(r), weather = weather,
+    -- (Traffic on road sections: the pick to show, and whether the world has traffic -- On with none: a note)
+    traffic = { pick = M.trafficChoice(), world = M.worldTraffic() } }
+end
+
+-- A timed rally's start for the start screen: { text = 'Fri 6 Feb 2026, 18:00 local', light = 'night' | 'dusk' |
+-- 'day' | 'dawn' (the sun's height at the start's place, nil without one) }, nil untimed.
+function M.startsAt(r)
+  if not (r and r.timed and r.clock and r.clock.t) then return nil end
+  local pl = placeOf(r)
+  return { text = wt.startText(r.clock.t), light = pl and wt.light(r.clock.t, r.tz, pl.lat, pl.lon) or nil }
 end
 
 ------------------------------------------------------------------------------------------ getting the stages ready
@@ -449,8 +894,11 @@ local function boardM(p)
   return math.sqrt((x - b.x) ^ 2 + (y - b.y) ^ 2)
 end
 
--- At the stop the rally is at (the car there): repaired, the rally saved, the time card up.
-local function arrive()
+-- At the stop the rally is at (the car there): repaired, the rally saved, the time card up. driven: the car drove in
+-- and stopped at its board (or near it, the time card's button) -- then, with a due time known, it is checked in at
+-- the stop's "in" control first, so the save at the service holds it. A teleport (a Realistic recovery, a stop with no
+-- place, a move) checks nothing in. No wait at a stop: the clock jumps to the out time anyway.
+local function arrive(driven)
   move, toStop = nil, nil
   if not R then return end
   local it = rally.current(R)
@@ -458,6 +906,11 @@ local function arrive()
   if runner.current() and not runLive() then pcall(runner.abort, true) end
   gpsOff()
   stopSite(it)
+  local key = 'stop' .. R.pos
+  if driven and timed() and not (type(R.road) == 'table' and R.road[key]) then
+    local dueT = dueAt(R.pos)
+    if dueT then M.checkIn(it, nil, R.clock.t, dueT, key) end
+  end
   if it.final then
     -- (#71: checked in at the final service: the rally is done here, kept as finished)
     rally.serviced(R)
@@ -520,6 +973,7 @@ local function armTransit()
   -- (#45, #70) Into the ATC the right way: the GPS through a point a little before it on its own road, then to the
   -- ATC. The road map round the ATC is there only once the car is near: looked for again on the way (M.update).
   local okV, via0 = pcall(M.approachVia, stage, lat, lon, kind)
+  if not (okV and via0) then okV, via0 = pcall(M.straightVia, stage, lat, lon, kind) end
   local tg = { via = okV and via0 or nil }
   local function setGps()
     local via = tg.via
@@ -531,10 +985,10 @@ local function armTransit()
   -- (#42: armed at the flying finish, the stage's own arrows to its stop control clear the GPS: set again once that
   -- run has let them go, M.update)
   tg.set, tg.again = setGps, not runLive()
-  if not tg.via and kind == 'ATC' then tg.lookVia = { stage = stage, lat = lat, lon = lon, kind = kind, tries = 0 } end
+  if (not tg.via or tg.via.straight) and kind == 'ATC' then tg.lookVia = { stage = stage, lat = lat, lon = lon, kind = kind, tries = 0 } end
   transitGps = tg
   local ok = runner.armApproach(ev, stage, { sticky = true, title = title, rally = true,
-    startOpts = { rally = true, ssLabel = it.ss, keepDamage = true },
+    startOpts = { rally = true, ssLabel = it.ss, keepDamage = true, casual = R.mode == 'casual' },
     onStart = function() M.onStageLoaded() end,
     -- (#40: loaded at the ATC, behind the time control card; #58: once the car has stopped there and the player
     -- said yes to "Load the stage?")
@@ -595,7 +1049,38 @@ end
 M.APPROACH_VIA_BACK_M = { 60, 45, 30 }
 M.APPROACH_VIA_LOOK_M = 1500      -- (the road map round the ATC looked at from this close)
 M.APPROACH_VIA_ON_ROAD_M = 4      -- (the walked point still this close to a road running the same way)
-M.APPROACH_VIA_TRIES = 5          -- (looked for at most this many times on the way in: M.update)
+M.APPROACH_VIA_TRIES = 20         -- (looked for at most this many times on the way in: M.update)
+M.APPROACH_VIA_EVERY_S = 2         -- (one look this often: the road map round the ATC comes in as the car nears it)
+M.APPROACH_STRAIGHT_M = 60         -- (no road map yet: a point this far back on the line from the start through the ATC)
+M.APPROACH_STRAIGHT_DEG = 25       -- (... only where the stage's first 50 m run within this of the ATC-to-start way)
+
+-- (notes-rally-loop 5) Before the road map round the ATC is in (on the official BeamNG.Earth only the roads near the car
+-- are in it, so the road-map point was never found and the GPS went straight in, often to the far side of the board):
+-- a point APPROACH_STRAIGHT_M back from the ATC on the line from the stage's start through it, which on the ATC's own
+-- road is the way in. Replaced by the road-map point once that is found.
+function M.straightVia(stage, lat, lon, kind)
+  if kind ~= 'ATC' then return nil end
+  local ctl = stage.controls or {}
+  local st = ctl.start or (stage.line and stage.line[1] and { lat = stage.line[1][1], lon = stage.line[1][2] })
+  if not st then return nil end
+  local d = geo.metres(st.lat, st.lon, lat, lon)
+  if not d or d < 20 then return nil end
+  -- (only where the road runs straight on through the ATC into the stage: the stage's first 50 m heading the same way
+  -- as ATC to start, within APPROACH_STRAIGHT_DEG; an ATC round a corner from the start gets no point, as before)
+  local line = stage.line
+  if not (line and #line >= 2) then return nil end
+  local k = 2
+  while k < #line and geo.metres(line[1][1], line[1][2], line[k][1], line[k][2]) < 50 do k = k + 1 end
+  local c = math.cos(math.rad(lat))
+  local ax, ay = (st.lon - lon) * c, st.lat - lat
+  local bx, by = (line[k][2] - line[1][2]) * c, line[k][1] - line[1][1]
+  local la, lb = math.sqrt(ax * ax + ay * ay), math.sqrt(bx * bx + by * by)
+  if la < 1e-9 or lb < 1e-9 or (ax * bx + ay * by) / (la * lb) < math.cos(math.rad(M.APPROACH_STRAIGHT_DEG)) then
+    return nil
+  end
+  local f = M.APPROACH_STRAIGHT_M / d
+  return { lat = lat + (lat - st.lat) * f, lon = lon + (lon - st.lon) * f, backM = M.APPROACH_STRAIGHT_M, straight = true }
+end
 function M.approachVia(stage, lat, lon, kind)
   local ctl = stage.controls or {}
   local line = stage.line
@@ -638,7 +1123,8 @@ local function startHere(it)
   runner.disarmApproach('the rally moved on')
   toStop = nil
   card = nil
-  local ok, why = runner.start(ev, stage, { rally = true, ssLabel = it.ss, keepDamage = true })
+  local ok, why = runner.start(ev, stage, { rally = true, ssLabel = it.ss, keepDamage = true,
+    casual = R.mode == 'casual' })
   if not ok then return false, why end
   M.onStageLoaded()
   if M.ui.loading then M.ui.loading('stage', it, stage) end
@@ -671,7 +1157,91 @@ function M.atControl(it, stage)
   local tc = { ss = it.ss, name = stage.name, km = stage.lengthM and math.floor(stage.lengthM / 100 + 0.5) / 10,
     day = it.day, rally = R.name, timeIn = r and runner.formatClock(runner.clock() or 0) or nil }
   log('I', logTag, 'rally: at the time control of ' .. tostring(it.ss) .. ', the stage loads behind its card')
+  -- (interface 3: a timed rally's check-in -- on time or late at once; early: wait for your minute, or check in
+  -- early at a cost when the setting says so: M.continueOk)
+  wait = nil
+  local dueT = timed() and R.order[R.pos] == it and dueAt(R.pos) or nil
+  if dueT then
+    tc.due = wt.hm(dueT)
+    if math.floor(R.clock.t / 60) < math.floor(dueT / 60) then
+      wait = { item = it, dueT = dueT, tc = tc }
+      tc.wait = M.waitCard(wait)
+      log('I', logTag, string.format('rally: early at the time control of %s: due %s, the clock %s', tostring(it.ss),
+        tc.due, wt.hm(R.clock.t)))
+    else
+      M.checkIn(it, tc, R.clock.t, dueT)
+    end
+  end
   if M.ui.atControl then M.ui.atControl(tc, stage) end
+end
+
+-- The check-in at the time control: the result on the card and in the rally (rally.checkIn). key: a stop's ('stop<i>').
+function M.checkIn(it, tc, inT, dueT, key)
+  local res = rally.checkIn(R, it, inT, dueT, settings.get('earlyPenalty') == true, key)
+  if tc then
+    tc.result, tc.wait = res, nil
+    tc.timeIn = wt.hms(inT)
+  end
+  log('I', logTag, string.format('rally: checked in at %s %s, due %s: %s%s', tostring(it.ss or it.label), wt.hm(inT),
+    wt.hm(dueT), res.kind, res.penaltyS > 0 and string.format(' (+%d s)', res.penaltyS) or ''))
+  return res
+end
+
+function M.waiting() return wait end
+
+-- The card's wait: { leftS, due }, and with the early penalty on what checking in now costs: earlyMin (whole minutes
+-- early), earlyCostS -- the card then offers Continue at that cost and no skip.
+function M.waitCard(w)
+  local out = { leftS = math.max(0, math.ceil(w.dueT - R.clock.t)), due = w.tc and w.tc.due or wt.hm(w.dueT) }
+  if settings.get('earlyPenalty') == true then
+    out.earlyMin = math.max(0, math.floor(w.dueT / 60) - math.floor(R.clock.t / 60))
+    out.earlyCostS = out.earlyMin * (R.earlySPerMin or rally.EARLY_S_PER_MIN)
+  end
+  return out
+end
+
+-- (interface 3) The wait skipped: the clock on to the due minute, checked in on time. No-op (false) with no wait, and
+-- refused with the early penalty on (a free skip would be an early check-in at no cost: Continue does it, at its cost).
+function M.skipWait()
+  if not (wait and timed()) then return false end
+  if settings.get('earlyPenalty') == true then return false end
+  local w = wait
+  wait = nil
+  if R.clock.t < w.dueT then R.clock.t = w.dueT end
+  M.checkIn(w.item, w.tc, R.clock.t, w.dueT)
+  skippedAt = realT
+  -- (a jump of the clock: the sky follows once the card goes and the clock runs)
+  setWorld()
+  return true
+end
+
+-- The game's Interact (Shift+E) is ours while waiting at the board -- a skip, or nothing with the early penalty on --
+-- and for a moment after a skip: the page's own key press arrives too, and must not fall through to the start line's
+-- skip of the countdown.
+M.INTERACT_HOLD_S = 0.5
+function M.interactHeld()
+  if wait then return true end
+  return skippedAt ~= nil and realT - skippedAt < M.INTERACT_HOLD_S
+end
+
+-- The time control card's Continue while you wait for your minute: with the early penalty on, the check-in now (early,
+-- at its cost) and on; off, not yet (the card counts down and checks you in itself, or the wait is skipped).
+function M.continueOk()
+  if not wait then return true end
+  if settings.get('earlyPenalty') == true then
+    local w = wait
+    wait = nil
+    M.checkIn(w.item, w.tc, R.clock.t, w.dueT)
+    return true
+  end
+  return false
+end
+
+-- The card gone with the wait still up (the page closed under it): the penalty on, an early check-in; off, the wait
+-- skipped -- the stage is under way, so a check-in there must be.
+function M.leftBoard()
+  if not wait then return end
+  if settings.get('earlyPenalty') == true then M.continueOk() else M.skipWait() end
 end
 
 -- (runner: the rally's stage loaded, by the transit's arrival or startHere)
@@ -682,6 +1252,8 @@ function M.onStageLoaded()
   card = nil
   r.rally = { mode = R.mode }
   r.rallyKey = 'rally:' .. R.mode .. ':' .. tostring(r.ssLabel)
+  -- (the sky at the stage's start: the rally clock as the stage loads)
+  setWorld()
 end
 
 ------------------------------------------------------------------------------------------ start, continue, leave
@@ -692,7 +1264,10 @@ finish = function()
   t.finished[#t.finished + 1] = rally.finished(R, os.date('!%Y-%m-%dT%H:%M:%SZ'))
   writeFile(R.eventId, t)
   M.block(false)
+  trafficEnd()
   gpsOff()
+  wait = nil
+  setWorld(true)
   runner.disarmApproach('the rally is over')
   toStop, move = nil, nil
   log('I', logTag, string.format('rally: %s finished, %.1f s%s', R.name, rally.totalS(R),
@@ -706,9 +1281,12 @@ function M.start(id, opts)
   if not load(id) then return false, 'that rally is not on this computer any more' end
   local car = M.car()
   if not car then return false, 'get in a car first' end
+  -- (traffic: the start screen's pick, kept as the default next time; none sent: the default)
+  local picked = opts and (opts.traffic == 'on' or opts.traffic == 'off') and opts.traffic or nil
   local r, why = rally.new(ev, { mode = opts and opts.mode, class = opts and opts.class,
-    cancelled = opts and opts.cancelled, car = car })
+    cancelled = opts and opts.cancelled, traffic = picked or M.trafficChoice(), car = car })
   if not r then return false, why end
+  if picked and settings.get('rallyTraffic') ~= picked then pcall(settings.set, 'rallyTraffic', picked) end
   if question then pcall(runner.askLayout, false) end
   R, card, recoveredAt, question, move, toStop = r, nil, nil, nil, nil, nil
   savedResults = nil
@@ -716,9 +1294,12 @@ function M.start(id, opts)
   local t0 = M.readFile(id)
   if t0.current or t0.loop then t0.current, t0.loop = nil, nil writeFile(id, t0) end
   loop = { results = {} }
+  wait = nil
   M.block(true)
-  log('I', logTag, string.format('rally: %s started (%s, %s, cancelled stages %s)', R.name, R.mode, R.class,
-    R.cancelled))
+  trafficStart()
+  log('I', logTag, string.format('rally: %s started (%s, %s, cancelled stages %s)%s', R.name, R.mode, R.class,
+    R.cancelled, R.timed and (', timed from ' .. wt.startText(R.clock.t)) or ''))
+  setWorld()
   -- (the page stays on the time card, which follows the stages being got ready: #34)
   getReady(function() goToStop() end)
   return true
@@ -741,11 +1322,23 @@ function M.resume(id)
   if question then pcall(runner.askLayout, false) end
   R, card, recoveredAt, question, move, toStop = t.current, nil, nil, nil, nil, nil
   savedResults = t.current.results
+  wait = nil
   M.block(true)
+  -- (continued, even over itself still under way: the traffic as the player had it first, then the save's choice)
+  trafficEnd()
+  trafficStart()
   loop = { results = {} }
   if R.mode == 'realistic' and type(t.loop) == 'table' then
     local missedBefore = R.missed or 0
     rally.replayLoop(R, t.loop, board)
+    -- (a timed rally: the road penalties, the clock and the last time out as the loop left them)
+    if timed() then
+      if type(t.loop.road) == 'table' then R.road = t.loop.road end
+      if type(t.loop.clock) == 'number' then R.clock.t = t.loop.clock end
+      -- (a stage left mid-run was scored as recovered by the replay: it has no time out, and the one saved is the
+      -- stage before it's)
+      if t.loop.lastOut ~= nil and not t.loop.started then R.lastOut = t.loop.lastOut end
+    end
     log('I', logTag, string.format('rally: resumed mid-loop, %d stage(s) kept%s', #(t.loop.results or {}),
       t.loop.started and ', the stage left during scored under Super Rally' or ''))
     if rally.over(R) then
@@ -758,9 +1351,20 @@ function M.resume(id)
     -- them again on top of themselves)
     save()
   end
+  setWorld()
+  -- (the clock as the save left it: a recce in getReady can run it on, and that is no road section's time)
+  local savedClock = R.clock and R.clock.t
   getReady(function()
     local it = rally.current(R)
-    if it and it.kind ~= 'stage' then goToStop()
+    if it and it.kind ~= 'stage' then
+      -- (a timed rally left on the road section to this stop: checked in at it at the rally clock saved, the lateness
+      -- so far counted -- never early, the car would have waited short of the board)
+      local key = 'stop' .. R.pos
+      local dueT = timed() and not (type(R.road) == 'table' and R.road[key]) and dueAt(R.pos) or nil
+      if dueT then
+        M.checkIn(it, nil, math.max(savedClock or R.clock.t, math.floor(dueT / 60) * 60), dueT, key)
+      end
+      goToStop()
     elseif it then
       -- (left between two stages: back at the last stop's place, the transit to the stage driven from there -- a
       -- leave and continue is no skip of a road section, #33)
@@ -788,15 +1392,21 @@ end
 -- Leave the rally (continue later): BeamNG's recovery back, the run stopped. The save stays at its last service.
 function M.quit()
   if not R then return true end
+  -- (Realistic, timed, left on a road section: the clock as it is now kept with the loop, so a Continue checks in at
+  -- the next stop with the lateness so far)
+  if loop and not R.done and timed() and not runLiveAny() then pcall(saveLoop) end
+  -- (the sky given back first: nothing after may leave it on the rally's date)
+  pcall(setWorld, true)
   if M.inRun() then pcall(runner.abort, true) end
   runner.disarmApproach('the rally was left')
   if toStop or (R and not R.done) then gpsOff() end
   -- (the service's board and tent: taken away now, unless the rally ended there and the car stands by it)
   local s = props.site('service')
   if s and s.rally and not s.left then props.dropSite('service') end
-  R, card, recoveredAt, loop, move, toStop, prep = nil, nil, nil, nil, nil, nil, nil
+  R, card, recoveredAt, loop, move, toStop, prep, wait = nil, nil, nil, nil, nil, nil, nil, nil
   if question then question = nil pcall(runner.askLayout, false) end
   M.block(false)
+  trafficEnd()
   return true
 end
 
@@ -855,7 +1465,7 @@ function M.goNext()
       -- (not there yet: a service is driven to, an overnight or a stop with no place is gone to)
       if (it.kind == 'service' or it.kind == 'overnight') and it.place and not recoveredAt then
         if not toStop then driveToStop()
-        elseif (toStop.distM or math.huge) <= M.ARRIVE_NEAR_M and M.stoppedNow() then arrive() end
+        elseif (toStop.distM or math.huge) <= M.ARRIVE_NEAR_M and M.stoppedNow() then arrive(true) end
         return true
       end
       goToStop()
@@ -864,6 +1474,7 @@ function M.goNext()
     local wasPlaced = it.place and it.place.lat
     leaveStopSite()
     rally.serviceOut(R)
+    setWorld()                 -- (a timed rally: out at the stop's scheduled time)
     recoveredAt = nil
     it = rally.current(R)
     if not it then return false, 'the rally is over' end
@@ -877,10 +1488,16 @@ end
 -- way on armed: the next stage's transit, or the service's.
 function M.onFinished(res)
   if not R then return end
+  -- (a timed rally: the stage's time out, where the road section on from it starts)
+  if timed() then
+    local cur = rally.current(R)
+    res.outT = cur and cur.kind == 'stage' and rally.timeOut(cur, res.startT, res.finishT) or nil
+  end
   local it, why = rally.stageDone(R, res)
   if not it then log('W', logTag, 'rally: ' .. tostring(why)) return end
   if loop and not rally.over(R) then
-    loop.results[#loop.results + 1] = { timeS = res.timeS, stageS = res.stageS, penaltyS = res.penaltyS }
+    loop.results[#loop.results + 1] = { timeS = res.timeS, stageS = res.stageS, penaltyS = res.penaltyS,
+      outT = res.outT }
     loop.started = false
     saveLoop()
   end
@@ -975,7 +1592,7 @@ function M.recoverKey()
   local r = runner.current()
   -- (Casual, and Realistic between the check-in and the start -- toAtc, toStart, waitStart: not timed yet, so free)
   if R.mode == 'casual' or r.state ~= 'running' then
-    runner.backOnRoad()           -- (free: no reset penalty in a rally run)
+    runner.backOnRoad()           -- (Casual on the timed stage: +5 s, runner.BACK_ON_ROAD_PENALTY_S; else free)
     return true
   end
   -- Realistic, on the stage: the question (#59: the game paused under it, answered on its card: no time-out, and the
@@ -1005,8 +1622,43 @@ runner.askKey = function() return question and question.key or nil end
 
 -- (main.onUpdate) a teleport to a stop settling, a service driven to, a stage started (Realistic: from then on
 -- leaving scores it under Super Rally).
-function M.update(dt)
+function M.update(dt, dtSim)
+  lateDeleteTick(dt)
   dt = dt or 0
+  realT = realT + dt
+  frameN = frameN + 1
+  -- (traffic Off: held at 0 against BeamNG.Earth and the player putting it back, as the runner holds it for a stage)
+  if traffic and traffic.mode == 'off' then
+    traffic.t = traffic.t + dt
+    if traffic.t >= M.TRAFFIC_HOLD_S then traffic.t = 0 pcall(trafficHold) end
+  end
+  if timed() and not R.done then
+    if wait then
+      -- (waiting for your minute at the board: the clock runs on real time under the card, and checks you in on it)
+      R.clock.t = R.clock.t + dt
+      wait.tc.wait = M.waitCard(wait)
+      if R.clock.t >= wait.dueT then
+        local w = wait
+        wait = nil
+        M.checkIn(w.item, w.tc, w.dueT, w.dueT)
+      end
+    else
+      local paused = clockPausedNow()
+      if not paused then R.clock.t = R.clock.t + (dtSim or dt) end
+      -- (BeamNG.Earth's sky runs on wall-clock time from where it was set and knows nothing of pauses: set again as a
+      -- loading screen or a menu goes -- a jump made under it as a jump, else as a catch-up)
+      -- (a jump is set as soon as the clock runs, paused before or not: a skip at the board can come unpaused)
+      -- (and the setting turned off or on in the menu: given back, or set, as it closes)
+      if not paused and worldDue then setWorld()
+      elseif wasPaused and not paused and (world or (realWorldOn() and timed())) then setWorld(false, true) end
+      -- (and whenever the two have drifted apart all the same while the clock runs: a game pause of its own, slow
+      -- motion. Never while it is paused: the sky would be set to a clock standing still)
+      if not paused and world and world.t and math.abs((world.t + (realT - world.real)) - R.clock.t) > M.WORLD_DRIFT_S then
+        setWorld(false, true)
+      end
+      wasPaused = paused
+    end
+  end
   -- ("Load the stage?" whose approach went -- the rally moved on, a run started: nothing left to answer)
   if question and question.loadAsk then
     local a = runner.approaching()
@@ -1031,10 +1683,13 @@ function M.update(dt)
         local far = not (ap and ap.distM) or ap.distM > 300
         -- (#70: the road map round the ATC in now: its direction point on the road, and the GPS set through it)
         local lv = transitGps.lookVia
-        if lv and far and ap and ap.distM and ap.distM <= M.APPROACH_VIA_LOOK_M then
-          -- (a few looks once inside the radius, not one every poll for the whole approach: the road map round the
-          -- ATC is in by then or is not coming, and the walk along it is not free)
+        local due = lv and (lv.nextT or 0) <= (transitGps.clock or 0)
+        transitGps.clock = (transitGps.clock or 0) + M.ARRIVE_POLL_S
+        if lv and due and far and ap and ap.distM and ap.distM <= M.APPROACH_VIA_LOOK_M then
+          -- (a look every APPROACH_VIA_EVERY_S once inside the radius, at most APPROACH_VIA_TRIES: the road map round
+          -- the ATC comes in as the car nears it, and the walk along it is not free)
           lv.tries = (lv.tries or 0) + 1
+          lv.nextT = transitGps.clock + M.APPROACH_VIA_EVERY_S
           local okV, via = pcall(M.approachVia, lv.stage, lv.lat, lv.lon, lv.kind)
           if okV and via then
             transitGps.lookVia, transitGps.via = nil, via
@@ -1043,7 +1698,8 @@ function M.update(dt)
               tostring(cur.ss), via.backM or 0))
           elseif lv.tries >= M.APPROACH_VIA_TRIES then
             transitGps.lookVia = nil
-            log('I', logTag, 'rally: no approach point found for ' .. tostring(cur.ss) .. ': the GPS goes straight in')
+            log('I', logTag, 'rally: no road-map approach point for ' .. tostring(cur.ss) .. (transitGps.via
+              and ': the GPS kept through the point on the line before its time control' or ': the GPS goes straight in'))
           end
         elseif lv and not far then
           transitGps.lookVia = nil
@@ -1093,12 +1749,14 @@ function M.update(dt)
         local rr = runner.current()
         local cardUp = rr and rr.resultsOpen       -- (the stage's card read first: arriving takes the run away)
         if not runLive() and not cardUp and stopped and there then
-          arrive()
+          arrive(true)
         end
       end
     end
   end
 end
+
+M.WORLD_DRIFT_S = 60
 
 -- The service being driven to, for the HUD's line and the game's Messages app: { name, distM, rally } or nil.
 local tInfo
@@ -1256,7 +1914,8 @@ end
 function M.debugLine()
   if not R then return nil end
   local it = rally.current(R)
-  return string.format('%s · %s · at %s%s%s%s', R.name, R.mode, tostring(itemLabel(it) or 'the end'),
+  return string.format('%s · %s · at %s%s%s%s%s', R.name, R.mode, tostring(itemLabel(it) or 'the end'),
+    timed() and (' · ' .. wt.dateText(R.clock.t) .. ' ' .. wt.hm(R.clock.t)) or '',
     prep and ' · getting ready' or '', move and ' · moving to the stop' or '',
     toStop and string.format(' · driving to %s (%.0f m)', toStop.item.label, toStop.distM or -1) or '')
 end
@@ -1277,6 +1936,31 @@ function M.uiCard()
     local row = { kind = it.kind, label = it.kind == 'stage' and it.ss or it.label, name = it.kind == 'stage'
       and stageName(it) or it.name, km = it.km, day = it.day or (it.kind == 'start' and firstDay or nil),
       next = i == R.pos or nil, done = i < R.pos or nil, final = it.final or nil }
+    if timed() then
+      -- (interface 2: a timed rally's controls; additions B: a stop's at its "in" control, as a stage's)
+      local key = it.kind == 'stage' and it.ss or ('stop' .. i)
+      local road = it.kind ~= 'start' and type(R.road) == 'table' and R.road[key] or nil
+      if road then
+        -- (roadKind: as checked in -- the card cannot tell late from early by 'HH:MM' over midnight)
+        row.due, row.timeIn, row.roadPenaltyS = wt.hm(road.dueT), wt.hm(road.inT), road.penaltyS
+        row.roadKind = road.kind
+      elseif it.kind ~= 'start' then
+        row.due = wt.hm(dueAt(i))
+      end
+      if it.kind ~= 'stage' and it.kind ~= 'start' then row.inType = it.inType end
+      -- (a row ahead whose due isn't known yet: its road section's target instead of "–". Not a stop already done
+      -- with no check-in -- a teleport there leaves its row blank)
+      if not road and not row.due and i >= R.pos and it.kind ~= 'start'
+        and not (i == R.pos and it.kind ~= 'stage' and rally.isServiced(R)) then
+        local prev = R.order[i - 1]
+        if it.kind == 'stage' then
+          row.targetMin = (prev and prev.kind ~= 'stage') and it.outTargetMin or it.targetMin
+        else
+          row.targetMin = it.inTargetMin
+        end
+      end
+      if it.kind ~= 'stage' and it.outT and not it.final then row.outAt = wt.hm(it.outT) end
+    end
     if it.kind == 'stage' then
       local res = R.results[it.ss]
       if res then
@@ -1285,6 +1969,8 @@ function M.uiCard()
         if stp then row.pos, row.of = stp.pos, stp.of end
       end
       row.cancelledReal = it.cancelledReal
+      -- (plan E: the stage's stored weather in a word, for the time card)
+      row.weather = M.weatherWord(weatherOf(it))
     end
     rows[#rows + 1] = row
   end
@@ -1321,32 +2007,59 @@ function M.uiCard()
   if phase == 'transit' and ap then transit = { name = ap.name, distM = ap.distM }
   elseif phase == 'toStop' and toStop then transit = { name = cur.label .. (cur.name and (' · ' .. cur.name) or ''),
     distM = toStop.distM } end
+  local td = transit and (phase == 'transit' or phase == 'toStop') and M.transitDue() or nil
+  if td then transit.due, transit.leftS, transit.late, transit.penaltyS = td.due, td.leftS, td.late, td.penaltyS end
+  -- (plan E: the next stage's stored weather)
+  if transit then transit.weather = M.weatherWord(weatherOf(weatherItem(R))) end
+  -- (additions B) at a stop checked in: its check-in for the stop card
+  local checkIn = nil
+  local ciRoad = timed() and cur and cur.kind ~= 'stage' and type(R.road) == 'table' and R.road['stop' .. R.pos] or nil
+  if ciRoad then
+    local inType = ciRoad.inType or cur.inType
+    checkIn = { inType = inType, due = wt.hm(ciRoad.dueT),
+      timeIn = wt.hms(ciRoad.inT),
+      kind = ciRoad.kind, min = ciRoad.min, penaltyS = ciRoad.penaltyS, free = ciRoad.free,
+      outAt = (cur.outT and not cur.final) and wt.hm(cur.outT) or nil }
+  end
   return {
     id = R.eventId, name = R.name, mode = R.mode, class = R.class, car = R.car and R.car.name,
     cancelled = R.cancelled, rows = rows, pos = R.pos, phase = phase, transit = transit,
     at = cur and { kind = cur.kind, label = cur.kind == 'stage' and cur.ss or cur.label,
-      name = cur.kind == 'stage' and stageName(cur) or cur.name, serviced = rally.isServiced(R) or nil } or nil,
+      name = cur.kind == 'stage' and stageName(cur) or cur.name, serviced = rally.isServiced(R) or nil,
+      checkIn = checkIn } or nil,
     prep = prep and M.prepInfo() or nil,
     nextStage = nextStage, nextIndex = nxi, superRally = sr, overall = rally.standing(R, board),
     totalS = rally.totalS(R), done = rally.over(R) or nil, unclassified = R.unclassified or nil,
     heldOut = #held > 0 and held or nil, leave = M.leaveInfo(), hasBoard = board ~= nil or nil,
+    -- (interface 2: a timed rally only -- the card treats a rally as timed when clock is there)
+    clock = timed() and { date = wt.dateText(R.clock.t), time = wt.hm(R.clock.t) } or nil,
+    roadPenaltyS = timed() and rally.roadPenaltyS(R) or nil,
+    lateSPerMin = timed() and (R.lateSPerMin or rally.LATE_S_PER_MIN) or nil,
+    earlySPerMin = timed() and (R.earlySPerMin or rally.EARLY_S_PER_MIN) or nil,
+    earlyPenalty = timed() and settings.get('earlyPenalty') == true or nil,
   }
 end
 
 -- The rally's Results tab: your best finished rally against the real National totals. nil with none.
+-- (additions A) A timed rally finished since its road penalties are kept per pass (rally.finished's roadKept): its
+-- passes ({ ss, timeS, roadS }), its stops checked in at a cost and its road penalty total, for the full rally's
+-- strip. An untimed rally, or one finished before this, has none of them: the strip is as it was.
 function M.resultsFor(id)
   local list = M.finishedList(id)
   local best = rally.bestFinished(list)
   if not best then return nil end
   local st = rally.finishedStanding(best, events.boards(id))
+  local kept = best.roadKept == true
   return { totalS = best.totalS, mode = best.mode, class = best.class, car = best.car, date = best.date,
     unclassified = best.unclassified, pos = st and st.pos, of = st and st.of, classPos = st and st.classPos,
-    classOf = st and st.classOf, count = #list }
+    classOf = st and st.classOf, count = #list, passes = kept and best.passes or nil, stops = kept and best.stops or nil,
+    roadPenaltyS = kept and tonumber(best.roadPenaltyS) or nil }
 end
 
 -- (the level left, the mod switched off: the game's own recovery back whatever happens)
 function M.release()
   M.block(false)
+  pcall(trafficEnd)
   runner.keepDamage(false)
 end
 

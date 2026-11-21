@@ -17,15 +17,26 @@
     <EarthRallyLoading @view="v => (v === 'timecard' ? openCard() : null)" @up="v => (loadingUp = v)" />
     <template v-if="!loadingUp">
     <div class="er-topbar">
-      <div class="er-back" tabindex="0" bng-nav-item @click="back" @keydown.enter="back"><span>‹</span> {{ view === "home" ? "Close" : "Back" }}</div>
+      <div class="er-back" tabindex="0" bng-nav-item @click="back" @keydown.enter="back"><span>‹</span> {{ view === "home" || mp ? "Close" : "Back" }}</div>
       <div class="er-title"><span class="er-accent">Earth</span> Rally</div>
       <div class="er-crumbs"><span v-for="(c, i) in crumbs" :key="i" :class="{ 'er-cgo': c.go }" @click="c.go && c.go()">{{ c.label }}</span></div>
       <div class="er-right">
-        <BngButton v-if="view !== 'settings' && view !== 'home'" :accent="ACCENTS.outlined" @click="go('settings')">Settings</BngButton>
+        <BngButton v-if="!mp && view !== 'settings' && view !== 'home'" :accent="ACCENTS.outlined" @click="openSettings">Settings</BngButton>
       </div>
     </div>
 
     <div class="er-content" :class="{ 'er-content-fill': view === 'home' }" v-bng-ui-nav-scroll>
+      <!-- (plan F) in a BeamMP session the menu is this one card, whatever page it was on; Close (A or B) shuts it
+           (docs/mockups-rally-loop/weather.html, c) -->
+      <div v-if="mp" class="er-mp">
+        <div class="er-card er-mpcard">
+          <div class="er-mpkick"><svg viewBox="0 0 24 24"><g fill="none" stroke="#f26b1d" stroke-width="2"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><path d="M2 20c0-3.5 2.7-6 6-6s6 2.5 6 6M12 15.2c1.1-.8 2.5-1.2 4-1.2 3.3 0 6 2.5 6 6"/></g></svg>Multiplayer session</div>
+          <h2>Earth Rally is off in multiplayer</h2>
+          <p>Leave the server to drive rallies.</p>
+          <BngButton v-bng-ui-nav-focus="1" class="er-mpbtn" :accent="ACCENTS.main" @click="closeMenu">Close</BngButton>
+        </div>
+      </div>
+      <template v-else>
       <!-- the run or the recce under way -->
       <div v-if="banner" class="er-banner">
         <span>{{ banner }}</span>
@@ -121,7 +132,12 @@
           </div>
         </div>
         <div v-if="curTab === 'results' && rly.rallyFinished" class="er-card er-yourfull">
-          <b>Your full rally</b> · {{ longTime(rly.rallyFinished.totalS) }}<template v-if="rly.rallyFinished.pos"> · P{{ rly.rallyFinished.pos }} of {{ rly.rallyFinished.of }} National · {{ rly.rallyFinished.class }} {{ ord(rly.rallyFinished.classPos) }} of {{ rly.rallyFinished.classOf }}</template><template v-if="rly.rallyFinished.unclassified"> · not classified</template> · {{ rly.rallyFinished.mode === "realistic" ? "Realistic" : "Casual" }}<template v-if="rly.rallyFinished.car"> · {{ rly.rallyFinished.car }}</template>
+          <b>Your full rally</b> · {{ longTime(rly.rallyFinished.totalS) }}<template v-if="rly.rallyFinished.roadPenaltyS != null"> · <template v-if="rly.rallyFinished.roadPenaltyS > 0">incl. transit penalties <span class="er-rp">{{ roadText(rly.rallyFinished.roadPenaltyS) }}</span></template><span v-else class="er-rp0">no transit penalties</span></template><template v-if="rly.rallyFinished.pos"> · P{{ rly.rallyFinished.pos }} of {{ rly.rallyFinished.of }} National · {{ rly.rallyFinished.class }} {{ ord(rly.rallyFinished.classPos) }} of {{ rly.rallyFinished.classOf }}</template><template v-if="rly.rallyFinished.unclassified"> · not classified</template> · {{ rly.rallyFinished.mode === "realistic" ? "Realistic" : "Casual" }}<template v-if="rly.rallyFinished.car"> · {{ rly.rallyFinished.car }}</template>
+          <!-- (additions A) a timed rally: each stage's time with the road penalty getting to it, and a stop only where
+               it cost something. Untimed, or finished before this: no passes from the Lua, no chips -->
+          <div v-if="fullChips.length" class="er-chips">
+            <span v-for="(c, i) in fullChips" :key="i" class="er-chip" :class="{ stop: c.stop, sr: c.sr }">{{ c.label }}<span v-if="c.timeS != null" class="er-mono">{{ time(c.timeS) }}</span><i v-if="c.penS > 0">{{ roadText(c.penS) }}</i></span>
+          </div>
         </div>
         <EarthRallyResults v-if="curTab === 'results'" :r="rly.results" />
         <div v-else-if="curTab === 'rules'" class="er-card er-rules">
@@ -267,6 +283,18 @@
           <div v-else class="er-card er-line-note"><span class="er-pill" :class="pill(stg.status).cls">{{ pill(stg.status).label }}</span><span>{{ stg.note }}</span></div>
           <!-- Auto recce is the fourth button, before Recce, so the two recce buttons sit together and the cheap
                one comes first. While one runs it is replaced in place by its Stop, not joined by a fifth button. -->
+          <!-- (plan G) Weather, one row the start screen's look, cycled with left / right or a click on the arrows:
+               Current (nothing set), Rally day (only when the pass shown has stored weather), BeamNG.Earth's
+               presets. Kept between stages; set as the stage loads (stageWeather.lua). Not without the hook. -->
+          <div v-if="stg.wxCan" class="er-wxrow">
+            <span class="er-wxl">Weather</span>
+            <span class="er-cyc" v-bng-on-ui-nav:focus_l="() => wxNav(-1)" v-bng-on-ui-nav:focus_r="() => wxNav(1)">
+              <span class="er-ar" @click="wxStep(-1)">‹</span>
+              <span ref="wxVal" class="er-val" tabindex="0" bng-nav-item @keydown.enter="wxStep(1)" @click="wxStep(1)">
+                <svg v-if="wxShown.icon" viewBox="0 0 24 24" v-html="wxIcon(wxShown)"></svg>{{ wxShown.label }}</span>
+              <span class="er-ar" @click="wxStep(1)">›</span>
+            </span>
+          </div>
           <div class="er-actions">
             <BngButton v-bng-ui-nav-focus="1" :accent="ACCENTS.main" :disabled="!stg.canDrive || busy" @click="action('drive', stg.eventId, stg.id)">Drive stage</BngButton>
             <BngButton :accent="ACCENTS.secondary" :disabled="busy" @click="action('route', stg.eventId, stg.id)">Route to start</BngButton>
@@ -341,11 +369,23 @@
         <div class="er-card er-runs">
           <h3>Your runs</h3>
           <div v-if="stg.best" class="er-best-box"><span class="er-t">{{ time(stg.best) }}</span><span class="er-badge">BEST</span></div>
-          <div v-for="(r, i) in runsShown" :key="i" class="er-run">
-            <span>{{ when(r.date) }} <span v-if="r.last" class="er-dim">· last</span></span>
-            <span class="er-mono">{{ time(r.timeS) }}</span>
-            <span :class="r.penaltyS > 0 ? 'er-pen' : 'er-clean'">{{ r.text }}</span>
+          <!-- (additions A) the splits the HUD compares with: one run's, on the line the stage runs on now -->
+          <div v-if="stg.bestSplits" class="er-bsplits">
+            <div class="er-bsh"><span>Best splits</span><span>{{ stg.bestSplits.rally ? "a full-rally pass" : "your run" }}{{ dayOf(stg.bestSplits.date) ? (stg.bestSplits.rally ? ", " : " of ") + dayOf(stg.bestSplits.date) : "" }}</span></div>
+            <div class="er-sg4">
+              <div v-for="(t, k) in bestSplitTimes" :key="k"><small>{{ SPLIT_LABELS[k] }}</small>{{ time(t) }}</div>
+            </div>
           </div>
+          <template v-for="(r, i) in runsShown" :key="i">
+            <div class="er-run">
+              <span>{{ when(r.date) }} <span v-if="r.last" class="er-dim">· last</span></span>
+              <span class="er-mono">{{ time(r.timeS) }}</span>
+              <span :class="r.penaltyS > 0 ? 'er-pen' : 'er-clean'">{{ r.text }}</span>
+            </div>
+            <div v-if="arr(r.splits).length === 4" class="er-sg4 er-rsp">
+              <div v-for="(x, k) in arr(r.splits)" :key="k">{{ time(x.timeS) }}<span v-if="r.bestSplits && k === 0" class="er-z">best</span><span v-else-if="x.gapS != null" :class="x.gapS < 0 ? 'er-a' : x.gapS > 0 ? 'er-b' : 'er-z'">{{ splitGap(x.gapS) }}</span></div>
+            </div>
+          </template>
           <div v-if="!arr(stg.runs).length" class="er-muted">No runs yet.</div>
           <div class="er-muted er-small">Times include penalties.</div>
         </div>
@@ -362,15 +402,18 @@
       </section>
 
       <div v-else class="er-muted">Loading...</div>
+      </template>
     </div>
 
     <!-- the stats question (#76): once, when the leaderboard is turned on; its own yes or no -->
+    <template v-if="!mp">
     <EarthRallyConsent v-if="onlineOn && st.stats && st.stats.consent === 'ask'" />
     <!-- the Leaderboards helper not answering (#77): how to install it; never over the stats question (main.lua) -->
     <EarthRallyHelperPrompt v-else-if="st.helperPrompt" :online-on="onlineOn" />
     <!-- no leaderboard name yet (main.lua namePromptWanted): after the two above, one at a time -->
     <EarthRallyNamePrompt v-else-if="st.namePrompt" :naming="st.naming" />
-    <EarthRallyPrompts :top="view === 'home'" :results="view === 'pick' && !!(pickView && pickView.hasResults)" />
+    </template>
+    <EarthRallyPrompts :top="view === 'home' || mp" :results="!mp && view === 'pick' && !!(pickView && pickView.hasResults)" />
     </template>
   </div>
 </template>
@@ -398,7 +441,7 @@ import EarthRallyFull from "./EarthRallyFull.vue"
 import EarthRallyLoading from "./EarthRallyLoading.vue"
 import {
   state, season, rally, stage, busyMsg, action as luaAction, refreshState, takeOpenAt, loadSeason, loadRally, loadStage,
-  closeMenu, pickCar, keep, lastPlace, helperPromptClose, namePromptLater, loadRallyStart, loadRallyCard, rallyAction, loadDrive, pointTo,
+  closeMenu, pickCar, keep, lastPlace, setSetting, wxIcon, helperPromptClose, namePromptLater, loadRallyStart, loadRallyCard, rallyAction, loadDrive, pointTo,
   arr, mmss, units, len, lenNum, riseNum, riseUnit, time, longTime, when, ord, days, ssName, STATUS, AUTO_OUTCOME, RUN_WORDS,
 } from "./store.js"
 
@@ -408,6 +451,8 @@ const view = ref("home")
 // pass: the stage leaderboard's pass the player picked (null: the one they place best on, chosen in Lua)
 const sel = ref({ seasonId: null, eventId: null, stageId: null, pass: null })
 const st = computed(() => state.value || {})
+// (plan F) a BeamMP session: the menu is one card (main.lua uiState().multiplayer)
+const mp = computed(() => !!st.value.multiplayer)
 const ssn = computed(() => (season.value && !season.value.missing && season.value.id === sel.value.seasonId) ? season.value : null)
 const rly = computed(() => (rally.value && !rally.value.missing && rally.value.id === sel.value.eventId) ? rally.value : null)
 // (the rally as well as the stage: a stage's id is its line's name, and two rallies can both have a "Wildcat")
@@ -515,13 +560,14 @@ function rowEnter(e, s) { if (e.target === e.currentTarget) openStage(rly.value.
 // back) on all but the last (#39). Home > Drive rally > X results (#55), Home > Time card > X results.
 const crumbs = computed(() => {
   const home = { label: "Home", go: () => openHome() }
-  if (view.value === "home") return [{ label: "Home" }]
+  if (view.value === "home" || mp.value) return [{ label: "Home" }]
   if (view.value === "pick") return [home, { label: "Drive rally" }]
   if (view.value === "rally" && resultsFrom.value) {
     const from = resultsFrom.value === "pick" ? { label: "Drive rally", go: () => openPick(true) } : { label: "Time card", go: () => openCard() }
     return [home, from, { label: `${(rly.value && rly.value.name) || "Rally"} results` }]
   }
-  if (view.value === "settings") return [home, { label: "Settings" }]
+  if (view.value === "settings") return settingsFrom.value === "timecard"
+    ? [home, { label: "Time card", go: () => openCard() }, { label: "Settings" }] : [home, { label: "Settings" }]
   if (view.value === "timecard") return [home, { label: "Time card" }]
   if (view.value === "rallyStart") {
     if (startFrom.value === "pick") return [home, { label: "Drive rally", go: () => openPick(true) }, { label: "Start the rally" }]
@@ -574,8 +620,8 @@ function stepTab(d) {
   rallyTab.value = t[(i + d + t.length) % t.length].id
 }
 // (the helper pop-up up, #77: the page under it does not move)
-const tabPrev = () => { if (!st.value.helperPrompt && !st.value.namePrompt) stepTab(-1) }
-const tabNext = () => { if (!st.value.helperPrompt && !st.value.namePrompt) stepTab(1) }
+const tabPrev = () => { if (!mp.value && !st.value.helperPrompt && !st.value.namePrompt) stepTab(-1) }
+const tabNext = () => { if (!mp.value && !st.value.helperPrompt && !st.value.namePrompt) stepTab(1) }
 const legend = computed(() => !!(rly.value && (rly.value.anyCancelled || rly.value.hasBoard)))
 const cancelledSs = computed(() => {
   for (const s of arr(rly.value && rly.value.list)) {
@@ -649,6 +695,43 @@ const runsShown = computed(() => {
   return stg.value && stg.value.board ? runs.slice(0, 2) : runs
 })
 
+// (additions A) Best splits: 1/4, 1/2, 3/4 and the finish of one run (menu.stageBase's bestSplits)
+const SPLIT_LABELS = ["1/4", "1/2", "3/4", "Finish"]
+const bestSplitTimes = computed(() => {
+  const b = stg.value && stg.value.bestSplits
+  if (!b) return []
+  return [...arr(b.splits).slice(0, 3), b.timeS]
+})
+// A split's gap to the best splits: "−0.3" ahead, "+0.6" slower, "0.0" level
+function splitGap(s) {
+  const a = Math.abs(Math.round(s * 10) / 10)
+  if (a === 0) return "0.0"
+  return (s < 0 ? "−" : "+") + (a < 60 ? a.toFixed(1) : longTime(a))
+}
+// The day a run was driven, "16 Nov" (where the best splits came from)
+function dayOf(iso) {
+  if (!iso) return ""
+  const d = new Date(iso)
+  return isNaN(d.getTime()) ? "" : d.toLocaleDateString([], { day: "numeric", month: "short" })
+}
+// A road penalty: "+20 s" under a minute, "+1:10" from one up
+function roadText(s) {
+  const t = Math.round(s || 0)
+  return t < 60 ? `+${t} s` : `+${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`
+}
+// The full rally's chips: its passes in order, each stop that cost something after the pass before it
+const fullChips = computed(() => {
+  const f = rly.value && rly.value.rallyFinished
+  if (!f) return []
+  const stops = arr(f.stops)
+  const out = []
+  for (const p of arr(f.passes)) {
+    out.push({ label: p.ss, timeS: p.timeS, penS: p.roadS, sr: !!p.superRally })
+    for (const s of stops) if (s.after === p.ss) out.push({ label: s.label, penS: s.penaltyS, stop: true })
+  }
+  return out
+})
+
 const banner = computed(() => {
   const s = st.value
   if (s.auto) {
@@ -683,12 +766,16 @@ const controlsLine = computed(() => {
   return parts.length ? parts.join(" · ") : "Start line and flying finish"
 })
 
-function go(v) { view.value = v; busyMsg.value = "" }
+function go(v) { if (v === "settings") settingsFrom.value = null; view.value = v; busyMsg.value = "" }
+// (notes-rally-loop 6) Settings opened from the time card goes back to it; from anywhere else, Home (#39)
+const settingsFrom = ref(null)
+function openSettings() { const from = view.value === "timecard" ? "timecard" : null; go("settings"); settingsFrom.value = from }
 // Where the menu was left, for the next time it opens with no page asked for (the pause menu's button, Ctrl+Alt+K):
 // the user, 2026-11-14, "the rally menu should also now remember where it was when you close and open it".
 // (not the leaderboard's pass: after another drive the board opens on the pass you place best on, as Lua picks it)
-watch([view, sel, rallyTab], () => {
-  lastPlace.at = { view: view.value, sel: { ...sel.value, pass: null }, rallyTab: rallyTab.value }
+watch([view, sel, rallyTab, settingsFrom], () => {
+  lastPlace.at = { view: view.value, sel: { ...sel.value, pass: null }, rallyTab: rallyTab.value,
+    settingsFrom: settingsFrom.value }
 }, { deep: true })
 function resume(at) {
   const s = at.sel || {}
@@ -698,7 +785,7 @@ function resume(at) {
     openRally(s.eventId, false)
     if (at.rallyTab) rallyTab.value = at.rallyTab
   } else if (at.view === "season" && s.seasonId) openSeason(s.seasonId)
-  else if (at.view === "settings") go("settings")
+  else if (at.view === "settings") { go("settings"); settingsFrom.value = at.settingsFrom || null }
   else if (at.view === "timecard") openCard()
   else if (at.view === "rallies") go("rallies")
   else if (at.view === "pick") openPick()
@@ -790,7 +877,7 @@ function openPick(keep) {
 }
 // Y on Drive rally: the picked rally's Results, its page on the Results tab alone (#55)
 const pickView = ref(null)
-function contextPress() { if (st.value.helperPrompt || st.value.namePrompt) return; if (view.value === "pick" && pickView.value) pickView.value.results() }
+function contextPress() { if (mp.value || st.value.helperPrompt || st.value.namePrompt) return; if (view.value === "pick" && pickView.value) pickView.value.results() }
 function openResults(id, from) {
   if (from === "pick") pickSel.value = id
   openRally(id, false)
@@ -833,6 +920,7 @@ function fullView(v, id) {
 const loadingUp = ref(false)
 function back() {
   if (loadingUp.value) return
+  if (mp.value) return closeMenu()
   if (st.value.helperPrompt) return helperPromptClose(false)   // (B on the helper pop-up, #77: Got it)
   if (st.value.namePrompt) return namePromptLater()             // (B on the name pop-up: Later)
   if (view.value === "rallyStart") {
@@ -847,6 +935,7 @@ function back() {
   }
   // (#39: Drive rally, Drive stage and Settings go back to Home; so does the time card, where Home's Continue strip
   // is: the mock-up's homeSaved)
+  if (view.value === "settings" && settingsFrom.value === "timecard") { openCard(); return }
   if (["timecard", "pick", "rallies", "settings"].includes(view.value)) {
     openHome()
     return
@@ -862,6 +951,34 @@ function back() {
   } else if (view.value === "season") go("rallies")
   else closeMenu()
 }
+// (plan G) the stage page's Weather row: the picks in order, Rally day only when the shown pass has stored weather
+// (a remembered Rally day reads as Current where there is none, and comes back on a stage that has it)
+const WX_PICKS = [["current", "Current"], ["rallyday", "Rally day"], ["clear", "Clear", "sun"], ["cloudy", "Cloudy", "cloud"],
+  ["rain", "Rain", "rain"], ["storm", "Storm", "storm"], ["snow", "Snow", "snow"], ["fog", "Fog", "fog"]]
+const wxVal = ref(null)
+// (Rally day only with stored weather for the shown pass; a preset only when this BeamNG.Earth has it)
+const wxPicks = computed(() => WX_PICKS.filter(p => p[0] === "current"
+  || (p[0] === "rallyday" ? !!(stg.value && stg.value.wxDay) : arr(stg.value && stg.value.wxPresets).includes(p[0]))))
+const wxPick = computed(() => {
+  const v = st.value.settings && st.value.settings.settings && st.value.settings.settings.stageWeather
+  return wxPicks.value.some(p => p[0] === v) ? v : "current"
+})
+const wxShown = computed(() => {
+  const p = wxPicks.value.find(x => x[0] === wxPick.value) || WX_PICKS[0]
+  // (the weather only: a single stage keeps BeamNG.Earth's hour, so no "night" and no moon here)
+  if (p[0] === "rallyday") {
+    const w = stg.value.wxDay
+    return { icon: w.icon === "moon" ? "sun" : w.icon, label: "Rally day · " + w.text }
+  }
+  return { icon: p[2], label: p[1] }
+})
+function wxStep(d) {
+  const ps = wxPicks.value
+  const i = Math.max(0, ps.findIndex(p => p[0] === wxPick.value))
+  setSetting("stageWeather", ps[(i + d + ps.length) % ps.length][0])
+}
+// (the D-pad / stick and the arrow keys, as BeamNG's UI nav sends them: only while the row has the focus)
+function wxNav(d) { if (wxVal.value && document.activeElement === wxVal.value) wxStep(d) }
 function action(what, eventId, stageId) {
   luaAction(what, eventId, stageId, () => {
     if (view.value === "stage" && sel.value.stageId) loadStage(sel.value.eventId, sel.value.stageId, sel.value.pass)
@@ -933,6 +1050,14 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .er-page :deep(span[bng-nav-item]:focus), .er-back:focus { outline: 2px solid var(--er-orange); outline-offset: 2px; }
 
 .er-card { background: rgba(0, 0, 0, 0.6); border-radius: 0.5rem; }
+/* (plan F) the multiplayer card, alone in the middle of the page */
+.er-mp { min-height: 100%; display: flex; align-items: center; justify-content: center; }
+.er-mpcard { width: 940px; max-width: 100%; padding: 48px 56px 44px; border-left: 6px solid var(--er-orange); border-radius: 0 0.5rem 0.5rem 0;
+  h2 { margin: 12px 0 18px; font-size: 48px; text-transform: uppercase; line-height: 1.1; }
+  p { margin: 0 0 34px; font-size: 22px; line-height: 1.5; color: #dfe2e8; max-width: 800px; }
+  .er-mpbtn { --bng-button-margin: 0; font-size: 26px; line-height: 32px; padding: 14px 40px; letter-spacing: 0.04em; } }
+.er-mpkick { display: flex; align-items: center; gap: 12px; font-size: 15px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--er-orange); font-weight: 700;
+  svg { width: 26px; height: 26px; } }
 .er-lbswitch { display: flex; gap: 4px; align-self: flex-start; margin-bottom: -10px; background: rgba(0, 0, 0, 0.6); border-radius: 0.25rem; padding: 4px;
   span { padding: 6px 18px; border-radius: 3px; font-size: 16px; font-weight: 600; color: var(--er-muted); cursor: pointer; }
   span.on { background: var(--er-orange-500); color: #fff; } }
@@ -1050,6 +1175,15 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 
 .er-stage-page { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 28px; align-items: start; }
 .er-rcol { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+/* (plan G) the Weather row (docs/mockups-rally-loop/weather.html, screen d) */
+.er-wxrow { display: flex; align-items: center; gap: 16px; margin-top: 22px;
+  .er-wxl { font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--er-muted); } }
+.er-cyc { display: inline-flex; align-items: center; gap: 4px; background: rgba(0, 0, 0, 0.45); border-radius: 0.25rem; padding: 4px;
+  .er-ar { padding: 8px 12px; font-size: 18px; font-weight: 700; color: var(--er-muted); cursor: pointer; }
+  .er-val { display: inline-flex; align-items: center; gap: 8px; min-width: 250px; justify-content: center; padding: 8px 16px;
+    border-radius: 3px; background: #c75b1e; color: #fff; font-size: 18px; font-weight: 600; white-space: nowrap; cursor: pointer;
+    svg { width: 20px; height: 20px; flex: none; } }
+  &:focus-within { outline: 2px solid var(--er-orange); outline-offset: 2px; .er-ar { color: #fff; } } }
 .er-stage-ss { font-family: "Overpass Mono", monospace; font-size: 20px; color: var(--er-orange); font-weight: 700; letter-spacing: 0.05em; }
 .er-stage-name { font-size: 52px; font-weight: 700; line-height: 1.1; }
 .er-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 26px 0; }
@@ -1113,6 +1247,23 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 
 .er-fullbar { display: flex; align-items: center; gap: 16px; padding: 14px 20px; margin-bottom: 14px; border-left: 4px solid var(--er-orange);
   .er-fb-text { display: flex; flex-direction: column; gap: 2px; margin-right: auto; font-size: 17px; b { font-size: 19px; } } }
-.er-yourfull { padding: 14px 20px; margin-bottom: 14px; font-size: 18px; border-left: 4px solid var(--er-orange); }
+.er-yourfull { padding: 14px 20px; margin-bottom: 14px; font-size: 18px; border-left: 4px solid var(--er-orange);
+  .er-rp { color: #ffd36b; font-family: "Overpass Mono", monospace; font-weight: 700; } .er-rp0 { color: #6fd39a; } }
+.er-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.er-chip { font-size: 16px; padding: 5px 12px; border-radius: 999px; background: rgba(40, 140, 80, 0.4); color: #d9ffe6; white-space: nowrap;
+  .er-mono { margin-left: 6px; }
+  i { font-style: normal; font-family: "Overpass Mono", monospace; font-weight: 700; color: #ffd36b; margin-left: 8px; }
+  &.stop { background: rgba(255, 211, 107, 0.14); color: #ffe7ad; i { margin-left: 6px; } }
+  &.sr { background: rgba(229, 83, 61, 0.25); color: #ffd0c8; } }
+.er-bsplits { margin: 0 0 14px; padding: 10px 14px 12px; border-radius: 8px; background: rgba(255, 255, 255, 0.05);
+  .er-sg4 { margin-top: 6px; div { font: 700 22px "Overpass Mono", monospace; } }
+  small { display: block; font: 600 12px "Noto Sans", sans-serif; color: var(--er-dim); letter-spacing: 0.1em; } }
+.er-bsh { display: flex; justify-content: space-between; font-size: 14px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--er-muted); font-weight: 600;
+  span:last-child { text-transform: none; letter-spacing: 0; font-weight: 400; } }
+.er-sg4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.er-rsp { margin: 0 0 8px; font-size: 14px; color: var(--er-muted);
+  div { font-family: "Overpass Mono", monospace; white-space: nowrap; }
+  .er-a { color: #6fd39a; margin-left: 6px; } .er-b { color: #ffd36b; margin-left: 6px; }
+  .er-z { color: var(--er-dim); margin-left: 6px; font-family: "Noto Sans", sans-serif; } }
 .er-settings-page { display: grid; grid-template-columns: 1.6fr 1fr; gap: 28px; align-items: start; }
 </style>

@@ -26,6 +26,7 @@ local menuPause = require('earthRally/menuPause')     -- the game paused while t
 local rally = require('earthRally/rally')             -- the full rally (1.7.0): its rules and numbers
 local rallyRun = require('earthRally/rallyRun')       -- ... and driving it in the game
 local loadScreen = require('earthRally/loadScreen')   -- the page's loading screen (1.7.0, #49)
+local cardInput = require('earthRally/cardInput')     -- the pad and the keys on the HUD's cards (cardInput.lua says why)
 local online = require('earthRally/online')         -- the online leaderboard (prototype): via the companion
 local codriver = require('earthRally/codriver')       -- the game's co-driver settings, on our settings page
 local gameTile = require('earthRally/gameTile')       -- the tile on the game's own Rally page
@@ -40,7 +41,7 @@ loadScreen.moving = function() return runner.originMoving() or earth.rebasing() 
 local M = {}
 local logTag = 'earthRally'
 local logPausedSim         -- (below, by onUpdate)
-M.VERSION = '1.9.4-alpha+reccecalls'
+M.VERSION = '1.10.0-alpha+reccecalls'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_FLOOR_S = 1             -- the HUD's streams sent when what they show changes, and at least this often
 M.STREAM_GAP_S = 0.1              -- ... the stock stream at most this often outside waitStart / running
@@ -78,6 +79,7 @@ M.PLAYTEST_WAIT_S = 420         -- the world given this long to come up before g
 M.PLAYTEST_SETTLE_S = 12        -- ... and this long settled before the stage is asked for, so BeamNG.Earth has
                                 -- streamed the roads round the control before the run puts its boards down
 local playtest = nil     -- { event, stage, what, t, levelAsked, ready }
+local mpOn, mpT = false, 0 -- (plan F) in a BeamMP session: Earth Rally off (M.mpCheck)
 
 -- The developer panel (the ImGui window): console toggle; the setting shows / hides it.
 function M.toggle() show[0] = not show[0] end
@@ -173,6 +175,8 @@ end
 -- (the full rally's time card is a view of the menu page: rallyRun opens it after a recovery and from Continue)
 rallyRun.ui.openCard = function() return M.openMenu('timecard') end
 rallyRun.ui.closeMenu = function() if menuOpen then pcall(menuPause.suspend) return M.closeMenu() end end
+-- (the rally-loop plan) a timed rally's clock stops under a loading screen and the menu, as the game does
+rallyRun.clockPaused = function() return menuOpen or loadScreen.active() ~= nil end
 
 ------------------------------------------------------------------------------------------ the loading screens (#49)
 -- Wherever the menu used to close and the world then loaded in view, the page stays up (or opens) on a loading screen
@@ -258,13 +262,16 @@ end
 -- the world to the stage (#63); the start time is given when Continue is pressed (runner.continueAtc), so the card
 -- says so (tc.startNote) and, once the run has checked in behind it, tc.checkedIn.
 rallyRun.ui.atControl = function(tc, stage)
-  local steps = { 'Checked in', 'Moving the world to the stage', 'Line, pacenotes, controls',
+  local steps = { tc.wait and 'Stopped at the board' or 'Checked in', 'Moving the world to the stage',
+    'Line, pacenotes, controls',
     'Junctions taped, stage dressed' }
   tc.startNote = 'given when you continue'
   loadScreen.begin({ kind = 'atc', kick = 'Time control · in', title = tostring(tc.ss) .. ' ' .. tostring(tc.name),
     sub = (tc.km and (tc.km .. ' km · ') or '') .. tostring(tc.rally) .. (tc.day and (' · day ' .. tc.day) or ''),
     steps = steps, card = tc, button = 'Continue', thenView = 'timecard',
     probe = function()
+      -- (interface 3: waiting at the board for the due minute, not checked in yet)
+      steps[1] = tc.wait and 'Stopped at the board' or 'Checked in'
       local r = runner.current()
       if not r then return 1, nil, nil, 'the stage was put away' end
       if r.state == 'failed' then return 1, nil, nil, tostring(r.error or 'the stage could not be got ready') end
@@ -279,6 +286,8 @@ rallyRun.ui.atControl = function(tc, stage)
       return i, (i - 1) / #steps, steps[math.min(i, #steps)]
     end,
     done = function(ok, why)
+      -- (a timed rally: still waiting for the due minute as the card goes -- checked in now, rallyRun.leftBoard)
+      pcall(rallyRun.leftBoard)
       -- (#64: the start time from now, and "Move up to the start line" said, not before)
       pcall(runner.continueAtc)
       if ok then if menuOpen then M.closeMenu() end
@@ -289,7 +298,19 @@ end
 
 -- The page's loading screen, nil with none (polled by EarthRallyLoading.vue).
 function M.uiLoading() return loadScreen.ui() end
-function M.uiLoadingContinue() return loadScreen.continue() end
+function M.uiLoadingContinue()
+  -- (a timed rally, early at a time control: Continue checks in early only when that costs -- the setting -- else the
+  -- card waits for the due minute or its skip)
+  local okW, ready = pcall(rallyRun.continueOk)
+  if okW and ready == false then return false end
+  return loadScreen.continue()
+end
+-- (interface 3) The wait for your minute at a time control skipped: the rally clock on to it, checked in on time.
+-- A no-op (false) once there is no wait (the page's key and the game's Interact can both send it).
+function M.uiLoadingSkipWait()
+  local ok, done = pcall(rallyRun.skipWait)
+  return ok and done == true
+end
 -- Ctrl+Alt+K
 function M.toggleMenu()
   if menuOpen then return M.closeMenu() end
@@ -1325,6 +1346,9 @@ doAction = function(what, eventId, stageId, fromPanel, queued)
     -- (1.7.3) the stage under way still downloading its own area: with the look-ahead's, two downloads go on
     local ownDl = autoSeq ~= nil and autoSeq.phase == M.DOWNLOADING
     autoSeq = nil
+    -- (a rally's prep stopped on an official BeamNG.Earth: the walk's trip home goes, as on quit -- prepDone takes the
+    -- car where the rally goes next, and two teleports in one frame race)
+    if rallyRun.preparing() then pcall(earth._roadWalk.reset) end
     -- (autoRecce.cancel does not call the done callback -- a stop is not an ending, and leaves no line behind)
     local stopped = autoRecce.cancel() or hadSeq
     -- (1.7.2) A full rally getting its stages ready runs one auto recce after another (stepRallyPrep), so stopping
@@ -1499,6 +1523,7 @@ end
 M._action = doAction
 
 function M.uiAction(what, eventId, stageId)
+  if mpOn then return { ok = false, message = M.MP_MESSAGE, multiplayer = true } end
   -- (no world, at the main menu: BeamNG.Earth loaded first, the button pressed again once it is up)
   if M.WORLD_ACTIONS[what] and M.needsWorld() then
     local ev, stage = menu.findStage(eventId, stageId)
@@ -1638,6 +1663,7 @@ function M.uiState()
   local ok, why = earth.check()
   s.version = M.VERSION
   s.earthOk, s.earthWhy = ok, (not ok) and why or nil
+  s.multiplayer = mpOn or nil   -- (plan F: the menu shows only "Earth Rally is off in multiplayer")
   -- (at the main menu, or on another map: not a fault, the level loads with the first button that needs it. Only that
   --  one reason: BeamNG.Earth missing or too old is still said, before a level load that could only fail)
   if not ok and why == earth.NOT_IN_WORLD then
@@ -1767,12 +1793,18 @@ end
 
 -- pass: the leaderboard's pass ('SS4'), nil for the one you place best on
 function M.uiStage(eventId, stageId, pass)
-  local _, stage = menu.findStage(eventId, stageId)
+  local e, stage = menu.findStage(eventId, stageId)
   if not stage then return { missing = true, eventId = eventId, id = stageId } end   -- (ids: the page tells whose)
   local _, _, arrival = runner.arrivalPoint(stage)
   local out = menu.stage(eventId, stageId, arrival, earth.hasRoadGraph(), pass)
   for k, v in pairs(runSummary()) do out[k] = v end
   out.autoLine = autoLines[autoKey(eventId, stageId)]
+  -- (plan G) the Weather row: Rally day's weather in a word (the shown pass's stored weather), nil with none
+  -- (only where it can be set: the hooks there; a Manual weather is put in Real while the pick holds it)
+  local sw = require('earthRally/stageWeather')
+  out.wxDay = rallyRun.weatherWord(sw.passWeather(e, sw.pagePass(eventId, stageId, out)))
+  out.wxCan = earth.hasSceneHooks() or nil
+  out.wxPresets = out.wxCan and sw.presets() or nil
   return out
 end
 
@@ -1866,6 +1898,7 @@ end
 -- done with the rally, kept as finished; the page then opens Home, or the menu closes to plain free roam).
 -- Returns { ok, message, view }.
 function M.uiRallyAction(what, eventId, opts)
+  if mpOn then return { ok = false, message = M.MP_MESSAGE, multiplayer = true } end
   -- (no world, at the main menu: BeamNG.Earth loaded first, then Start or Continue pressed again. The page goes to
   --  the time card at once, as it does for an ok Start, and follows the rally from there once it is under way)
   if M.WORLD_RALLY_ACTIONS[what] and M.needsWorld() then
@@ -2043,21 +2076,42 @@ local routeMsgKey, routeMsgT = nil, 0
 local routeAp, routeApKey = nil, nil
 local function routeMessage(gh, dt, on)
   local ap = on and not runner.uiHidden and (runner.approachInfo() or rallyRun.transitInfo()) or nil
+  -- (a timed road section: its due time and time left in the line too)
+  local okT, td = pcall(rallyRun.transitDue)
+  td = ap and okT and td or nil
   local units, key
   if ap and ap == routeAp then key = routeApKey
   elseif ap then units = settings.get('units'); key = hudFrame.approachKey(ap, units); routeAp, routeApKey = ap, key
   else routeAp, routeApKey = nil, nil end
+  if key and td then key = key .. '|' .. hudFrame.transitKey(td) end
   routeMsgT = routeMsgT + (dt or 0)
   if key == routeMsgKey and (not key or routeMsgT < M.ROUTE_MSG_S) then return end
   routeMsgKey, routeMsgT = key, 0
   if not gh.trigger then return end
   if ap then
-    pcall(gh.trigger, 'Message', { msg = hudFrame.approachText(ap, units or settings.get('units')), ttl = M.ROUTE_MSG_S * 2 + 1,
+    pcall(gh.trigger, 'Message', { msg = hudFrame.approachText(ap, units or settings.get('units'), td), ttl = M.ROUTE_MSG_S * 2 + 1,
       category = M.ROUTE_MSG_CATEGORY, icon = 'raceFlag' })
   else
     pcall(gh.trigger, 'Message', { msg = '', category = M.ROUTE_MSG_CATEGORY, clear = true })
   end
 end
+
+local transitSentKey = nil
+-- Our stream sent: the card it shows told to cardInput first, and the card's pick sent with it (ours.card).
+local lastOurs, lastGh = nil, nil
+local function queueOurs(gh, ours)
+  if type(ours) == 'table' then ours.card = cardInput.frame(ours) end
+  lastOurs, lastGh = ours, gh
+  gh.queueStream('earthRally', ours)
+end
+-- (the pick moved on the card: the frame on screen sent again with it)
+cardInput.changed = function()
+  if lastOurs and lastGh then
+    lastOurs.card = cardInput.streamInfo()
+    lastGh.queueStream('earthRally', lastOurs)
+  end
+end
+cardInput.act = function(what) return M.uiResults(what) end
 
 local function sendStreams(dt)
   local gh = rawget(_G, 'guihooks')
@@ -2069,7 +2123,7 @@ local function sendStreams(dt)
     local rl, ours = preview.frameAt(previewT, settings.get('units'))
     if not rl then M.previewStop() return end
     gh.queueStream('rallyLoop', rl)
-    gh.queueStream('earthRally', ours)
+    queueOurs(gh, ours)
     return
   end
   local r = runner.current()
@@ -2085,20 +2139,43 @@ local function sendStreams(dt)
     if key ~= askSentKey or hudT >= M.STREAM_FLOOR_S then
       askSentKey, hudT = key, 0
       local _, ours = runner.uiFrame()
-      gh.queueStream('earthRally', ours)
+      queueOurs(gh, ours)
       log('I', logTag, M.streamsLine(nil, ours))
     end
     inactiveSent = false
     return
   end
   askSentKey = nil
+  -- (the rally-loop plan, interface 4: a timed road section with no stage on screen -- its due time and time left in
+  -- our stream, sent when they change and at the floor's pace)
+  local okT, td = pcall(rallyRun.transitDue)
+  if over and okT and td then
+    hudT = hudT + dt
+    local key = hudFrame.transitKey(td) .. '|' .. tostring(runner.uiHidden)
+    -- (the finished run's one-off blanking still done: the stock apps go inactive and nothing of the run stays up)
+    local blank = not inactiveSent
+    if blank or key ~= transitSentKey or hudT >= M.STREAM_FLOOR_S then
+      transitSentKey, hudT = key, 0
+      local rl, ours = runner.uiFrame()
+      if blank and rl then gh.queueStream('rallyLoop', { activeState = 'inactive', showStageApps = false }) end
+      -- (the idle frame, with the transit's line alongside: not the finished run's cards)
+      local show = { approach = ours.show and ours.show.approach or nil }
+      ours.state, ours.show = 'idle', show
+      queueOurs(gh, ours)
+      inactiveSent = true
+    end
+    return
+  end
+  -- (a transit line just gone: the idle frame again, without it)
+  local wasTransit = transitSentKey ~= nil
+  transitSentKey = nil
   if over then
     -- (once: the stock apps blank, ours hides)
-    if not inactiveSent then
+    if not inactiveSent or wasTransit then
       local rl, ours = runner.uiFrame()
       if rl then gh.queueStream('rallyLoop', { activeState = 'inactive', showStageApps = false }) end
       ours.state, ours.show = 'idle', {}
-      gh.queueStream('earthRally', ours)
+      queueOurs(gh, ours)
       inactiveSent = true
       if streamLogKey then log('I', logTag, 'HUD streams: the run over, the HUD hidden') end
       streamLogKey = nil
@@ -2141,7 +2218,7 @@ local function sendStreams(dt)
   end
   if hudDue then
     hudT, hudKey = 0, kh
-    gh.queueStream('earthRally', ours)
+    queueOurs(gh, ours)
     local key = M.streamsKey(rl, ours)
     if key ~= streamLogKey then
       streamLogKey = key
@@ -2336,8 +2413,64 @@ logPausedSim = function(dtReal, dtSim)
   pausedLog.real, pausedLog.sim = 0, 0
 end
 
+------------------------------------------------------------------------------------------ multiplayer (plan F)
+-- In a BeamMP session Earth Rally does nothing (the owner, 2026-11-19: "a very multiplayer unfriendly mod"): no stage
+-- or rally starts, a stage under way is stopped and a rally under way left as Save and quit leaves it, no HUD, no input
+-- map or action filter, BeamNG.Earth's clock and weather never touched, traffic given back. Checked as the mod loads,
+-- at each level start and about once a second.
+M.MP_CHECK_S = 1
+function M.multiplayer() return mpOn end
+M.MP_MESSAGE = 'Earth Rally is off in multiplayer.'
+
+-- Everything under way stopped (as the level going stops it), the rally's save kept.
+local function mpStop()
+  pcall(menuPause.releaseAll)
+  if recce.active() then pcall(recce.stop, false) end
+  autoSeq, rallyQ = nil, nil
+  if autoRecce.active() then autoRun = nil; pcall(earth._roadWalk.reset); pcall(autoRecce.cancel) end
+  if previewT then pcall(M.previewStop) end
+  pcall(endWorldWait)
+  facing, playtest = nil, nil
+  if selftest then pcall(selftest.stop, 'multiplayer session') end
+  pcall(rallyRun.quit)          -- (Save and quit: the save kept, BeamNG's own recovery back, traffic given back)
+  pcall(rallyRun.release)
+  pcall(cardInput.reset)        -- (the card's buttons given back to the game)
+  pcall(runner.abort, true)
+  pcall(earth.holdStrips, false)
+end
+
+-- The session read again (force: now, else about once a second). Returns whether Earth Rally is off.
+function M.mpCheck(dt, force)
+  mpT = mpT + (dt or 0)
+  if not force and mpT < M.MP_CHECK_S then return mpOn end
+  mpT = 0
+  local ok, on = pcall(earth.inMultiplayer)
+  on = ok and on == true
+  if on ~= mpOn then
+    mpOn = on
+    if on then
+      log('I', logTag, 'multiplayer session: Earth Rally off')
+      mpStop()
+    else
+      log('I', logTag, 'multiplayer session over: Earth Rally on again')
+    end
+  end
+  return mpOn
+end
+
+function M.onClientStartMission() M.mpCheck(0, true) end
+
 function M.onUpdate(dtReal, dtSim)
-  pcall(rallyRun.update, dtReal)
+  -- (plan F: off in a BeamMP session -- nothing below runs; switched off in the mod manager still unloads)
+  if M.mpCheck(dtReal or 0) then
+    if unloadNext then
+      unloadNext = false
+      local ext = rawget(_G, 'extensions')
+      if ext and ext.unload then pcall(ext.unload, 'earthRally_main') end
+    end
+    return
+  end
+  pcall(rallyRun.update, dtReal, dtSim)
   local okP, errP = pcall(stepRallyPrep, dtReal or 0)
   if not okP then log('E', logTag, 'rally prep: ' .. tostring(errP)) end
   -- (1.7.3, item 3) a road-graph window waiting to be asked again after a timeout
@@ -2371,6 +2504,8 @@ function M.onUpdate(dtReal, dtSim)
     local okA, asking = pcall(rallyRun.asking)
     pcall(menuPause.card, 'earthRally_ask', okA and asking == true and not menuOpen and not runner.uiHidden)
   end
+  -- (the card up and showing: the pad and the keys are its own, its pause held or not -- cardInput.lua)
+  pcall(cardInput.update, dtReal or 0, { menuOpen = menuOpen, uiHidden = runner.uiHidden })
   local okL, errL = pcall(loadScreen.update, dtReal or 0)
   if not okL then log('E', logTag, 'loading screen: ' .. tostring(errL)) loadScreen.cancel() end
   earth.update()
@@ -2379,6 +2514,8 @@ function M.onUpdate(dtReal, dtSim)
   -- since the last time, so this is not a per-frame cost.
   if not earthSeen and earth.inWorld() then
     earthSeen = true
+    -- (the level up with no rally running: a clock or weather of ours a crash or a reload left set, given back)
+    pcall(rallyRun.clearStrayWorld)
     pcall(versions.check, M.VERSION)
   end
   if recce.active() and recce.update() == 'done' then
@@ -2428,13 +2565,21 @@ end
 
 -- The game's Interact control (Shift+E; the modifier + Y on a pad): on the start line, skip to 6 s before the start.
 function M.onGameplayInteract()
+  if mpOn then return end
+  -- (a timed rally's wait for your minute at a time control: the same key skips it, as at the start line -- or does
+  -- nothing, with the early penalty on. Just after a skip, the same press's second arrival (the page's key and this
+  -- hook both see Shift+E) is swallowed: it must not skip the start line's countdown as well)
+  if M.uiLoadingSkipWait() then return end
+  local okH, held = pcall(rallyRun.interactHeld)
+  if okH and held then return end
   pcall(runner.onGameplayInteract)
 end
 
--- Recovery keys (Backspace: back on the road, +10 s on the stage; Shift+Backspace: flip upright).
+-- Recovery keys (Backspace: back on the road, +5 s on the stage; Shift+Backspace: flip upright).
 -- (1.7.0) In a full rally's stage the key is the rally's recovery (rallyRun.recoverKey: free in Casual, the Recover?
 -- question in Realistic).
 function M.backOnRoad()
+  if mpOn then return false end
   local okR, mine = pcall(rallyRun.recoverKey)
   if okR and mine then return true end
   local ok, r = pcall(runner.backOnRoad) return ok and r end
@@ -2442,13 +2587,23 @@ function M.flipUpright() local ok, r = pcall(runner.flipUpright) return ok and r
 -- (1.7.0, #25) The pad's rally recovery (D-pad right): the rally's recovery key, and nothing outside a full rally --
 -- there the same button is the game's own reset, which a stage counts already.
 function M.rallyRecover()
+  if mpOn then return false end
+  -- (a card up: the d-pad is the card's, cardInput)
+  if cardInput.active() then return false end
   local r = rallyRun.active()
   if not r or r.done then return false end
   local ok, r = pcall(rallyRun.recoverKey)
   return ok and r
 end
 
--- A reset by the player (the game's trackVehReset hook: once a press, a held rewind included): +10 s during the timed
+-- The card's buttons (core/input/actions/earthRally.json, map EarthRallyCard: pushed only while a card is up), and
+-- the card's own nav and clicks forwarded from the HUD (src 'ui').
+function M.cardPress(kind, src) local ok, r = pcall(cardInput.press, kind, src) return ok and r end
+function M.cardRelease(kind) pcall(cardInput.release, kind) end
+function M.cardStick(axis, v, src) local ok, r = pcall(cardInput.stick, axis, v, src) return ok and r end
+function M.cardClick(what) local ok, r = pcall(cardInput.click, what) return ok and r end
+
+-- A reset by the player (the game's trackVehReset hook: once a press, a held rewind included): +15 s during the timed
 -- stage (setting resetPenalty).
 function M.trackVehReset(vid)
   pcall(runner.onReset, vid)
@@ -2463,6 +2618,7 @@ end
 -- stage run end to end by the game's AI, with checks, and a report in earthRally/selftest/. From the console, in the
 -- BeamNG.Earth level: earthRally_main.selfTest('otr24', 'maryhill-up'); earthRally_main.selfTestStop() stops it.
 function M.selfTest(eventId, stageId, opts)
+  if mpOn then log('W', logTag, 'self-test: ' .. M.MP_MESSAGE) return false end
   opts = opts or {}
   selftest = selftest or require('earthRally/selftest')
   local ok, why = selftest.start({ event = eventId, stage = stageId, token = opts.token, quit = opts.quit,
@@ -2497,6 +2653,7 @@ function M.onClientEndMission()
   if previewT then pcall(M.previewStop) end
   pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
   pcall(rallyRun.release)
+  pcall(cardInput.reset)        -- (the card's buttons given back to the game)
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)
   pcall(earth.reset)
@@ -2529,6 +2686,7 @@ function M.onModDeactivated()
   if previewT then pcall(M.previewStop) end
   pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
   pcall(rallyRun.release)
+  pcall(cardInput.reset)        -- (the card's buttons given back to the game)
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)
   pcall(earth.reset)
@@ -2557,6 +2715,7 @@ function M.onExtensionUnloaded()
   if previewT then pcall(M.previewStop) end
   pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
   pcall(rallyRun.release)
+  pcall(cardInput.reset)        -- (the card's buttons given back to the game)
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)
   pcall(earth.reset)
@@ -2567,7 +2726,11 @@ function M.onExtensionLoaded()
   --  and BeamNG.Earth's strips given back in case a run was cut short holding them)
   pcall(require('earthRally/props').sweep)
   pcall(earth.holdStrips, false)
+  pcall(cardInput.clearStale)  -- (the card's map and filter group, which the game keeps across a reload)
   pcall(rallyRun.release)      -- (a full rally's block on the game's recovery, if a reload cut it short)
+  pcall(rallyRun.clearStrayWorld) -- (and its clock and weather on BeamNG.Earth)
+  mpOn, mpT = false, 0
+  pcall(M.mpCheck, 0, true)     -- (plan F: a BeamMP session already)
   local veh = getPlayerVehicle and getPlayerVehicle(0)
   if veh then pcall(runner._vehCtl, veh, 'off') end
   settings.load()

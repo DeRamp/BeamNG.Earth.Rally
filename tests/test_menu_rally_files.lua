@@ -294,6 +294,52 @@ do
     s.board.oldLine, 'only times on an earlier line: none placed, and the board says so')
   T.check(menu.rally('mm').results.complete == false, 'and the rally result waits for a time on this line')
 
+  -- (additions A) Your runs' best splits: the fastest run with splits on the line the stage runs on now (a full-rally
+  -- pass can be it), and each run's splits on that line with its gaps to them
+  local key = events.stageLineInfo('mm', 'delta', deltaStage).key
+  local function sp(t, a, b, c, k, d)
+    local x = run(t) x.lineKey, x.splits, x.date = k or key, { a, b, c }, d or x.date return x
+  end
+  files['/earthRally/results/mm__delta.json'] = { runs = {
+    sp(79, 20, 40, 60, nil, '2026-11-14T10:00:00Z'),
+    sp(70, 15, 30, 50, 'another line'),
+    run(85),
+    sp(81, 19.5, 41, 62, nil, '2026-11-18T10:00:00Z') } }
+  events.forget()
+  s = menu.stage('mm', 'delta', 'start')
+  local bs = s.bestSplits
+  T.check(bs and bs.timeS == 79 and bs.splits[2] == 40 and bs.date == '2026-11-14T10:00:00Z' and bs.rally == nil,
+    'best splits: the fastest run with splits on this line, and its date (the faster one on another line not it)')
+  local r1, r2, r3, r4 = s.runs[1], s.runs[2], s.runs[3], s.runs[4]
+  T.check(r1.timeS == 81 and r1.splits and #r1.splits == 4 and r1.splits[1].gapS == -0.5 and r1.splits[2].gapS == 1
+    and r1.splits[3].gapS == 2 and r1.splits[4].timeS == 81 and r1.splits[4].gapS == 2,
+    'a run\'s splits and finish, each with its gap signed (ahead negative)')
+  T.check(r2.timeS == 85 and r2.splits == nil, 'a run with no splits: none')
+  T.check(r3.timeS == 70 and r3.splits == nil, 'a run on another line: no splits')
+  T.check(r4.timeS == 79 and r4.splits and r4.splits[1].timeS == 20 and r4.splits[1].gapS == nil
+    and r4.splits[4].gapS == nil and r4.bestSplits, 'the best run itself: its splits, no gaps')
+  -- (review 2026-11-19) two runs with the same date and time: only the best one itself marked (by its place in runs)
+  files['/earthRally/results/mm__delta.json'].runs[5] = sp(79, 21, 41, 61, nil, '2026-11-14T10:00:00Z')
+  events.forget()
+  s = menu.stage('mm', 'delta', 'start')
+  T.check(s.runs[5].bestSplits and not s.runs[1].bestSplits and s.runs[1].splits[1].gapS == 1,
+    'the best run marked by identity, not by its date and time: its twin compared with it')
+  files['/earthRally/results/mm__delta.json'].runs[5] = nil
+  -- a full-rally pass faster on this line: the best splits are its, and the row says so
+  files['/earthRally/results/mm__delta.json'].rallyPasses = { { timeS = 78.5, splits = { 18, 39, 59 }, lineKey = key,
+    date = '2026-11-16T10:00:00Z' } }
+  events.forget()
+  s = menu.stage('mm', 'delta', 'start')
+  T.check(s.bestSplits and s.bestSplits.rally == true and s.bestSplits.timeS == 78.5
+    and s.bestSplits.date == '2026-11-16T10:00:00Z', 'best splits from a full-rally pass: rally = true')
+  T.check(s.runs[4].splits[1].gapS == 2 and s.runs[4].splits[4].gapS == 0.5 and not s.runs[4].bestSplits,
+    'every run of yours compared with the pass')
+  -- a stage with no line: no best splits and no split lines, whatever its runs recorded
+  files['/earthRally/results/mm__echo.json'] = { runs = { sp(80, 20, 40, 60, 'some line') } }
+  events.forget()
+  s = menu.stage('mm', 'echo', 'start')
+  T.check(s.bestSplits == nil and s.runs[1].splits == nil, 'no line: no best splits, no split lines')
+
   -- the HUD's next stage and SS count (runner.lua): the itinerary's running order and counted passes; the map's
   -- order with none, a stage never run skipped
   local it = { id = 'it', stages = { stage('a', 'A', 1), stage('x', 'X', 1), stage('y', 'Y', 1), stage('b', 'B', 1),

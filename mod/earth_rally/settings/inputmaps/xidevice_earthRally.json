@@ -4,6 +4,40 @@
     {
       "control": "rpov",
       "action": "earthRally_rallyRecover"
+    },
+    {
+      "control": "btn_a",
+      "action": "earthRally_cardOk"
+    },
+    {
+      "control": "btn_b",
+      "action": "earthRally_cardBack"
+    },
+    {
+      "control": "lpov",
+      "action": "earthRally_cardPrev"
+    },
+    {
+      "control": "upov",
+      "action": "earthRally_cardPrev"
+    },
+    {
+      "control": "rpov",
+      "action": "earthRally_cardNext"
+    },
+    {
+      "control": "dpov",
+      "action": "earthRally_cardNext"
+    },
+    {
+      "control": "thumblx",
+      "action": "earthRally_cardStickX",
+      "deadzoneResting": 0.1
+    },
+    {
+      "control": "thumbly",
+      "action": "earthRally_cardStickY",
+      "deadzoneResting": 0.1
     }
   ]
 }

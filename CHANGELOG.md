@@ -3,6 +3,44 @@
 Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/writing-standard.md). Downloads:
 [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
 
+## 1.10.0-alpha: the rally loop (2026-11-19)
+
+Works with BeamNG.drive 0.40.6 · [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+.
+
+Full rallies now run to the clock, at each stage's real time of day and in its weather.
+
+### New
+
+#### Time controls
+* **Timed road sections**: a due time at every time control, 10 s a minute late.
+* **Services, regroups and the finish** have their own time controls.
+* **Early check-in penalty** setting: checking in early costs time. Off by default: you wait for your minute.
+* The road section's HUD line shows the rally time, the due time and the time left.
+* The time card shows each due time, time in and **transit penalties**.
+
+#### Time of day and weather
+* Each stage runs at its real date and time, in the weather it had on the day. The ARA 2026 season has it all.
+* **Rally's real time and weather** setting: Off keeps your own sky.
+* **Weather** on the Drive stage page: Current, Rally day, Clear, Cloudy, Rain, Storm, Snow or Fog.
+* The time card shows each stage's weather.
+
+#### Splits and results
+* **Split times** at 25, 50 and 75% of the stage, against your best.
+* The rally's results show transit penalties, each stage's time and what each stop cost.
+
+#### On the road
+* **Traffic on road sections**: On or Off on the rally's start screen.
+* The pop-up cards work with a controller and the keyboard.
+
+### Changed
+* **Reset penalty**: the game's reset costs 15 s, **Back on the road** 5 s, on the timed stage.
+* **Casual** rallies let you reset and recover the car.
+* Starting or continuing a rally puts the game back to normal speed.
+* In BeamMP, Earth Rally's menu says it is single player only.
+
+### Known issues
+* Where the road map near a time control hasn't loaded, the route can bring you in from the wrong side.
+
 ## 1.9.4-alpha: missing road segments (2026-11-19)
 
 Works with BeamNG.drive 0.40.6 · [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+.

@@ -1663,7 +1663,7 @@ do
   veh.getDirectionVector = nil
 end
 
--- the reset penalty: +10 s a reset during the timed stage, in the result
+-- the reset penalty: +15 s a reset during the timed stage, in the result
 do
   settings.reset()
   local r5 = toTheLine(event)
@@ -1671,7 +1671,7 @@ do
   go(r5)
   T.check(runner.state() == 'running', 'running (reset penalty run)')
   T.check(runner.onReset(1) == true and r5.resets == 1, 'a reset on the stage: counted')
-  T.check(toastTitled('Reset: %+10 s') ~= nil, 'a toast says so')
+  T.check(toastTitled('Reset: %+15 s') ~= nil, 'a toast says so')
   T.check(not runner.onReset(1) and r5.resets == 1, 'the same reset heard twice: counted once')
   frames(10)
   moveAnchor(anchor.lat, anchor.lon, 'rebase')
@@ -1686,11 +1686,11 @@ do
   T.check(runner.state() == 'finished', 'finished (reset penalty run: ' .. runner.state() .. ')')
   local runs = events.results('test', 'hill').runs
   local last5 = runs[#runs]
-  T.check(last5.resets == 2 and last5.resetPenaltyS == 20 and last5.penaltyS == 20 and
-    math.abs(last5.timeS - last5.stageS - 20) < 1e-9, 'the resets in the result: +20 s in the time')
+  T.check(last5.resets == 2 and last5.resetPenaltyS == 30 and last5.penaltyS == 30 and
+    math.abs(last5.timeS - last5.stageS - 30) < 1e-9, 'the resets in the result: +30 s in the time')
   -- the results card: the HUD frame, Retry starts the stage again
   local rl, ours = runner.uiFrame()
-  T.check(rl.activeState == 'inactive' and ours.finish and ours.finish.penalties.resets == 20 and
+  T.check(rl.activeState == 'inactive' and ours.finish and ours.finish.penalties.resets == 30 and
     ours.finish.penalties.resetCount == 2, 'the HUD has the resets itemised')
   T.check(r5.resultsOpen and r5.sinceFinish ~= nil, 'the results card open at the flying finish (no stop control)')
   frames(50)
@@ -1788,7 +1788,7 @@ do
   settings.reset()
 end
 
--- recovery: back on the road (+10 s on the stage), flip upright (free); the stage layout held
+-- recovery: back on the road (+5 s on the stage), flip upright (free); the stage layout held
 do
   settings.reset()
   local teleports = {}
@@ -1807,12 +1807,14 @@ do
   local fx, fy = toGame(full[600][1], full[600][2])
   car.lat, car.lon = toGeo(fx + 30, fy)
   frames(1)
-  local before = r10.resets or 0
+  local before, penBefore = r10.resets or 0, r10.resetPenS or 0
   T.check(runner.backOnRoad() == true and #teleports == 1 and teleports[1].reset == false,
     'back on the road: moved as the game flips a car (damage kept)')
   local bx, by = toGame(car.lat, car.lon)
   T.check(math.abs(bx - fx) < 3 and math.abs(by - fy) < 15 and (r10.resets or 0) == before + 1,
     'back on the road: on the stage line where it had got to, +1 reset (' .. string.format('%.1f, %.1f', bx - fx, by - fy) .. ')')
+  T.check((r10.resetPenS or 0) == penBefore + 5 and toastTitled('Back on the road: %+5 s') ~= nil,
+    'back on the road: +5 s, not the reset\'s 15')
   frames(10)
   veh.getDirectionVector = function() return { x = 0, y = 1, z = 0 } end
   veh.getID = function() return 1 end
@@ -3950,6 +3952,174 @@ do
     T.check(rallyRun.saved('test19r') and rallyRun.saved('test19r').at == 'Service A', 'rally: the save is at Service A')
     rallyRun.abandon('test19r')
     T.check(rallyRun.saved('test19r') == nil, 'rally: retired, the save deleted')
+    -- (a timed rally left mid-run on SS1: the replay scores it as recovered, with no time out -- the loop's saved
+    -- lastOut, the stage before's, not put back over it; left between stages, it is)
+    for _, started in ipairs({ true, false }) do
+      local tr = rally.new(evR, { mode = 'realistic', class = 'L4WD' })
+      tr.timed, tr.clock, tr.road, tr.tz = true, { t = 600000 }, {}, 'UTC'
+      rally.serviced(tr)
+      rally.serviceOut(tr)
+      files['/earthRally/rallies/test19r.json'] = { format = rallyRun.FORMAT, current = tr, finished = {},
+        loop = { results = {}, started = started, lastOut = 599940, clock = 600300, road = {} } }
+      T.check(rallyRun.resume('test19r'), 'rally: a timed save resumed (started = ' .. tostring(started) .. ')')
+      local a = rallyRun.active()
+      if started then
+        T.check(a.results.SS1 and a.results.SS1.superRally and a.lastOut == nil,
+          'rally: resumed after leaving mid-run: SS1 recovered, no stale time out (' .. tostring(a.lastOut) .. ')')
+      else
+        T.check(a.lastOut == 599940 and a.clock.t == 600300, 'rally: resumed between stages: the loop\'s time out kept')
+      end
+      rallyRun.quit()
+      rallyRun.abandon('test19r')
+    end
+    -- (the owner, 2026-11-19) Traffic on road sections, the start screen's choice. On leaves the world's traffic as it
+    -- is (never the game's stock traffic set up); Off holds it at 0 for the whole rally and gives the player's amount
+    -- back, kept in the settings meanwhile (a Lua reload); the default is the player's last pick, else the world's
+    do
+      local tAmt, tState, setUp, deleted = 8, 'on', 0, 0
+      gameplay_traffic = { getState = function() return tState end,
+        getTrafficVars = function() return { activeAmount = tAmt } end, setActiveAmount = function(n) tAmt = n end,
+        setupTraffic = function() setUp = setUp + 1 tState = 'on' end,
+        deleteVehicles = function() deleted = deleted + 1 end,        -- (the game's: the state goes off a frame later)
+        onTrafficStopped = function() tState = 'off' end }
+      settings.reset()
+      local info = rallyRun.startInfo('test19r')
+      T.check(info.traffic and info.traffic.pick == 'on' and info.traffic.world == true,
+        "traffic: none picked yet, the world's running: On on the start screen")
+      tState = 'off'
+      info = rallyRun.startInfo('test19r')
+      T.check(info.traffic.pick == 'off' and info.traffic.world == false, 'traffic: none picked yet, none in the world: Off')
+      tState = 'on'
+      T.check(rallyRun.start('test19r', { mode = 'casual', class = 'L4WD' }), 'traffic: a rally started with no choice sent')
+      rallyRun.update(1.1)
+      T.check(rallyRun.active().traffic == 'on' and tAmt == 8 and setUp == 0,
+        "traffic: the world's default, On: its traffic left running")
+      rallyRun.quit()
+      rallyRun.abandon('test19r')
+      T.check(rallyRun.start('test19r', { mode = 'casual', class = 'L4WD', traffic = 'off' }) and tAmt == 0,
+        "traffic Off: the game's traffic held at 0 (" .. tostring(tAmt) .. ')')
+      T.check(settings.get('rallyTraffic') == 'off' and settings.get('rallyTrafficStash') == 8,
+        "traffic Off: the pick remembered, the player's amount kept in the settings")
+      tAmt = 5                  -- (BeamNG.Earth putting its amount back after a teleport's hold)
+      rallyRun.update(1.1)
+      T.check(tAmt == 0, 'traffic Off: put back by someone else, held at 0 again')
+      rallyRun.quit()
+      T.check(tAmt == 8 and rallyRun.trafficState() == nil and settings.get('rallyTrafficStash') == false,
+        "traffic Off: the rally left, the player's amount back (" .. tostring(tAmt) .. ')')
+      rallyRun.abandon('test19r')
+      T.check(rallyRun.startInfo('test19r').traffic.pick == 'off', 'traffic: the last pick (Off) the default next time')
+      T.check(rallyRun.start('test19r', { mode = 'casual', class = 'L4WD', traffic = 'on' }), 'traffic On: started')
+      T.check(settings.get('rallyTraffic') == 'on', 'traffic On: the pick remembered')
+      rallyRun.quit()
+      rallyRun.abandon('test19r')
+      T.check(tAmt == 8 and deleted == 0, "traffic On: left, the player's own traffic left alone")
+      tState = 'off'
+      info = rallyRun.startInfo('test19r')
+      T.check(info.traffic.pick == 'on' and info.traffic.world == false, 'traffic: On picked last, the world has none (the note)')
+      -- (notes-rally-loop 2) On with none running: started for the rally (BeamNG.Earth's own, through its navgraph's
+      -- choice and start), taken away after, its choice put back
+      local ngStarts = 0
+      beamngEarth_navgraph = { choice = { traffic = false },
+        _startTraffic = function() ngStarts = ngStarts + 1 if beamngEarth_navgraph.choice.traffic then tState = 'on' end end }
+      T.check(rallyRun.start('test19r', { mode = 'casual', class = 'L4WD', traffic = 'on' }) and ngStarts == 1
+        and tState == 'on' and setUp == 0, "traffic On, none in the world: BeamNG.Earth's traffic started for the rally")
+      T.check(settings.get('rallyTrafficSpawned') == 'off', 'traffic On: the one started kept in the settings (a Lua reload)')
+      rallyRun.quit()
+      rallyRun.abandon('test19r')
+      T.check(deleted == 1 and tState == 'off' and beamngEarth_navgraph.choice.traffic == false,
+        'traffic On: the rally left, the traffic it started taken away, the choice put back')
+      -- (no BeamNG.Earth navgraph: the game's own traffic)
+      beamngEarth_navgraph = nil
+      T.check(rallyRun.start('test19r', { mode = 'casual', class = 'L4WD', traffic = 'on' }) and setUp == 1,
+        "traffic On, none in the world, no BeamNG.Earth traffic: the game's set up")
+      rallyRun.quit()
+      rallyRun.abandon('test19r')
+      T.check(deleted == 2 and settings.get('rallyTrafficSpawned') == false, 'traffic On: taken away after')
+      -- (left while it is still spawning: taken away again once it is on)
+      T.check(rallyRun.start('test19r', { mode = 'casual', class = 'L4WD', traffic = 'on' }), 'traffic On: started again')
+      tState = 'spawning'
+      rallyRun.quit()
+      rallyRun.abandon('test19r')
+      T.check(deleted == 3 and tState == 'spawning', 'traffic: deleted while still spawning, the state left to it')
+      rallyRun.update(0.1)
+      tState = 'on'                 -- (the spawning group arrives)
+      rallyRun.update(0.1)
+      T.check(deleted == 4 and tState == 'off', 'traffic: the cars that came after the delete taken away too')
+      -- (Casual: the game's own reset and recovery open; the rest blocked. notes-rally-loop 3)
+      local casual = rallyRun.blockedFor('casual')
+      local has = function(l, x) for _, v in ipairs(l) do if v == x then return true end end return false end
+      T.check(not has(casual, 'reset_physics') and has(casual, 'reset_all_physics') and not has(casual, 'recover_vehicle') and has(casual, 'vehicle_selector')
+        and has(casual, 'toggle_slow_motion'), 'Casual: reset and recover open, vehicle swap and slow motion blocked')
+      local real = rallyRun.blockedFor('realistic')
+      T.check(has(real, 'reset_physics') and has(real, 'recover_vehicle'), 'Realistic: reset and recover blocked')
+      -- (notes-rally-loop 4) a rally started in slow motion runs at normal speed
+      local speed = 0.25
+      simTimeAuthority = { get = function() return speed end, set = function(v) speed = v end }
+      T.check(rallyRun.normalSpeed() and speed == 1, 'slow motion: back to normal speed')
+      T.check(rallyRun.normalSpeed() == false, 'normal speed already: nothing done')
+      simTimeAuthority = nil
+      -- (notes-rally-loop 5) no road map round the ATC yet: a point on the line from the start back through the ATC
+      local stg = { controls = { start = { lat = 47.0, lon = -119.0 } }, line = { { 47.0, -119.0 }, { 46.9997, -119.0 },
+        { 46.9994, -119.0 } } }      -- (the stage runs on south from the start, away from the ATC)
+      local v = rallyRun.straightVia(stg, 47.0009, -119.0, 'ATC')      -- (the ATC 100 m north of the start)
+      local geo = require('earthRally/geo')
+      T.check(v and v.straight and v.lat > 47.0009 and math.abs(geo.metres(47.0009, -119.0, v.lat, v.lon) - 60) < 2,
+        'approach: 60 m back from the ATC, away from the start')
+      T.check(rallyRun.straightVia(stg, 47.0009, -119.0, 'start') == nil, 'approach: none for a stage with no ATC')
+      stg.line = { { 47.0, -119.0 }, { 47.0, -118.9993 }, { 47.0, -118.9986 } }      -- (the stage turns east at the start)
+      T.check(rallyRun.straightVia(stg, 47.0009, -119.0, 'ATC') == nil, 'approach: none where the road bends at the start')
+      -- (continued over itself while still under way, Off: the player's amount still given back after)
+      tState, tAmt = 'on', 8
+      rallyRun.start('test19r', { mode = 'casual', class = 'L4WD', traffic = 'off' })
+      files['/earthRally/rallies/test19r.json'] = { format = rallyRun.FORMAT, finished = {},
+        current = rally.new(evR, { mode = 'casual', class = 'L4WD', traffic = 'off' }) }
+      T.check(tAmt == 0 and rallyRun.resume('test19r') and tAmt == 0, 'traffic Off: continued over itself, still held')
+      rallyRun.quit()
+      rallyRun.abandon('test19r')
+      T.check(tAmt == 8, 'traffic Off: continued over itself, the amount still given back after')
+      -- (a Lua reload in an Off rally: a fresh rallyRun has no rally, the amount is in the settings; the level left
+      -- gives it back, and so does continuing the rally, which then holds it again)
+      for _, way in ipairs({ 'release', 'resume' }) do
+        tState, tAmt = 'on', 8
+        rallyRun.start('test19r', { mode = 'casual', class = 'L4WD', traffic = 'off' })
+        T.check(tAmt == 0, 'traffic Off: held before the reload (' .. way .. ')')
+        local hooks = {}
+        for _, k in ipairs({ 'rallyClock', 'transitDueSource', 'onFinished', 'askSource', 'askKey', 'onRallyReset',
+          'transitSource', 'rallyOn' }) do hooks[k] = runner[k] end
+        local keepShown = events.keepShown
+        package.loaded['earthRally/rallyRun'] = nil
+        local fresh = require('earthRally/rallyRun')
+        if way == 'release' then
+          fresh.release()
+          T.check(tAmt == 8 and settings.get('rallyTrafficStash') == false,
+            "traffic Off, after a Lua reload: the level left, the player's amount back (" .. tostring(tAmt) .. ')')
+        else
+          files['/earthRally/rallies/test19r.json'] = { format = rallyRun.FORMAT, finished = {},
+            current = rally.new(evR, { mode = 'casual', class = 'L4WD', traffic = 'off' }) }
+          T.check(fresh.resume('test19r') and tAmt == 0 and fresh.trafficState().stash.traffic == 8,
+            "traffic Off, after a Lua reload: continued, still held, the player's amount still known")
+          fresh.quit()
+          T.check(tAmt == 8, "traffic Off, after a Lua reload: continued and left, the player's amount back")
+        end
+        package.loaded['earthRally/rallyRun'] = rallyRun
+        for k, v in pairs(hooks) do runner[k] = v end
+        events.keepShown = keepShown
+        rallyRun.quit()
+        rallyRun.abandon('test19r')
+        T.check(tAmt == 8, 'traffic: the old module left after the reload: the amount stays (' .. tostring(tAmt) .. ')')
+      end
+      -- (a save from before the choice: the world left alone, as On)
+      tState, tAmt = 'on', 8
+      local old = rally.new(evR, { mode = 'casual', class = 'L4WD' })
+      old.traffic = nil
+      files['/earthRally/rallies/test19r.json'] = { format = rallyRun.FORMAT, current = old, finished = {} }
+      T.check(rallyRun.resume('test19r') and rallyRun.trafficState() and rallyRun.trafficState().mode == 'on'
+        and tAmt == 8, "traffic: an older save continued with the world's traffic left alone")
+      rallyRun.quit()
+      rallyRun.abandon('test19r')
+      settings.reset()
+      gameplay_traffic = nil
+    end
     core_input_actionFilter = nil
     teleports, moved = 0, false
   end
@@ -4005,6 +4175,127 @@ do
     T.check(props.site('service') == nil, 'rally end: driven away, the board and tent taken away (#68)')
     core_input_actionFilter = nil
     rallyRun.abandon('test19f')
+    teleports, moved = 0, false
+  end
+
+  -- 3d1. (additions B) a timed rally's stops checked in: driven to the final service and stopped at its board, checked
+  -- in at its MTC in before the rally finishes (late: in the finished rally's stops); a stop with no place gone to
+  -- (no driving in) checks nothing in
+  do
+    local rally = require('earthRally/rally')
+    local rallyRun = require('earthRally/rallyRun')
+    local wt = require('earthRally/worldTime')
+    local parkLat, parkLon = atcLat - 8000 / 111195, full[11][2]
+    local t0 = wt.parse('2031-02-07', '08:00')
+    local timing = { timezone = 'America/Chicago', start = { date = '2031-02-07', time = '08:00' },
+      finish = { inType = 'MTC_IN', inTargetMin = 10 }, earlyFree = { MTC_IN = true } }
+    files['/earthRally/events/test19t.json'] = { format = 1, id = 'test19t', name = 'Test Rally 19T', stages = ev.stages,
+      itinerary = { { ss = 'SS1', stage = 'hill', run = 1, day = 1, km = 3, latenessMin = 10, outDate = '2031-02-07',
+        outAt = '08:00', outTargetMin = 20 } },
+      rallyStops = { { after = 1, kind = 'service', label = 'Service A', name = 'Park',
+        place = { name = 'Park', lat = parkLat, lon = parkLon } } },
+      rallyStart = { name = 'Park', lat = parkLat, lon = parkLon }, timing = timing }
+    files['/earthRally/matched/test19t__hill.json'] = { format = 1, points = recFrom }
+    events.list(true)
+    rallyRun.ui.openCard = function() end
+    core_input_actionFilter = { setGroup = function() end, addAction = function() end }
+    local function rframes(n) for _ = 1, n do rallyRun.update(0.1, 0) frames(1) end end
+    car.lat, car.lon, car.speed = parkLat, parkLon, 0
+    T.check(rallyRun.start('test19t', { mode = 'casual', class = 'L4WD' }), 'stop check-in: started')
+    rframes(60)
+    local R = rallyRun.active()
+    T.check(R.timed and R.order[3].final and R.order[3].inType == 'MTC_IN' and R.order[3].inTargetMin == 10,
+      'stop check-in: the final service checked in at the finish\'s MTC in')
+    local c = rallyRun.uiCard()
+    T.check(c.rows[3].due == nil and c.rows[3].targetMin == 10 and c.rows[3].inType == 'MTC_IN',
+      'stop check-in: the final row shows its target until SS1 is done')
+    T.check(rallyRun.goNext() and runner.approaching(), 'stop check-in: on the transit to SS1')
+    rallyRun.onFinished({ timeS = 200, stageS = 200, penaltyS = 0, startT = t0 + 20 * 60, finishT = t0 + 25 * 60 })
+    T.check(R.lastOut == t0 + 30 * 60 and rallyRun.uiCard().phase == 'toStop', 'stop check-in: SS1 out 08:30, driving in')
+    R.clock.t = t0 + 35 * 60
+    local td = rallyRun.transitDue()
+    T.check(td and td.due == '08:40' and td.leftS == 5 * 60 and td.label == 'Final service · Park',
+      'stop check-in: the transit to the stop has its due time (' .. tostring(td and td.label) .. ')')
+    c = rallyRun.uiCard()
+    T.check(c.transit and c.transit.due == '08:40' and c.rows[3].due == '08:40', 'stop check-in: the card\'s banner and row')
+    -- (choice 3) early, driving to a stop that charges early: the line says to wait short of the board
+    local hud = require('earthRally/hudFrame')
+    settings.set('earlyPenalty', true)
+    T.check(td.early == nil, 'stop check-in: early at a finish that allows it: no wait note')
+    R.earlyFree = {}
+    R.clock.t = t0 + 35 * 60 + 1
+    td = rallyRun.transitDue()
+    T.check(td and td.early == nil and td.leftS and hud.transitText(td):find('left', 1, true),
+      'stop check-in: early with the penalty on, far from the board: the time left, no wait note yet: '
+      .. tostring(td and hud.transitText(td)))
+    -- (near the board: the note, with the time left still there to wait by)
+    car.lat, car.lon, car.speed = parkLat - 0.001, parkLon, 10
+    rframes(2)
+    R.clock.t = t0 + 35 * 60 + 3
+    td = rallyRun.transitDue()
+    local txt = td and hud.transitText(td) or ''
+    T.check(td and td.early and txt:find('left · early: wait short of the board', 1, true),
+      'stop check-in: early with the penalty on, near the board: ' .. txt)
+    settings.set('earlyPenalty', false)
+    R.clock.t = t0 + 35 * 60 + 2
+    T.check(rallyRun.transitDue().early == nil, 'stop check-in: the early penalty off: no wait note')
+    R.earlyFree = { MTC_IN = true }
+    R.clock.t = t0 + 43 * 60 + 30
+    car.lat, car.lon, car.speed = parkLat, parkLon, 0
+    rframes(5)
+    T.check(rally.over(R), 'stop check-in: stopped at the final service, the rally over')
+    T.check(R.road.stop3 and R.road.stop3.kind == 'late' and R.road.stop3.min == 3 and R.road.stop3.penaltyS == 30,
+      'stop check-in: checked in 3 min late, +30 s')
+    local list = rallyRun.finishedList('test19t')
+    local f = list[#list]
+    T.check(f and f.roadPenaltyS == 30 and f.stops and f.stops[1].label == 'Final service' and f.stops[1].penaltyS == 30,
+      'stop check-in: before the finish -- the finished rally holds it')
+    local fin = rallyRun.resultsFor('test19t')
+    T.check(fin and fin.roadPenaltyS == 30 and fin.passes and fin.passes[1].ss == 'SS1' and fin.stops[1].after == 'SS1',
+      'stop check-in: the Results tab gets the passes, stops and road total')
+    rallyRun.endRally()
+    rallyRun.abandon('test19t')
+    -- (Realistic) left on the road section to the stop, 3 min late by then, and continued: checked in at the stop at
+    -- the rally clock as it was left, the lateness counted
+    car.lat, car.lon, car.speed = parkLat, parkLon, 0
+    T.check(rallyRun.start('test19t', { mode = 'realistic', class = 'L4WD' }), 'resume to a stop: started')
+    rframes(60)
+    R = rallyRun.active()
+    T.check(rallyRun.goNext() and runner.approaching(), 'resume to a stop: on the transit to SS1')
+    rallyRun.onFinished({ timeS = 200, stageS = 200, penaltyS = 0, startT = t0 + 20 * 60, finishT = t0 + 25 * 60 })
+    R.clock.t = t0 + 43 * 60 + 30
+    car.lat, car.lon = parkLat + 0.05, parkLon
+    rallyRun.quit()
+    car.lat, car.lon = parkLat, parkLon
+    T.check(rallyRun.resume('test19t'), 'resume to a stop: continued')
+    rframes(30)
+    R = rallyRun.active()
+    T.check(R and R.road.stop3 and R.road.stop3.kind == 'late' and R.road.stop3.min == 3 and R.road.stop3.penaltyS == 30,
+      'resume to a stop: checked in there at the clock left, 3 min late, +30 s (' ..
+      tostring(R and R.road.stop3 and R.road.stop3.kind) .. ')')
+    rallyRun.endRally()
+    rallyRun.abandon('test19t')
+    -- a stop with no place: gone to, not driven in -- nothing checked in
+    files['/earthRally/events/test19u.json'] = { format = 1, id = 'test19u', name = 'Test Rally 19U', stages = ev.stages,
+      itinerary = { { ss = 'SS1', stage = 'hill', run = 1, day = 1, km = 3, latenessMin = 10, outDate = '2031-02-07',
+        outAt = '08:00', outTargetMin = 20 }, { ss = 'SS2', stage = 'hill', run = 2, day = 1, km = 3, targetMin = 30,
+        inType = 'SVC_IN', inTargetMin = 10 } },
+      rallyStops = { { after = 1, kind = 'service', label = 'Service A', inType = 'SVC_IN', inTargetMin = 10 } },
+      rallyStart = { name = 'Park', lat = parkLat, lon = parkLon }, timing = timing }
+    files['/earthRally/matched/test19u__hill.json'] = { format = 1, points = recFrom }
+    events.list(true)
+    car.lat, car.lon, car.speed = parkLat, parkLon, 0
+    T.check(rallyRun.start('test19u', { mode = 'casual', class = 'L4WD' }), 'no place: started')
+    rframes(60)
+    R = rallyRun.active()
+    T.check(rallyRun.goNext() and runner.approaching(), 'no place: on the transit to SS1')
+    rallyRun.onFinished({ timeS = 200, stageS = 200, penaltyS = 0, startT = t0 + 20 * 60, finishT = t0 + 25 * 60 })
+    T.check(rally.current(R).kind == 'service' and rallyRun._dueAt(R.pos) == t0 + 40 * 60, 'no place: the stop is due')
+    rallyRun.goNext()
+    T.check(rally.isServiced(R) and R.road.stop3 == nil and rallyRun.uiCard().rows[3].due == nil
+      and rallyRun.uiCard().rows[3].targetMin == nil, 'no place: done where the car is, nothing checked in, the row blank')
+    core_input_actionFilter = nil
+    rallyRun.abandon('test19u')
     teleports, moved = 0, false
   end
 
@@ -4337,11 +4628,17 @@ do
   T.check(runner.onReset(nil) == false and rallyResets == 2, 'a reset with no vehicle id (the radial menu): the rally too')
   local oldBest = events.best
   events.best = function() return nil end      -- (a stage never driven before: no best to show)
+  car.speed = 1000      -- (the stand-in car jumps 25 points a second: as fast, so its splits are believed)
   driveTo(11, #full)
+  car.speed = 0
   events.best = oldBest
   T.check(runner.state() == 'finished' and #finished == 1 and math.abs(finished[1].timeS - rr.finalTime) < 1e-9,
     'the finish handed to the rally (' .. runner.state() .. ')')
   T.check(#(events.results('test', 'hill').runs or {}) == nRuns, 'a rally time is not a single-stage run')
+  local passes = events.results('test', 'hill').rallyPasses or {}
+  T.check(#passes == 1 and #passes[1].splits == 3 and passes[1].splits[1] < passes[1].splits[3],
+    'a rally pass kept apart, with its three splits (the rally loop)')
+  T.check(finished[1].startT == nil and finished[1].finishT == nil, 'an untimed rally: no rally-clock times')
   frames(50)
   local _, oursR = runner.uiFrame()
   T.check(oursR.show.results and oursR.results.next == nil, 'the results card up, no Next stage of its own')
@@ -4356,6 +4653,419 @@ do
   runner.onFinished, runner.onRallyReset = nil, nil
   spawn = oldSpawn
   settings.reset()
+end
+
+------------------------------------------------------------------------------------------ the rally loop: splits
+-- Three splits at a quarter, half and three quarters of the timed span, crossed on run.along, against the best run's
+-- splits on the stage (a single run or a rally's pass); the card for 5 s; the finish card's list.
+do
+  local hud = require('earthRally/hudFrame')
+  files['/earthRally/results/sp__x.json'] = nil
+  T.check(events.bestSplits('sp', 'x') == nil, 'no run with splits: nothing to compare')
+  local fr = { event = { id = 'sp' }, stage = { id = 'x' }, state = 'running', startM = 100, finishM = 1100,
+    along = 300, clock = 30 }
+  runner._splitsTick(fr)
+  T.check(fr.splits and #fr.splits == 0 and fr.splitBest == false, 'before a quarter: no split')
+  fr.along, fr.clock = 360, 40
+  runner._splitsTick(fr)
+  T.check(#fr.splits == 1 and fr.splits[1] == 40 and fr.splitShow.n == 1 and fr.splitShow.gapS == nil,
+    'split 1 at a quarter: 40 s, no gap on a first run')
+  local c = hud.splitCard(fr)
+  T.check(c and c.n == 1 and c.timeS == 40, 'the split card up')
+  fr.clock = 46
+  T.check(hud.splitCard(fr) == nil, 'and gone 5 s on')
+  fr.along, fr.clock = 1000, 90
+  runner._splitsTick(fr)
+  T.check(#fr.splits == 3 and fr.splits[2] == 90 and fr.splits[3] == 90 and fr.splitShow.n == 3,
+    'two splits passed in one look: both kept')
+  fr.finalTime = 120
+  local rows = hud.splitRows(fr)
+  T.check(#rows == 4 and rows[4].n == 4 and rows[4].timeS == 120 and rows[4].gapS == nil, 'the finish card: 3 splits and the finish')
+  -- a rally's pass kept apart (not a single-stage run), and the best of both compared with
+  events.addResult('sp', 'x', { finished = true, timeS = 130, splits = { 41, 85, 100 } })
+  events.addRallyPass('sp', 'x', { timeS = 125, splits = { 39, 80, 99 } })
+  events.addResult('sp', 'x', { finished = true, timeS = 110 })      -- (faster, but saved before splits)
+  T.check(#events.results('sp', 'x').runs == 2 and events.best('sp', 'x') == 110, 'a rally\'s pass is not a run')
+  local b = events.bestSplits('sp', 'x')
+  T.check(b and b.timeS == 125 and b.splits[1] == 39, 'the best run with splits, a rally\'s pass too')
+  local fr2 = { event = { id = 'sp' }, stage = { id = 'x' }, state = 'running', startM = 0, finishM = 1000,
+    along = 260, clock = 37.5 }
+  runner._splitsTick(fr2)
+  T.check(math.abs(fr2.splitShow.gapS - (-1.5)) < 1e-9, 'ahead of the best: a negative gap')
+  fr2.finalTime = 127
+  rows = hud.splitRows(fr2)
+  T.check(#rows == 2 and math.abs(rows[2].gapS - 2) < 1e-9, 'the finish gap against that run\'s time')
+  local _, ours = hud.build(fr2, { now = 0 })
+  T.check(ours.split and ours.split.n == 1 and ours.show.split and ours.splitsAt[2] == 0.5,
+    'the stream: ours.split and the progress bar\'s ticks')
+  -- (M1) a hairpin: progress jumps 320 m ahead in a frame at 20 m/s -- no split until the car could have got there
+  files['/earthRally/results/sp__h.json'] = nil
+  local hp = { event = { id = 'sp' }, stage = { id = 'h' }, state = 'running', startM = 0, finishM = 1000,
+    along = 200, clock = 10 }
+  runner._splitsTick(hp, 20)
+  hp.along, hp.clock = 520, 10.1
+  runner._splitsTick(hp, 20)
+  T.check(#hp.splits == 0, 'a jump ahead on a hairpin: no split yet')
+  hp.along, hp.clock = 522, 13
+  runner._splitsTick(hp, 20)
+  T.check(#hp.splits == 0, 'still not: 3 s at 20 m/s is not 320 m')
+  hp.along, hp.clock = 530, 26
+  runner._splitsTick(hp, 20)
+  T.check(#hp.splits == 2 and hp.splits[1] == 26, 'once it could have driven there: the splits passed, at that time')
+  -- (M2) only runs on the line timed now are compared with
+  events.addResult('sp', 'k', { finished = true, timeS = 100, splits = { 20, 45, 70 }, lineKey = 'old' })
+  events.addResult('sp', 'k', { finished = true, timeS = 120, splits = { 30, 60, 90 }, lineKey = 'new' })
+  local bk = events.bestSplits('sp', 'k', 'new')
+  T.check(bk and bk.timeS == 120 and bk.splits[1] == 30, 'best splits: the line timed now only')
+  T.check(events.bestSplits('sp', 'k', 'none') == nil, 'best splits: none on this line')
+  -- (M3) a stage's rally passes capped: the 50 most recent and the best
+  events.addRallyPass('sp', 'c', { timeS = 50, splits = { 1, 2, 3 }, lineKey = 'L' })
+  for i = 1, 60 do events.addRallyPass('sp', 'c', { timeS = 100 + i, splits = { 1, 2, 3 }, lineKey = 'L' }) end
+  local rp = events.results('sp', 'c').rallyPasses
+  T.check(#rp == 51 and rp[1].timeS == 50 and rp[#rp].timeS == 160, 'rally passes capped at 50 and the best: ' .. #rp)
+  T.check(events.bestSplits('sp', 'c', 'L').timeS == 50, 'and the best still there to beat')
+end
+
+------------------------------------------------------------------------------------------ the rally loop: the scene
+-- (plan E) A stand-in for the official BeamNG.Earth's two BeamMP hooks, as they behave there (sky.lua setServerClock /
+-- serverClock, weather.lua PRESETS / presetMsg's lower-cased lookup / setPreset / preset). answer = false: the clock
+-- refused.
+local function fakeScene()
+  local f = { clock = nil, preset = nil, sets = 0, answer = true }
+  beamngEarth_sky = {
+    setServerClock = function(c)
+      f.sets = f.sets + 1
+      if not f.answer then return nil end
+      if type(c) == 'table' and tonumber(c.hours) then
+        f.clock = { hours = tonumber(c.hours) % 24, speed = c.speed, epoch = c.epoch }
+      else
+        f.clock = nil
+      end
+      return f.clock
+    end,
+    serverClock = function() return f.clock end }
+  beamngEarth_weather = { PRESETS = { clear = { code = 0 } } }
+  beamngEarth_weather.setPreset = function(name)
+    local p = name and beamngEarth_weather.PRESETS[tostring(name):lower()]
+    f.preset = p and tostring(name):lower() or nil
+    return p ~= nil
+  end
+  beamngEarth_weather.preset = function() return f.preset end
+  return f
+end
+local function noScene() beamngEarth_sky, beamngEarth_weather = nil, nil end
+
+-- earthAdapter's scene: both hooks or nothing; ours set and given back; someone else's (a BeamMP server's) left alone
+do
+  noScene()
+  T.check(earth.hasSceneHooks() == false and earth.setScene({ hours = 9 }, { code = 3 }) == false,
+    'no hooks: nothing set')
+  T.check(earth.clearScene() == false, 'no hooks: nothing to give back')
+  local f = fakeScene()
+  T.check(earth.hasSceneHooks() == true, 'the hooks: there')
+  local ok = earth.setScene({ hours = 25.5 }, { code = 63, cover = { low = 100 }, rainMmH = 4 })
+  T.check(ok and f.clock.hours == 1.5 and f.clock.speed == 1, 'the clock: the hour, running on in real time')
+  T.check(f.preset == 'earthrally' and beamngEarth_weather.PRESETS.earthrally.rainMmH == 4,
+    'the weather: our entry in PRESETS, picked')
+  T.check(earth.sceneSet() and not earth.sceneTaken(), "ours, not someone else's")
+  earth.setScene({ hours = 10 }, nil)
+  T.check(f.preset == nil and beamngEarth_weather.PRESETS.earthrally == nil and f.clock.hours == 10,
+    "a stage with no stored weather: the player's own weather, the clock still set")
+  T.check(earth.clearScene() and f.clock == nil and f.preset == nil, 'given back')
+  -- a BeamMP server's clock: never touched
+  f.clock = { hours = 20, speed = 0, epoch = 0 }
+  local sets = f.sets
+  T.check(earth.sceneTaken() and earth.setScene({ hours = 9 }, { code = 0 }) == false and f.sets == sets
+    and f.clock.hours == 20 and f.preset == nil, 'a server clock someone else set: left alone')
+  earth.clearScene()
+  T.check(f.clock and f.clock.hours == 20, 'and not given back as ours')
+  f.clock, f.preset = nil, 'rain'
+  T.check(earth.setScene({ hours = 9 }, { code = 0 }) == false and f.preset == 'rain', 'a server weather: left alone')
+  f.preset = nil
+  noScene()
+  -- plan F: BeamMP's own session check
+  T.check(earth.inMultiplayer() == false, 'no BeamMP: not in a session')
+  MPCoreNetwork = { isMPSession = function() return true end }
+  T.check(earth.inMultiplayer() == true, 'a BeamMP session')
+  MPCoreNetwork = nil
+  -- the time card's word
+  local rallyRun = require('earthRally/rallyRun')
+  local w = rallyRun.weatherWord({ code = 3, tempC = 14.6, isDay = true })
+  T.check(w.text == 'overcast' and w.tempC == 15 and w.icon == 'cloud' and w.night == false, 'overcast, 15')
+  w = rallyRun.weatherWord({ code = 0, slTempC = -3.2, isDay = false })
+  T.check(w.icon == 'moon' and w.night and w.tempC == -3, 'clear at night: the moon')
+  T.check(rallyRun.weatherWord({ code = 63 }).icon == 'rain' and rallyRun.weatherWord({ code = 73 }).icon == 'snow'
+    and rallyRun.weatherWord({ code = 45 }).icon == 'fog' and rallyRun.weatherWord({ code = 95 }).icon == 'storm',
+    'rain, snow, fog, storm')
+  T.check(rallyRun.weatherWord(nil) == nil, 'none stored: no word')
+end
+
+------------------------------------------------------------------------------------------ the rally loop: the clock
+-- A timed rally's clock in rallyRun: the runner's clock is it, the wait at a time control for the due minute (and its
+-- skip), the check-in early or late, the time card's rows and the transit's due time.
+do
+  local rallyRun = require('earthRally/rallyRun')
+  local rally = require('earthRally/rally')
+  local wt = require('earthRally/worldTime')
+  local settings = require('earthRally/settings')
+  local t0 = wt.parse('2031-02-07', '08:00')
+  local r = { format = 3, eventId = 'test', name = 'Test Rally', mode = 'casual', class = 'L4WD', timed = true,
+    tz = 'America/Chicago', clock = { t = t0 }, road = {}, lateSPerMin = 10, earlySPerMin = 60, results = {},
+    serviced = { ['1'] = true }, pos = 2, missed = 0, heldOut = {},
+    order = { { kind = 'start', label = 'Start', outT = t0, place = { name = 'Park', lat = 45, lon = -90 } },
+      { kind = 'stage', ss = 'SS1', stageId = 'hill', outT = t0, outTargetMin = 20, latenessMin = 10 },
+      { kind = 'stage', ss = 'SS2', stageId = 'hill', targetMin = 15, latenessMin = 10 } } }
+  rallyRun._setRally(r)
+  T.check(runner.rallyClock.now() == t0, 'the runner reads the rally clock')
+  rallyRun.clockPaused = function() return false end
+  rallyRun.update(1, 60)
+  T.check(r.clock.t == t0 + 60, 'it runs with game time')
+  rallyRun.clockPaused = function() return true end
+  rallyRun.update(1, 60)
+  T.check(r.clock.t == t0 + 60, 'and stops under a loading screen or the menu')
+  rallyRun.clockPaused = function() return false end
+  T.check(rallyRun._dueAt(2) == t0 + 20 * 60 and rallyRun._dueAt(3) == nil,
+    'due at SS1\'s control from the start; SS2\'s not known until SS1 is done')
+  -- early at the board (08:01, due 08:20), the setting off: the wait, Continue held, the skip
+  settings.set('earlyPenalty', false)
+  local up = nil
+  rallyRun.ui.atControl = function(tc) up = tc end
+  rallyRun.atControl(r.order[2], { name = 'Hill', lengthM = 3000 })
+  T.check(up and up.due == '08:20' and up.wait and up.wait.leftS == 19 * 60 and up.result == nil,
+    'early: the card waits for 08:20 (' .. tostring(up and up.wait and up.wait.leftS) .. ' s)')
+  rallyRun.clockPaused = function() return true end
+  rallyRun.update(30, 0)
+  T.check(r.clock.t == t0 + 90 and up.wait.leftS == 19 * 60 - 30, 'the wait runs on real time under the card')
+  T.check(rallyRun.continueOk() == false and rallyRun.waiting(), 'Continue does not check in early with the setting off')
+  T.check(up.wait.earlyCostS == nil, 'the setting off: no early cost on the card')
+  T.check(rallyRun.interactHeld(), 'waiting at the board: the game\'s Interact is the wait\'s')
+  T.check(rallyRun.skipWait() and r.clock.t == t0 + 20 * 60 and up.result.kind == 'onTime' and up.wait == nil,
+    'the skip: the clock to 08:20, on time')
+  T.check(rallyRun.skipWait() == false, 'a second skip is a no-op')
+  -- (G) the same key press's Interact arriving after the page's skip: swallowed, not the start line's skip
+  T.check(rallyRun.interactHeld(), 'just after a skip: Interact swallowed')
+  rallyRun.update(0.6, 0)
+  T.check(not rallyRun.interactHeld(), 'half a second on: Interact the start line\'s again')
+  -- the setting on: the card offers Continue at its cost; no skip; Continue checks in early, 1 min a minute
+  settings.set('earlyPenalty', true)
+  r.clock.t = t0 + 17 * 60
+  rallyRun.atControl(r.order[2], { name = 'Hill', lengthM = 3000 })
+  T.check(up.wait and up.wait.earlyMin == 3 and up.wait.earlyCostS == 180,
+    'the setting on: the card says checking in now costs 3 min (' .. tostring(up.wait and up.wait.earlyCostS) .. ' s)')
+  T.check(rallyRun.skipWait() == false and rallyRun.waiting() and r.clock.t == t0 + 17 * 60,
+    'the setting on: the skip refused, the clock as it was')
+  T.check(require('earthRally/main').uiLoadingSkipWait() == false and rallyRun.waiting(), 'the setting on: the page\'s skip refused too')
+  T.check(rallyRun.interactHeld(), 'the setting on: Interact swallowed while waiting (no start-line skip)')
+  T.check(rallyRun.continueOk() == true and up.result.kind == 'early' and up.result.penaltyS == 180,
+    'the setting on: Continue checks in 3 min early, +180 s')
+  -- the setting on, waiting it out in real time: on time at the minute
+  r.road = {}
+  r.clock.t = t0 + 19 * 60 + 30
+  rallyRun.atControl(r.order[2], { name = 'Hill', lengthM = 3000 })
+  T.check(up.wait and up.wait.earlyCostS == 60, 'the setting on, 30 s to go: 1 min early costs 60 s')
+  rallyRun.update(31, 0)
+  T.check(not rallyRun.waiting() and up.result.kind == 'onTime' and up.result.penaltyS == 0,
+    'the setting on: waited out to the minute, on time')
+  r.road = { SS1 = { dueT = t0 + 20 * 60, inT = t0 + 17 * 60, kind = 'early', min = 3, penaltyS = 180 } }
+  -- late: checked in at once
+  r.clock.t = t0 + 22 * 60 + 5
+  rallyRun.atControl(r.order[2], { name = 'Hill', lengthM = 3000 })
+  T.check(up.wait == nil and up.result.kind == 'late' and up.result.min == 2 and up.result.penaltyS == 20
+    and r.road.SS1.penaltyS == 20, 'late by 2 min: +20 s at once')
+  settings.set('earlyPenalty', false)
+  -- the time card: its clock, the rows' due and in times, the total
+  local cardOk, card = pcall(rallyRun.uiCard)
+  T.check(cardOk and card and card.clock and card.clock.date == 'Fri 7 Feb' and card.clock.time == '08:22'
+    and card.roadPenaltyS == 20 and card.lateSPerMin == 10, 'the time card: the rally clock and the road total')
+  local row = cardOk and card.rows[2]
+  T.check(row and row.due == '08:20' and row.timeIn == '08:22' and row.roadPenaltyS == 20 and card.rows[1].outAt == '08:00',
+    'the time card: SS1 due 08:20, in 08:22, +20 s; the start out at 08:00')
+  T.check(row and row.roadKind == 'late', 'the time card: the row says late itself (roadKind)')
+  -- the start screen's line
+  local sa = rallyRun.startsAt(r)
+  T.check(sa and sa.text == 'Fri 7 Feb 2031, 08:22 local' and sa.light == 'day', 'the start screen\'s start and light')
+  -- the transit: due time at SS2's control from SS1's time out
+  r.lastOut, r.pos = t0 + 40 * 60, 3
+  local td = rallyRun.transitDue()
+  T.check(td and td.due == '08:55' and td.late == 0 and td.leftS == 33 * 60 - 5, 'the transit: due 08:55, time left')
+  r.clock.t = t0 + 57 * 60 + 10
+  td = rallyRun.transitDue()
+  T.check(td.late == 2 and td.penaltyS == 20 and td.leftS < 0, 'late on the transit: 2 min, +20 s so far')
+  -- (P) worked out once a frame: the same answer twice, a new one once the clock moves
+  T.check(rallyRun.transitDue() == td, 'the transit: once a frame')
+  local hud = require('earthRally/hudFrame')
+  local _, ours = hud.build(nil, { rally = true, approach = { name = 'SS2 Hill', distM = 1200, rally = true },
+    rallyTransit = td })
+  T.check(ours.rally and ours.rally.transit and ours.rally.transit.late == 2 and ours.approach.sub:find('2 min late', 1, true),
+    'the HUD stream: ours.rally.transit, and the line says it: ' .. tostring(ours.approach.sub))
+  -- (I) the clock on BeamNG.Earth: set on a jump only while the clock runs, again on unpause; never while paused; a
+  -- refusal not asked again every minute
+  local f = fakeScene()
+  rallyRun._setRally(r)
+  rallyRun.clockPaused = function() return true end
+  rallyRun.update(0.1, 0)
+  rallyRun._setWorld()
+  T.check(f.sets == 0, 'the clock: not set while the rally clock is paused')
+  for _ = 1, 20 do rallyRun.update(10, 0) end
+  T.check(f.sets == 0, 'the clock: no drift re-sync while paused')
+  rallyRun.clockPaused = function() return false end
+  rallyRun.update(0.1, 0.1)
+  T.check(f.sets == 1 and f.clock ~= nil, 'the clock: set as the rally clock runs again')
+  T.check(math.abs(f.clock.hours - ((r.clock.t % 86400) / 3600)) < 1e-6, "to the rally clock's local hour")
+  rallyRun.update(0.1, 120)
+  T.check(f.sets == 2, 'the clock: set again on drift while running')
+  rallyRun.clockPaused = function() return true end
+  for _ = 1, 20 do rallyRun.update(10, 0) end
+  T.check(f.sets == 2, 'the clock: paused, no re-sync however far it runs on')
+  rallyRun.clockPaused = function() return false end
+  rallyRun.update(0.1, 0.1)
+  T.check(f.sets == 3, 'the clock: re-synced as the rally clock runs again')
+  f.answer = false
+  rallyRun.update(0.1, 120)
+  local after = f.sets
+  for _ = 1, 5 do rallyRun.update(0.1, 120) end
+  T.check(f.sets == after, 'the clock: refused once, not asked again on every drift')
+  rallyRun._setWorld()
+  T.check(f.sets == after + 1, 'the clock: asked again at the next jump')
+  f.answer = true
+  rallyRun._setWorld()
+  -- the setting "Rally's real time and weather" off: given back as the menu closes, not set again; on: set again
+  settings.set('realWorld', false)
+  rallyRun.clockPaused = function() return true end
+  rallyRun.update(0.1, 0)
+  rallyRun.clockPaused = function() return false end
+  rallyRun.update(0.1, 0.1)
+  T.check(f.clock == nil, 'the setting off: the clock given back as the menu closes')
+  local offSets = f.sets
+  rallyRun._setWorld()
+  rallyRun.update(0.1, 120)
+  T.check(f.sets == offSets and f.clock == nil, 'the setting off: never set')
+  settings.set('realWorld', true)
+  rallyRun.clockPaused = function() return true end
+  rallyRun.update(0.1, 0)
+  rallyRun.clockPaused = function() return false end
+  rallyRun.update(0.1, 0.1)
+  T.check(f.clock ~= nil, 'the setting on again: set as the menu closes')
+  -- (E) the stored weather: the road section before a stage has that stage's, a stop the next stage's
+  r.order[2].weather = { code = 63, rainMmH = 4, tempC = 9, isDay = true }
+  r.order[3].weather = { code = 0, tempC = 12, isDay = true }
+  local posWas = r.pos
+  r.pos = 2
+  rallyRun._setWorld()
+  T.check(f.preset == 'earthrally' and beamngEarth_weather.PRESETS.earthrally.code == 63,
+    "on the road section to SS1: SS1's weather")
+  local okC, card = pcall(rallyRun.uiCard)
+  T.check(okC and card.rows[2].weather and card.rows[2].weather.text == 'rain' and card.rows[2].weather.tempC == 9
+    and card.rows[3].weather.icon == 'sun' and card.rows[1].weather == nil,
+    "the time card rows: each stage's word " .. (okC and '' or tostring(card)))
+  r.pos = 3
+  rallyRun._setWorld()
+  T.check(beamngEarth_weather.PRESETS.earthrally.code == 0, "on to SS2: SS2's")
+  r.order[3].weather = nil
+  rallyRun._setWorld()
+  T.check(f.preset == nil and f.clock ~= nil, "a stage with none stored: the player's own weather, the clock set")
+  r.order[3].weather = { code = 0, tempC = 12, isDay = true }
+  rallyRun._setWorld()
+  -- plan F: in a BeamMP session the hooks are never touched
+  MPCoreNetwork = { isMPSession = function() return true end }
+  rallyRun._setWorld()
+  T.check(f.clock == nil and f.preset == nil, 'a BeamMP session: ours given back, nothing set')
+  local mpSets = f.sets
+  rallyRun._setWorld()
+  T.check(f.sets == mpSets and f.clock == nil, 'and not set again')
+  MPCoreNetwork = nil
+  rallyRun._setWorld()
+  r.pos = posWas
+  -- (B) left: given back; and ours left set with no rally running given back at load
+  rallyRun.quit()
+  T.check(f.clock == nil and f.preset == nil and beamngEarth_weather.PRESETS.earthrally == nil
+    and rallyRun.active() == nil, 'quit: the clock and the weather given back, our entry removed')
+  earth.setScene({ hours = 9 }, { code = 3 })
+  T.check(rallyRun.clearStrayWorld() and f.clock == nil and f.preset == nil, 'no rally running, ours left set: given back')
+  T.check(rallyRun.clearStrayWorld() == false, 'nothing set: nothing done')
+  f.clock = { hours = 20, speed = 0, epoch = 0 }
+  T.check(rallyRun.clearStrayWorld() == false and f.clock.hours == 20, 'a server clock: not ours, left alone')
+  noScene()
+  rallyRun._setRally(nil)
+  rallyRun.clockPaused = function() return false end
+  rallyRun.ui.atControl = nil
+  T.check(runner.rallyClock.now() == nil and rallyRun.transitDue() == nil, 'no rally: no clock')
+end
+
+------------------------------------------------------------------------------------------ the stops' check-ins (card)
+-- (additions B) the time card's stop rows: a stop due from the stage just done, its check-in on the stop card, and
+-- rows ahead with their road section's target where the due isn't known
+do
+  local rallyRun = require('earthRally/rallyRun')
+  local wt = require('earthRally/worldTime')
+  local t0 = wt.parse('2031-02-07', '08:00')
+  local place = { name = 'Park', lat = 45, lon = -90 }
+  local r = { format = 3, eventId = 'test', name = 'Test Rally', mode = 'casual', class = 'L4WD', timed = true,
+    tz = 'America/Chicago', clock = { t = t0 + 50 * 60 }, road = {}, lateSPerMin = 10, earlySPerMin = 60,
+    earlyFree = { RGC_IN = true, MTC_IN = true }, results = { SS1 = { timeS = 500 } }, lastOut = t0 + 40 * 60,
+    serviced = { ['1'] = true }, pos = 3, missed = 0, heldOut = {},
+    order = { { kind = 'start', label = 'Start', outT = t0, place = place },
+      { kind = 'stage', ss = 'SS1', stageId = 'hill', outT = t0, outTargetMin = 20, latenessMin = 10 },
+      { kind = 'service', label = 'Service A', name = 'Park', place = place, inType = 'RGC_IN', inTargetMin = 12,
+        outT = t0 + 100 * 60 },
+      { kind = 'stage', ss = 'SS2', stageId = 'hill', targetMin = 15, latenessMin = 10, outT = t0 + 100 * 60,
+        outTargetMin = 18 },
+      { kind = 'stage', ss = 'SS3', stageId = 'hill', targetMin = 14, latenessMin = 10 },
+      { kind = 'service', label = 'Final service', name = 'Park', place = place, final = true, inType = 'MTC_IN',
+        inTargetMin = 6 } } }
+  rallyRun._setRally(r)
+  T.check(rallyRun._dueAt(3) == t0 + 52 * 60 and rallyRun._dueAt(6) == nil,
+    'card: the stop right after the stage done is due (08:52); the final not yet')
+  local ok, c = pcall(rallyRun.uiCard)
+  T.check(ok and c.rows[3].due == '08:52' and c.rows[3].inType == 'RGC_IN' and c.rows[3].outAt == '09:40'
+    and c.rows[3].targetMin == nil, 'card: the stop row has its due and says where it is checked in')
+  T.check(ok and c.rows[4].due == '09:58' and c.rows[4].targetMin == nil, 'card: a due the schedule fixes kept')
+  T.check(ok and c.rows[5].due == nil and c.rows[5].targetMin == 14 and c.rows[6].due == nil
+    and c.rows[6].targetMin == 6, 'card: rows ahead show their road section\'s target')
+  T.check(ok and c.at and c.at.checkIn == nil, 'card: not checked in yet, no check-in on the stop card')
+  -- checked in 2 min early at the regroup-in: free
+  local res = rallyRun.checkIn(r.order[3], nil, t0 + 50 * 60, t0 + 52 * 60, 'stop3')
+  r.serviced['3'] = true
+  ok, c = pcall(rallyRun.uiCard)
+  local ci = ok and c.at and c.at.checkIn
+  T.check(res.kind == 'early' and ci and ci.inType == 'RGC_IN' and ci.due == '08:52' and ci.timeIn == '08:50:00'
+    and ci.kind == 'early' and ci.min == 2 and ci.penaltyS == 0 and ci.free and ci.outAt == '09:40',
+    'card: the stop card carries the check-in (time in, due, result, out)')
+  T.check(ok and c.rows[3].timeIn == '08:50' and c.rows[3].roadKind == 'early' and c.rows[3].roadPenaltyS == 0,
+    'card: the stop row has its in time and road result')
+  -- a stop done with no check-in (a teleport there): its row blank
+  r.road = {}
+  ok, c = pcall(rallyRun.uiCard)
+  T.check(ok and c.rows[3].due == nil and c.rows[3].targetMin == nil and c.at.checkIn == nil,
+    'card: a stop done with no check-in: blank, as before')
+  rallyRun._setRally(nil)
+end
+
+------------------------------------------------------------------------------------------ plan F: off in multiplayer
+do
+  local main = require('earthRally/main')
+  local rallyRun = require('earthRally/rallyRun')
+  T.check(main.mpCheck(0, true) == false and not main.multiplayer(), 'no BeamMP: on')
+  local quits = 0
+  local q = rallyRun.quit
+  rallyRun.quit = function() quits = quits + 1 return q() end
+  MPCoreNetwork = { isMPSession = function() return true end }
+  T.check(main.mpCheck(0.1) == false, 'read about once a second, not every frame')
+  T.check(main.mpCheck(1) == true and main.multiplayer() and quits == 1,
+    'a BeamMP session: off, a rally under way left as Save and quit leaves it')
+  local r = main.uiAction('drive', 'x', 'y')
+  T.check(r and r.ok == false and r.multiplayer and r.message == main.MP_MESSAGE, 'no stage starts')
+  r = main.uiRallyAction('start', 'x', {})
+  T.check(r and r.ok == false and r.multiplayer, 'no rally starts')
+  local okS, st = pcall(main.uiState)
+  T.check(okS and st.multiplayer == true, 'the menu state: multiplayer = true')
+  main.onUpdate(0.016, 0.016)
+  T.check(main.multiplayer(), 'the update: nothing but the check')
+  MPCoreNetwork = nil
+  T.check(main.mpCheck(0, true) == false and not main.multiplayer() and quits == 1, 'the session over: on again')
+  okS, st = pcall(main.uiState)
+  T.check(okS and st.multiplayer == nil, 'the menu state: no flag')
+  rallyRun.quit = q
 end
 
 T.done('test_run')

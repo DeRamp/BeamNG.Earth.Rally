@@ -45,6 +45,16 @@ end
 
 ------------------------------------------------------------------------------------------ the running order
 
+-- (plan E) each stage keeps its pass's stored weather
+do
+  local e = event()
+  e.itinerary[2].weather = { code = 3, slTempC = 9 }
+  local r = rally.new(e, {})
+  local got = {}
+  for _, it in ipairs(r.order) do if it.kind == 'stage' then got[it.ss] = it.weather end end
+  T.check(got.SS2 and got.SS2.code == 3 and got.SS1 == nil, 'the running order: the stored weather kept per stage')
+end
+
 do
   local r = rally.new(event(), { mode = 'realistic', class = 'L4WD' })
   local labels = {}
@@ -430,6 +440,435 @@ do
   rally.replayLoop(q, { results = { { timeS = 600 }, { recovered = true }, { timeS = 650 } } }, board)
   T.check(rally.current(q).ss == 'SS4' and q.results.SS1.timeS == 600 and q.results.SS2.superRally
     and q.results.SS3.timeS == 650, 'no stop: a recovery in the loop replayed as one, the next time on SS3')
+end
+
+------------------------------------------------------------------------------------------ the rally clock (rally-loop)
+-- worldTime.lua: dates, local clocks, zones, the sun. Made-up times and places.
+local wt = require('earthRally/worldTime')
+do
+  T.check(wt.daysFromCivil(1970, 1, 1) == 0 and wt.daysFromCivil(2000, 3, 1) == 11017, 'days from the civil date')
+  local y, m, d = wt.civilFromDays(wt.daysFromCivil(2028, 2, 29))
+  T.check(y == 2028 and m == 2 and d == 29, 'and back (a leap day)')
+  local t = wt.parse('2031-03-14', '18:05')
+  T.check(t and wt.hm(t) == '18:05' and wt.dateText(t) == 'Fri 14 Mar', 'parsed and written: ' .. tostring(wt.dateText(t)))
+  T.check(wt.startText(t) == 'Fri 14 Mar 2031, 18:05 local', 'the start screen\'s line: ' .. tostring(wt.startText(t)))
+  T.check(wt.parse('2031-03-14', 'noon') == nil and wt.parse(nil, '10:00') == nil, 'not a time: nil')
+  -- zones: standard and summer time
+  T.check(wt.utcOffset('America/Chicago', wt.parse('2031-02-07', '12:00')) == -6 * 3600, 'Chicago in winter: -6')
+  T.check(wt.utcOffset('America/Chicago', wt.parse('2031-08-07', '12:00')) == -5 * 3600, 'Chicago in summer: -5')
+  T.check(wt.utcOffset('America/Phoenix', wt.parse('2031-08-07', '12:00')) == -7 * 3600, 'Phoenix: no summer time')
+  T.check(wt.utcOffset('Europe/London', wt.parse('2031-07-01', '12:00')) == 3600, 'London in summer: +1')
+  T.check(wt.utcOffset('Australia/Sydney', wt.parse('2031-01-10', '12:00')) == 11 * 3600, 'Sydney in January: +11')
+  T.check(wt.utcOffset('Australia/Sydney', wt.parse('2031-07-10', '12:00')) == 10 * 3600, 'Sydney in July: +10')
+  local off, known = wt.utcOffset('Nowhere/Made_Up', 0, 31)
+  T.check(off == 2 * 3600 and known == false, 'an unknown zone: its longitude\'s hour')
+  -- (US summer time from the second Sunday of March: 2031-03-09)
+  T.check(wt.utcOffset('America/New_York', wt.parse('2031-03-09', '01:30')) == -5 * 3600
+    and wt.utcOffset('America/New_York', wt.parse('2031-03-09', '03:30')) == -4 * 3600, 'the US switch in March')
+  T.check(wt.toUtc(wt.parse('2031-02-07', '12:00'), 'America/Chicago') == wt.parse('2031-02-07', '18:00'),
+    'a local time to the UTC instant')
+  -- the sun (a made-up place at 45 N, 90 W, on Chicago time)
+  local e = wt.sunElevationDeg(2031, 3, 20, 20, 0, 0, 0)
+  T.check(e < -20, 'the equinox, 20:00 UTC at 0, 0: the sun down (' .. string.format('%.1f', e) .. ')')
+  T.near(wt.sunElevationDeg(2031, 3, 20, 12, 0, 0, 0), 88, 4, 'the equinox, noon at 0, 0: the sun overhead')
+  T.check(wt.light(wt.parse('2031-02-07', '12:30'), 'America/Chicago', 45, -90) == 'day', 'midday: day')
+  T.check(wt.light(wt.parse('2031-02-07', '19:30'), 'America/Chicago', 45, -90) == 'night', 'a February evening: night')
+  T.check(wt.light(wt.parse('2031-02-07', '17:20'), 'America/Chicago', 45, -90) == 'dusk', 'sunset: dusk')
+  T.check(wt.light(wt.parse('2031-02-07', '07:15'), 'America/Chicago', 45, -90) == 'dawn', 'sunrise: dawn')
+  T.check(wt.light(t, 'America/Chicago', nil, nil) == nil, 'no place: no light')
+end
+
+-- pack.itineraryOf reads the schedule: a made-up two-day event. Day 1: start 08:00, TC1 (20 min), SS1 (bogey 10),
+-- TC2 (15), SS2 (bogey 8), regroup in (12), service in (10) and out 09:40 (30), TC3 (18), SS3; a regional crew's own
+-- row (not ours: its target never counts). Day 2: MTC out 07:00, TC4 (10), SS4.
+local function timedEvent()
+  local function row(t) t.classes = t.classes or { 'national', 'regional' } return t end
+  return {
+    event = { timezone = 'America/Chicago' },
+    locations = { { id = 'pk', name = 'Made-up Park, Town', lat = 45.0, lon = -90.0 } },
+    itinerary = {
+      row({ type = 'MTC_OUT', control = 'TC0', date = '2031-02-07', first_car = '08:00', location = 'pk', day = 1 }),
+      row({ type = 'ATC', control = 'TC1', date = '2031-02-07', target_min = 20, first_car = '08:20', day = 1 }),
+      row({ type = 'SS', control = 'SS1', stage = 'A', date = '2031-02-07', first_car = '08:23', lateness_min = 10, day = 1 }),
+      row({ type = 'ATC', control = 'TC2', date = '2031-02-07', target_min = 15, first_car = '08:48', day = 1 }),
+      row({ type = 'SS', control = 'SS2', stage = 'B', date = '2031-02-07', first_car = '08:51', lateness_min = 8, day = 1 }),
+      row({ type = 'RGC_IN', control = 'TC2A', date = '2031-02-07', target_min = 12, first_car = '09:11', day = 1 }),
+      row({ type = 'MTC_IN', control = 'TC2A', date = '2031-02-07', target_min = 12, first_car = '09:11', day = 1,
+        classes = { 'regional' } }),
+      row({ type = 'SVC_IN', control = 'TC2B', date = '2031-02-07', target_min = 10, first_car = '09:21', location = 'pk', day = 1 }),
+      row({ type = 'SVC_OUT', control = 'TC2C', date = '2031-02-07', target_min = 30, first_car = '09:40', location = 'pk', day = 1 }),
+      row({ type = 'ATC', control = 'TC3', date = '2031-02-07', target_min = 18, first_car = '09:58', day = 1 }),
+      row({ type = 'SS', control = 'SS3', stage = 'A', run = 2, date = '2031-02-07', first_car = '10:01', lateness_min = 10, day = 1 }),
+      row({ type = 'MTC_IN', control = 'TC3A', date = '2031-02-07', target_min = 20, first_car = '10:31', location = 'pk', day = 1 }),
+      row({ type = 'MTC_OUT', control = 'TC3B', date = '2031-02-08', first_car = '07:00', location = 'pk', day = 2 }),
+      row({ type = 'ATC', control = 'TC4', date = '2031-02-08', target_min = 10, first_car = '07:10', day = 2 }),
+      row({ type = 'SS', control = 'SS4', stage = 'B', run = 2, date = '2031-02-08', first_car = '07:13', lateness_min = 8, day = 2 }),
+    } }
+end
+
+do
+  local it, stops, start, timing = pack._itineraryOf(timedEvent(), {}, { A = 'a', B = 'b' }, function() end)
+  T.check(#it == 4 and it[1].date == '2031-02-07' and it[1].firstCar == '08:23' and it[1].latenessMin == 10,
+    'a pass carries its date, start and lateness')
+  T.check(it[1].outAt == '08:00' and it[1].outTargetMin == 20, 'the first pass: from the start, 20 min')
+  T.check(it[2].targetMin == 15 and it[2].outAt == nil, 'SS2: the road section from SS1, 15 min')
+  T.check(it[3].targetMin == 12 + 10 + 30 + 18 and it[3].outAt == '09:40' and it[3].outTargetMin == 18,
+    'SS3: through the service (the regional crew\'s row left out), and from its out time: ' .. tostring(it[3].targetMin))
+  T.check(it[4].outDate == '2031-02-08' and it[4].outAt == '07:00' and it[4].outTargetMin == 10,
+    'SS4: from the next morning\'s start')
+  T.check(timing and timing.timezone == 'America/Chicago' and timing.start.date == '2031-02-07'
+    and timing.start.time == '08:00', 'the rally is timed: its zone and start')
+  T.check(stops[1].kind == 'service' and stops[1].outAt == '09:40' and stops[2].kind == 'overnight'
+    and stops[2].outAt == '07:00', 'the stops carry their out times')
+  -- no target anywhere: untimed
+  local ev2 = timedEvent()
+  for _, r in ipairs(ev2.itinerary) do r.target_min = nil end
+  local _, _, _, t2 = pack._itineraryOf(ev2, {}, { A = 'a', B = 'b' }, function() end)
+  T.check(t2 == nil, 'no target times: untimed')
+end
+
+local function timedRally(opts)
+  local it, stops, start, timing = pack._itineraryOf(timedEvent(), {}, { A = 'a', B = 'b' }, function() end)
+  return rally.new({ id = 'tm', name = 'Timed Rally', itinerary = it, rallyStops = stops, rallyStart = start,
+    timing = timing, rules = opts and opts.rules }, opts or {})
+end
+
+do
+  local r = timedRally({ mode = 'realistic' })
+  T.check(r.timed and r.tz == 'America/Chicago' and wt.hm(r.clock.t) == '08:00' and r.lateSPerMin == 10
+    and r.earlySPerMin == 60, 'a timed rally: its clock at the start, ARA\'s penalties by default')
+  rally.serviced(r)
+  rally.serviceOut(r)
+  T.check(wt.hm(rally.dueFor(r, r.pos)) == '08:20', 'due at TC1: the start + 20 min')
+  -- (late: the minute you check in during counts -- 08:22:30 is 2 min late, due 08:20)
+  local res = rally.checkIn(r, rally.current(r), wt.parse('2031-02-07', '08:22') + 30, rally.dueFor(r, r.pos), false)
+  T.check(res.kind == 'late' and res.min == 2 and res.penaltyS == 20, 'late in the minute 08:22: 2 min, +20 s')
+  -- the stage started 08:25, took 9:30 (inside its 10 min lateness): time out 08:35; due at TC2 08:50
+  local outT = rally.timeOut(rally.current(r), wt.parse('2031-02-07', '08:25'), wt.parse('2031-02-07', '08:34') + 30)
+  T.check(wt.hm(outT) == '08:35', 'time out: start + lateness')
+  T.check(wt.hm(rally.timeOut(rally.current(r), wt.parse('2031-02-07', '08:25'), wt.parse('2031-02-07', '08:41') + 20))
+    == '08:41', 'a stage slower than its lateness: time out at its finish, to the minute down')
+  rally.stageDone(r, { timeS = 570, outT = outT })
+  T.check(wt.hm(rally.dueFor(r, r.pos)) == '08:50', 'due at TC2: time out + 15 min')
+  res = rally.checkIn(r, rally.current(r), wt.parse('2031-02-07', '08:50') + 59, rally.dueFor(r, r.pos), false)
+  T.check(res.kind == 'onTime' and res.penaltyS == 0, 'in the due minute: on time')
+  res = rally.checkIn(r, rally.current(r), wt.parse('2031-02-07', '08:47'), rally.dueFor(r, r.pos), false)
+  T.check(res.kind == 'early' and res.min == 3 and res.penaltyS == 0, 'early with the setting off: no cost')
+  res = rally.checkIn(r, rally.current(r), wt.parse('2031-02-07', '08:47'), rally.dueFor(r, r.pos), true)
+  T.check(res.kind == 'early' and res.penaltyS == 180, 'early with the setting on: 1 min a minute')
+  T.check(rally.roadPenaltyS(r) == 200 and r.road.SS1.penaltyS == 20, 'the road penalties kept per control')
+  rally.stageDone(r, { timeS = 400, outT = wt.parse('2031-02-07', '09:00') })
+  T.check(rally.current(r).kind == 'service' and wt.hm(rally.current(r).outT) == '09:40', 'Service A: out at 09:40')
+  T.check(math.abs(rally.totalS(r) - (570 + 400 + 200)) < 1e-9, 'the total: stage times and road penalties')
+  rally.serviced(r)
+  rally.serviceOut(r)
+  T.check(wt.hm(r.clock.t) == '09:40' and wt.hm(rally.dueFor(r, r.pos)) == '09:58',
+    'out of service at its scheduled time, whatever the clock said; due at TC3 09:58')
+  rally.stageDone(r, { timeS = 560, outT = wt.parse('2031-02-07', '10:11') })
+  T.check(rally.current(r).kind == 'overnight', 'the overnight')
+  rally.serviced(r)
+  rally.serviceOut(r)
+  T.check(wt.dateText(r.clock.t) == 'Sat 8 Feb' and wt.hm(r.clock.t) == '07:00'
+    and wt.hm(rally.dueFor(r, r.pos)) == '07:10', 'the next morning: out at 07:00, due 07:10')
+  local f = rally.finished(r, 'x')
+  T.check(f.roadPenaltyS == 200 and math.abs(f.totalS - (570 + 400 + 560 + 200)) < 0.05, 'the finished rally keeps them')
+  -- a recovery: no time out to count from
+  r.lastOut = 1
+  rally.stageDone(r, { timeS = 1 })
+  T.check(r.lastOut == nil, 'a stage with no time out: none')
+  -- the pack's rules win
+  local r2 = timedRally({ rules = { lateSPerMin = 5, earlySPerMin = 30 } })
+  T.check(r2.lateSPerMin == 5 and r2.earlySPerMin == 30, 'the pack\'s penalties used')
+  -- untimed and format-2 saves
+  local u = rally.new(event(), {})
+  T.check(u.timed == nil and u.clock == nil and rally.dueFor(u, 2) == nil and rally.roadPenaltyS(u) == 0,
+    'an untimed rally: no clock, no due times')
+  local old = rally.new(event(), {})
+  old.format = 2
+  T.check(rally.valid(old) and rally.valid(r) and r.format == 3, 'a format-2 save still continues (untimed)')
+  -- a stage held out: its time goes to the next one's road section
+  local r3 = timedRally({})
+  rally.serviced(r3)
+  rally.serviceOut(r3)
+  rally.holdOut(r3, 'b', 'test')
+  T.check(rally.current(r3).ss == 'SS1', 'SS2 and SS4 held out')
+  rally.stageDone(r3, { timeS = 1, outT = wt.parse('2031-02-07', '08:35') })
+  T.check(rally.current(r3).kind == 'service', 'on to the service')
+end
+
+------------------------------------------------------------------------------------------ review fixes (rally-loop)
+do
+  -- (C) a cancelled first stage: the next one is timed from the rally's start (08:00 + 20 + SS1's 3 + 10 + 15 = 08:48,
+  -- its time control's printed time)
+  local it, stops, start, timing = pack._itineraryOf(timedEvent(), {}, { A = 'a', B = 'b' }, function() end)
+  it[1].cancelled = true
+  local r = rally.new({ id = 'tm', name = 'Timed Rally', itinerary = it, rallyStops = stops, rallyStart = start,
+    timing = timing }, { cancelled = 'real' })
+  T.check(r.order[2].ss == 'SS2', 'cancelled SS1 left out')
+  rally.serviced(r)
+  rally.serviceOut(r)
+  T.check(wt.hm(rally.dueFor(r, r.pos) or 0) == '08:48', 'cancelled first stage: the opening section still timed: '
+    .. tostring(rally.dueFor(r, r.pos) and wt.hm(rally.dueFor(r, r.pos))))
+  -- (C) a cancelled pass after a service: the next pass starts from the service's out time (09:40 + 18 + SS3's 3 + 10
+  -- + 30 = 10:41), not from the stage before the service. The overnight taken away so SS4 follows straight on.
+  it, stops, start, timing = pack._itineraryOf(timedEvent(), {}, { A = 'a', B = 'b' }, function() end)
+  it[3].cancelled = true
+  it[4].outDate, it[4].outAt, it[4].outTargetMin = nil, nil, nil
+  local kept = {}
+  for _, s in ipairs(stops) do if s.after ~= 3 then kept[#kept + 1] = s end end
+  r = rally.new({ id = 'tm', name = 'Timed Rally', itinerary = it, rallyStops = kept, rallyStart = start,
+    timing = timing }, { cancelled = 'real' })
+  rally.serviced(r)
+  rally.serviceOut(r)
+  rally.stageDone(r, { timeS = 1, outT = wt.parse('2031-02-07', '08:35') })
+  rally.stageDone(r, { timeS = 1, outT = wt.parse('2031-02-07', '09:30') })
+  T.check(rally.current(r).kind == 'service' and wt.hm(rally.current(r).outT or 0) == '09:40',
+    'cancelled pass after the service: the service keeps its out time')
+  rally.serviced(r)
+  rally.serviceOut(r)
+  T.check(rally.current(r).ss == 'SS4' and wt.hm(rally.dueFor(r, r.pos) or 0) == '10:41',
+    'cancelled pass after the service: due from the service\'s out time: '
+    .. tostring(rally.dueFor(r, r.pos) and wt.hm(rally.dueFor(r, r.pos))))
+end
+
+do
+  -- (D) a stage held out between Service A and the overnight: the two stops merge, out at the overnight's time
+  local r = timedRally({ mode = 'realistic' })
+  rally.serviced(r)
+  rally.serviceOut(r)
+  rally.stageDone(r, { timeS = 1, outT = wt.parse('2031-02-07', '08:35') })
+  rally.stageDone(r, { timeS = 1, outT = wt.parse('2031-02-07', '09:00') })
+  rally.holdOut(r, 'a', 'test')
+  local stop = rally.current(r)
+  T.check(stop.kind == 'overnight' and r.order[r.pos + 1].ss == 'SS4', 'the stops merged: an overnight, then SS4')
+  T.check(wt.dateText(stop.outT) == 'Sat 8 Feb' and wt.hm(stop.outT) == '07:00', 'the merged stop: the later out time')
+  rally.serviced(r)
+  rally.serviceOut(r)
+  T.check(wt.hm(r.clock.t) == '07:00' and wt.hm(rally.dueFor(r, r.pos) or 0) == '07:10',
+    'out of the merged stop and due at TC4 agree')
+end
+
+------------------------------------------------------------------------------------------ the stops' check-ins
+-- (additions B) the made-up two-day event, with early check-in allowed at the regroup and the finish, and on day 2
+-- after SS4 a service (in 8, out 07:49), SS5 on its own line C and the finish's MTC in (15). Service A is checked in at
+-- its regroup-in (12 after SS2), the overnight at its MTC in (20 after SS3), Service B at its service-in.
+local function stopsEvent()
+  local ev = timedEvent()
+  ev.time_rules = { early_checkin_allowed = { 'MTC_IN', 'RGC_IN' } }
+  local function add(t) t.classes = { 'national' } t.date, t.day = '2031-02-08', 2 ev.itinerary[#ev.itinerary + 1] = t end
+  add({ type = 'SVC_IN', control = 'TC4A', target_min = 8, first_car = '07:29', location = 'pk' })
+  add({ type = 'SVC_OUT', control = 'TC4B', target_min = 20, first_car = '07:49', location = 'pk' })
+  add({ type = 'ATC', control = 'TC5', target_min = 10, first_car = '07:59' })
+  add({ type = 'SS', control = 'SS5', stage = 'C', first_car = '08:02', lateness_min = 8 })
+  add({ type = 'MTC_IN', control = 'TC5A', target_min = 15, first_car = '08:25', location = 'pk' })
+  return ev
+end
+local function stopsRally(cancelSS2)
+  local it, stops, start, timing = pack._itineraryOf(stopsEvent(), {}, { A = 'a', B = 'b', C = 'c' }, function() end)
+  if cancelSS2 then it[2].cancelled = true end
+  return rally.new({ id = 'tm', name = 'Timed Rally', itinerary = it, rallyStops = stops, rallyStart = start,
+    timing = timing }, { mode = 'realistic', cancelled = 'real' })
+end
+local function at(hm, d) return wt.parse(d or '2031-02-07', hm) end
+local function kindsOf(r)
+  local k = {}
+  for _, x in ipairs(r.order) do k[#k + 1] = x.kind == 'stage' and x.ss or x.kind end
+  return table.concat(k, ' ')
+end
+
+do
+  local r = stopsRally()
+  T.check(kindsOf(r) == 'start SS1 SS2 service SS3 overnight SS4 service SS5 service',
+    'check-ins: the order (' .. kindsOf(r) .. ')')
+  local svc, ovn, svcB, fin = r.order[4], r.order[6], r.order[8], r.order[10]
+  T.check(svc.inType == 'RGC_IN' and svc.inTargetMin == 12 and ovn.inType == 'MTC_IN' and ovn.inTargetMin == 20
+    and svcB.inType == 'SVC_IN' and svcB.inTargetMin == 8 and fin and fin.final and fin.inType == 'MTC_IN'
+    and fin.inTargetMin == 15, 'orderOf: each stop its in and its target, the final the finish\'s')
+  T.check(r.earlyFree and r.earlyFree.RGC_IN and r.earlyFree.MTC_IN and not r.earlyFree.SVC_IN,
+    'rally.new keeps the early-free controls')
+  rally.serviced(r)
+  rally.serviceOut(r)
+  T.check(rally.dueFor(r, 4) == nil, 'dueFor: no stop due before the stage before it is done')
+  rally.stageDone(r, { timeS = 570, outT = at('08:35') })
+  rally.checkIn(r, rally.current(r), at('08:52'), rally.dueFor(r, r.pos), false)      -- (SS2's TC: 2 min late)
+  rally.stageDone(r, { timeS = 400, outT = at('09:00') })
+  T.check(r.pos == 4 and wt.hm(rally.dueFor(r, 4) or 0) == '09:12', 'dueFor a stop: time out + its in target')
+  T.check(rally.dueFor(r, 6) == nil and rally.dueFor(r, 10) == nil, 'dueFor: only the stop right after the stage done')
+  -- early at the regroup-in: free, whatever the setting
+  local res = rally.checkIn(r, svc, at('09:09'), rally.dueFor(r, 4), true, 'stop4')
+  T.check(res.kind == 'early' and res.min == 3 and res.penaltyS == 0 and res.free,
+    'checkIn: early at a regroup-in, setting on: free')
+  T.check(r.road.stop4 and r.road.stop4.inType == 'RGC_IN' and r.road.SS2 and r.road.SS2.penaltyS == 20,
+    'checkIn: the stop kept under its own key, with its in type')
+  -- a service checked in at its service-in: late as at an ATC; early per the setting
+  local due = at('09:12')
+  res = rally.checkIn(r, svcB, at('09:14') + 31, due, false, 'stopX')
+  T.check(res.kind == 'late' and res.min == 2 and res.penaltyS == 20 and not res.free,
+    'checkIn: 2 min late at a service-in: +20 s')
+  res = rally.checkIn(r, svcB, at('09:09'), due, false, 'stopX')
+  T.check(res.kind == 'early' and res.penaltyS == 0, 'checkIn: early at a service-in, setting off: no penalty')
+  res = rally.checkIn(r, svcB, at('09:09'), due, true, 'stopX')
+  T.check(res.kind == 'early' and res.penaltyS == 180, 'checkIn: early at a service-in, setting on: 1 min a minute')
+  r.road.stopX = nil
+  rally.serviced(r)
+  rally.serviceOut(r)
+  rally.stageDone(r, { timeS = 560, outT = at('10:11') })
+  T.check(wt.hm(rally.dueFor(r, 6) or 0) == '10:31', 'the overnight: due at its MTC in')
+  rally.checkIn(r, ovn, at('10:33'), rally.dueFor(r, 6), false, 'stop6')
+  rally.serviced(r)
+  rally.serviceOut(r)
+  rally.stageDone(r, { timeS = 300, outT = at('07:21', '2031-02-08') })
+  T.check(wt.hm(rally.dueFor(r, 8) or 0) == '07:29', 'Service B: due at its service-in')
+  rally.serviced(r)          -- (not checked in: a teleport there)
+  rally.serviceOut(r)
+  rally.stageDone(r, { timeS = 330, outT = at('08:10', '2031-02-08') })
+  res = rally.checkIn(r, fin, at('08:19', '2031-02-08'), rally.dueFor(r, 10), false, 'stop10')
+  T.check(wt.hm(rally.dueFor(r, 10) or 0) == '08:25' and res.kind == 'early' and res.penaltyS == 0 and res.free,
+    'the finish: due 08:25, early free')
+  rally.serviced(r)
+  rally.serviceOut(r)
+  T.check(rally.over(r) and rally.roadPenaltyS(r) == 40, 'road penalties at stops in the same total')
+  local f = rally.finished(r, 'x')
+  T.check(f.roadKept and f.roadPenaltyS == 40 and f.passes[1].roadS == nil and f.passes[2].roadS == 20,
+    'finished: roadS per pass, nil with none')
+  T.check(f.stops and #f.stops == 1 and f.stops[1].label == 'Overnight' and f.stops[1].inType == 'MTC_IN'
+    and f.stops[1].min == 2 and f.stops[1].penaltyS == 20 and f.stops[1].after == 'SS3',
+    'finished: a chip only for the stop that cost something')
+  -- an untimed rally: as before
+  local fu = rally.finished(rally.new(event(), {}), 'x')
+  T.check(fu.roadKept == nil and fu.stops == nil and fu.roadPenaltyS == nil, 'finished: an untimed rally unchanged')
+end
+
+do
+  -- a cancelled pass before a stop: its road section, start gap and lateness counted into the stop's in (12 + 15 + 3
+  -- + 8: from SS1's time out 08:33, 09:11 as printed)
+  local r = stopsRally(true)
+  T.check(r.order[3].kind == 'service' and r.order[3].inTargetMin == 38,
+    'orderOf: a cancelled pass before a stop (' .. tostring(r.order[3].inTargetMin) .. ')')
+  rally.serviced(r)
+  rally.serviceOut(r)
+  rally.stageDone(r, { timeS = 1, outT = at('08:35') })
+  T.check(wt.hm(rally.dueFor(r, r.pos) or 0) == '09:13', 'due at the stop: from SS1 through SS2 left out')
+  -- held out right before a stop: the same; two stops merged keep the first one's in
+  local h = stopsRally()
+  rally.serviced(h)
+  rally.serviceOut(h)
+  rally.holdOut(h, 'b', 'test')
+  T.check(kindsOf(h) == 'start SS1 service SS3 overnight SS5 service', 'holdOut b: SS2 and SS4 out (' .. kindsOf(h) .. ')')
+  T.check(h.order[3].inTargetMin == 38 and h.order[5].inType == 'MTC_IN' and h.order[5].inTargetMin == 20
+    and h.order[7].inTargetMin == 15, 'holdOut before a stop: its target added; the merged stop keeps the first\'s in')
+  rally.stageDone(h, { timeS = 1, outT = at('08:35') })
+  T.check(wt.hm(rally.dueFor(h, h.pos) or 0) == '09:13', 'holdOut: due at the stop from SS1')
+  -- the last stage held out: the stop left at the end goes, and the final service is checked in at its control
+  local c = stopsRally()
+  rally.serviced(c)
+  rally.serviceOut(c)
+  rally.holdOut(c, 'c', 'test')
+  local fin = c.order[#c.order]
+  T.check(kindsOf(c) == 'start SS1 SS2 service SS3 overnight SS4 service' and fin.final and fin.inType == 'SVC_IN'
+    and fin.inTargetMin == 8, 'holdOut of the last stage: the final takes the dropped service\'s in ('
+    .. kindsOf(c) .. ', ' .. tostring(fin.inType) .. ' ' .. tostring(fin.inTargetMin) .. ')')
+end
+
+do
+  -- (review 2026-11-19, 9) a pass left out carries the gap from its time control to its start (3 min) with its
+  -- lateness and target, so the due time after it is the schedule's: a made-up day, TCs 3 min before each start
+  local function row(c, ty, fc, extra)
+    local x = { control = c, type = ty, date = '2031-02-07', first_car = fc, day = 1 }
+    for k, v in pairs(extra or {}) do x[k] = v end
+    return x
+  end
+  local ev = { event = { timezone = 'UTC' }, itinerary = {
+    row('0', 'MTC_OUT', '08:00'),
+    row('1', 'TC', '08:10', { target_min = 10 }), row('SS1', 'SS', '08:13', { stage = 'A', lateness_min = 15 }),
+    row('2', 'TC', '08:38', { target_min = 10 }), row('SS2', 'SS', '08:41', { stage = 'B', lateness_min = 15 }),
+    row('2A', 'SVC_IN', '09:06', { target_min = 10 }), row('2B', 'SVC_OUT', '09:36', { target_min = 30 }),
+    row('3', 'TC', '09:46', { target_min = 10 }), row('SS3', 'SS', '09:49', { stage = 'C', lateness_min = 15 }),
+    row('4', 'TC', '10:14', { target_min = 10 }), row('SS4', 'SS', '10:17', { stage = 'D', lateness_min = 15 }),
+  } }
+  local function gapRally(cancel)
+    local it, stops, start, timing = pack._itineraryOf(ev, {}, { A = 'a', B = 'b', C = 'c', D = 'd' }, function() end)
+    if cancel then for _, p in ipairs(it) do if p.ss == cancel then p.cancelled = true end end end
+    stops = { { after = 2, kind = 'service', label = 'Service A', inType = 'SVC_IN', inTargetMin = it[3].inTargetMin } }
+    return rally.new({ id = 'gap', name = 'Gap Rally', itinerary = it, rallyStops = stops, rallyStart = start,
+      timing = timing }, { mode = 'realistic', cancelled = 'real' }), it
+  end
+  local r, it = gapRally()
+  T.check(it[1].startGapMin == 3 and it[2].startGapMin == 3 and it[4].startGapMin == 3,
+    'pack: each pass\'s gap from its time control to its start (' .. tostring(it[1].startGapMin) .. ')')
+  local function idx(rr, ss) for i, x in ipairs(rr.order) do if x.ss == ss then return i end end end
+  local function svcIdx(rr) for i, x in ipairs(rr.order) do if x.kind == 'service' and not x.final then return i end end end
+  -- held out right before the service: due there from SS1's time out (08:28) at 09:06, as printed
+  local h = gapRally()
+  rally.serviced(h)
+  rally.serviceOut(h)
+  rally.holdOut(h, 'b', 'test')
+  rally.stageDone(h, { timeS = 1, outT = at('08:28') })
+  T.check(wt.hm(rally.dueFor(h, h.pos) or 0) == '09:06', 'holdOut before a stop: the start gap carried, due 09:06 ('
+    .. wt.hm(rally.dueFor(h, h.pos) or 0) .. ')')
+  -- cancelled before the service: the same
+  local c = gapRally('SS2')
+  rally.serviced(c)
+  rally.serviceOut(c)
+  rally.stageDone(c, { timeS = 1, outT = at('08:28') })
+  T.check(wt.hm(rally.dueFor(c, c.pos) or 0) == '09:06', 'cancelled before a stop: due 09:06 ('
+    .. wt.hm(rally.dueFor(c, c.pos) or 0) .. ')')
+  -- held out after the service, before a stage: SS4's TC due 10:14 from the service's out time (09:36)
+  local h2 = gapRally()
+  rally.holdOut(h2, 'c', 'test')
+  local i4 = idx(h2, 'SS4')
+  T.check(svcIdx(h2) == i4 - 1 and wt.hm(rally.dueFor(h2, i4) or 0) == '10:14',
+    'holdOut after a stop, before a stage: due 10:14 (' .. wt.hm(rally.dueFor(h2, i4) or 0) .. ')')
+  -- no first car on the time control in the file: no gap, nothing added (as before)
+  local ev0 = ev
+  ev = { event = ev0.event, itinerary = {} }
+  for k, x in ipairs(ev0.itinerary) do
+    local y = {}
+    for a, b in pairs(x) do y[a] = b end
+    if y.type == 'TC' then y.first_car = nil end
+    ev.itinerary[k] = y
+  end
+  local _, it0 = gapRally()
+  T.check(it0[2].startGapMin == nil, 'pack: no first car on the time control, no gap')
+  ev = ev0
+  T.check(r.order[idx(r, 'SS1')].startGapMin == 3, 'orderOf: a stage keeps its gap')
+end
+
+do
+  -- (J) the overall place counts the road penalties, as "Your total" does
+  local r = newR(event(), { class = 'L4WD' })
+  rally.stageDone(r, { timeS = 715 })
+  local ov = rally.standing(r, board)
+  T.check(ov.pos == 2, 'overall: 715 is 2nd')
+  r.road = { SS1 = { penaltyS = 30 } }
+  ov = rally.standing(r, board)
+  T.check(ov.pos == 3 and math.abs(ov.gapS - 45) < 1e-6 and math.abs(ov.totalS - rally.totalS(r)) < 1e-6,
+    'overall with 30 s of road penalties: 745 is 3rd, 45 s off, the same total')
+  r.timed = true
+  local f = rally.finished(r, 'x')
+  local fs = rally.finishedStanding(f, board)
+  T.check(fs and fs.pos == 3, 'a finished rally placed with its road penalties too')
+end
+
+do
+  -- (K) summer time at the changeovers, on the wall clock (2026: US 8 Mar / 1 Nov, EU 29 Mar / 25 Oct, AU 5 Apr /
+  -- 4 Oct)
+  local function off(tz, d, hm) return wt.utcOffset(tz, wt.parse(d, hm)) / 3600 end
+  local cases = {
+    { 'America/New_York', '2026-03-08', '01:59', -5 }, { 'America/New_York', '2026-03-08', '03:00', -4 },
+    { 'America/New_York', '2026-11-01', '00:30', -4 }, { 'America/New_York', '2026-11-01', '01:30', -4 },
+    { 'America/New_York', '2026-11-01', '02:00', -5 },
+    { 'Europe/London', '2026-03-29', '00:59', 0 }, { 'Europe/London', '2026-03-29', '02:00', 1 },
+    { 'Europe/London', '2026-10-25', '01:30', 1 }, { 'Europe/London', '2026-10-25', '02:00', 0 },
+    { 'Europe/Paris', '2026-03-29', '03:00', 2 }, { 'Europe/Paris', '2026-10-25', '02:30', 2 },
+    { 'Europe/Paris', '2026-10-25', '03:00', 1 },
+    { 'Australia/Sydney', '2026-04-05', '02:30', 11 }, { 'Australia/Sydney', '2026-04-05', '03:00', 10 },
+    { 'Australia/Sydney', '2026-10-04', '01:59', 10 }, { 'Australia/Sydney', '2026-10-04', '03:00', 11 },
+  }
+  for _, c in ipairs(cases) do
+    local got = off(c[1], c[2], c[3])
+    T.check(got == c[4], string.format('summer time: %s %s %s is %+g (%+g)', c[1], c[2], c[3], c[4], got))
+  end
 end
 
 T.done('test_rally')

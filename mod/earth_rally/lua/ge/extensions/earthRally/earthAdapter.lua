@@ -501,4 +501,217 @@ function M.setRebaseDistance(m)
   end
 end
 
+------------------------------------------------------------------------------------------ multiplayer (plan F)
+-- In a BeamMP session? BeamMP's own MPCoreNetwork.isMPSession(), as BeamNG.Earth's beammp.inSession reads it; false
+-- outside BeamMP.
+function M.inMultiplayer()
+  local mp = rawget(_G, 'MPCoreNetwork')
+  if type(mp) ~= 'table' or type(mp.isMPSession) ~= 'function' then return false end
+  local ok, v = pcall(mp.isMPSession)
+  return ok and v == true
+end
+
+------------------------------------------------------------------------------------------ the rally's sky (plan E)
+-- A timed rally's hour and its stage's stored weather, through the two hooks BeamNG.Earth keeps for a BeamMP server's
+-- clock and weather (mpsession.lua applyServerSky): beamngEarth_sky.setServerClock({ hours, speed, epoch }) and
+-- beamngEarth_weather.setPreset(name), with our own entry in its PRESETS table. Neither switches the player's sky or
+-- weather setting to Manual, saves anything or shows a toast; nil gives back the player's own. Not modding API: a
+-- BeamNG.Earth update can rename them, so each is checked, and without them the rally keeps the player's sky and
+-- weather (one log line). The clock sets the hour, not the date (the sun is today's at that hour).
+M.SCENE_PRESET = 'earthrally'   -- (weather.presetMsg looks names up lower-cased)
+
+local function sky() return rawget(_G, 'beamngEarth_sky') end
+local function weather() return rawget(_G, 'beamngEarth_weather') end
+-- (ours: the clock table BeamNG.Earth keeps, marked earthRally = true -- the mark survives a Lua reload of the mod)
+local function ours(c) return type(c) == 'table' and c.earthRally == true end
+
+-- Both hooks there? true, or false and what is missing.
+function M.hasSceneHooks()
+  local sk, wx = sky(), weather()
+  if not (type(sk) == 'table' and type(sk.setServerClock) == 'function' and type(sk.serverClock) == 'function') then
+    return false, 'beamngEarth_sky.setServerClock / serverClock missing'
+  end
+  if not (type(wx) == 'table' and type(wx.setPreset) == 'function' and type(wx.preset) == 'function'
+      and type(wx.PRESETS) == 'table') then
+    return false, 'beamngEarth_weather.setPreset / preset / PRESETS missing'
+  end
+  return true
+end
+
+-- A clock or weather someone else set (a BeamMP server's): true when there is one that is not ours.
+function M.sceneTaken()
+  local sk, wx = sky(), weather()
+  local okC, c = pcall(function() return sk and sk.serverClock and sk.serverClock() end)
+  if okC and c ~= nil and not ours(c) then return true end
+  local okP, p = pcall(function() return wx and wx.preset and wx.preset() end)
+  return okP and p ~= nil and p ~= M.SCENE_PRESET
+end
+
+-- Is ours set (the clock or the weather)?
+function M.sceneSet()
+  local sk, wx = sky(), weather()
+  local okC, c = pcall(function() return sk and sk.serverClock and sk.serverClock() end)
+  if okC and ours(c) then return true end
+  local okP, p = pcall(function() return wx and wx.preset and wx.preset() end)
+  return okP and p == M.SCENE_PRESET
+end
+
+-- (BeamNG.Earth's setPreset(nil) keeps the preset's weather until its world server's next real weather message, up to
+-- 10 minutes away. So the real message it had when ours went on is kept in our entry, earthRallyReal -- the entry
+-- outlives a Lua reload of this mod -- and handed back through wx.onWeather once ours is off.)
+local function realOf(wx)
+  local okP, p = pcall(wx.preset)
+  local entry = type(wx.PRESETS) == 'table' and wx.PRESETS[M.SCENE_PRESET] or nil
+  if okP and p == M.SCENE_PRESET then return type(entry) == 'table' and entry.earthRallyReal or nil end
+  if okP and p == nil and type(wx.current) == 'function' then
+    local okC, m = pcall(wx.current)
+    -- (not a preset's message left as current: only a real one, and not one of ours nested)
+    if okC and type(m) == 'table' and m.preset == nil and m.earthRallyReal == nil then return m end
+  end
+  return nil
+end
+local function weatherBack(wx, real)
+  pcall(wx.setPreset, nil)
+  if type(real) == 'table' and type(wx.onWeather) == 'function' then
+    -- (the weather only: its time zone and place are from when ours went on, and the sky already has today's)
+    local m = {}
+    for k, v in pairs(real) do if k ~= 'utcOffsetS' and k ~= 'lat' and k ~= 'lon' then m[k] = v end end
+    pcall(wx.onWeather, m)
+  end
+end
+
+-- (notes-rally-loop 1) BeamNG.Earth applies its clock and weather only in its Real mode, and switches itself to Manual
+-- when something else changes the time or weather. So while ours is set its sky and weather are put in Real
+-- (setMode: not saved to its settings) and the player's mode is put back when ours is given back; the mode they had,
+-- and in Manual the time of day they had, are kept on our clock table / our preset entry (they outlive a Lua reload).
+local function modeOf(x)
+  if type(x) ~= 'table' or type(x.getMode) ~= 'function' then return nil end
+  local ok, m = pcall(x.getMode)
+  return ok and m or nil
+end
+local function toReal(x)
+  local m = modeOf(x)
+  if m and m ~= 'real' and type(x.setMode) == 'function' then pcall(x.setMode, 'real') end
+  return m
+end
+local function envTod()
+  local ce = rawget(_G, 'core_environment')
+  if not (ce and ce.getTimeOfDay) then return nil end
+  local ok, t = pcall(ce.getTimeOfDay)
+  if not (ok and type(t) == 'table') then return nil end
+  local out = {}
+  for k, v in pairs(t) do if type(v) ~= 'table' and type(v) ~= 'userdata' and type(v) ~= 'function' then out[k] = v end end
+  return out
+end
+-- (in Manual, the player's own weather: the core_environment values BeamNG.Earth's weather writes, put back with it)
+local ENV_WX = { 'CloudCover', 'CloudCirrusCoverage', 'CloudCirrusDensity', 'WindSpeed', 'FogDensity',
+  'FogAtmosphereHeight', 'GroundWind', 'CloudWindDirection' }
+local function envWx()
+  local ce = rawget(_G, 'core_environment')
+  if type(ce) ~= 'table' then return nil end
+  local out = {}
+  for _, k in ipairs(ENV_WX) do
+    local g = ce['get' .. k]
+    if type(g) == 'function' then
+      local ok, v = pcall(g)
+      if ok and type(v) == 'number' then out[k] = v
+      elseif ok and v ~= nil and tonumber(v.x) and tonumber(v.y) then        -- (a vector: the wind)
+        out[k] = { x = tonumber(v.x), y = tonumber(v.y), z = tonumber(v.z) or 0 }
+      end
+    end
+  end
+  return next(out) and out or nil
+end
+local function modeBack(x, m, tod, env)
+  if not m or m == 'real' or type(x) ~= 'table' or type(x.setMode) ~= 'function' then return end
+  pcall(x.setMode, m)
+  local ce = rawget(_G, 'core_environment')
+  if tod and ce and ce.setTimeOfDay then pcall(ce.setTimeOfDay, tod) end
+  if type(env) == 'table' and ce then
+    for k, v in pairs(env) do
+      local s = ce['set' .. k]
+      if type(s) == 'function' then
+        if type(v) == 'table' then pcall(s, v.x, v.y, v.z) else pcall(s, v) end
+      end
+    end
+  end
+end
+
+-- scene = { hours (local, 0-24) }; msg = the stage's stored weather (BeamNG.Earth's weather message) or nil (the
+-- player's own weather). Returns true when set, else false and why. Leaves a clock or weather someone else set alone.
+function M.setScene(scene, msg)
+  local ok, why = M.hasSceneHooks()
+  if not ok then return false, why end
+  if M.sceneTaken() then return false, 'a server clock or weather is set' end
+  local sk, wx = sky(), weather()
+  local hours = type(scene) == 'table' and tonumber(scene.hours) or nil
+  if hours then
+    -- (the player's sky mode, and in Manual their time of day, from before ours: kept from the last set while ours)
+    local okO, old = pcall(sk.serverClock)
+    local prevMode, prevTod
+    if okO and ours(old) then prevMode, prevTod = old.earthRallyMode, old.earthRallyTod
+    else
+      prevMode = modeOf(sk)
+      if prevMode and prevMode ~= 'real' then prevTod = envTod() end
+    end
+    local okC, c = pcall(sk.setServerClock, { hours = hours % 24, speed = 1, epoch = os.time() })
+    if not (okC and type(c) == 'table') then return false, 'setServerClock: ' .. tostring(c) end
+    c.earthRally, c.earthRallyMode, c.earthRallyTod = true, prevMode, prevTod
+    toReal(sk)
+  end
+  if type(msg) == 'table' then
+    local real = realOf(wx)
+    local okP0, p0 = pcall(wx.preset)
+    local old = wx.PRESETS[M.SCENE_PRESET]
+    local kept = okP0 and p0 == M.SCENE_PRESET and type(old) == 'table'
+    local prevMode = kept and old.earthRallyMode or modeOf(wx)
+    local prevEnv
+    if kept then prevEnv = old.earthRallyEnv elseif prevMode and prevMode ~= 'real' then prevEnv = envWx() end
+    local p = {}
+    for k, v in pairs(msg) do
+      if k ~= 'earthRallyReal' and k ~= 'earthRallyMode' and k ~= 'earthRallyEnv' then p[k] = v end
+    end
+    p.earthRallyReal, p.earthRallyMode, p.earthRallyEnv = real, prevMode, prevEnv
+    wx.PRESETS[M.SCENE_PRESET] = p
+    local okP, set = pcall(wx.setPreset, M.SCENE_PRESET)
+    if not (okP and set) then
+      if wx.preset() ~= M.SCENE_PRESET then wx.PRESETS[M.SCENE_PRESET] = nil end
+      return false, 'setPreset: ' .. tostring(set)
+    end
+    toReal(wx)
+  elseif wx.preset() == M.SCENE_PRESET then
+    -- (no stored weather for this stage: the player's own again, in the mode they had)
+    local e = wx.PRESETS[M.SCENE_PRESET]
+    weatherBack(wx, realOf(wx))
+    modeBack(wx, type(e) == 'table' and e.earthRallyMode or nil, nil, type(e) == 'table' and e.earthRallyEnv or nil)
+    wx.PRESETS[M.SCENE_PRESET] = nil
+  end
+  return true
+end
+
+-- Ours given back (the clock nil, the preset nil, our entry removed); a clock or weather someone else set is left.
+-- Returns true when there was something of ours to give back.
+function M.clearScene()
+  local sk, wx = sky(), weather()
+  local had = false
+  local okC, c = pcall(function() return sk and sk.serverClock and sk.serverClock() end)
+  if okC and ours(c) then
+    pcall(sk.setServerClock, nil)
+    modeBack(sk, c.earthRallyMode, c.earthRallyTod)
+    had = true
+  end
+  local okP, p = pcall(function() return wx and wx.preset and wx.preset() end)
+  if okP and p == M.SCENE_PRESET then
+    local e = wx.PRESETS[M.SCENE_PRESET]
+    weatherBack(wx, realOf(wx))
+    modeBack(wx, type(e) == 'table' and e.earthRallyMode or nil, nil, type(e) == 'table' and e.earthRallyEnv or nil)
+    had = true
+  end
+  if type(wx) == 'table' and type(wx.PRESETS) == 'table' and wx.PRESETS[M.SCENE_PRESET] ~= nil then
+    wx.PRESETS[M.SCENE_PRESET] = nil
+    had = true
+  end
+  return had
+end
+
 return M

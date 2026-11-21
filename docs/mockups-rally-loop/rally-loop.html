@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Rally: the rally loop, timed (mock-ups)</title>
+<!-- Mock-ups for docs/plan-rally-loop.md: timed road sections, the early check-in setting, the rally's real date and
+     weather, split times. Not built. 1920x1080, the look of docs/mockups-1.7.0 (rev4.html, loading.html) and the
+     built Vue (EarthRallyFull.vue, EarthRallyLoading.vue, app.earthRallyHud.vue). Self-contained: no fonts or
+     anything else fetched. Names are made up: real event data never goes in git. -->
+<style>
+:root { --orange: #f26b1d; --orange-d: #c75b1e; --muted: #b8bcc6; --dim: #8a909a; --blue: #1f8fff; --amber: #ffd36b; --green: #3ccf7e; --red: #e5533d;
+  --pink: rgb(225, 123, 225); --dash: rgba(66, 70, 81, .8); --black-80: rgba(0, 0, 0, .8); --go: rgb(0, 255, 0); --hud-amber: #ffb000; --hud-red: #ff4d4d;
+  --mono: "Overpass Mono", ui-monospace, Consolas, monospace; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto Sans", system-ui, sans-serif; }
+.mock-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 16px; background: #1a1d22; border-bottom: 1px solid #2a2e35; position: sticky; top: 0; z-index: 10; }
+.mock-bar b { margin-right: 8px; }
+.mock-bar button, .vbar button { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 4px; border: 1px solid #3a3f48; background: #23272e; color: #ddd; cursor: pointer; }
+.mock-bar button.on, .vbar button.on { background: var(--orange-d); border-color: var(--orange-d); color: #fff; }
+.mock-bar .sep, .vbar .sep { width: 1px; height: 22px; background: #3a3f48; margin: 0 6px; }
+.vbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 16px; }
+.vbar .g { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); margin-right: 2px; }
+.vbar .only { font-size: 14px; color: var(--amber); }
+#who { padding: 12px 16px 24px; color: var(--muted); font-size: 15px; max-width: 1400px; line-height: 1.5; margin: 0 auto; }
+#who b { color: #fff; }
+.wrap { padding: 0 16px; }
+.box { position: relative; width: 100%; max-width: 1920px; margin: 0 auto; aspect-ratio: 16/9; overflow: hidden; border-radius: 6px; box-shadow: 0 0 0 1px #2a2e35; }
+.screen { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-size: 16px; overflow: hidden;
+  background: linear-gradient(180deg, #8fb3cf 0%, #b9c9d2 40%, #6f7f55 41%, #55633d 70%, #3d4630 100%); }
+.screen.dusk { background: linear-gradient(180deg, #1c2338 0%, #4a4660 22%, #c07a52 40%, #3c4230 41%, #2c3324 70%, #1f2419 100%); }
+.road { position: absolute; left: 50%; bottom: 0; width: 1400px; height: 640px; transform: translateX(-50%); background: linear-gradient(180deg, #8c7a5e, #a38e6c); clip-path: polygon(47% 0, 53% 0, 100% 100%, 0 100%); }
+.dusk .road { background: linear-gradient(180deg, #4e4434, #7a6a50); }
+.hud-ex { position: absolute; border: 2px dashed rgba(255,255,255,.3); border-radius: 6px; color: rgba(255,255,255,.55); font-size: 14px; display: flex; align-items: center; justify-content: center; }
+.dimmer { position: absolute; inset: 0; background: rgba(10,12,16,.82); }
+.solid { position: absolute; inset: 0; background: radial-gradient(ellipse at 70% 30%, #2a2219 0%, #121418 60%, #0b0c0f 100%); }
+.page { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.top { height: 84px; flex: none; display: flex; align-items: center; gap: 20px; padding: 0 64px; background: linear-gradient(180deg, rgba(0,0,0,.8), rgba(0,0,0,.35)); }
+.back { font-size: 20px; color: var(--muted); margin-right: 10px; }
+.title { font-size: 30px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; } .title span { color: var(--orange); }
+.crumbs { font-size: 18px; color: var(--muted); } .crumbs b { color: #fff; font-weight: 400; } .crumbs i { font-style: normal; color: #6f7480; margin: 0 10px; }
+.content { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 28px 64px; position: relative; }
+.content.tl { align-items: flex-start; justify-content: flex-start; }
+.prompts { height: 56px; flex: none; display: flex; align-items: center; gap: 30px; padding: 0 64px; background: rgba(0,0,0,.6); color: var(--muted); font-size: 17px; }
+.k { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; font: 700 14px "Noto Sans", system-ui, sans-serif; color: #111; margin-right: 8px; }
+.k.a { background: #6cc24a; } .k.b { background: var(--red); } .k.x { background: #3b8beb; color: #fff; } .k.y { background: #f0c419; }
+.kbd { display: inline-block; font: 700 15px var(--mono); padding: 1px 8px; border-radius: 4px; background: #fff; color: #111; margin-right: 8px; }
+.paused { margin-left: auto; font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+.card { background: rgba(0,0,0,.6); border-radius: 10px; }
+.pad { padding: 30px 34px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; padding: 14px 28px; border-radius: 4px; font-size: 20px; font-weight: 600; background: var(--orange-d); color: #fff; }
+.btn.out { background: transparent; border: 1px solid #6f7480; color: #ddd; font-weight: 500; }
+.btn.off { background: #3a3f48; color: #8a909a; }
+.btn.huge { font-size: 30px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; padding: 22px 56px; min-width: 520px; flex-direction: column; }
+.btn.huge small { display: block; font-size: 17px; font-weight: 500; text-transform: none; letter-spacing: 0; opacity: .85; margin-top: 2px; }
+.sel { outline: 4px solid var(--orange); outline-offset: 3px; }
+.cornerbtn { position: absolute; right: 64px; bottom: 34px; display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
+.warn { color: var(--amber); font-size: 17px; }
+.muted { color: var(--muted); } .dim { color: var(--dim); } .mono { font-family: var(--mono); }
+.lbl { font-size: 15px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); font-weight: 600; margin: 22px 0 10px; }
+h2 { margin: 0; font-size: 40px; text-transform: uppercase; line-height: 1.1; }
+h3.sec { margin: 0 0 4px; font-size: 18px; letter-spacing: .16em; text-transform: uppercase; color: var(--orange); font-weight: 700; }
+.seg { display: inline-flex; flex-shrink: 0; border-radius: 4px; overflow: hidden; box-shadow: inset 0 0 0 1px #5a6070; }
+.seg span { padding: 11px 20px; color: var(--muted); font-size: 18px; white-space: nowrap; } .seg span.on { background: var(--orange-d); color: #fff; font-weight: 600; }
+.boxv { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-radius: 6px; background: rgba(255,255,255,.06); font-size: 20px; }
+.newtag { font-size: 12px; font-weight: 700; letter-spacing: .1em; color: var(--orange); margin-left: 10px; vertical-align: middle; }
+.ok { color: var(--green); } .late { color: var(--amber); } .over { color: var(--red); }
+
+/* ===== 1 time card (EarthRallyFull.vue's er-tc) ===== */
+.tcg { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 24px; width: 100%; align-items: start; }
+.col { display: flex; flex-direction: column; gap: 20px; }
+.cpad { padding: 22px 26px; }
+.tchead { display: flex; align-items: baseline; gap: 16px; }
+.tchead h4 { margin: 0 0 6px; font-size: 30px; }
+.tchead .mode { margin-left: auto; color: var(--muted); font-size: 17px; }
+.clockchip { font: 700 22px var(--mono); color: var(--pink); text-shadow: 0 0 10px rgba(225,123,225,.4); }
+.day { margin: 14px 0 4px; font-size: 14px; text-transform: uppercase; letter-spacing: .1em; color: var(--orange); font-weight: 700; }
+.tr { display: grid; grid-template-columns: 136px minmax(0, 1fr) 120px 100px; gap: 10px; padding: 7px 10px; font-size: 18px; border-bottom: 1px solid rgba(255,255,255,.06); align-items: center; }
+.tr .r { text-align: right; }
+.tr.next { background: #2a6df4; color: #fff; font-weight: 600; border-radius: 3px; }
+.tr.svc { background: rgba(120, 50, 40, .35); }
+.tr.dimr { color: var(--dim); }
+.tr.hd { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; border-bottom-color: rgba(255,255,255,.14); padding-top: 4px; padding-bottom: 4px; }
+.t2 .tr { grid-template-columns: 116px minmax(0, 1fr) 74px 74px 140px 100px 84px; }
+.tr > span:first-child { white-space: nowrap; }
+.tr .nm small { display: block; font-size: 14px; font-weight: 600; }
+.tr.lim { background: rgba(229, 83, 61, .12); box-shadow: inset 4px 0 0 var(--red); }
+.tr.next .late, .tr.next .dim { color: #fff; }
+.tsum { display: flex; gap: 28px; margin-top: 12px; padding: 0 10px; font-size: 16px; color: var(--muted); }
+.tsum b { font-family: var(--mono); color: #fff; font-weight: 700; }
+.tsum b.late { color: var(--amber); } .tsum b.over { color: var(--red); }
+h5 { margin: 0 0 10px; font-size: 20px; letter-spacing: .04em; }
+.row2 { display: flex; justify-content: space-between; padding: 6px 0; font-size: 18px; }
+.row2 b { font-family: var(--mono); }
+.btns { display: flex; gap: 12px; }
+.banner { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 12px 16px; border-radius: 6px; background: rgba(42, 109, 244, .18); box-shadow: inset 4px 0 0 #2a6df4; font-size: 21px; font-weight: 600; }
+.banner .mono { font-weight: 700; }
+.banner i { font-style: normal; color: #6f7480; }
+.small { font-size: 15px; margin-top: 8px; line-height: 1.5; }
+
+/* ===== HUD (app.earthRallyHud.vue) ===== */
+.hpanel { position: absolute; background: var(--dash); border-radius: .5rem; color: #fff; }
+.approach { left: 0; top: 0; max-width: 750px; padding: 10px 20px; display: flex; align-items: baseline; gap: 12px; white-space: nowrap; overflow: hidden; }
+.approach .l { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.approach .n { font-size: 20px; font-weight: 700; }
+.approach .d { font: 700 20px var(--mono); color: var(--pink); }
+.approach .s { font-size: 15px; color: #e8e8e8; }
+.approach i { font-style: normal; color: #8a909a; }
+.approach .due { font: 700 20px var(--mono); color: #fff; }
+.approach .left { font: 700 20px var(--mono); }
+.approach.amb { box-shadow: inset 0 -3px 0 var(--hud-amber); } .approach.amb .left { color: var(--hud-amber); }
+.approach.red { box-shadow: inset 0 -3px 0 var(--hud-red); } .approach.red .left { color: var(--hud-red); }
+.hints { position: absolute; left: 20px; bottom: 20px; display: flex; gap: 18px; padding: 6px 12px; border-radius: 4px; background: rgba(0,0,0,.45); color: #e8e8e8; font-size: 14px; white-space: nowrap; }
+.hints span b { font: 700 13px var(--mono); padding: 1px 6px; margin-right: 6px; border-radius: 3px; background: rgba(255,255,255,.14); }
+.tcboard { position: absolute; width: 46px; height: 56px; background: #d33; border: 3px solid #fff; color: #fff; font: 700 11px "Noto Sans", system-ui, sans-serif; display: flex; align-items: center; justify-content: center; text-align: center; }
+/* stock stage apps (docs/mockups-1.2.0/hud.html) */
+.timing { position: absolute; left: 0; top: 0; width: 288px; }
+.timing .h { background: var(--black-80); text-align: center; font-style: italic; letter-spacing: .08rem; font-size: 19px; padding: 4px; }
+.timing .t { background: var(--blue); text-align: center; font-size: 48px; font-weight: 600; }
+.progress { position: absolute; left: 288px; top: 0; width: 780px; height: 68px; background: var(--black-80); padding: 4px 26px 4px 20px; display: flex; align-items: center; }
+.track { position: relative; width: 100%; height: 5px; background: #fff; }
+.track .fill { position: absolute; left: 0; top: 0; height: 100%; background: var(--blue); }
+.track .sq { position: absolute; top: 50%; width: 14px; height: 14px; transform: translate(-50%, -50%); }
+.track .sq.theme { background: var(--blue); } .track .sq.out { background: #202020; border: 2px solid #fff; }
+.track .tick { position: absolute; top: 50%; width: 3px; height: 16px; transform: translate(-50%, -50%); background: #fff; }
+.track .tick.past { background: var(--blue); }
+.track .lab { position: absolute; top: 12px; transform: translateX(-90%); font: 600 17px var(--mono); white-space: nowrap; }
+.sliver { position: absolute; left: 288px; top: 68px; width: 780px; height: 18px; background: rgba(0,0,0,.8); border-radius: 0 0 .3rem .3rem; display: flex; align-items: center; gap: 8px; padding: 0 14px; font: 500 13px/1 "Noto Sans", system-ui, sans-serif; color: #aab; }
+.sliver b { color: #fff; font-weight: 500; }
+.kmread { position: absolute; left: 1068px; top: 0; height: 68px; padding: 0 16px; background: var(--black-80); display: flex; align-items: center; gap: 8px; font: 700 28px var(--mono); border-left: 1px solid rgba(255,255,255,.1); }
+.kmread small { font-size: 17px; color: var(--muted); font-weight: 600; }
+.split { position: absolute; left: 0; top: 104px; width: 288px; padding: 8px 14px 10px; background: var(--black-80); border-bottom: 4px solid var(--blue); border-radius: 0 0 .5rem 0; }
+.split .l { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.split .rw { display: flex; align-items: center; gap: 12px; margin-top: 2px; white-space: nowrap; }
+.split .t { font: 700 30px var(--mono); line-height: 1.1; }
+.gap { display: inline-block; font-weight: 800; padding: 2px 9px; border-radius: 5px; font-size: 18px; white-space: nowrap; }
+.gap.ahead { background: var(--go); color: #002a00; }
+.gap.behind { background: var(--hud-red); color: #fff; }
+.gap.slower { background: rgba(255, 176, 0, .95); color: #1a1000; }
+.gap small { font-size: .7em; margin-left: .4em; opacity: .8; text-transform: uppercase; letter-spacing: .04em; }
+.finish { position: absolute; left: 1068px; top: 0; width: 399px; padding: 8px 18px 0; background: var(--black-80); border-left: 1px solid rgba(255,255,255,.1); border-bottom: 4px solid var(--blue); border-radius: 0 0 .5rem 0; height: 90px; }
+.finish .hd { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; white-space: nowrap; }
+.finish .rw { display: flex; align-items: center; gap: 14px; white-space: nowrap; }
+.finish .t { font: 700 44px var(--mono); line-height: 1; }
+.finish .gap { font-size: 18px; padding: 3px 9px; border-radius: 6px; }
+.finish.tall { height: auto; padding-bottom: 12px; }
+.fsplits { margin-top: 10px; border-top: 1px solid rgba(255,255,255,.12); padding-top: 6px; }
+.fsplits div { display: grid; grid-template-columns: 1fr 100px 92px; align-items: center; gap: 8px; padding: 3px 0; font-size: 16px; }
+.fsplits span:nth-child(2) { font: 700 18px var(--mono); text-align: right; }
+.fsplits .gap { font-size: 15px; padding: 1px 7px; text-align: center; justify-self: end; }
+.fsplits .fin { border-top: 1px solid rgba(255,255,255,.12); margin-top: 3px; padding-top: 6px; font-weight: 700; }
+
+/* ===== 3 ATC card (EarthRallyLoading.vue) ===== */
+.tc { width: 1080px; display: grid; grid-template-columns: 1fr 1fr; overflow: hidden; }
+.tc .l { padding: 42px 46px; } .tc .r { padding: 42px 46px; background: rgba(255,255,255,.04); display: flex; flex-direction: column; }
+.kick { font-size: 17px; letter-spacing: .18em; text-transform: uppercase; color: var(--orange); font-weight: 700; }
+.tc h1 { margin: 6px 0 2px; font-size: 52px; line-height: 1.05; text-transform: uppercase; font-weight: 800; }
+.tc .sub { color: var(--muted); font-size: 20px; margin-bottom: 28px; }
+.tcrow { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,.08); font-size: 20px; }
+.tcrow span { color: var(--muted); white-space: nowrap; } .tcrow b { font-family: var(--mono); font-size: 26px; text-align: right; }
+.tcrow b.sm { font-family: "Noto Sans", system-ui, sans-serif; font-size: 20px; font-weight: 600; }
+.tcrow.new { background: rgba(242,107,29,.08); box-shadow: -10px 0 0 rgba(242,107,29,.08), 10px 0 0 rgba(242,107,29,.08); }
+.tc .r h3 { margin: 0 0 14px; font-size: 18px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.steps { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; font-size: 18px; }
+.steps li { display: flex; align-items: center; gap: 14px; color: var(--dim); } .steps li.done { color: #e8eaee; } .steps li.now { color: #fff; font-weight: 600; }
+.dot { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #5a606a; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; }
+.done .dot { background: var(--green); border-color: var(--green); color: #062; }
+.now .dot { border-color: var(--orange); border-top-color: transparent; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.world { margin-top: 22px; padding: 18px 20px 30px; border-radius: 8px; background: rgba(255,255,255,.05); }
+.world .wt { display: flex; justify-content: space-between; font-size: 18px; margin-bottom: 10px; } .world .wt span { color: var(--muted); }
+.wbar { position: relative; height: 14px; border-radius: 7px; background: rgba(255,255,255,.12); }
+.wbar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 7px; background: var(--green); }
+.wbar em { position: absolute; left: 60%; top: -6px; bottom: -6px; width: 3px; background: #fff; border-radius: 2px; }
+.wbar u { position: absolute; left: 60%; top: 20px; transform: translateX(-50%); text-decoration: none; font-size: 14px; color: #fff; }
+.tc .r .btn { width: 100%; margin-top: 22px; font-size: 26px; padding: 18px; }
+.wait { margin-top: 22px; padding: 18px 20px; border-radius: 8px; background: rgba(255, 211, 107, .08); box-shadow: inset 4px 0 0 var(--amber); }
+.wait .w1 { font-size: 20px; font-weight: 600; }
+.wait .cd { font: 700 64px var(--mono); line-height: 1.1; margin: 6px 0 4px; }
+.wait .w2 { font-size: 17px; color: var(--muted); }
+
+/* ===== 5 settings (loading.html's .sett) ===== */
+.sett { width: 1240px; padding: 30px 44px; }
+.sett h1 { margin: 0 0 12px; font-size: 34px; }
+.set { display: flex; align-items: center; justify-content: space-between; gap: 30px; padding: 14px 8px; border-bottom: 1px solid rgba(255,255,255,.07); }
+.set .n { font-size: 20px; font-weight: 600; } .set .d { font-size: 16px; color: var(--muted); margin-top: 3px; max-width: 700px; }
+.set .seg span { padding: 9px 16px; font-size: 17px; }
+.set.new { background: rgba(242,107,29,.10); border-radius: 6px; outline: 2px solid rgba(242,107,29,.55); }
+.setnote { margin-top: 16px; font-size: 15px; color: var(--muted); line-height: 1.5; }
+
+/* ===== 6 start ===== */
+.when { display: flex; align-items: center; gap: 14px; margin-top: 18px; padding: 14px 18px; border-radius: 6px; background: rgba(40, 50, 90, .45); box-shadow: inset 4px 0 0 #7c8cff; font-size: 21px; font-weight: 600; }
+.when .moon { width: 26px; height: 26px; border-radius: 50%; box-shadow: inset -8px -3px 0 0 #e8e4c8; flex: none; transform: rotate(-20deg); }
+.nofork { max-width: 620px; text-align: right; line-height: 1.45; }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="mock-bar">
+  <b>Rally loop, timed · mock-ups</b>
+  <button data-s="tc">1 · Time card</button>
+  <button data-s="hud">2 · HUD on a road section</button>
+  <button data-s="atc">3 · ATC card</button>
+  <button data-s="split">4 · Split times</button>
+  <button data-s="set">5 · Settings</button>
+  <button data-s="start">6 · Start the rally</button>
+</div>
+<div class="vbar" id="vbar"></div>
+<div class="wrap"><div class="box" id="box"><div class="screen" id="screen">
+  <div class="road"></div>
+  <div class="hud-ex" style="left:40px;bottom:40px;width:300px;height:300px;border-radius:50%">speed / tacho</div>
+  <div class="hud-ex" style="right:40px;bottom:40px;width:360px;height:240px">minimap</div>
+
+  <!-- ================= 2 HUD on a road section ================= -->
+  <div data-m="hud.now hud.prop hud.amb hud.red">
+    <div class="tcboard" style="left:937px;top:452px">TC<br>2</div>
+    <div class="hpanel approach" data-m="hud.now"><span class="l">Transit</span><span class="n">SS2 Hillside Rd</span><span class="d">4.2 km</span><span class="s">follow the arrows</span></div>
+    <div class="hpanel approach" data-m="hud.prop"><span class="l">Transit</span><span class="n">TC2 Hillside Rd</span><span class="due">due 18:50</span><i>·</i><span class="left">6:12 left</span><i>·</i><span class="d">4.2 km</span></div>
+    <div class="hpanel approach amb" data-m="hud.amb"><span class="l">Transit</span><span class="n">TC2 Hillside Rd</span><span class="due">due 18:50</span><i>·</i><span class="left">0:48 left</span><i>·</i><span class="d">0.6 km</span></div>
+    <div class="hpanel approach red" data-m="hud.red"><span class="l">Transit</span><span class="n">TC2 Hillside Rd</span><span class="due">due 18:50</span><i>·</i><span class="left">2 min late · +20 s</span><i>·</i><span class="d">0.3 km</span></div>
+    <div class="hints"><span><b>Backspace · D-pad →</b>Recover</span><span><b>Ctrl+Alt+K</b>Time card</span></div>
+  </div>
+
+  <!-- ================= 4 split times on stage ================= -->
+  <div data-m="split.now split.nowfin split.ahead split.behind split.first split.fin">
+    <div class="timing"><div class="h">SS2 · HILLSIDE RD</div>
+      <div class="t" data-m="split.now">2:41.7</div><div class="t" data-m="split.ahead split.behind split.first">3:14.9</div><div class="t" data-m="split.nowfin split.fin">6:31.7</div></div>
+    <div class="progress"><div class="track">
+      <div class="fill" data-m="split.now" style="width:42%"></div><div class="fill" data-m="split.ahead split.behind split.first" style="width:51%"></div><div class="fill" data-m="split.nowfin split.fin" style="width:100%"></div>
+      <span class="sq theme" style="left:0"></span>
+      <span class="tick past" data-m="split.ahead split.behind split.first split.fin" style="left:25%"></span>
+      <span class="tick past" data-m="split.ahead split.behind split.first split.fin" style="left:50%"></span>
+      <span class="tick" data-m="split.ahead split.behind split.first" style="left:75%"></span><span class="tick past" data-m="split.fin" style="left:75%"></span>
+      <span class="sq out" style="left:100%"></span><span class="lab" style="left:100%">12.1 km</span>
+    </div></div>
+    <div class="sliver"><b>Hillside Rd</b><span>· Pine Ridge</span></div>
+    <div class="kmread" data-m="split.now">5.1 <small>/ 12.1 km</small></div>
+    <div class="kmread" data-m="split.ahead split.behind split.first">6.2 <small>/ 12.1 km</small></div>
+
+    <div class="split" data-m="split.ahead"><div class="l">Split 2</div><div class="rw"><span class="t">3:12.4</span><span class="gap ahead">−1.8 s</span></div></div>
+    <div class="split" data-m="split.behind"><div class="l">Split 2</div><div class="rw"><span class="t">3:12.4</span><span class="gap behind">+2.3 s</span></div></div>
+    <div class="split" data-m="split.first"><div class="l">Split 2</div><div class="rw"><span class="t">3:12.4</span></div></div>
+
+    <div class="finish" data-m="split.nowfin"><div class="hd">SS2 Hillside Rd · finish</div><div class="rw"><span class="t">6:31.7</span><span class="gap ahead">−1.2 s · NEW BEST</span></div></div>
+    <div class="finish tall" data-m="split.fin"><div class="hd">SS2 Hillside Rd · finish</div><div class="rw"><span class="t">6:31.7</span><span class="gap ahead">−1.2 s · NEW BEST</span></div>
+      <div class="fsplits">
+        <div><span>Split 1</span><span>1:34.2</span><span class="gap ahead">−0.6 s</span></div>
+        <div><span>Split 2</span><span>3:12.4</span><span class="gap ahead">−1.8 s</span></div>
+        <div><span>Split 3</span><span>4:51.0</span><span class="gap behind">+0.9 s</span></div>
+        <div class="fin"><span>Finish</span><span>6:31.7</span><span class="gap ahead">−1.2 s</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= menu pages ================= -->
+  <div class="dimmer" data-m="tc.now tc.prop tc.lim set.now set.prop start.now start.prop start.nofork"></div>
+  <div class="solid" data-m="atc.now atc.on atc.late atc.early atc.wait"></div>
+  <div class="page" data-m="tc.now tc.prop tc.lim set.now set.prop start.now start.prop start.nofork atc.now atc.on atc.late atc.early atc.wait">
+    <div class="top">
+      <span class="back" data-m="tc.now tc.prop tc.lim set.now set.prop start.now start.prop start.nofork">‹ Back</span>
+      <div class="title"><span>Earth</span> Rally</div>
+      <div class="crumbs" id="crumbs"></div>
+    </div>
+
+    <!-- ===== 1 time card ===== -->
+    <div class="content tl" data-m="tc.now tc.prop tc.lim">
+      <div class="tcg">
+        <!-- now: untimed -->
+        <div class="card cpad" data-m="tc.now">
+          <div class="tchead"><h4>Pine Ridge Rally</h4><span class="mode">Realistic · O4WD</span></div>
+          <div class="day">Day 1</div>
+          <div class="tr dimr"><span class="mono">Start</span><span>Pine Ridge town hall</span><span></span><span></span></div>
+          <div class="tr"><span class="mono">SS1</span><span>Quarry Loop</span><span class="mono r">6:48.2</span><span class="mono r">12 / 38</span></div>
+          <div class="tr next"><span class="mono">SS2</span><span>Hillside Rd</span><span class="mono r">next</span><span></span></div>
+          <div class="tr"><span class="mono">SS3</span><span>Cedar Flats</span><span></span><span></span></div>
+          <div class="tr svc"><span class="mono">Service A</span><span>Ridge service park</span><span></span><span></span></div>
+          <div class="tr"><span class="mono">SS4</span><span>Gum Creek</span><span></span><span></span></div>
+          <div class="tr"><span class="mono">SS5</span><span>Quarry Loop 2</span><span></span><span></span></div>
+          <div class="tr svc"><span class="mono">Overnight</span><span>Ridge service park</span><span></span><span></span></div>
+          <div class="day">Day 2</div>
+          <div class="tr"><span class="mono">SS6</span><span>Long Gully</span><span></span><span></span></div>
+          <div class="tr"><span class="mono">SS7</span><span>Saddle Back</span><span></span><span></span></div>
+          <div class="tr svc"><span class="mono">Service B</span><span>Ridge service park</span><span></span><span></span></div>
+          <div class="tr"><span class="mono">SS8</span><span>Long Gully 2</span><span></span><span></span></div>
+          <div class="tr svc"><span class="mono">Final service</span><span>Pine Ridge town hall</span><span></span><span></span></div>
+        </div>
+        <!-- proposed: timed, 18:41 on the way to TC2 -->
+        <div class="card cpad t2" data-m="tc.prop">
+          <div class="tchead"><h4>Pine Ridge Rally</h4><span class="clockchip">Fri 6 Feb · 18:41</span><span class="mode">Realistic · O4WD</span></div>
+          <div class="tr hd"><span></span><span></span><span class="r">Due</span><span class="r">In</span><span class="r">Transit</span><span class="r">Stage</span><span class="r">Pos</span></div>
+          <div class="day">Day 1 · Friday</div>
+          <div class="tr dimr"><span class="mono">Start</span><span>Pine Ridge town hall</span><span class="mono r">18:00</span><span class="mono r">18:00</span><span class="r">on time</span><span></span><span></span></div>
+          <div class="tr"><span class="mono">SS1</span><span>Quarry Loop</span><span class="mono r">18:22</span><span class="mono r">18:24</span><span class="r late">+20 s late</span><span class="mono r">6:48.2</span><span class="mono r">12 / 38</span></div>
+          <div class="tr next"><span class="mono">SS2</span><span>Hillside Rd</span><span class="mono r">18:50</span><span class="mono r"></span><span></span><span class="mono r">next</span><span></span></div>
+          <div class="tr"><span class="mono">SS3</span><span>Cedar Flats</span><span class="mono r dim">–</span><span></span><span></span><span></span><span></span></div>
+          <div class="tr svc"><span class="mono">Service A</span><span class="nm">Ridge service park<small class="dim">out 20:05</small></span><span class="mono r dim">–</span><span></span><span></span><span></span><span></span></div>
+          <div class="tr"><span class="mono">SS4</span><span>Gum Creek</span><span class="mono r dim">–</span><span></span><span></span><span></span><span></span></div>
+          <div class="tr"><span class="mono">SS5</span><span>Quarry Loop 2</span><span class="mono r dim">–</span><span></span><span></span><span></span><span></span></div>
+          <div class="tr svc"><span class="mono">Overnight</span><span class="nm">Ridge service park<small class="dim">out Sat 08:30</small></span><span class="mono r dim">–</span><span></span><span></span><span></span><span></span></div>
+          <div class="day">Day 2 · Saturday</div>
+          <div class="tr"><span class="mono">SS6</span><span>Long Gully</span><span class="mono r dim">–</span><span></span><span></span><span></span><span></span></div>
+          <div class="tr dimr"><span class="mono">⋮</span><span>3 more</span><span></span><span></span><span></span><span></span><span></span></div>
+          <div class="tsum"><span>Transit penalties <b class="late">+20 s</b></span><span>Late today <b>2 min</b> of 30</span></div>
+        </div>
+        <!-- proposed: later that night, past the day's maximum lateness -->
+        <div class="card cpad t2" data-m="tc.lim">
+          <div class="tchead"><h4>Pine Ridge Rally</h4><span class="clockchip">Fri 6 Feb · 21:37</span><span class="mode">Realistic · O4WD</span></div>
+          <div class="tr hd"><span></span><span></span><span class="r">Due</span><span class="r">In</span><span class="r">Transit</span><span class="r">Stage</span><span class="r">Pos</span></div>
+          <div class="day">Day 1 · Friday</div>
+          <div class="tr dimr"><span class="mono">Start</span><span>Pine Ridge town hall</span><span class="mono r">18:00</span><span class="mono r">18:00</span><span class="r">on time</span><span></span><span></span></div>
+          <div class="tr"><span class="mono">SS1</span><span>Quarry Loop</span><span class="mono r">18:22</span><span class="mono r">18:24</span><span class="r late">+20 s late</span><span class="mono r">6:48.2</span><span class="mono r">12 / 38</span></div>
+          <div class="tr"><span class="mono">SS2</span><span>Hillside Rd</span><span class="mono r">18:50</span><span class="mono r">18:50</span><span class="r dim">on time</span><span class="mono r">8:31.7</span><span class="mono r">9 / 38</span></div>
+          <div class="tr"><span class="mono">SS3</span><span>Cedar Flats</span><span class="mono r">19:21</span><span class="mono r">19:34</span><span class="r late">+2:10 late</span><span class="mono r">5:12.9</span><span class="mono r">15 / 38</span></div>
+          <div class="tr svc"><span class="mono">Service A</span><span class="nm">Ridge service park<small class="dim">out 20:05</small></span><span class="mono r">19:40</span><span class="mono r">19:40</span><span class="r dim">on time</span><span></span><span></span></div>
+          <div class="tr lim"><span class="mono">SS4</span><span class="nm">Gum Creek<small class="over">past the 30 min limit (not enforced)</small></span><span class="mono r">20:58</span><span class="mono r">21:17</span><span class="r over">+3:10 late</span><span class="mono r">7:40.3</span><span class="mono r">21 / 38</span></div>
+          <div class="tr next"><span class="mono">SS5</span><span>Quarry Loop 2</span><span class="mono r">21:52</span><span class="mono r"></span><span></span><span class="mono r">next</span><span></span></div>
+          <div class="tr svc"><span class="mono">Overnight</span><span class="nm">Ridge service park<small class="dim">out Sat 08:30</small></span><span class="mono r dim">–</span><span></span><span></span><span></span><span></span></div>
+          <div class="day">Day 2 · Saturday</div>
+          <div class="tr"><span class="mono">SS6</span><span>Long Gully</span><span class="mono r dim">–</span><span></span><span></span><span></span><span></span></div>
+          <div class="tr dimr"><span class="mono">⋮</span><span>3 more</span><span></span><span></span><span></span><span></span><span></span></div>
+          <div class="tsum"><span>Transit penalties <b class="late">+5:40</b></span><span>Late today <b class="over">34 min</b> of 30</span></div>
+        </div>
+
+        <div class="col">
+          <div class="card cpad">
+            <h5>TRANSIT</h5>
+            <div data-m="tc.now" style="font-size:18px">To SS2 Hillside Rd · 8.8 km</div>
+            <div class="banner" data-m="tc.prop"><span>To TC2</span><i>·</i><span>due <span class="mono">18:50</span></span><i>·</i><span class="mono">9:12</span><span>left</span><i>·</i><span class="mono">8.8 km</span></div>
+            <div class="banner" data-m="tc.lim"><span>To TC5</span><i>·</i><span>due <span class="mono">21:52</span></span><i>·</i><span class="mono">15:04</span><span>left</span><i>·</i><span class="mono">11.3 km</span></div>
+            <div class="muted small" data-m="tc.now">Follow the arrows.</div>
+            <div class="muted small" data-m="tc.prop tc.lim">Follow the arrows. Late costs 10 s a minute.</div>
+          </div>
+          <div class="card cpad">
+            <h5>OVERALL</h5>
+            <div class="row2"><span>Position</span><b data-m="tc.now tc.prop">P12 / 38</b><b data-m="tc.lim">P16 / 38</b></div>
+            <div class="row2"><span>O4WD</span><b data-m="tc.now tc.prop">4th / 14</b><b data-m="tc.lim">6th / 14</b></div>
+            <div class="row2"><span>Gap to leader</span><span class="mono" data-m="tc.now">+24.6</span><span class="mono" data-m="tc.prop">+44.6</span><span class="mono" data-m="tc.lim">+6:12.8</span></div>
+            <div class="row2" data-m="tc.prop tc.lim"><span>Transit penalties</span><span class="mono late" data-m="tc.prop">+20 s</span><span class="mono late" data-m="tc.lim">+5:40</span></div>
+            <div class="row2"><span>Your total</span><span class="mono" data-m="tc.now">6:48.2</span><span class="mono" data-m="tc.prop">7:08.2</span><span class="mono" data-m="tc.lim">33:53.1</span></div>
+          </div>
+          <div class="card cpad"><div class="btns"><div class="btn out">Save and quit</div><div class="btn out">Retire</div></div></div>
+        </div>
+      </div>
+      <div class="cornerbtn">
+        <div class="btn huge sel" data-m="tc.now tc.prop">Back to the transit<small>to SS2 Hillside Rd</small></div>
+        <div class="btn huge sel" data-m="tc.lim">Back to the transit<small>to SS5 Quarry Loop 2</small></div>
+      </div>
+    </div>
+
+    <!-- ===== 3 ATC card ===== -->
+    <div class="content" data-m="atc.now atc.on atc.late atc.early atc.wait">
+      <div class="card tc">
+        <div class="l">
+          <div class="kick">Time control · in</div>
+          <h1>SS2 Hillside Rd</h1>
+          <div class="sub">12.1 km · Pine Ridge Rally · day 1</div>
+          <!-- now -->
+          <div data-m="atc.now">
+            <div class="tcrow"><span>Time in</span><b>18:50:12</b></div>
+            <div class="tcrow"><span>Start time</span><b>+1 min after Continue</b></div>
+            <div class="tcrow"><span>Then</span><b class="sm">move up to the start line</b></div>
+          </div>
+          <!-- on time -->
+          <div data-m="atc.on">
+            <div class="tcrow"><span>Time in</span><b>18:50:12</b></div>
+            <div class="tcrow new"><span>Due</span><b>18:50</b></div>
+            <div class="tcrow new"><span>Result</span><b class="ok">On time</b></div>
+            <div class="tcrow"><span>Start time</span><b>18:51:00</b></div>
+            <div class="tcrow"><span>Then</span><b class="sm">move up to the start line</b></div>
+          </div>
+          <div data-m="atc.late">
+            <div class="tcrow"><span>Time in</span><b>18:51:20</b></div>
+            <div class="tcrow new"><span>Due</span><b>18:50</b></div>
+            <div class="tcrow new"><span>Result</span><b class="late">1 min late · +10 s</b></div>
+            <div class="tcrow"><span>Start time</span><b>18:52:00</b></div>
+            <div class="tcrow"><span>Then</span><b class="sm">move up to the start line</b></div>
+          </div>
+          <div data-m="atc.early">
+            <div class="tcrow"><span>Time in</span><b>18:48:05</b></div>
+            <div class="tcrow new"><span>Due</span><b>18:50</b></div>
+            <div class="tcrow new"><span>Result</span><b class="late">2 min early · +2 min</b></div>
+            <div class="tcrow"><span>Start time</span><b>18:49:00</b></div>
+            <div class="tcrow"><span>Then</span><b class="sm">move up to the start line</b></div>
+          </div>
+          <div data-m="atc.wait">
+            <div class="tcrow"><span>Time in</span><b class="dim">–</b></div>
+            <div class="tcrow"><span>Start time</span><b>18:51:00</b></div>
+            <div class="wait">
+              <div class="w1">Due 18:50 — check in at your minute</div>
+              <div class="cd">1:55</div>
+              <div class="w2"><span class="kbd">Shift+E</span>or <span class="k y" style="margin-left:6px">Y</span>Skip the wait</div>
+            </div>
+          </div>
+        </div>
+        <div class="r">
+          <h3>The stage</h3>
+          <ul class="steps">
+            <li class="done" data-m="atc.now atc.on atc.late atc.early"><span class="dot">✓</span>Checked in</li>
+            <li class="done" data-m="atc.wait"><span class="dot">✓</span>Stopped at the board</li>
+            <li class="done"><span class="dot">✓</span>Moving the world to the stage</li>
+            <li class="done"><span class="dot">✓</span>Line, pacenotes, controls</li>
+            <li class="done"><span class="dot">✓</span>Junctions taped, stage dressed</li>
+            <li class="done"><span class="dot">✓</span>The world around you: at least 60%</li>
+          </ul>
+          <div class="world"><div class="wt"><b>World</b><span style="color:var(--green)">Ready to drive</span></div><div class="wbar"><i style="width:74%"></i><em></em><u>60%</u></div></div>
+          <div class="btn sel" data-m="atc.now atc.on atc.late atc.early">Continue</div>
+          <div class="btn off" data-m="atc.wait">Check in at 18:50</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 5 settings ===== -->
+    <div class="content" data-m="set.now set.prop">
+      <div class="card sett">
+        <h1>Settings</h1>
+        <div class="set"><div><div class="n">Units</div><div class="d">Stage lengths and distances on the HUD</div></div><div class="seg"><span class="on">km</span><span>miles</span></div></div>
+        <div class="set"><div><div class="n">Reset penalty</div><div class="d">+10 s for each car reset during the timed stage</div></div><div class="seg"><span class="on">On</span><span>Off</span></div></div>
+        <div class="set new" data-m="set.prop"><div><div class="n">Early check-in penalty<span class="newtag">NEW</span></div><div class="d">Checking in at a time control before your minute costs 1 min a minute. Off: you wait for your minute.</div></div><div class="seg"><span class="on">Off</span><span>On</span></div></div>
+        <div class="set"><div><div class="n">Control-zone brake</div><div class="d">The brakes ease on in a control's zone, so you stop at its board</div></div><div class="seg"><span class="on">On</span><span>Off</span></div></div>
+        <div class="set"><div><div class="n">Start clock view</div><div class="d">Where the close-up of the start clock shows during the countdown</div></div><div class="seg"><span class="on">Right</span><span>Top</span><span>Off</span></div></div>
+        <div class="set"><div><div class="n">World loaded before driving</div><div class="d">How much of the world around the car must load before a loading screen lets you drive. Higher: less scenery popping in, a longer wait.</div></div><div class="seg"><span>40%</span><span>50%</span><span class="on">60%</span><span>70%</span><span>80%</span><span>90%</span></div></div>
+        <div class="set"><div><div class="n">Developer panel</div><div class="d">The old Earth Rally window with each run's checks</div></div><div class="seg"><span>On</span><span class="on">Off</span></div></div>
+        <div class="setnote"><b style="color:#fff">Time controls</b>: <i>Full</i>, as in a real rally: stop at the time control (the red clock board), get your start time, move up to the start line and wait for your minute; driving past the time control costs 60 s.</div>
+      </div>
+    </div>
+
+    <!-- ===== 6 start the rally ===== -->
+    <div class="content tl" data-m="start.now start.prop start.nofork">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px;width:100%">
+        <div class="card pad">
+          <h2>Pine Ridge Rally</h2>
+          <div class="muted" style="font-size:18px;margin-top:6px">9 stages · 2 days · 3 services</div>
+          <div class="when" data-m="start.prop start.nofork"><span class="moon"></span><span>Starts Fri 6 Feb 2026, 18:00 local, at night</span></div>
+          <div class="lbl">Car</div>
+          <div class="boxv"><span>Rallye 2.0 Gravel</span><span class="muted">AWD</span></div>
+          <div class="lbl">Class</div>
+          <div class="seg"><span>L4WD</span><span class="on">O4WD</span><span>L2WD</span><span>O2WD</span></div>
+          <div class="muted" style="font-size:15px;margin-top:8px">Picked from your car's drivetrain.</div>
+        </div>
+        <div class="card pad">
+          <h3 class="sec">Rally settings</h3>
+          <div class="lbl">Mode</div>
+          <div class="seg"><span class="on">Realistic</span><span>Casual</span></div>
+          <div class="muted" style="font-size:15px;margin-top:8px">No restarts. Recovering ends your stage: Super Rally penalty, back in at the next service.</div>
+          <div class="lbl">Cancelled stages</div>
+          <div class="seg"><span class="on">As it really ran</span><span>Run them all</span></div>
+          <div class="muted" style="font-size:15px;margin-top:8px">SS7 Saddle Back was cancelled on the day.</div>
+          <div class="muted" style="font-size:15px;margin-top:22px">2 stages get their line first: the auto recce takes you to each.</div>
+        </div>
+      </div>
+      <div class="cornerbtn">
+        <div class="warn nofork" data-m="start.nofork">Your BeamNG.Earth can't set the rally's date and weather: the time of day is set, the weather stays live. Install the Earth Rally fork of BeamNG.Earth for the real weather.</div>
+        <div class="btn huge sel" data-m="start.now">Start the rally<small>first car away 18:00</small></div>
+        <div class="btn huge sel" data-m="start.prop start.nofork">Start the rally<small>first car away Fri 6 Feb · 18:00</small></div>
+      </div>
+    </div>
+
+    <div class="prompts">
+      <span data-m="tc.now tc.prop tc.lim set.now set.prop start.now start.prop start.nofork"><span class="k a">A</span>Select</span>
+      <span data-m="atc.now atc.on atc.late atc.early"><span class="k a">A</span>Continue</span>
+      <span data-m="atc.wait"><span class="k y">Y</span>Skip the wait</span>
+      <span data-m="tc.now tc.prop tc.lim set.now set.prop start.now start.prop start.nofork"><span class="k b">B</span>Back</span>
+      <span class="paused">Game paused</span>
+    </div>
+  </div>
+</div></div></div>
+<div id="who"></div>
+
+<script>
+// each screen: its variants (now / proposed), its trail and its note
+const SCREENS = {
+  tc: { crumbs: "Home<i>›</i><b>Time card</b>", v: [["now", "Now", "n"], ["prop", "Proposed", "p"], ["lim", "Proposed · past the 30 min limit", "p"]],
+    note: {
+      now: "<b>Now.</b> The time card has no clock: road sections are untimed, so the only times are stage times and places.",
+      prop: "<b>Time card, timed.</b> The header gives the rally's real date and clock. Each control gets its <b>Due</b> time, your time <b>In</b> and its <b>Road</b> penalty (10 s a minute late, amber). The transit card says where you're due, when, and how long you have. A service resets you to the schedule: its out time is fixed, so lateness never carries past it.",
+      lim: "<b>Past the day's limit.</b> A real rally puts you out at 30 min late in a day. Here the control that takes you past it turns red and says so, and you keep going (the plan's choice 1). The total under the rows counts the day's minutes late against the 30."
+    } },
+  hud: { crumbs: "", v: [["now", "Now", "n"], ["prop", "Proposed", "p"], ["amb", "Proposed · under 1 min", "p"], ["red", "Proposed · late", "p"]],
+    note: {
+      now: "<b>Now.</b> The transit line says where you're going and how far: no due time, nothing to hurry for.",
+      prop: "<b>On a road section.</b> The same line, with the time control's due time and the time left. It's the only place you see the clock while driving, so it stays one line in the corner, not a new panel.",
+      amb: "<b>Under a minute left.</b> The time left and a bar under the line turn amber.",
+      red: "<b>Late.</b> Red, with how late and what it costs so far (\"2 min late · +20 s\"), counting up until you stop at the board."
+    } },
+  atc: { crumbs: "Pine Ridge Rally<i>›</i><b>SS2 time control</b>", v: [["now", "Now", "n"], ["on", "On time", "p"], ["late", "Late", "p"], ["early", "Early · penalty on", "p"], ["wait", "Early · penalty off", "p"]],
+    note: {
+      now: "<b>Now.</b> Time in, then a start time a minute after you press Continue. Nothing says whether you were on time, because nothing is due.",
+      on: "<b>The ATC card, timed.</b> New rows <b>Due</b> (the slot the card already has) and <b>Result</b>. The start time is your due minute plus one, as on a real time card.",
+      late: "<b>Late.</b> The result says by how much and what it costs; it goes on the rally total as a road penalty.",
+      early: "<b>Early, with Early check-in penalty on.</b> Checking in before your minute costs 1 min a minute, as in a real rally. You could have waited at the board instead.",
+      wait: "<b>Early, with the setting off (the default).</b> You don't check in yet: the card shows your due minute and counts down to it, and checks you in on it, on time. Shift+E or Y skips the wait: the clock jumps to your minute, as it does at a service. The stage keeps loading meanwhile."
+    } },
+  split: { crumbs: "", v: [["now", "Now · on stage", "n"], ["nowfin", "Now · finish", "n"], ["ahead", "Split · ahead", "p"], ["behind", "Split · behind", "p"], ["first", "Split · first run", "p"], ["fin", "Finish", "p"]],
+    note: {
+      now: "<b>Now.</b> On a stage: the stage clock, the progress bar and the km. No splits.",
+      nowfin: "<b>Now.</b> The finish card: your time and the gap to your best on the stage.",
+      ahead: "<b>A split.</b> Three per stage, at a quarter, half and three quarters (ticks on the progress bar). As you pass one, a card under the stage clock for 5 s: the split time and the gap to your best run on this stage, green when you're ahead.",
+      behind: "<b>Behind your best:</b> the gap in red.",
+      first: "<b>First run on the stage:</b> the split time, no gap (nothing to compare with yet). Runs saved before this have no splits either: the next run sets them.",
+      fin: "<b>The finish card</b> grows a list: the three splits and the finish, each with its gap to your best. It tucks up as now after a few seconds, without the list. Behind is red here, where the finish gap today is amber: say which you want."
+    } },
+  set: { crumbs: "<b>Settings</b>", v: [["now", "Now", "n"], ["prop", "Proposed", "p"]],
+    note: {
+      now: "<b>Now.</b> The settings as they are.",
+      prop: "<b>Early check-in penalty</b> (new, off by default, every mode). Off: arrive early and you wait for your minute (or skip the wait). On: checking in early costs 1 min a minute. Next to Reset penalty, the other penalty switch."
+    } },
+  start: { crumbs: "Home<i>›</i>Drive rally<i>›</i><b>Start the rally</b>", v: [["now", "Now", "n"], ["prop", "Proposed", "p"], ["nofork", "Proposed · older BeamNG.Earth", "p"]],
+    note: {
+      now: "<b>Now.</b> The first car's time, with no date: the rally runs in today's sky and weather.",
+      prop: "<b>The rally's real start.</b> One line says when it starts: the real date and local time, and whether it's in the dark. Each stage then gets the sky and weather of its real date and time.",
+      nofork: "<b>Without the BeamNG.Earth that can set the date</b> (the fork's next build): one amber line above Start. The rally still runs and is still timed; the sun is moved to the right time of day, the weather is today's."
+    } },
+};
+let cur = "tc", curV = {};
+function go(s, v) {
+  const S = SCREENS[s];
+  v = v || curV[s] || (S.v.find(x => x[2] === "p") || S.v[0])[0];
+  cur = s; curV[s] = v;
+  const m = s + "." + v;
+  document.querySelectorAll("#screen [data-m]").forEach(e => e.classList.toggle("hidden", !e.dataset.m.split(" ").includes(m)));
+  document.querySelectorAll(".mock-bar button").forEach(b => b.classList.toggle("on", b.dataset.s === s));
+  document.getElementById("screen").classList.toggle("dusk", s === "hud" || s === "split");
+  const vb = document.getElementById("vbar");
+  const nows = S.v.filter(x => x[2] === "n"), props = S.v.filter(x => x[2] === "p");
+  const btn = x => `<button data-v="${x[0]}" class="${x[0] === v ? "on" : ""}">${x[1]}</button>`;
+  vb.innerHTML = (nows.length ? `<span class="g">Now</span>${nows.map(btn).join("")}<span class="sep"></span>` : `<span class="only">New screen: proposed only.</span><span class="sep"></span>`)
+    + `<span class="g">Proposed</span>${props.map(btn).join("")}`;
+  vb.querySelectorAll("button").forEach(b => b.onclick = () => go(cur, b.dataset.v));
+  document.getElementById("crumbs").innerHTML = S.crumbs || "";
+  document.getElementById("who").innerHTML = S.note[v];
+  history.replaceState(null, "", "#" + m);
+  fit();
+}
+document.querySelectorAll(".mock-bar button").forEach(b => b.onclick = () => go(b.dataset.s));
+function fit() { document.getElementById("screen").style.transform = "scale(" + (document.getElementById("box").clientWidth / 1920) + ")"; }
+addEventListener("resize", fit);
+const h = location.hash.slice(1).split(".");
+go(SCREENS[h[0]] ? h[0] : "tc", SCREENS[h[0]] && SCREENS[h[0]].v.some(x => x[0] === h[1]) ? h[1] : null);
+</script>
+</body>
+</html>

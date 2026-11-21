@@ -37,6 +37,7 @@ local stats = require('earthRally/stats')   -- anonymous stats, only with the pl
 local dressing = require('earthRally/dressing')
 local junctions = require('earthRally/junctions')
 local online = require('earthRally/online')
+local stageWx = require('earthRally/stageWeather')   -- (plan G) the stage page's weather pick
 
 local M = {}
 local logTag = 'earthRally'
@@ -114,7 +115,8 @@ M.ZONE_HOLD_S = 1.5            -- stopped on the start line this long before the
 M.FOLLOW_BACK_M = 150          -- the car's progress looked for this far behind ...
 M.FOLLOW_AHEAD_M = 600         -- ... and this far ahead of where it was along the stage line
 M.ROUTE_REFRESH_S = 5          -- the route arrows planned again this often (BeamNG.Earth's road map changes as you go)
-M.RESET_PENALTY_S = 10         -- each car reset during the timed stage (setting resetPenalty)
+M.RESET_PENALTY_S = 15         -- each of the game's car resets during the timed stage (setting resetPenalty)
+M.BACK_ON_ROAD_PENALTY_S = 5   -- each Back on the road during the timed stage (the owner, 2026-11-19)
 M.RESET_DEBOUNCE_S = 0.5       -- (one reset can be heard more than once)
 M.RESET_AFTER_MOVE_S = 2       -- (no reset counted this soon after the world's origin moved: not the player's)
 M.OFF_ROUTE_CLEAR_M = 40       -- (where the line is the organisers': off route from OFF_ROUTE_M, back within this)
@@ -151,15 +153,41 @@ local run = nil
 local approach = nil           -- Route to start armed: { event, stage, lat, lon, kind, t } (M.armApproach)
 local speed, freeze            -- (below: the car's speed, the game's freeze)
 
--- The rally clock (seconds of the day): the game's time of day when the run began, carried on with game time (so a
--- pause stops it, as the stage clock).
+-- (the rally-loop plan) A timed full rally's clock, set by rallyRun.lua: { now = fn() -> its local time (s since
+-- 1970, worldTime.lua) or nil, shift = fn(s) (moved on: the start-line skip) }. nil: no timed rally.
+M.rallyClock = nil
+local function rallyNow()
+  local rc = M.rallyClock
+  if not (rc and rc.now) then return nil end
+  local ok, t = pcall(rc.now)
+  return ok and type(t) == 'number' and t or nil
+end
+
+-- The rally clock (seconds of the day): a timed rally's own clock; else the game's time of day when the run began,
+-- carried on with game time (so a pause stops it, as the stage clock).
 local function todNow()
+  local t = rallyNow()
+  if t then return t % 86400 end
   local env = rawget(_G, 'core_environment')
   local ok, tod = pcall(function() return env and env.getTimeOfDay and env.getTimeOfDay() end)
   if ok and type(tod) == 'table' and tonumber(tod.time) then return ((tod.time + 0.5) % 1) * 86400 end
   return os.time() % 86400
 end
-function M.clock() return run and run.clockBase and (run.clockBase + run.clockRun) or nil end
+function M.clock()
+  if not (run and run.clockBase) then return nil end
+  -- (a timed rally's run: the rally clock itself, from the midnight of the day the run began, so the clocks agree
+  -- however the rally's moves it -- the wait for a due minute, its skip)
+  if run.rcDay then
+    local t = rallyNow()
+    if t then return t - run.rcDay end
+  end
+  return run.clockBase + run.clockRun
+end
+-- (a timed rally) A run's clock reading (M.clock, a start time) as the rally clock's local time, or nil.
+function M.rallyTimeOf(c)
+  if not (run and run.rcDay and type(c) == 'number') then return nil end
+  return run.rcDay + c
+end
 function M.formatClock(t)
   if not t then return '--:--:--' end
   t = math.floor(t + 0.5) % 86400
@@ -187,6 +215,7 @@ function M.current() return run end
 local function fail(why)
   if not run then return end
   run.state, run.error = 'failed', why
+  pcall(stageWx.giveBack)   -- (plan G: a run that never got going keeps no weather pick on the world)
   pcall(stats.stageEnded, run, 'failed')
   say(why, 8, 'error', 'Earth Rally: run stopped')
 end
@@ -483,6 +512,7 @@ function M.start(event, stage, opts)
   for i = 2, #latlon do flatLen = flatLen + geo.metres(latlon[i - 1][1], latlon[i - 1][2], latlon[i][1], latlon[i][2]) end
   run = {
     inRally = (opts and opts.rally) and true or nil,
+    casual = (opts and opts.rally and opts.casual) and true or nil,   -- (a Casual rally's stage: resets cost, below)
     checkInNow = (opts and opts.checkInNow) or nil,
     event = event, stage = stage, state = 'travel', t = 0, latlon = latlon, latlonLength = flatLen,
     startFlat = startFlat, finishFlat = finishFlat,
@@ -492,6 +522,13 @@ function M.start(event, stage, opts)
     oldRebase = earth.rebaseDistance(),
     clockBase = todNow(), clockRun = 0, realT = 0, resets = 0,
   }
+  do
+    local t = rallyNow()
+    if t and run.inRally then run.rcDay = math.floor(t / 86400) * 86400 end
+  end
+  -- (plan G) the stage page's weather pick, set as a single stage loads (a rally sets its own: rallyRun.setWorld)
+  -- (not the self-test's scripted runs, opts.noOnline: those keep the world's weather, so they repeat)
+  if not run.inRally and not (opts and opts.noOnline) then pcall(stageWx.apply, event, stage) end
   -- the line it is timed on, kept with the time (events.addResult): its start and flying finish on it (a time is
   -- placed while the stage's line has those within a few metres: events.onLine), and its key as a record
   run.lineKey = events.lineKey(source, kind)
@@ -1099,19 +1136,44 @@ end
 -- holds its parked cars at 0 over a teleport and puts its amount back once the place is built, and starts its parking
 -- only once it knows the place's driveways: at the check-in either can still be to come, and the parked cars came back
 -- at Maryhill's start (in game, 2026-11-13). The first amount seen that is not 0 is the player's, given back after.
-local function trafficHold()
-  local stash = run and run.trafficStash
-  if not stash then return end
+-- (shared with the full rally's Traffic Off, rallyRun: one hold-and-give-back) Each system (only: a set of names,
+-- nil for all) showing cars set to 0, the first amount seen that is not 0 kept in stash[name]. Returns true when an
+-- amount was kept this time.
+local function holdAt0(stash, only, what)
+  local kept = false
   for name, s in pairs(systems()) do
-    local ok, cur = pcall(s.get)
-    -- (0 now: none showing, or BeamNG.Earth holding them over a teleport: looked at again next time)
-    if ok and cur ~= nil and cur ~= 0 then
-      if pcall(s.set, 0) and stash[name] == nil then
-        stash[name] = cur
-        log('I', logTag, (name == 'parking' and 'parked cars' or 'traffic') .. ' out of the way for the stage')
+    if not only or only[name] then
+      local ok, cur = pcall(s.get)
+      -- (0 now: none showing, or BeamNG.Earth holding them over a teleport: looked at again next time)
+      if ok and cur ~= nil and cur ~= 0 then
+        if pcall(s.set, 0) and stash[name] == nil then
+          stash[name], kept = cur, true
+          log('I', logTag, (name == 'parking' and 'parked cars' or 'traffic') .. ' ' .. (what or 'out of the way for the stage'))
+        end
       end
     end
   end
+  return kept
+end
+
+-- The amounts in stash given back, each only where it is still our 0: an amount the player or BeamNG.Earth changed
+-- since is theirs.
+local function giveBack(stash)
+  local sys = systems()
+  for name, amount in pairs(stash) do
+    local s = sys[name]
+    if s then
+      local ok, cur = pcall(s.get)
+      if ok and cur == 0 then pcall(s.set, amount) end
+    end
+  end
+end
+M.trafficHoldAt0, M.trafficGiveBack = holdAt0, giveBack
+
+local function trafficHold()
+  local stash = run and run.trafficStash
+  if not stash then return end
+  holdAt0(stash)
   run.checks.trafficHidden = (stash.traffic and 'traffic ' or '') .. (stash.parking and 'parked cars' or '')
 end
 
@@ -1125,15 +1187,7 @@ local function trafficOn()
   local stash = run and run.trafficStash
   if not stash then return end
   run.trafficStash = nil
-  local sys = systems()
-  for name, amount in pairs(stash) do
-    local s = sys[name]
-    -- (only where it is still our 0: an amount the player or BeamNG.Earth changed since is theirs)
-    if s then
-      local ok, cur = pcall(s.get)
-      if ok and cur == 0 then pcall(s.set, amount) end
-    end
-  end
+  giveBack(stash)
 end
 M._trafficOff = function() trafficOff() end
 
@@ -1732,6 +1786,8 @@ function M.skipCountdown()
   if not M.canSkip() then return false end
   local left = run.startAt - M.clock()
   run.clockRun = run.clockRun + (left - M.SKIP_TO_S)
+  -- (a timed rally: its clock moved on with it, as at the game's own skip)
+  if run.rcDay and M.rallyClock and M.rallyClock.shift then pcall(M.rallyClock.shift, left - M.SKIP_TO_S) end
   run.prevLeft = M.SKIP_TO_S        -- (the 30 s and 10 s calls passed over)
   run.skipAt = run.t
   run.checks.skippedS = (run.checks.skippedS or 0) + (left - M.SKIP_TO_S)
@@ -1741,6 +1797,46 @@ end
 
 -- (the game's Interact control: main.lua passes on its hook)
 function M.onGameplayInteract() return M.skipCountdown() end
+
+-- (the rally-loop plan, item 3) Split times: SPLITS_AT of the timed span (start to flying finish), each crossed on
+-- run.along, against the splits of your best run on the stage (events.bestSplits: any mode, a rally's passes too).
+-- run.splits = { timeS... } as they are passed; run.splitShow = { n, timeS, gapS, at = run.clock } for SPLIT_SHOW_S.
+M.SPLITS_AT = hudFrame.SPLITS_AT
+-- (progress can jump ahead in one frame -- a hairpin, where the line's later leg is near and the follow looks up to
+-- FOLLOW_AHEAD_M on: a split is crossed only on progress the car could have driven since the last one trusted, at its
+-- speed (SPLIT_MAX_MS when not known) plus SPLIT_SLACK_M)
+M.SPLIT_SLACK_M = 25
+M.SPLIT_MAX_MS = 70
+local function splitsTick(spd)
+  if run.splitBest == nil then
+    local ok, b = pcall(events.bestSplits, run.event.id, run.stage.id, run.lineKey)
+    run.splitBest = (ok and b) or false
+  end
+  run.splits = run.splits or {}
+  local span = (run.finishM or 0) - (run.startM or 0)
+  if span <= 0 then return end
+  local a, tr = run.along or 0, run.splitTrust
+  if not tr or a <= tr.along then
+    run.splitTrust = { along = a, clock = run.clock }
+  else
+    local dt = math.max(0, (run.clock or 0) - (tr.clock or 0))
+    local v = tonumber(spd) or M.SPLIT_MAX_MS
+    if a - tr.along <= v * dt + M.SPLIT_SLACK_M then run.splitTrust = { along = a, clock = run.clock } end
+  end
+  local done = run.splitTrust.along - run.startM
+  while #run.splits < #M.SPLITS_AT and done >= span * M.SPLITS_AT[#run.splits + 1] do
+    local n = #run.splits + 1
+    local t = run.clock
+    run.splits[n] = t
+    local b = run.splitBest and run.splitBest.splits and tonumber(run.splitBest.splits[n])
+    run.splitShow = { n = n, timeS = t, gapS = b and (t - b) or nil, at = run.clock }
+    log('I', logTag, string.format('split %d: %s%s', n, M.formatTime(t),
+      b and string.format(' (%+.1f s)', t - b) or ''))
+  end
+end
+M._splitsTick = function(r, spd) local was = run run = r splitsTick(spd) run = was end
+
+M.splitRows = hudFrame.splitRows
 
 local function stepRunning(dtSim)
   routeOff()
@@ -1761,6 +1857,7 @@ local function stepRunning(dtSim)
   local along, off = progress(p)
   props.update(p, earth.toGame, along)
   run.along, run.off = along, off
+  pcall(splitsTick, speed())
   if run.online then
     local okP, pose = pcall(earth.pose)
     if okP and pose then online.runSample(run.online, run.clock, pose.lat, pose.lon) end
@@ -1793,7 +1890,7 @@ local function stepRunning(dtSim)
     if not run.stopCtl then rallyA.notesOn(false) end
     run.offRoute, run.backBearing = false, nil
     run.stageTime = run.clock
-    local resetPen = (run.resets or 0) * M.RESET_PENALTY_S
+    local resetPen = run.resetPenS or 0
     run.penalty = (run.jumpStart and M.JUMP_START_PENALTY_S or 0) + (run.latePenalty or 0)
       + (run.missedAtc and M.MISSED_TC_PENALTY_S or 0) + resetPen
     local time = run.clock + run.penalty
@@ -1804,8 +1901,14 @@ local function stepRunning(dtSim)
       penaltyS = run.penalty, jumpStart = run.jumpStart == true, lateMinutes = checks.lateMinutes,
       missedAtc = run.missedAtc == true, resets = run.resets or 0, resetPenaltyS = resetPen, line = checks.line,
       lineKey = run.lineKey, lineM = math.floor(run.finishM - run.startM + 0.5), lineStart = run.lineStart,
-      lineFinish = run.lineFinish,
+      lineFinish = run.lineFinish, splits = (run.splits and #run.splits == #M.SPLITS_AT) and run.splits or nil,
       startAt = M.formatClock(run.startAt), date = os.date('!%Y-%m-%dT%H:%M:%SZ'), checks = checks }) end
+    -- (a rally's pass: kept apart from the stage's runs -- not a single-stage time, not on its boards -- for its splits,
+    -- so the next run on the stage, in any mode, has them to beat)
+    if run.inRally and run.splits and #run.splits == #M.SPLITS_AT then
+      pcall(events.addRallyPass, run.event.id, run.stage.id, { timeS = time, splits = run.splits,
+        lineKey = run.lineKey, date = os.date('!%Y-%m-%dT%H:%M:%SZ') })
+    end
     run.finalTime, run.best = time, best
     pcall(M.noteCar)
     pcall(stats.stageEnded, run, 'finished')
@@ -1815,7 +1918,9 @@ local function stepRunning(dtSim)
       if not okO then log('E', logTag, 'online: the run was not sent: ' .. tostring(errO)) end
     end
     if run.inRally and M.onFinished then
-      local okF, errF = pcall(M.onFinished, { timeS = time, stageS = run.clock, penaltyS = run.penalty })
+      -- (a timed rally: its start and finish on the rally clock, for the stage's time out)
+      local okF, errF = pcall(M.onFinished, { timeS = time, stageS = run.clock, penaltyS = run.penalty,
+        startT = M.rallyTimeOf(run.startAt), finishT = M.rallyTimeOf(M.clock()) })
       if not okF then log('E', logTag, 'rally: the finish was not taken: ' .. tostring(errF)) end
     end
     log('I', logTag, 'run checks: ' .. dumps(checks))
@@ -2246,6 +2351,7 @@ end
 -- are, taken away by distance (sitesTick) or with the next stage, not the moment the car drives off)
 tidy = function(keepLayout, leaveSites)
   M.keepDamage(false)
+  pcall(stageWx.giveBack)   -- (plan G: the stage's weather pick, given back)
   trafficOn()
   earth.originMoved()
   zoneRelease()
@@ -2435,11 +2541,11 @@ end
 -- when pressed and again when let go: two resets for one, in game 2026-11-13): the player's car reset during the
 -- timed stage costs RESET_PENALTY_S each (setting resetPenalty), counted in the result. Not one heard again within
 -- RESET_DEBOUNCE_S, nor one just after the world's origin moved (BeamNG.Earth moving the car is not the player's).
-function M.onReset(vid)
+function M.onReset(vid, costS)
   if not (run and run.state == 'running') then return false end
   if run.online then pcall(online.runReset, run.online, run.clock) end
-  if run.inRally then
-    -- (the game's own recovery is blocked during a rally, rallyRun.lua; one that still got through -- the radial
+  if run.inRally and not run.casual then
+    -- (the game's own recovery is blocked during a Realistic rally, rallyRun.lua; one that still got through -- the radial
     -- menu, quick access: they send no vehicle id -- is the rally's. Not another car's, nor BeamNG.Earth moving it.)
     local _, veh = carPos()
     local okI, id = pcall(function() return veh and veh:getID() end)
@@ -2460,9 +2566,11 @@ function M.onReset(vid)
   if earth.rebasing() or (run.movedAt and t - run.movedAt < M.RESET_AFTER_MOVE_S) then return false end
   if run.resetAt and t - run.resetAt < M.RESET_DEBOUNCE_S then return false end
   run.resetAt = t
+  local cost = costS or M.RESET_PENALTY_S
   run.resets = (run.resets or 0) + 1
+  run.resetPenS = (run.resetPenS or 0) + cost
   say(string.format('%d reset%s on this stage.', run.resets, run.resets == 1 and '' or 's'), 3, 'warning',
-    string.format('Reset: +%d s', M.RESET_PENALTY_S))
+    string.format('%s: +%d s', costS and 'Back on the road' or 'Reset', cost))
   return true
 end
 
@@ -2496,7 +2604,8 @@ function M.backOnRoad()
   local pos = { x = at.x, y = at.y }
   pos.z = groundNear(pos.x, pos.y, at.z or p.z) + M.RECOVER_UP_M
   if not recoverTo(veh, pos, dir) then return false end
-  if run.state == 'running' and not run.inRally then M.onReset(nil) end
+  -- (BACK_ON_ROAD_PENALTY_S on the timed stage; a Casual rally's too, a Realistic rally's stage asks Recover? instead)
+  if run.state == 'running' and (not run.inRally or run.casual) then M.onReset(nil, M.BACK_ON_ROAD_PENALTY_S) end
   run.offRoute, run.backBearing = false, nil
   return true
 end
@@ -2578,6 +2687,8 @@ function M.uiFrame()
     rally = M.rallyOn and M.rallyOn() or nil,
     -- (#58, #69: a rally's question with no stage under way -- "Load the stage?", Recover? on a transit)
     rallyAsk = M.askSource and M.askSource() or nil,
+    -- (the rally-loop plan, interface 4: a timed road section's due time, rallyRun.transitDue)
+    rallyTransit = M.transitDueSource and M.transitDueSource() or nil,
     noRallyLoop = extensions and extensions.isExtensionLoaded and extensions.isExtensionLoaded('gameplay_rallyLoop')
       or false,
     c = uiConsts,
@@ -2602,7 +2713,8 @@ function M.uiKeys(slow)
   keyCtx.stopRadiusM = M.STOP_CONTROL_RADIUS_M
   keyCtx.approach = M.approachInfo()
   local kr, kh = hudFrame.streamKeys(run, keyCtx)
-  return kr, kh .. '|' .. tostring(M.askKey and M.askKey() or '') .. '|' .. tostring(cardPaused())
+  return kr, kh .. '|' .. tostring(M.askKey and M.askKey() or '') .. '|' .. tostring(cardPaused()) .. '|' ..
+    hudFrame.transitKey(M.transitDueSource and M.transitDueSource() or nil)
 end
 
 -- The results card's buttons: 'next' (the rally's next stage), 'retry' (this one again), 'menu' / 'close' (the card
