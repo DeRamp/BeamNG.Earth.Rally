@@ -195,6 +195,8 @@ def main():
     ap.add_argument('--label', default='')
     ap.add_argument('--stage')
     ap.add_argument('--maps', action='store_true')
+    ap.add_argument('--trace-m', type=float, default=0.0,
+                    help='map-like lines traced off the road with this much wiggle (maplike.degrade_trace)')
     ap.add_argument('--driven', action='store_true',
                     help='the map-like scores on lines as a driven recce gives them instead (maplike.degrade_driven)')
     ap.add_argument('--ray-heights', action='store_true',
@@ -267,6 +269,7 @@ def main():
             # the same road as a map draws it (maplike.py), through the whole pipeline; its notes put back on the
             # clean road, and scored there against the same notes
             mline = (maplike.degrade_driven(line) if a.driven else
+                     maplike.degrade_trace(line, a.trace_m) if a.trace_m else
                      maplike.degrade_rays(line) if a.ray_heights else maplike.degrade(line))
             mStart, mFinish = ends_on(mline, start, finish)
             msaid, mpts = speak(mline, (), mStart, mFinish)

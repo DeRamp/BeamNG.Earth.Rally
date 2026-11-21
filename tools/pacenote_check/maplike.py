@@ -197,3 +197,22 @@ def degrade_driven(line, wander_m=0.3, noise_m=0.05):
         off = wander_m * (0.6 * math.sin(s / 150 * 2 * math.pi) + 0.4 * math.sin(s / 41 * 2 * math.pi + 1.3)) +             noise_m * 2 * _jitter(i, 3)
         out.append({'x': x + nx * off, 'y': y + ny * off, 'z': z})
     return out
+
+
+def degrade_trace(line, sigma_m, tol=TOL_M):
+    """degrade, with each map point moved sideways by up to about sigma_m (a fixed pseudo-random amount): a map traced
+    off the road with wiggle. The check of whether such wiggle makes calls (the owner's matched lines show no more
+    wiggle than degrade gives: docs/pacenote-check.md)."""
+    pts = [(p['x'], p['y'], p['z']) for p in line]
+    keep = dp(pts, tol)
+    P = [pts[i] for i in keep]
+    moved = []
+    for k, (x, y, z) in enumerate(P):
+        a, b = P[max(0, k - 1)], P[min(len(P) - 1, k + 1)]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        L = math.hypot(dx, dy) or 1.0
+        o = sigma_m * 2 * 1.7 * _jitter(k, 5) if 0 < k < len(P) - 1 else 0.0
+        moved.append((x - dy / L * o, y + dx / L * o, z))
+    res = resample(moved, STEP_M)
+    return [{'x': x + _jitter(i, 1) * ROUND_XY_M, 'y': y + _jitter(i, 2) * ROUND_XY_M,
+             'z': round(z / ROUND_Z_M) * ROUND_Z_M} for i, (x, y, z) in enumerate(res)]
