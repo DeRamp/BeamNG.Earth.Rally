@@ -243,6 +243,7 @@ end
 M.FIT = true
 M.FIT_POINT_DEG = 0.3
 M.FIT_SPREAD_MAX_M = 120
+M.FIT_SIGMA_DIV = 4
 
 local function fitTurns(turn, step, smoothM)
   local n = #turn
@@ -285,7 +286,7 @@ local function fitTurns(turn, step, smoothM)
     end
   end
   -- the Gaussian (sigma smoothM / 4, out to 2 sigma either side)
-  local sig = math.max(step * 0.5, (smoothM or 15) / 4) / step
+  local sig = math.max(step * 0.5, (smoothM or 15) / M.FIT_SIGMA_DIV) / step
   local reach = math.max(1, math.ceil(2 * sig))
   local wts = {}
   for d = -reach, reach do wts[d] = math.exp(-0.5 * (d / sig) ^ 2) end

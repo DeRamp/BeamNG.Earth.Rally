@@ -117,6 +117,15 @@ do
   T.check(has(cn, '^2:chicaneLeftEntry$'), 'a left then a right, tight and close: "chicane left entry", one note (' ..
     show(cn) .. ')')
   T.check(ch.corners == 1, 'a chicane counts as one corner note (' .. ch.corners .. ')')
+  -- (the same chicane as a map draws it: a point every 7 m in its corners, one edge along each straight, rounded
+  --  to 1 cm -- the fitted curvature reads it a little more open, and it is still one chicane)
+  local full = road({ { 'straight', 300 }, { 'arc', 20, 60 }, { 'straight', 5 }, { 'arc', 20, -60 }, { 'straight', 300 } })
+  local mapped = { full[1] }
+  for i = 300, #full - 300, 7 do mapped[#mapped + 1] = { x = math.floor(full[i].x * 100 + 0.5) / 100,
+                                                        y = math.floor(full[i].y * 100 + 0.5) / 100, z = 0 } end
+  mapped[#mapped + 1] = full[#full]
+  local mcn = notes(build(geo.resample(mapped, 4)))
+  T.check(has(mcn, '^2:chicaneLeftEntry$'), 'a map-drawn chicane: still one chicane (' .. show(mcn) .. ')')
   local sw = {}
   sw[#sw + 1] = { 'straight', 300 }
   for k = 1, 6 do

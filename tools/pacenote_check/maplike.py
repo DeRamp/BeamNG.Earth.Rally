@@ -178,3 +178,22 @@ def degrade_xy_only(line, tol=TOL_M):
                 best, j = d, k
         p['z'] = zs[j][2]
     return m
+
+
+def degrade_driven(line, wander_m=0.3, noise_m=0.05):
+    """The road as a driven recce gives it: the car's position every STEP_M, wandering across the road (sines of
+    40-150 m, wander_m) with noise_m of jitter. Not a map line: the check of the curve fit on dense lines."""
+    pts = [(p['x'], p['y'], p['z']) for p in line]
+    res = resample(pts, STEP_M)
+    out = []
+    s = 0.0
+    for i, (x, y, z) in enumerate(res):
+        if i:
+            s += math.dist(res[i - 1][:2], (x, y))
+        a, b = res[max(0, i - 1)], res[min(len(res) - 1, i + 1)]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        L = math.hypot(dx, dy) or 1.0
+        nx, ny = -dy / L, dx / L
+        off = wander_m * (0.6 * math.sin(s / 150 * 2 * math.pi) + 0.4 * math.sin(s / 41 * 2 * math.pi + 1.3)) +             noise_m * 2 * _jitter(i, 3)
+        out.append({'x': x + nx * off, 'y': y + ny * off, 'z': z})
+    return out

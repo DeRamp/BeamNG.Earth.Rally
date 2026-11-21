@@ -195,6 +195,8 @@ def main():
     ap.add_argument('--label', default='')
     ap.add_argument('--stage')
     ap.add_argument('--maps', action='store_true')
+    ap.add_argument('--driven', action='store_true',
+                    help='the map-like scores on lines as a driven recce gives them instead (maplike.degrade_driven)')
     ap.add_argument('--ray-heights', action='store_true',
                     help='map-like lines take their heights as the auto recce ground rays give them (maplike.degrade_rays)')
     ap.add_argument('--only', choices=['fixtures', 'pro', 'mine'])
@@ -264,7 +266,8 @@ def main():
                                            pts) if game else None
             # the same road as a map draws it (maplike.py), through the whole pipeline; its notes put back on the
             # clean road, and scored there against the same notes
-            mline = maplike.degrade_rays(line) if a.ray_heights else maplike.degrade(line)
+            mline = (maplike.degrade_driven(line) if a.driven else
+                     maplike.degrade_rays(line) if a.ray_heights else maplike.degrade(line))
             mStart, mFinish = ends_on(mline, start, finish)
             msaid, mpts = speak(mline, (), mStart, mFinish)
             mnotes = remap(msaid['notes'], mpts, pts)
@@ -272,6 +275,7 @@ def main():
             show('map-like ' + name, mview)
             result['pro'][name] = {
                 'selfCheck': self_check(said['notes']) + self_check(msaid['notes']),
+                'chicanes': [sum('chicane' in n['text'] for n in ns) for ns in (said['notes'], mnotes, pro, game)],
                 'versus': vs, 'versusGame': vg, 'rules': rules, 'proRules': selfRules, 'gameRules': gameRules,
                 'km': km, 'overlaps': said['overlaps'],
                 'map': {'versus': checks.versus_pro(mnotes, pro, said['startS'] or 0),
@@ -412,6 +416,8 @@ def summarise(r):
         same = sum(v['selfCheck'][0] + v['selfCheck'][2] for v in P if v.get('selfCheck'))
         checked = sum(v['selfCheck'][1] + v['selfCheck'][3] for v in P if v.get('selfCheck'))
         s['selfCheckSame'] = same / max(checked, 1)
+        ch = [sum(v['chicanes'][i] for v in P if v.get('chicanes')) for i in range(4)]
+        s['proChicanes'], s['mapChicanes'], s['proSelfChicanes'], s['gameSelfChicanes'] = ch
         s['proStages'] = len(P)
         s['proKm'] = km
     if r['mine']:
