@@ -165,7 +165,7 @@ def game_spline(nodes, spacing=1.0):
 
 def pro_stages(game=DEFAULT_GAME, stage=None):
     """The game's rally stages with a pro co-driver's notes: (name, driveline nodes, pro notebook, transcriptions
-    {clip: {description}})."""
+    {clip: {description}}, start, finish, the structured notebook or None)."""
     base = Path(game) / 'gameplay' / 'missions'
     for f in sorted(base.glob('*/rallyStage/*/rally/notebooks/pro_ak.notebook.json')):
         rally = f.parents[1]
@@ -189,5 +189,9 @@ def pro_stages(game=DEFAULT_GAME, stage=None):
                     finish = race['pathnodes'][-1]['pos']
             except (ValueError, KeyError, IndexError):
                 pass
+        # the game's own written notes (structured.notebook.json: the designers' corners, which the game grades
+        # itself): a second truth beside the pro's voice
+        sp = f.parent / 'structured.notebook.json'
+        snb = json.loads(sp.read_text(encoding='utf-8')) if sp.exists() else None
         yield (name, nodes, json.loads(f.read_text(encoding='utf-8')),
-               json.loads(tp.read_text(encoding='utf-8')), start, finish)
+               json.loads(tp.read_text(encoding='utf-8')), start, finish, snb)

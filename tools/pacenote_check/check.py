@@ -30,6 +30,7 @@ import checks  # noqa: E402
 import common  # noqa: E402
 import fixtures  # noqa: E402
 import maps  # noqa: E402
+import maplike  # noqa: E402
 
 OUT = common.ROOT / 'out' / 'pacenote-check'
 MIN_KM = 0.5    # a stage shorter than this (start to finish) is left out
@@ -106,6 +107,60 @@ def _clip_key(b):
     return (int(m.group(1)), m.group(2), int(m.group(3) or 0))
 
 
+def ends_on(line, start, finish):
+    along = [0.0]
+    for p, q in zip(line, line[1:]):
+        along.append(along[-1] + math.dist((p['x'], p['y']), (q['x'], q['y'])))
+    lpts = [(p['x'], p['y'], 0, s) for p, s in zip(line, along)]
+    startM = nearest_s(lpts, start[0], start[1])[1] if start else None
+    finishM = nearest_s(lpts, finish[0], finish[1])[1] if finish else None
+    if startM is not None and finishM is not None and finishM <= startM + 500:
+        finishM = None
+    return startM, finishM
+
+
+def remap(notes, src, dst):
+    """Notes along one spline (src) moved onto another of the same road (dst), by where they are."""
+    out, i = [], 0
+    for n in notes:
+        k0 = index_s(src, n['s0'])
+        k1 = index_s(src, n['s1'])
+        i, s0 = nearest_s(dst, src[k0][0], src[k0][1], max(0, i - 100))
+        _, s1 = nearest_s(dst, src[k1][0], src[k1][1], i)
+        out.append(dict(n, s0=s0, s1=max(s0, s1)))
+    return out
+
+
+def index_s(pts, s):
+    lo, hi = 0, len(pts) - 1
+    while hi - lo > 1:
+        m = (lo + hi) // 2
+        if pts[m][3] <= s:
+            lo = m
+        else:
+            hi = m
+    return lo
+
+
+def game_notes(lua, voice, opts, nodes, snb, pts):
+    """The game's own written notes (its structured notebook), spoken as the game speaks them on its own driveline:
+    [{ s0, s1 (along pts), text, p }]."""
+    built = lua.table_from({'driveline': {'nodes': [list(n) for n in nodes]}, 'notebook': snb}, recursive=True)
+    said = voice.say(built, opts)
+    out, from_i = [], 0
+    for k, pn in enumerate(snb['pacenotes'], 1):
+        wps = {w['waypointType']: w['pos'] for w in pn['pacenoteWaypoints']}
+        cs, ce = wps.get('cornerStart'), wps.get('cornerEnd')
+        if not cs or not ce:
+            continue
+        i0, s0 = nearest_s(pts, cs[0], cs[1], max(0, from_i - 200))
+        _, s1 = nearest_s(pts, ce[0], ce[1], i0)
+        from_i = i0
+        text = said.notes[k].text or ''
+        out.append({'s0': s0, 's1': s1, 'text': text, 'p': checks.parse(text)})
+    return out
+
+
 def gaps_on(line, pts):
     """The stretches of the line with no road on the map (its gap points), along the spline."""
     out, cur = [], None
@@ -178,21 +233,14 @@ def main():
             if a.maps:
                 maps.write(OUT / 'maps' / f'fixture-{fx.name}.svg', 'fixture ' + fx.name, said, pts, rules)
 
-    # ---- the game's stages with a pro's notes
+    # ---- the game's stages with a pro's notes: on their clean lines, and on the same roads made map-like
     if a.only in (None, 'pro'):
-        for name, nodes, nb, tr, start, finish in common.pro_stages(a.game, a.stage):
+        for name, nodes, nb, tr, start, finish, snb in common.pro_stages(a.game, a.stage):
             if not nb.get('pacenotes'):
                 result['skipped']['pro ' + name] = 'empty pro notebook'
                 continue
             line = [{'x': p['x'], 'y': p['y'], 'z': p['z']} for p in common.game_spline(nodes)]
-            along = [0.0]
-            for p, q in zip(line, line[1:]):
-                along.append(along[-1] + math.dist((p['x'], p['y']), (q['x'], q['y'])))
-            lpts = [(p['x'], p['y'], 0, s) for p, s in zip(line, along)]
-            startM = nearest_s(lpts, start[0], start[1])[1] if start else None
-            finishM = nearest_s(lpts, finish[0], finish[1])[1] if finish else None
-            if startM is not None and finishM is not None and finishM <= startM + 500:
-                finishM = None
+            startM, finishM = ends_on(line, start, finish)
             said, pts = speak(line, (), startM, finishM)
             show('pro ' + name, said)
             pro = pro_notes(nb, tr, pts)
@@ -200,15 +248,35 @@ def main():
             if not pro or km < MIN_KM:
                 result['skipped']['pro ' + name] = 'no pro notes' if not pro else f'{km:.2f} km'
                 continue
+            game = game_notes(lua, voice, opts, nodes, snb, pts) if snb else []
             rules = checks.stage_rules(said, pts)
             vs = checks.versus_pro(said['notes'], pro, said['startS'] or 0)
+            vg = checks.versus_pro(said['notes'], game, said['startS'] or 0) if game else None
             # the same rules over the pro's own notes: what a human co-driver "fails" -- the rules' false alarms
             selfRules = checks.stage_rules({'notes': pro, 'startS': said['startS'], 'finishS': said['finishS']}, pts)
-            result['pro'][name] = {'versus': vs, 'rules': rules, 'proRules': selfRules, 'km': km,
-                                   'overlaps': said['overlaps']}
+            gameRules = checks.stage_rules({'notes': game, 'startS': said['startS'], 'finishS': said['finishS']},
+                                           pts) if game else None
+            # the same road as a map draws it (maplike.py), through the whole pipeline; its notes put back on the
+            # clean road, and scored there against the same notes
+            mline = maplike.degrade(line)
+            mStart, mFinish = ends_on(mline, start, finish)
+            msaid, mpts = speak(mline, (), mStart, mFinish)
+            mnotes = remap(msaid['notes'], mpts, pts)
+            mview = {'notes': mnotes, 'startS': said['startS'], 'finishS': said['finishS']}
+            show('map-like ' + name, mview)
+            result['pro'][name] = {
+                'versus': vs, 'versusGame': vg, 'rules': rules, 'proRules': selfRules, 'gameRules': gameRules,
+                'km': km, 'overlaps': said['overlaps'],
+                'map': {'versus': checks.versus_pro(mnotes, pro, said['startS'] or 0),
+                        'versusGame': checks.versus_pro(mnotes, game, said['startS'] or 0) if game else None,
+                        'rules': checks.stage_rules(mview, pts), 'overlaps': msaid['overlaps'],
+                        'notes': len(mnotes)},
+                'notes': len(said['notes']), 'proNotes': len(pro), 'gameNotes': len(game)}
             if a.maps:
                 maps.write(OUT / 'maps' / f"pro-{name.replace('/', '__')}.svg", 'pro ' + name, said, pts, rules,
                            pro=pro)
+                maps.write(OUT / 'maps' / f"promap-{name.replace('/', '__')}.svg", 'map-like ' + name, mview, pts,
+                           result['pro'][name]['map']['rules'], pro=pro)
 
     # ---- the player's stages
     if a.only in (None, 'mine'):
@@ -256,56 +324,86 @@ def scope(a):
     return (a.only or 'all') + (':' + a.stage if a.stage else '')
 
 
+def _versus_summary(s, key, vlist):
+    vlist = [v for v in vlist if v]
+    if not vlist:
+        return
+    t = {}
+    for v in vlist:
+        for k, x in v.items():
+            if isinstance(x, (int, float)) and not isinstance(x, bool):
+                t[k] = t.get(k, 0) + x
+    s[key + 'CornerRecall'] = t['found'] / max(t['proCorners'], 1)
+    s[key + 'CornerPrecision'] = t['found'] / max(t['ourCorners'], 1)
+    s[key + 'SameGrade'] = t['sameGrade'] / max(t['graded'], 1)
+    s[key + 'WithinOneGrade'] = t['withinOne'] / max(t['graded'], 1)
+    s[key + 'GradeBias'] = t['gradeDiff'] / max(t['graded'], 1)
+    s[key + 'WrongDir'] = t.get('wrongDir', 0)
+    s[key + 'LongFound'] = t['longFound'] / max(t['proLong'], 1)
+    s[key + 'LongSaid'] = t['longSaid'] / max(t['proLong'], 1)
+    s[key + 'FalseLong'] = t.get('falseLong', 0)
+    s[key + 'CrestCornerSaid'] = t['crestCornerSaid'] / max(t['proCrestCorner'], 1)
+    s[key + 'CrestCornerCrestOnly'] = t['crestCornerCrestOnly']
+
+
+def _rules_summary(s, key, rs, km, overlaps=None):
+    s[key + 'OpeningsSilent'] = sum(1 for x in rs if x['opening'] and not x['opening']['ok'])
+    s[key + 'MissedBends'] = sum(len(x['bends']) for x in rs)
+    s[key + 'MissedBendsPerKm'] = s[key + 'MissedBends'] / max(km, 1e-9)
+    s[key + 'VisibleMissedPerKm'] = sum(len(x['visible']) for x in rs) / max(km, 1e-9)
+    s[key + 'SplitBendsPerKm'] = sum(len(x['split']) for x in rs) / max(km, 1e-9)
+    s[key + 'HiddenCornersAfterCrest'] = sum(len(checks.crest_flags(x['crests'])) for x in rs)
+    s[key + 'CrestCases'] = sum(len(x['crests']) for x in rs)
+    for lo, hi in checks.CREST_GAP_BINS:
+        b = checks.gap_bin(lo)
+        s[key + 'CrestGap' + b] = sum(1 for x in rs for c in checks.crest_flags(x['crests'])
+                                      if checks.gap_bin(c['gapM']) == b)
+    s[key + 'LongSilences'] = sum(len(x['silence']) for x in rs)
+    if overlaps is not None:
+        s[key + 'Overlaps'] = overlaps
+
+
 def summarise(r):
     s = {}
     if r['fixtures']:
         s['fixturesPassed'] = sum(1 for v in r['fixtures'].values() if v['ok'])
         s['fixtures'] = len(r['fixtures'])
     if r['pro']:
-        t = {}
-        for v in r['pro'].values():
-            for k, x in v['versus'].items():
-                if isinstance(x, (int, float)) and not isinstance(x, bool):
-                    t[k] = t.get(k, 0) + x
-        s['proCornerRecall'] = t['found'] / max(t['proCorners'], 1)
-        s['proCornerPrecision'] = t['found'] / max(t['ourCorners'], 1)
-        s['proSameGrade'] = t['sameGrade'] / max(t['graded'], 1)
-        s['proWithinOneGrade'] = t['withinOne'] / max(t['graded'], 1)
-        s['proGradeBias'] = t['gradeDiff'] / max(t['graded'], 1)
-        s['proLongFound'] = t['longFound'] / max(t['proLong'], 1)
-        s['proLongSaid'] = t['longSaid'] / max(t['proLong'], 1)
-        s['proCrestCornerSaid'] = t['crestCornerSaid'] / max(t['proCrestCorner'], 1)
-        s['proCrestCornerCrestOnly'] = t['crestCornerCrestOnly']
+        P = list(r['pro'].values())
+        km = sum(v['km'] for v in P)
+        # truth: the pro's voice (pro), the game's written notes (game); our notes on the clean lines, and on the
+        # same roads made map-like (map...)
+        _versus_summary(s, 'pro', [v['versus'] for v in P])
+        _versus_summary(s, 'game', [v['versusGame'] for v in P])
+        _versus_summary(s, 'mapPro', [v['map']['versus'] for v in P])
+        _versus_summary(s, 'mapGame', [v['map']['versusGame'] for v in P])
         # the first call is heard at the line: is what it tells of within OPENING_M of it?
-        s['proFirstWithin80'] = sum(1 for v in r['pro'].values()
-                                    if v['versus']['ourFirstAtM'] is not None and
+        s['proFirstWithin80'] = sum(1 for v in P if v['versus']['ourFirstAtM'] is not None and
                                     v['versus']['ourFirstAtM'] <= checks.OPENING_M)
-        s['proStages'] = len(r['pro'])
-    # proSelf: the rules over the pro's own notes -- how often a human co-driver "fails" them (false alarms)
-    for key, src, field in (('pro', 'pro', 'rules'), ('proSelf', 'pro', 'proRules'), ('mine', 'mine', 'rules')):
-        if not r[src]:
-            continue
-        rs = [v[field] for v in r[src].values()]
-        km = sum(v['km'] for v in r[src].values())
-        s[key + 'OpeningsSilent'] = sum(1 for x in rs if x['opening'] and not x['opening']['ok'])
-        s[key + 'MissedBends'] = sum(len(x['bends']) for x in rs)
-        s[key + 'MissedBendsPerKm'] = s[key + 'MissedBends'] / max(km, 1e-9)
-        s[key + 'HiddenCornersAfterCrest'] = sum(len(checks.crest_flags(x['crests'])) for x in rs)
-        s[key + 'CrestCases'] = sum(len(x['crests']) for x in rs)
-        for lo, hi in checks.CREST_GAP_BINS:
-            b = checks.gap_bin(lo)
-            s[key + 'CrestGap' + b] = sum(1 for x in rs for c in checks.crest_flags(x['crests'])
-                                          if checks.gap_bin(c['gapM']) == b)
-        s[key + 'LongSilences'] = sum(len(x['silence']) for x in rs)
-        if key != 'proSelf':
-            s[key + 'Overlaps'] = sum(len(v.get('overlaps') or []) for v in r[src].values())
-        s[key + 'Stages'] = len(rs)
-        s[key + 'Km'] = km
+        s['proNotesPerKm'] = sum(v['notes'] for v in P) / km
+        s['mapNotesPerKm'] = sum(v['map']['notes'] for v in P) / km
+        s['proSelfNotesPerKm'] = sum(v['proNotes'] for v in P) / km
+        s['gameSelfNotesPerKm'] = sum(v['gameNotes'] for v in P) / km
+        _rules_summary(s, 'pro', [v['rules'] for v in P], km, sum(len(v['overlaps'] or []) for v in P))
+        _rules_summary(s, 'map', [v['map']['rules'] for v in P], km, sum(len(v['map']['overlaps'] or []) for v in P))
+        # the rules over the pro's own notes, and the game's: how often a human co-driver "fails" them (false alarms)
+        _rules_summary(s, 'proSelf', [v['proRules'] for v in P], km)
+        _rules_summary(s, 'gameSelf', [v['gameRules'] for v in P if v['gameRules']], km)
+        s['proStages'] = len(P)
+        s['proKm'] = km
+    if r['mine']:
+        M = list(r['mine'].values())
+        km = sum(v['km'] for v in M)
+        _rules_summary(s, 'mine', [v['rules'] for v in M], km, sum(len(v.get('overlaps') or []) for v in M))
+        s['mineNotesPerKm'] = sum(v['notes'] for v in M) / km
+        s['mineStages'] = len(M)
+        s['mineKm'] = km
     return s
 
 
 # lower is better for these; higher for the rest
-LOWER = ('OpeningsSilent', 'MissedBends', 'HiddenCornersAfterCrest', 'LongSilences', 'CrestOnly', 'CrestGap', 'Overlaps')
+LOWER = ('OpeningsSilent', 'MissedBends', 'HiddenCornersAfterCrest', 'LongSilences', 'CrestOnly', 'CrestGap', 'Overlaps',
+         'WrongDir', 'FalseLong', 'VisibleMissed', 'SplitBends')
 
 
 def report(r, s, prev):
@@ -316,13 +414,13 @@ def report(r, s, prev):
     for name, v in r['fixtures'].items():
         print(f"  fixture {name:28s} {'PASS' if v['ok'] else 'FAIL'}  {v['why']}")
     for k, v in s.items():
-        if k in ('fixtures', 'proStages', 'mineStages', 'proKm', 'mineKm', 'proSelfStages', 'proSelfKm'):
+        if k in ('fixtures', 'proStages', 'mineStages', 'proKm', 'mineKm') or 'NotesPerKm' in k and 'Self' in k:
             continue
         old = p.get(k)
         mark = ''
         if isinstance(old, (int, float)) and fmt(k, old) != fmt(k, v):
             better = (v < old) if any(x in k for x in LOWER) else (v > old)
-            if k == 'proGradeBias':
+            if k.endswith('GradeBias'):
                 better = abs(v) < abs(old)
             mark = f"   was {fmt(k, old)}  {'better' if better else 'WORSE'}"
         print(f'  {k:30s} {fmt(k, v):>8s}{mark}')
@@ -334,8 +432,8 @@ def report(r, s, prev):
 
 
 def fmt(k, v):
-    if isinstance(v, float) and (k.startswith('pro') and ('Recall' in k or 'Precision' in k or 'Grade' in k and
-                                                          'Bias' not in k or 'Long' in k or 'CrestCornerSaid' in k)):
+    if isinstance(v, float) and ('Recall' in k or 'Precision' in k or 'Grade' in k and 'Bias' not in k or
+                                 'LongFound' in k or 'LongSaid' in k or 'CrestCornerSaid' in k):
         return f'{v:.0%}'
     if isinstance(v, float):
         return f'{v:.2f}'

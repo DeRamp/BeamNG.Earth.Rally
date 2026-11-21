@@ -112,5 +112,29 @@ pro = [note(95, 120, '4 left'), note(110, 130, '3 left')]
 v = checks.versus_pro(ours, pro, 0)
 check('one to one', v['found'] == 1 and v['sameGrade'] == 1)
 
+# split bends: two short calls of one way, close, the road turning on between them; and a visible kink
+def bend_road(deg_at, deg):
+    out, h, x, y = [], math.pi / 2, 0.0, 0.0
+    for k in range(400):
+        s = k * 2.0
+        if deg_at <= s < deg_at + 40:
+            h -= math.radians(deg) / 20
+        x, y = x + math.cos(h) * 2, y + math.sin(h) * 2
+        out.append((x, y, 0.0, s))
+    return out
+pts = bend_road(300, 40)
+said = {'startS': 0, 'finishS': 790, 'notes': [note(300, 320, 'five right short'), note(330, 345, 'six right short')]}
+check('split bend', len(checks.rule_split(said, pts)) == 1)
+said['notes'] = [note(300, 320, 'five right short'), note(330, 345, 'three right short')]
+check('different grades are two corners', checks.rule_split(said, pts) == [])
+pts = bend_road(300, 6)
+said = {'startS': 0, 'finishS': 790, 'notes': []}
+v = checks.rule_visible(said, pts)
+check('a 6 degree kink is visible', len(v) == 1 and v[0]['dir'] == 'right')
+said['notes'] = [note(290, 345, 'six right')]
+check('a visible kink called', checks.rule_visible(said, pts) == [])
+check('no kink, nothing visible', checks.rule_visible({'startS': 0, 'finishS': 790, 'notes': []},
+                                                      bend_road(300, 2)) == [])
+
 print('test_pacenote_check:', 'FAILED %d' % failed if failed else 'all passed')
 sys.exit(1 if failed else 0)

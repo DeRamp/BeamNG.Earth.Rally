@@ -4,7 +4,7 @@ import math
 import re
 
 # Bump when a rule or its numbers change: runs are only compared with runs of the same rules (check.py).
-RULES_VERSION = 2
+RULES_VERSION = 3
 
 NUM = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6}
 GRADES = {'1', '2', '3', '4', '5', '6', 'flat', 'hairpin', 'square'}
@@ -131,9 +131,12 @@ def index_at(pts, s):
 
 # ---------------------------------------------------------------------------------------------- the rules
 
+# Each rule's numbers are its own, set from the game's own stages (tools/pacenote_check/calibrate.py, 2026-11-20,
+# on the 15 pro stages' clean lines), never copied from the mod's code: a rule that shares the code's numbers can only
+# agree with it.
 OPENING_M = 80          # a first corner further than this from the start line has to be told with its distance
-BEND_MIN_DEG = 25       # a stretch turning this much one way ...
-BEND_LENGTHS = range(60, 501, 20)   # ... over one of these lengths (m) ...
+BEND_MIN_DEG = 18       # a stretch turning this much one way ... (calibrate.py: the pro calls 95 % of these)
+BEND_LENGTHS = range(60, 361, 20)   # ... over one of these lengths (m; up to the pro's longest corner, 362 m) ...
 BEND_COVER = 0.5        # ... has to turn at least this share of it inside corner calls of that direction
 BEND_PAD_BEFORE_M = 60  # a call covers the road this far before its corner start (the lead-in a driver is told of)
 BEND_PAD_AFTER_M = 40   # ... and this far past its corner end (where it opens out)
@@ -143,7 +146,22 @@ TURN_DEG = 15           # a turn, for the crest rule: the heading changes this m
 TURN_WINDOW_M = 40      # ... within this much road
 CREST_REACH_M = 30      # a turn this far past where the road comes back into view is still a surprise
 CREST_GAP_BINS = ((0, 40), (40, 60), (60, 100), (100, None))   # the summary's histogram of crest-to-turn gaps
-EYE_M, TARGET_M = 1.1, 0.6   # driver's eye; what of the road has to be seen (pacenotes.SIGHT_TARGET_M)
+EYE_M = 1.2             # a rally driver's eye over the road
+TARGET_M = 0.8          # what of the road has to be seen (calibrate.py: the most that still hides the pro's crests)
+# split bends (the owner's drive, 2026-11-19, Cathedral Westbound): two calls of one direction, grades within one,
+# no more than SPLIT_GAP_M apart, with the road still turning their way between them: one bend heard as two
+SPLIT_GAP_M = 50
+SPLIT_SHORT_M = 30      # ... both this short or shorter (calibrate.py: the pro does it 0.04 / km)
+SPLIT_TURN_DEG = 1.0    # the road between turns at least this much their way
+# a visible bend (the owner's rule, 2026-11-19: "any corner that's visible to the player does get a call"; his
+# numbers): the heading settles VISIBLE_DEG or more off the line before it, steady for VISIBLE_STEADY_M before and
+# after (within VISIBLE_STEADY_DEG), the change over no more than VISIBLE_MAX_M. Flagged when no call of its
+# direction covers it.
+VISIBLE_DEG = 5
+VISIBLE_STEADY_M = 30
+VISIBLE_STEADY_DEG = 1.5
+VISIBLE_MAX_M = 250
+VISIBLE_PAD_M = 30
 
 
 def rule_opening(said):
@@ -342,9 +360,99 @@ def rule_silence(said):
     return out
 
 
+def _corner_calls(said):
+    out = []
+    for n in said['notes']:
+        for d, g in n['p']['corners']:
+            out.append((n, d, grade_num(g)))
+    return out
+
+
+def rule_split(said, pts):
+    """One bend heard as two: consecutive corner calls of one direction, grades within one of each other, the second
+    starting no more than SPLIT_GAP_M past the first's end, and the road between them still turning their way."""
+    if len(pts) < 10:
+        return []
+    h = headings(pts)
+    start = said['startS'] or 0
+    cs = _corner_calls(said)
+    out = []
+    for (a, da, ga), (b, db, gb) in zip(cs, cs[1:]):
+        if a is b or da != db or ga is None or gb is None or abs(ga - gb) > 1:
+            continue
+        if max(a['s1'] - a['s0'], b['s1'] - b['s0']) > SPLIT_SHORT_M:
+            continue
+        gap = b['s0'] - a['s1']
+        if gap > SPLIT_GAP_M:
+            continue
+        i, j = index_at(pts, min(a['s1'], b['s0'])), index_at(pts, max(a['s1'], b['s0']))
+        turn = math.degrees(h[j] - h[i]) * (1 if da == 'left' else -1)
+        if gap <= 0 or turn >= SPLIT_TURN_DEG:
+            out.append({'atM': a['s0'] - start, 'gapM': gap, 'dir': da, 'calls': a['text'] + ' / ' + b['text']})
+    return out
+
+
+def visible_bends(pts, start, finish):
+    """Where the road's heading settles on a new line VISIBLE_DEG or more off the one before (the owner's "visible
+    corner"): [(from, to, dir, deg)] along."""
+    if len(pts) < 10:
+        return []
+    h = headings(pts)
+    step = 5.0
+    ss = [start + k * step for k in range(int((finish - start) / step) + 1)]
+    hs = [h[index_at(pts, s)] for s in ss]
+    nst = max(1, int(VISIBLE_STEADY_M / step))
+    nmax = int(VISIBLE_MAX_M / step)
+    steadyDeg = math.radians(VISIBLE_STEADY_DEG)
+
+    def steady(a, b):
+        if a < 0 or b >= len(hs):
+            return False
+        seg = hs[a:b + 1]
+        return max(seg) - min(seg) <= steadyDeg
+    out = []
+    i = nst
+    while i < len(hs) - nst:
+        if not steady(i - nst, i):
+            i += 1
+            continue
+        hit = None
+        for j in range(i + 1, min(len(hs) - nst, i + nmax)):
+            d = math.degrees(hs[j] - hs[i])
+            if abs(d) >= VISIBLE_DEG and steady(j, j + nst):
+                hit = (j, d)
+                break
+            if steady(j - nst, j) and abs(d) < VISIBLE_DEG and j - i > nst:
+                # (a new steady line short of the change: start again from there)
+                break
+        if hit:
+            j, d = hit
+            out.append((ss[i], ss[j], 'left' if d > 0 else 'right', abs(d)))
+            i = j
+        else:
+            i += 1
+    return out
+
+
+def rule_visible(said, pts):
+    """The owner's rule: every visible bend (visible_bends) gets a call of its direction, over it or within
+    VISIBLE_PAD_M of it. A stretch where the map has no road is left out."""
+    start = said['startS'] or 0
+    finish = said['finishS'] or pts[-1][3]
+    spans = [(n['s0'], n['s1'], d) for n in said['notes'] for d, _ in n['p']['corners']]
+    out = []
+    for a, b, d, deg in visible_bends(pts, start + 30, finish - 30):
+        if any(a <= m1 + 30 and b >= m0 - 30 for m0, m1 in said.get('mute', [])):
+            continue
+        if any(dd == d and x0 - VISIBLE_PAD_M <= b and x1 + VISIBLE_PAD_M >= a for x0, x1, dd in spans):
+            continue
+        out.append({'fromM': a - start, 'toM': b - start, 'dir': d, 'deg': deg})
+    return out
+
+
 def stage_rules(said, pts):
     return {'opening': rule_opening(said), 'bends': rule_bends(said, pts), 'crests': rule_crests(said, pts),
-            'silence': rule_silence(said)}
+            'silence': rule_silence(said), 'split': rule_split(said, pts), 'visible': rule_visible(said, pts)}
 
 
 # ---------------------------------------------------------------------------------------------- against a pro
@@ -370,6 +478,11 @@ def versus_pro(ours, pro, start):
         if a not in match and b not in used:
             match[a] = b
             used.add(b)
+    r['wrongDir'] = sum(1 for a, (n, d, _) in enumerate(pc) if a not in match and
+                        any(d2 != d and abs(m['s0'] - n['s0']) <= MATCH_M for m, d2, _ in oc))
+    r['ourLong'] = sum(1 for m, _, _ in oc if m['p']['long'])
+    r['falseLong'] = sum(1 for a, (n, _, _) in enumerate(pc) if a in match and not n['p']['long'] and
+                         oc[match[a]][0]['p']['long'])
     for a, (n, d, g) in enumerate(pc):
         r['proCorners'] += 1
         best = (oc[match[a]][0], oc[match[a]][2]) if a in match else None
