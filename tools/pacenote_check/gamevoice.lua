@@ -236,6 +236,17 @@ local function distanceHelpers(cfg, rallyUtil)
   return toString, shorthand
 end
 
+-- The style's corner ladder as rallyAdapter.speaks reads it in game: the most diameter of each grade but the last.
+function M.ladder(style)
+  local cfg = styleConfig(style)
+  local num = cfg.componentTypes and cfg.componentTypes.corner and cfg.componentTypes.corner.numbering
+  local out = {}
+  for _, e in ipairs(num and num.intensity or {}) do
+    if e.diameter and e.diameter.max then out[#out + 1] = e.diameter.max end
+  end
+  return out
+end
+
 -- built: stageWriter.build's result (Lua tables). opts.style 'enthusiast' (default) or 'casual'.
 -- Returns { notes = { { n, s0, s1 (along the driveline spline, corner start / end), sStart (the start line on the
 -- same spline), text (the words, one string), phrases ({...}), grade (the corner's number, or nil), diameter,

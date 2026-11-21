@@ -180,7 +180,8 @@ end
 -- pathnodes stay start to finish), name, quatFn, mute, landmarks ({ { s (along the line as given),
 -- type (a key of M.LANDMARKS) }... }), speaks ({ [call] = true }: the calls the player's voice can say, or nil for
 -- all of them -- rallyAdapter.speaks; a call it cannot say is left out, and a note with nothing it can say is not
--- written).
+-- written), ladder (that voice's corner ladder, rallyAdapter.speaks: the step each corner carries moves along it;
+-- nil: one to six).
 function M.build(line, opts)
   local quatFn = opts.quatFn
   local cum0 = geo.cumulative(line)
@@ -341,7 +342,7 @@ function M.build(line, opts)
         local cr = pacenotes.measuredRadius(c, stagePts)
         c.circleR = cr ~= math.huge and cr or nil
         if not pacenotes.descriptor(c, step) then
-          local i0, i1, risk, g = pacenotes.placeForGrade(c, stagePts, G)
+          local i0, i1, risk, g = pacenotes.placeForGrade(c, stagePts, G, opts.ladder)
           placed[ci] = { i0 = i0, i1 = i1, risk = risk,
                          length = pacenotes.lengthMode(G, (c.i1 - c.i0) * step, g, (i1 - i0) * step) }
         end

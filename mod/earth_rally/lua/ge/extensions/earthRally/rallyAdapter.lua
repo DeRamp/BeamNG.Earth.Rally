@@ -138,11 +138,23 @@ function M.speaks()
   for name in pairs(ct.modifiers) do out[name] = true end
   for name in pairs(type(ct.modifierAliases) == 'table' and ct.modifierAliases or {}) do out[name] = true end
   local corner = type(ct.corner) == 'table' and ct.corner or {}
+  -- (its ladder: the most diameter of each grade but the last -- the step a note carries moves along this one)
+  local ladder = nil
+  local num = type(corner.numbering) == 'table' and corner.numbering.intensity or nil
+  if type(num) == 'table' then
+    ladder = {}
+    for _, e in ipairs(num) do
+      if type(e) == 'table' and type(e.diameter) == 'table' and type(e.diameter.max) == 'number' then
+        ladder[#ladder + 1] = e.diameter.max
+      end
+    end
+    if #ladder == 0 or #ladder ~= #num - 1 then ladder = nil end
+  end
   for _, key in ipairs({ 'shapes', 'shapeAliases', 'descriptors', 'descriptorAliases' }) do
     local prefix = key:find('^shape') and 'shape:' or 'descriptor:'
     for name in pairs(type(corner[key]) == 'table' and corner[key] or {}) do out[prefix .. name] = true end
   end
-  return out, style
+  return out, style, ladder
 end
 
 -- Stage the co-driver for a fresh run (after the car was put at the start line).

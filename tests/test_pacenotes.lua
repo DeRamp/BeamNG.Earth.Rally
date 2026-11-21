@@ -617,6 +617,24 @@ do
       it[1].item.riskIntensity ~= nil), string.format('%d degrees at %d m: the game says our grade, %s (circle %s, step %s)',
       case[2], case[1], tostring(m and m.grade), tostring(said), tostring(it[1] and it[1].item.riskIntensity)))
   end
+  -- (the casual voices step their own hard / medium / easy ladder, by index: the step is worked out on that one)
+  local function bucket(d) return d < 65 and 1 or (d < 190 and 2 or 3) end
+  local function want(G) return bucket(pn.GRADE_MID_D[G]) end
+  local okAll, seen = true, 0
+  for _, case in ipairs({ { 60, 20 }, { 60, 90 }, { 15, 60 }, { 200, 40 }, { 30, 120 }, { 100, 60 }, { 45, 80 } }) do
+    local line = road({ { 'straight', 300 }, { 'arc', case[1], case[2] }, { 'straight', 300 } })
+    local cum = geo.cumulative(line)
+    local b = writer.build(line, { startM = 0, finishM = cum[#cum], quatFn = qf, ladder = { 65, 190 } })
+    for _, p in ipairs(b.notebook.pacenotes) do
+      local m, it = p.metadata.earthRally, p.structured.items['4']
+      if m and m.circleR and it and it.type == 'corner' and not it.descriptor then
+        seen = seen + 1
+        local said = math.max(1, math.min(3, bucket(2 * m.circleR) - (it.riskIntensity or 0)))
+        if said ~= want(m.grade) then okAll = false end
+      end
+    end
+  end
+  T.check(okAll and seen >= 5, 'casual ladder: each corner said in the casual grade of ours (' .. seen .. ')')
   T.check(pn.fitGrade(30) < pn.fitGrade(60) and pn.fitGrade(60) < pn.fitGrade(200) and pn.fitGrade(math.huge) == #pn.GRADE_FIT_DIAMETERS + 1,
     'fitGrade: tighter is a lower number, a straight a six or more open')
   -- (the grade the game measures: the circle through the waypoints and the middle, on its one to six ladder)

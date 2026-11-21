@@ -816,11 +816,11 @@ local function stepBuild()
   end
   table.sort(lms, function(a, b) return a.s < b.s end)
   -- (only the calls the player's voice can say: rallyAdapter.speaks)
-  local okS, speaks, style = pcall(rallyA.speaks)
-  if not okS then speaks, style = nil, nil end
+  local okS, speaks, style, ladder = pcall(rallyA.speaks)
+  if not okS then speaks, style, ladder = nil, nil, nil end
   run.checks.voiceStyle = style or 'not known (every call written)'
   local okB, built = pcall(writer.build, run.line, { startM = run.startM, finishM = run.finishM, name = run.stage.name,
-    mute = mute, landmarks = lms, speaks = speaks,
+    mute = mute, landmarks = lms, speaks = speaks, ladder = ladder,
     -- (#47: the notes on past the finish to the stop control)
     stop = run.stopCtl and (function() local x, y = earth.toGame(run.stopCtl.lat, run.stopCtl.lon, 0)
       return x and { x = x, y = y } or nil end)() or nil,

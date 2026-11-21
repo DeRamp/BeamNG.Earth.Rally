@@ -41,7 +41,7 @@ def runtime(game=DEFAULT_GAME):
     build = lua.execute('''
       local writer = require('earthRally/stageWriter')
       local geo = require('earthRally/geo')
-      return function(line, landmarks, speaks, startM, finishM)
+      return function(line, landmarks, speaks, startM, finishM, ladder)
         -- (a line doubling back on itself has the excursion dropped, as the mod reads a matched line: runner.lua
         --  stageLatLon, geo.dropFoldBacks)
         local keep, dropped = geo.foldBacks(line)
@@ -70,7 +70,8 @@ def runtime(game=DEFAULT_GAME):
           end
         end
         return writer.build(line, { startM = startM or 0, finishM = finishM or cum[#cum], mute = mute,
-                                    landmarks = lms, quatFn = function() return 0, 0, 0, 1 end, speaks = speaks })
+                                    landmarks = lms, quatFn = function() return 0, 0, 0, 1 end, speaks = speaks,
+                                    ladder = ladder })
       end''')
     return lua, voice, build
 

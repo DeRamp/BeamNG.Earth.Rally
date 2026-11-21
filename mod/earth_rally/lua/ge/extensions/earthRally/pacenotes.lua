@@ -168,11 +168,24 @@ function M.lengthMode(G, arcM, g, placedM)
   return want > got and 'longer' or 'shorter'
 end
 
-function M.placeForGrade(c, pts, G)
-  local g = gradeOf(2 * measuredRadius(c, pts))
+-- ladder: the player's voice's own ladder (the most diameter of each of its grades but the last, m; rallyAdapter.speaks),
+-- which the step moves along by one: the casual voices' hard / medium / easy is { 65, 190 }. Our grade G is placed on
+-- it by the middle of the game's one to six range it is (GRADE_MID_D). nil: the one to six ladder itself.
+M.GRADE_MID_D = { 17.5, 50, 90.5, 153, 225, 300 }
+local function ladderIndex(d, ladder)
+  for i, lim in ipairs(ladder) do if d < lim then return i end end
+  return #ladder + 1
+end
+function M.placeForGrade(c, pts, G, ladder)
+  local d = 2 * measuredRadius(c, pts)
+  local g = gradeOf(d)
   local i0, i1 = c.i0, c.i1
+  local want, got = G, g
+  if type(ladder) == 'table' and #ladder > 0 then
+    want, got = ladderIndex(M.GRADE_MID_D[math.max(1, math.min(6, G))], ladder), ladderIndex(d, ladder)
+  end
   local risk = nil
-  if g > G then risk = 1 elseif g < G then risk = -1 end
+  if got > want then risk = 1 elseif got < want then risk = -1 end
   return i0, i1, risk, g
 end
 

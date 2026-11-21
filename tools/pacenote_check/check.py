@@ -207,13 +207,14 @@ def main():
 
     lua, voice, build = common.runtime(a.game)
     opts = lua.table_from({'style': a.style})
+    ladder = voice.ladder(a.style)       # (the step a note carries moves along the voice's own ladder)
     OUT.mkdir(parents=True, exist_ok=True)
     result = {'when': datetime.datetime.now().isoformat(timespec='seconds'), 'rev': git_rev(), 'label': a.label,
               'style': a.style, 'fixtures': {}, 'pro': {}, 'mine': {}, 'skipped': {}}
 
     def speak(line, lms=(), startM=None, finishM=None):
         lt, lmt = common.to_lua(lua, line, lms)
-        b = build(lt, lmt, None, startM, finishM)
+        b = build(lt, lmt, None, startM, finishM, ladder)
         said, pts = py_said(voice.say(b, opts))
         return said, pts
 
