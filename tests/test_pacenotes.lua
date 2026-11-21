@@ -635,6 +635,11 @@ do
     end
   end
   T.check(okAll and seen >= 5, 'casual ladder: each corner said in the casual grade of ours (' .. seen .. ')')
+  -- (two fours of one direction 40 m apart: one corner, still a four -- the straight between does not open it)
+  local two4 = cornerItems(build(road({ { 'straight', 300 }, { 'arc', 70, 40 }, { 'straight', 40 }, { 'arc', 70, 40 },
+                                       { 'straight', 300 } })))
+  T.check(#two4 == 1 and two4[1].meta.grade == pn.fitGrade(70), 'two fours 40 m apart: one corner, a four (' ..
+    #two4 .. ', grade ' .. tostring(two4[1] and two4[1].meta.grade) .. ' vs ' .. pn.fitGrade(70) .. ')')
   T.check(pn.fitGrade(30) < pn.fitGrade(60) and pn.fitGrade(60) < pn.fitGrade(200) and pn.fitGrade(math.huge) == #pn.GRADE_FIT_DIAMETERS + 1,
     'fitGrade: tighter is a lower number, a straight a six or more open')
   -- (the grade the game measures: the circle through the waypoints and the middle, on its one to six ladder)

@@ -252,6 +252,7 @@ M.FIND_STEP_M = 30
 M.FIND_STEP_RATIO = 2.5
 M.FIND_STEP_K = 1 / 600
 M.FIND_PIECE_M = 60
+M.FIND_BACK_DEG = 1
 
 local function bendOf(turn, k, i0, i1, sign)
   local a, kMax = 0, 0
@@ -423,14 +424,24 @@ function M.findCorners(turn, k, step)
       local between = 0
       for j = p.i1 + 1, c.i0 - 1 do between = between + (turn[j] or 0) end
       local sign = c.dir == 'left' and 1 or -1
-      ok = between * sign >= 0 and abs(M.fitGrade((M.fitRadius(p, k, step))) -
+      -- (turning back by FIND_BACK_DEG at most: a straight's rounding is not a turn back)
+      ok = between * sign >= -math.rad(M.FIND_BACK_DEG) and abs(M.fitGrade((M.fitRadius(p, k, step))) -
                                        M.fitGrade((M.fitRadius(c, k, step)))) <= 1
     end
     if ok then
       local m = bendOf(turn, k, p.i0, c.i1, p.dir == 'left' and 1 or -1)
       local rad = math.rad(m.angleDeg)
-      m.avgR = rad > 0 and (m.i1 - m.i0) * step / rad or huge
-      -- (never more open than its own tightest part held over the whole of a piece)
+      -- (the pieces' own radii, kept down a chain: a joined corner is never more open than its tightest piece -- the
+      --  straight between two fours does not make them a five. Clamped to the most open piece instead: no change on
+      --  the check; to the tightest: same grade +0.1 point)
+      local rp, rc = p.pieceR or { M.fitRadius(p, k, step) }, c.pieceR or { M.fitRadius(c, k, step) }
+      m.pieceR = {}
+      for _, r in ipairs(rp) do m.pieceR[#m.pieceR + 1] = r end
+      for _, r in ipairs(rc) do m.pieceR[#m.pieceR + 1] = r end
+      local lim = huge
+      for _, r in ipairs(m.pieceR) do lim = math.min(lim, r) end
+      local avg = rad > 0 and (m.i1 - m.i0) * step / rad or huge
+      m.avgR = math.min(avg, lim)
       m.joinedFrom = (p.joinedFrom or 1) + 1
       m.sweeper = M.fitGrade((M.fitRadius(m, k, step))) > #M.GRADE_FIT_DIAMETERS or nil
       joined[#joined] = m
