@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earth Rally: import report (mock-up)</title>
+<!-- Mock-up for docs/plan-hand-files.md: the Rallies page's import strip and the Import report page. Not built.
+     1920x1080, the look of the built Vue (EarthRallyHome.vue). Self-contained. Names are made up. -->
+<style>
+:root { --orange: #f26b1d; --orange-d: #c75b1e; --muted: #b8bcc6; --dim: #8a909a; --amber: #ffd36b; --green: #6fd39a; --red: #e5533d;
+  --mono: "Overpass Mono", ui-monospace, Consolas, monospace; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0d0f12; color: #f0f0f0; font-family: "Noto Sans", system-ui, sans-serif; }
+.mock-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 16px; background: #1a1d22; border-bottom: 1px solid #2a2e35; position: sticky; top: 0; z-index: 10; }
+.mock-bar b { margin-right: 8px; }
+.mock-bar button { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 4px; border: 1px solid #3a3f48; background: #23272e; color: #ddd; cursor: pointer; }
+.mock-bar button.on { background: var(--orange-d); border-color: var(--orange-d); color: #fff; }
+.mock-bar .sep { width: 1px; height: 22px; background: #3a3f48; margin: 0 6px; }
+#who { padding: 12px 16px 24px; color: var(--muted); font-size: 15px; max-width: 1400px; line-height: 1.5; margin: 0 auto; }
+#who b { color: #fff; }
+.wrap { padding: 0 16px; }
+.box { position: relative; width: 100%; max-width: 1920px; margin: 0 auto; aspect-ratio: 16/9; overflow: hidden; border-radius: 6px; box-shadow: 0 0 0 1px #2a2e35; }
+.screen { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; transform-origin: 0 0; font-size: 16px; overflow: hidden;
+  background: radial-gradient(ellipse at 70% 30%, #2a2219 0%, #121418 60%, #0b0c0f 100%); }
+.page { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.top { height: 84px; flex: none; display: flex; align-items: center; gap: 20px; padding: 0 64px; background: linear-gradient(180deg, rgba(0,0,0,.8), rgba(0,0,0,.35)); }
+.back { font-size: 20px; color: var(--muted); margin-right: 10px; }
+.title { font-size: 30px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; } .title span { color: var(--orange); }
+.crumbs { font-size: 18px; color: var(--muted); } .crumbs b { color: #fff; font-weight: 400; } .crumbs i { font-style: normal; color: #6f7480; margin: 0 10px; }
+.content { flex: 1; min-height: 0; padding: 28px 64px; position: relative; overflow: hidden; }
+.prompts { height: 56px; flex: none; display: flex; align-items: center; gap: 30px; padding: 0 64px; background: rgba(0,0,0,.6); color: var(--muted); font-size: 17px; }
+.k { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; font: 700 14px "Noto Sans", system-ui, sans-serif; color: #111; margin-right: 8px; }
+.k.a { background: #6cc24a; } .k.b { background: var(--red); } .k.x { background: #3b8beb; color: #fff; }
+.card { background: rgba(0,0,0,.6); border-radius: 8px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; padding: 12px 24px; border-radius: 4px; font-size: 18px; font-weight: 600; background: var(--orange-d); color: #fff; }
+.btn.sec { background: #3a3f48; }
+.btn.out { background: transparent; border: 1px solid #6f7480; color: #ddd; font-weight: 500; }
+.lbl { font-size: 15px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); font-weight: 600; margin: 0 0 12px; }
+.mono { font-family: var(--mono); }
+.sel { outline: 4px solid var(--orange); outline-offset: 3px; }
+
+/* Rallies page */
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.hcard { height: 330px; display: flex; flex-direction: column; overflow: hidden; }
+.hcard .pic { height: 170px; background: linear-gradient(135deg, #3a2a1c, #6b4a2a); display: flex; align-items: flex-end; padding: 14px 18px; font-weight: 800; letter-spacing: .1em; color: rgba(255,255,255,.75); }
+.hcard .pic.b { background: linear-gradient(135deg, #1c2a3a, #2a4f6b); }
+.hcard .body { padding: 14px 18px; } .kind { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--orange); }
+.hname { font-size: 24px; font-weight: 700; margin: 4px 0; } .hline { color: var(--muted); }
+.add { margin-top: 28px; display: flex; align-items: flex-start; gap: 22px; padding: 16px 26px; border: 2px dashed #4a505c; border-radius: 8px; background: rgba(0,0,0,.3); }
+.add .t { font-size: 22px; font-weight: 700; color: var(--orange); white-space: nowrap; }
+.add .d { flex: 1; color: var(--muted); line-height: 1.5; }
+.add .path { font-family: var(--mono); font-size: 13px; margin: 6px 0; }
+.add .h { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; margin-top: 6px; }
+.ok { color: var(--green); } .warn { color: var(--amber); } .bad { color: var(--red); }
+.add .btns { display: flex; flex-direction: column; gap: 10px; }
+.line { display: flex; align-items: baseline; gap: 10px; padding: 3px 6px; margin-top: 6px; }
+.line .go { margin-left: auto; font-size: 14px; color: #ddd; border: 1px solid #6f7480; border-radius: 4px; padding: 2px 10px; }
+
+/* Report page */
+.rep { display: grid; grid-template-columns: 1fr 640px; gap: 28px; height: 100%; }
+.verdict { padding: 22px 28px; border-left: 6px solid var(--amber); margin-bottom: 22px; }
+.verdict.ok { border-color: var(--green); } .verdict.bad { border-color: var(--red); }
+.verdict h2 { margin: 0 0 6px; font-size: 26px; } .verdict p { margin: 0; color: var(--muted); font-size: 18px; }
+.prob { padding: 16px 22px; border-bottom: 1px solid #2a2e35; }
+.prob:last-child { border-bottom: 0; }
+.prob .where { font-size: 14px; color: var(--dim); letter-spacing: .04em; }
+.prob .as { font-family: var(--mono); font-size: 15px; color: #ddd; background: rgba(255,255,255,.06); padding: 3px 8px; border-radius: 3px; display: inline-block; margin: 6px 0; }
+.prob .what { font-size: 18px; } .prob .fix { color: var(--muted); font-size: 16px; margin-top: 4px; }
+.prob .n { display: inline-block; width: 26px; height: 26px; border-radius: 50%; background: var(--amber); color: #111; font-weight: 700; text-align: center; line-height: 26px; margin-right: 10px; font-size: 14px; }
+.prob .n.r { background: var(--red); color: #fff; }
+.found { padding: 22px 26px; font-size: 16px; }
+.found table { border-collapse: collapse; width: 100%; } .found td { padding: 5px 0; vertical-align: top; } .found td:first-child { color: var(--dim); width: 140px; }
+.found .ro { font-family: var(--mono); font-size: 14px; color: #ddd; line-height: 1.6; }
+.found .x { color: var(--amber); }
+.foot { display: flex; gap: 12px; margin-top: 18px; }
+.scroll { overflow: hidden; }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="mock-bar">
+  <b>Import report</b>
+  <button data-go="home" class="on">1 Rallies page</button>
+  <button data-go="rep">2 Report: imported with problems</button>
+  <button data-go="fail">3 Report: not imported</button>
+  <span class="sep"></span>
+  <button data-v="now">Now</button>
+  <button data-v="proposed" class="on">Proposed</button>
+</div>
+<div id="who"></div>
+<div class="wrap"><div class="box"><div class="screen" id="screen">
+
+  <!-- 1: Rallies page -->
+  <div class="page" data-s="home">
+    <div class="top"><span class="back">‹ Back</span><div class="title">Earth <span>Rally</span></div><div class="crumbs"><b>Rallies</b></div></div>
+    <div class="content">
+      <div class="cards">
+        <div class="card hcard"><div class="pic">SEASON</div><div class="body"><div class="kind">Season · 4 rallies</div><div class="hname">Northern Forest Series 2031</div><div class="hline">Feb – Jun · 31 stages</div></div></div>
+        <div class="card hcard"><div class="pic">RALLY</div><div class="body"><div class="kind">Rally · 5 stages</div><div class="hname">Fernvale Forest Rally</div><div class="hline">7 – 8 Feb · Fernvale, ZZ · 52 km of stages</div></div></div>
+        <div class="card hcard"><div class="pic b">STAGE</div><div class="body"><div class="kind" style="color:#4aa3ff">Stage</div><div class="hname">Kilo Hill</div><div class="hline">8.2 km</div></div></div>
+      </div>
+      <div class="add">
+        <div class="t">+ Add</div>
+        <div class="d">
+          Drop a map (<b>.kml</b>, <b>.kmz</b>, <b>.gpx</b>) or a rally file (<b>.zip</b> or folder) in the import folder.
+          <div class="path">C:\Users\you\AppData\Local\BeamNG\BeamNG.drive\current\earthRally\import\</div>
+          <div class="h">Last import · 25 Nov, 14:02</div>
+          <div class="v-now">
+            <div class="warn">! Fernvale Forest Rally: Fernvale Forest Rally, 5 stages (4 warnings: see the log)</div>
+            <div class="ok">✓ Kilo Hill: Kilo Hill, 1 stage</div>
+            <div class="warn">! Could not import Ridge Sprint: not a rally pack (no season.json, rally.json or stage.json at its top)</div>
+          </div>
+          <div class="v-proposed">
+            <div class="line warn sel">! Fernvale Forest Rally: imported with 4 problems <span class="go">Report</span></div>
+            <div class="line ok">✓ Kilo Hill: imported <span class="go">Report</span></div>
+            <div class="line bad">✕ Ridge Sprint: not imported <span class="go">Report</span></div>
+          </div>
+        </div>
+        <div class="btns"><span class="btn sec">Open folder</span><span class="btn out">Re-scan</span></div>
+      </div>
+    </div>
+    <div class="prompts"><span><span class="k a">A</span>Open</span><span><span class="k b">B</span>Back</span></div>
+  </div>
+
+  <!-- 2: report, imported with problems -->
+  <div class="page hidden" data-s="rep">
+    <div class="top"><span class="back">‹ Back</span><div class="title">Earth <span>Rally</span></div><div class="crumbs">Rallies<i>›</i><b>Import report</b></div></div>
+    <div class="content">
+      <div class="rep">
+        <div class="scroll">
+          <div class="card verdict"><h2>Fernvale Forest Rally: imported with 4 problems</h2>
+            <p>It's in the menu. Fix these in the folder and it's read again by itself.</p></div>
+          <div class="lbl">Problems</div>
+          <div class="card">
+            <div class="prob"><span class="n">1</span><span class="what">rally.json and rally.txt are both in the folder.</span>
+              <div class="fix">Only rally.txt was read. Delete or rename rally.json.</div></div>
+            <div class="prob"><span class="n">2</span><span class="where">rally.txt · line 58</span><br><span class="as">SS4  Kilo Hil</span>
+              <div class="what">No stage called "Kilo Hil" in the map. Did you mean "Kilo Hill"?</div>
+              <div class="fix">Left out of the running order: 5 stages instead of 6.</div></div>
+            <div class="prob"><span class="n">3</span><span class="where">results.csv · line 9</span><br><span class="as">SS2, Kilo Hill, 2, B. Okafor, O4WD, National, 5.20.3</span>
+              <div class="what">"5.20.3" is not a time. Write 5:20.3 or 320.3.</div>
+              <div class="fix">This crew is left out of SS2's leaderboard.</div></div>
+            <div class="prob"><span class="n">4</span><span class="where">rally.txt · line 44</span><br><span class="as">At: -10.1133, 60.0420</span>
+              <div class="what">Looks like longitude first: read as 60.0420, -10.1133.</div>
+              <div class="fix">If that's right, swap them in the file.</div></div>
+          </div>
+        </div>
+        <div>
+          <div class="lbl">What the game found</div>
+          <div class="card found">
+            <table>
+              <tr><td>Dates</td><td>7 – 8 Feb 2031</td></tr>
+              <tr><td>Map</td><td>3 stage lines, 9 control points</td></tr>
+              <tr><td>Stages</td><td>Meaford Mills: SS1, SS3<br>Kilo Hill: SS2 <span class="x">(SS4 left out)</span><br>Long Gap: SS5, SS6 (power stage)</td></tr>
+              <tr><td>Running order</td><td class="ro">Day 1 · Start Fernvale Park<br>SS1 · SS2 · Service A · SS3<br>Day 2 · Start Ridge Hotel<br>SS5 · Service B · SS6 · Finish</td></tr>
+              <tr><td>Timed</td><td>No (no schedule.csv)</td></tr>
+              <tr><td>Results</td><td>41 crews, 5 stages</td></tr>
+              <tr><td>Weather</td><td>4 stages</td></tr>
+              <tr><td>Pictures</td><td>cover, logo <span class="x">(photo.jpg not found)</span></td></tr>
+              <tr><td>Not used yet</td><td>Service area at Fernvale Park</td></tr>
+            </table>
+          </div>
+          <div class="foot"><span class="btn sec">Open folder</span><span class="btn out">Re-scan</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="prompts"><span><span class="k x">X</span>Open folder</span><span><span class="k b">B</span>Back</span></div>
+  </div>
+
+  <!-- 3: report, not imported -->
+  <div class="page hidden" data-s="fail">
+    <div class="top"><span class="back">‹ Back</span><div class="title">Earth <span>Rally</span></div><div class="crumbs">Rallies<i>›</i><b>Import report</b></div></div>
+    <div class="content">
+      <div class="rep">
+        <div>
+          <div class="card verdict bad"><h2>Ridge Sprint: not imported</h2>
+            <p>Fix the problem below and it's read again by itself.</p></div>
+          <div class="lbl">Problems</div>
+          <div class="card">
+            <div class="prob"><span class="n r">1</span><span class="where">rally.txt · line 3</span><br><span class="as">Map: ridge sprint.kml</span>
+              <div class="what">There is no ridge sprint.kml in the folder. Did you mean "Ridge Sprint stages.kml"?</div>
+              <div class="fix">A rally needs its map: nothing else could be read without it.</div></div>
+          </div>
+        </div>
+        <div>
+          <div class="lbl">What the game found</div>
+          <div class="card found">
+            <table>
+              <tr><td>Rally</td><td>Ridge Sprint</td></tr>
+              <tr><td>Files</td><td>rally.txt, Ridge Sprint stages.kml, results.csv</td></tr>
+            </table>
+          </div>
+          <div class="foot"><span class="btn sec">Open folder</span><span class="btn out">Re-scan</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="prompts"><span><span class="k x">X</span>Open folder</span><span><span class="k b">B</span>Back</span></div>
+  </div>
+
+</div></div></div>
+<script>
+const notes = {
+  home: { now: "<b>Now.</b> One line per import; problems only as a count and \"see the log\". A broken pack says only \"not a rally pack\".",
+          proposed: "<b>1 Rallies page.</b> The same strip. Each line says imported, imported with problems, or not imported, and opens its report. The full report is also written into the pack's folder as <b>import report.txt</b>." },
+  rep: { now: "<b>Now.</b> There is no report page: the warnings are only in the game's log.",
+         proposed: "<b>2 Import report.</b> The same text as import report.txt: the verdict, each problem with its file, line and the line as written, and what the game found. Open folder and Re-scan are here so the player can fix and check without going back." },
+  fail: { now: "<b>Now.</b> There is no report page: \"Could not import ...\" on the Rallies page is all there is.",
+          proposed: "<b>3 Not imported.</b> Only when nothing usable is left. Always with the reason and what to do." }
+};
+let screen = "home", view = "proposed";
+function show() {
+  document.querySelectorAll("[data-s]").forEach(p => p.classList.toggle("hidden", p.dataset.s !== (view === "now" && screen !== "home" ? "home" : screen)));
+  document.querySelectorAll(".v-now").forEach(e => e.classList.toggle("hidden", view !== "now"));
+  document.querySelectorAll(".v-proposed").forEach(e => e.classList.toggle("hidden", view !== "proposed"));
+  document.querySelectorAll("[data-go]").forEach(b => b.classList.toggle("on", b.dataset.go === screen));
+  document.querySelectorAll("[data-v]").forEach(b => b.classList.toggle("on", b.dataset.v === view));
+  document.getElementById("who").innerHTML = notes[screen][view];
+}
+document.querySelectorAll("[data-go]").forEach(b => b.onclick = () => { screen = b.dataset.go; show(); });
+document.querySelectorAll("[data-v]").forEach(b => b.onclick = () => { view = b.dataset.v; show(); });
+function fit() { const box = document.querySelector(".box"); document.getElementById("screen").style.transform = `scale(${box.clientWidth / 1920})`; }
+addEventListener("resize", fit); fit(); show();
+</script>
+</body>
+</html>

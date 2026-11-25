@@ -1,0 +1,47 @@
+#  ==========================================================================================
+#   EARTH RALLY  -  SEASON FILE
+#  ==========================================================================================
+#
+#   A season is several rallies in order, with championship standings. Make one folder for
+#   the season, put this file in it, and inside it one folder per rally, each with its own
+#   rally.txt and map. Only "Season" is needed.
+#
+#   - Lines starting with # are notes for you. The game skips them.
+#   - Capitals, spaces, ":" or "=" don't matter.
+#   - Each time the game reads this folder it writes "import report.txt" here. Open it to see
+#     what the game found in every round, and why anything was left out.
+#
+#  ------------------------------------------------------------------------------------------
+
+
+Season: Northern Forest Series 2031
+Championship: Northern Forest Rally Championship     # shown under the name
+ID: nfs-2031                       # optional. Times are saved under it: don't change it later.
+
+
+# --- Rounds --------------------------------------------------------------------------------
+#   One line per round, in running order: its number, then its folder's name.
+#   A round can also be a map on its own ("4  Coast Run.kml"): a rally named from the map.
+#   Left out, every rally folder in here is a round, in date order.
+
+Rounds:
+  1  Fernvale Forest Rally
+  2  Ridge Sprint
+  3  Lakeside Stages
+  4  Coast Run.kml
+
+
+# --- Standings -----------------------------------------------------------------------------
+
+Points: 25 20 16 13 11 10 9 8 7 6 5 4 3 2 1       # for 1st, 2nd, 3rd... in each rally
+Best rounds: all                   # or a number: only each crew's best rounds count
+Count only: National               # championship column in results.csv; "all" for everyone
+
+
+# --- Rules (for every round, unless a round's rally.txt says otherwise) --------------------
+
+False start: 10, 60, 180 s
+Late: 10 s per minute
+Early: 60 s per minute
+Max lateness: 30 min
+Start interval: 2 min

@@ -1,0 +1,70 @@
+EARTH RALLY - IMPORT REPORT
+Fernvale Forest Rally (folder)  ·  read 25 Nov 2031, 14:02
+This file is written by the game each time it reads this folder. Editing it changes nothing.
+
+====================================================================================================
+IMPORTED WITH 4 PROBLEMS
+The rally is in the menu. Fix the problems below and the game reads the folder again by itself.
+====================================================================================================
+
+
+PROBLEMS
+----------------------------------------------------------------------------------------------------
+
+1. rally.json and rally.txt are both in this folder.
+   Only rally.txt was read. Delete or rename rally.json to stop this message.
+
+2. rally.txt, line 58:  SS4  Kilo Hil
+   There is no stage called "Kilo Hil" in Fernvale stages.kml. Did you mean "Kilo Hill"?
+   Left out of the running order: the rally has 5 stages instead of 6.
+
+3. results.csv, line 9:  SS2, Kilo Hill, 2, B. Okafor, O4WD, National, 5.20.3
+   "5.20.3" is not a time. Write it as 5:20.3 (minutes:seconds) or 320.3 (seconds).
+   This crew is left out of SS2's leaderboard.
+
+4. rally.txt, line 44:  At: -10.1133, 60.0420
+   This looks like longitude first. Read as 60.0420, -10.1133 (Ridge Hotel). If that's right,
+   swap them in the file to stop this message.
+
+
+WHAT THE GAME FOUND
+----------------------------------------------------------------------------------------------------
+
+Rally         Fernvale Forest Rally
+Dates         7 - 8 Feb 2031
+Town          Fernvale, ZZ
+Map           Fernvale stages.kml: 3 stage lines, 9 control points
+Pictures      cover.jpg, logo.png  (photo.jpg: not in the folder)
+
+Stages in the map                    Run in the rally
+  Meaford Mills    10.5 km           SS1, SS3
+  Kilo Hill         8.2 km           SS2          (SS4 left out: problem 2)
+  Long Gap         14.0 km           SS5, SS6 (power stage)
+
+Running order (from rally.txt)
+  Day 1   Start at Fernvale Park
+          SS1  Meaford Mills
+          SS2  Kilo Hill
+          Service A at Fernvale Park
+          SS3  Meaford Mills
+  Day 2   Start at Ridge Hotel
+          SS5  Long Gap
+          Service B at Fernvale Park
+          SS6  Long Gap
+          Finish at Fernvale Park
+
+Timed         No: no schedule.csv, so road sections are not timed
+Results       results.csv: 41 crews, 5 stages (1 time left out: problem 3)
+Weather       weather.csv: 4 stages
+Rules         False start 10 / 60 / 180 s, late 10 s per minute, early 60 s per minute,
+              max lateness 30 min, start interval 2 min
+
+
+READ BUT NOT USED YET
+----------------------------------------------------------------------------------------------------
+
+rally.txt, line 41:  Area: 60.0098, -10.0460; 60.0106, -10.0460; 60.0106, -10.0442; 60.0098, -10.0442
+   Service areas are not used by this version of Earth Rally. The place's "At" is used.
+
+rally.txt, line 12:  Organiser: Fernvale Motor Club
+   Not something the game knows. Skipped.

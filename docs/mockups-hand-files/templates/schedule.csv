@@ -1,0 +1,27 @@
+# EARTH RALLY - SCHEDULE: the timed itinerary, one row per control, in running order. Replaces the Running order in rally.txt.
+# What: Start, ATC, Stage, Service in, Service out, Regroup in, Regroup out, Refuel, MTC in, MTC out, Parc ferme in, Parc ferme out, Finish.
+# Time: the first car's time (only where your route book gives one). Target min: time allowed to reach this control from the one before.
+# Lateness min: a stage's lateness time. Only for: classes this control is for, when not everyone (left empty: everyone).
+# Notes: "power stage". Columns can be in any order; missing columns are fine. Lines starting with # are skipped.
+Day,Date,Time,Control,What,Stage or place,Km,Target min,Lateness min,Only for,Notes
+1,2031-02-07,08:00,TC0,Start,Fernvale Park,,,,,
+1,2031-02-07,08:20,TC1,ATC,,,20,,,
+1,2031-02-07,08:23,SS1,Stage,Meaford Mills,10.46,,10,,
+1,2031-02-07,,TC2,ATC,,,25,,,
+1,2031-02-07,,SS2,Stage,Kilo Hill,8.20,,10,,
+1,2031-02-07,,TC2A,Service in,Fernvale Park,,30,,,
+1,2031-02-07,09:40,TC2B,Service out,Fernvale Park,,30,,,
+1,2031-02-07,,TC2C,Regroup in,Fernvale Park,,5,,Regional,
+1,2031-02-07,,TC3,ATC,,,22,,,
+1,2031-02-07,,SS3,Stage,Meaford Mills,,,10,,
+1,2031-02-07,,TC4,ATC,,,25,,,
+1,2031-02-07,,SS4,Stage,Kilo Hill,,,10,,
+1,2031-02-07,,TC4A,MTC in,Ridge Hotel,,40,,,
+2,2031-02-08,08:00,TC4B,MTC out,Ridge Hotel,,,,,
+2,2031-02-08,,TC5,ATC,,,30,,,
+2,2031-02-08,,SS5,Stage,Long Gap,14.02,,12,,
+2,2031-02-08,,TC5A,Service in,Fernvale Park,,35,,,
+2,2031-02-08,,TC5B,Service out,Fernvale Park,,30,,,
+2,2031-02-08,,TC6,ATC,,,35,,,
+2,2031-02-08,,SS6,Stage,Long Gap,,,12,,power stage
+2,2031-02-08,,TC6A,Finish,Fernvale Park,,40,,,
