@@ -59,11 +59,10 @@ what it found, what it left out and how to fix it, with the file and line. The s
 
 | File | What it is |
 |---|---|
-| `rally.txt` | The rally: name, map, dates, town, pictures, places, running order, rules |
+| `rally.txt` | **Everything about the rally in one file:** name, map, dates, town, pictures, rules, places, running order, and a block per stage with each pass's weather and results |
 | `season.txt` | A season: rounds (one folder per rally, each with its `rally.txt`), points, rules |
-| `stage.txt` | One stage: a map, or `line.csv` with its controls |
-| `results.csv` | Real crews' times: one row per crew per stage, or a column per stage |
-| `weather.csv` | Each stage's weather in words (`overcast`, `light rain`); `tools/pack_weather.py` can fill it |
+| `stage.txt` | One stage: a map (or `line.csv`), its controls, weather and results |
+| `results.csv`, `weather.csv` | Optional, for people who keep times or weather in a spreadsheet instead |
 | `line.csv` | A stage drawn as points, for a stage with no map |
 
 Only `Rally:` (or `Season:`, `Stage:`) and the map are needed. Leave out what you don't have.
@@ -106,6 +105,34 @@ Running order:
   (`Service in` / `Service out`, `MTC in` / `MTC out`, `Regroup in` / `Regroup out`, `Parc ferme in` /
   `Parc ferme out`), and `only Regional` for a control only some classes pass. The rally template ends with a
   full example.
+
+### Stage blocks
+
+After the running order, a block per stage holds what belongs to it and to each of its passes:
+
+```
+Stage: Meaford Mills
+	Length:  10.46 km
+
+	SS1:
+		Weather:  overcast, 90% cloud, wind 4 m/s from 250, 13.6 C
+		Results:
+			Car  Driver        Class  Championship  Time
+			1    A. Vance      L4WD   National      6:39.4
+			2    B. Okafor     O4WD   National      5:20.3 N
+
+	SS3:
+		Cancelled
+```
+
+* The indents are only for reading: `Stage:` starts a block, `SS3:` (or `Pass 2:`) a pass in it.
+* **Weather** is the sky in words, then any of `90% cloud`, `wind 4 m/s from 250`, `gusts 9`, `12 C`, `rain 0.8`,
+  `snow 0.6`, `fog`, `visibility 400 m`, `night`. On a stage that runs once, or written above its passes, it needs
+  no pass line.
+* **Results** start with a line of column names. Paste them straight from Excel, or line them up with tabs or two
+  spaces. `N` after a time makes it notional; `DNF`, `DNS` or nothing is no time.
+* `results.csv` or `weather.csv` beside `rally.txt` still work; where both give a pass, `rally.txt` wins and the
+  report says so.
 
 ## The stage map
 

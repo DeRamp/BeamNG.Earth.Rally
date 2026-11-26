@@ -57,6 +57,23 @@ A running order line that is a stage is never read as a date ("Mayfield 2"); a m
 form. Files the same way, with or without their extension; a map named wrongly when
 the folder has one map uses that map.
 
+**Headings and lists:** `Rules:` is a heading (the rules under it are settings as anywhere). `Places:` is a list of
+`Name: position` lines (or `Name  position`, or a name alone), each with its own `At:` or `Area:` under it if
+wanted; `Place:` + `At:` blocks work too.
+
+**Stage blocks** (rally.txt; stage.txt has one, for its own stage, from its first `Weather` or `Results` line): a
+`Stage: <name>` line starts one, and it runs until a line with one of the rally's own settings (`Running order:`,
+`Town:`...). In it: `Length` (`ss_km` of every pass that has none), a pass line (`SS3:`, or `Pass 2:` / `Run 2:`,
+its stage's second run; `SS3: Cancelled` on one line too), and under a pass `Weather`, `Results` and `Cancelled`.
+Weather or Results before any pass line is the stage's only pass; Weather there goes on every pass. `Weather:` is
+the sky, then comma parts (`90% cloud`, `wind 4 m/s from 250`, `gusts 9`, `12 C`, `rain 0.8`, `snow 0.6`, `fog`,
+`thunder`, `visibility 400 m`, `night`, `code 61`), through the same builder as weather.csv. `Results:` is a table
+to the next block line: its first row the column names (results.csv's), else Car, Driver, Class, Championship,
+Time and said; cells split by tabs (one each when the row has the header's number, as Excel pastes, else runs of
+them), else two spaces or more, else `,` / `;`, else single spaces when that gives the header's number. A block's
+results and weather override results.csv's and weather.csv's for the same pass, said; its `Cancelled` cancels the
+pass in the results.
+
 **rally.txt**: `Rally` (else the map's name), `Map` (else the folder's only map; none or several: refused), `Dates`,
 `Town` (`event.hq.town`), `Time zone` (`event.timezone`), `ID`, `Cover` / `Logo` / `Photo`, `Results` (else
 `results.csv`), `Weather` (else `weather.csv`), the rules (below), `Early is free at` (`time_rules.

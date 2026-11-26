@@ -36,7 +36,7 @@ local RULE_KEYS = {
   startIntervalMin = { 'start interval', 'interval', 'start gap', 'starting interval' },
 }
 local function with(t)
-  local out = {}
+  local out = { rulesHead = { 'rules', 'penalties' } }      -- ("Rules:" over them: a heading, nothing more)
   for k, v in pairs(RULE_KEYS) do out[k] = v end
   for k, v in pairs(t) do out[k] = v end
   return keys(out)
@@ -56,6 +56,7 @@ M.RALLY_KEYS = with({
   results = { 'results', 'result', 'results file' },
   weather = { 'weather', 'weather file' },
   place = { 'place', 'location' },
+  placesList = { 'places', 'locations', 'service parks' },
   at = { 'at', 'position', 'pos', 'gps', 'coords', 'coordinates', 'lat lon', 'lat long', 'latlng' },
   area = { 'area', 'service area', 'bounds', 'bounding box', 'box', 'polygon' },
   order = { 'running order', 'order', 'itinerary', 'schedule', 'route', 'stage order', 'run order', 'stages' },
@@ -81,7 +82,7 @@ M.STAGE_KEYS = with({
   ff = { 'finish', 'flying finish', 'ff', 'end' },
   stop = { 'stop', 'stop control', 'stop line' },
 })
-local LISTS = { order = true, rounds = true }
+local LISTS = { order = true, rounds = true, placesList = true }
 
 ------------------------------------------------------------------------------------------ problems
 
@@ -204,7 +205,7 @@ end
 local function settings(text, file, keyset, probs)
   local out, lists, places = {}, {}, {}
   local inList, place = nil, nil
-  for _, ln in ipairs(R.lines(text)) do
+  for _, ln in ipairs(type(text) == 'table' and text or R.lines(text)) do
     if ln.text ~= '' then
       local k, v, written = nil, nil, nil
       -- (inside a list, only a "Key:" with a colon ends it: a stage may be called "Map Hill")
@@ -224,6 +225,23 @@ local function settings(text, file, keyset, probs)
             k, v, written = k2, v2, w2
           end
         end
+        -- (under Places, a place's own At or Area line belongs to it)
+        local pk = inList == 'placesList' and R.exactKey(ln.text, keyset)
+        if pk == 'at' or pk == 'area' then
+          local _, pv = R.keyValue(ln.text, keyset)
+          if place and pk == 'at' then place.atText, place.atLn = pv, ln
+          elseif place then place.area, place.areaLn = pv, ln end
+          goto continue
+        end
+        if not k and inList == 'placesList' then
+          -- "Fernvale Park: 60.0102, -10.0451", "Fernvale Park  60.0102, -10.0451", or the name alone
+          local name, pos = ln.text:match('^(.-)%s*[:=]%s*(.+)$')
+          if not (name and R.position(pos)) then name, pos = ln.text:match('^(.-%a[^%d%-]-)%s+([%-%d].*)$') end
+          if not (name and pos and R.position(pos)) then name, pos = ln.text, nil end
+          place = { name = R.trim(name), ln = ln, atText = pos, atLn = pos and ln or nil }
+          places[#places + 1] = place
+          goto continue
+        end
         if not k then
           lists[inList][#lists[inList] + 1] = ln
           goto continue
@@ -231,7 +249,9 @@ local function settings(text, file, keyset, probs)
       else
         k, v, written = R.keyValue(ln.text, keyset)
       end
-      if k and LISTS[k] then
+      if k == 'rulesHead' then
+        inList = nil
+      elseif k and LISTS[k] then
         inList, place = k, nil
         lists[k] = lists[k] or {}
         if v ~= '' then lists[k][#lists[k] + 1] = { n = ln.n, raw = ln.raw, text = v } end
@@ -655,8 +675,11 @@ local function yes(s) local f = R.fold(s) return f == 'yes' or f == 'y' or f == 
 
 -- results.csv as a results file: { stages = { { control, stage, run, km, cancelled, times = {...} }... } }.
 -- passes: the rally's { control -> { stage, run, km } } (its running order, or its map's stages in order).
-local function readResults(text, file, passes, stageNames, probs)
-  local header, rows = R.csv(text)
+local function readResults(text, file, passes, stageNames, probs, opts)
+  -- (opts, a stage block's Results: { header, rows } already split, and fixed, the pass every row is on)
+  opts = opts or {}
+  local header, rows
+  if opts.header then header, rows = opts.header, opts.rows else header, rows = R.csv(text) end
   if not header then
     problem(probs, file, nil, string.format('%s is empty.', baseName(file)), 'Fill it in, or delete it.')
     return nil
@@ -749,7 +772,15 @@ local function readResults(text, file, passes, stageNames, probs)
       or nil, notional = notional or nil }
   end
 
-  if col.time then
+  if opts.fixed then
+    if not col.time then
+      problem(probs, file, { n = header.n, raw = header.raw }, 'These results have no Time column.',
+        'Start the results with a line of column names: Car  Driver  Class  Championship  Time')
+      return nil
+    end
+    local e = entry(opts.fixed)
+    for _, r in ipairs(rows) do addTime(e, r.cells[col.time] or '', r, { n = r.n, raw = r.raw }) end
+  elseif col.time then
     if not (col.ss or col.stage) then
       problem(probs, file, { n = header.n, raw = header.raw }, 'There is no SS or Stage column.',
         'Add a column headed SS (SS1, SS2...) or Stage (the stage\'s name).')
@@ -841,6 +872,7 @@ local WX_COLS = {
 }
 
 -- weather.csv as { control -> weather } (BeamNG.Earth's weather message, as tools/pack_weather.py stores it).
+local weatherFrom
 local function readWeather(text, file, passes, stageNames, probs)
   local header, rows = R.csv(text)
   if not header then return {} end
@@ -879,46 +911,85 @@ local function readWeather(text, file, passes, stageNames, probs)
       end
     end
     if #controls > 0 then
-      local skyText = cell('sky')
-      local code, s = tonumber(cell('wmo')) or tonumber(skyText), SKY_BY[R.fold(skyText)]
-      if not code and not s then
-        local hit = R.closest(skyText, SKY_NAMES)
-        s = hit and SKY_BY[R.fold(hit)] or nil
-        problem(probs, file, ln, string.format('"%s" is not a kind of weather the game knows%s.', skyText,
-          hit and ('. Read as "' .. hit .. '"') or ''), hit and 'Fix the spelling to stop this message.'
-          or 'Use one of the words in the notes at the top of weather.csv. This row is left out.')
-      end
-      if code or s then
-        code = code or s[2]
-        local cover = R.number(cell('cloud')) or (s and s[3]) or (code >= 3 and 100 or code * 25)
-        local temp = R.number(cell('temp'))
-        local snowy = (code >= 71 and code <= 77) or code == 85 or code == 86
-        local w = {
-          code = code, cover = { total = cover, low = cover, mid = cover, high = cover },
-          wind = { ms = R.number(cell('wind')) or 2, gustMs = R.number(cell('gust')) or (R.number(cell('wind')) or 2) * 2,
-            fromDeg = R.number(cell('from')) or 0 },
-          slTempC = temp or (snowy and -2 or 12), tempC = temp or (snowy and -2 or 12),
-          rainMmH = R.number(cell('rain')) or (s and s.rain) or 0,
-          snowCmH = R.number(cell('snow')) or (s and s.snow) or 0,
-          fog = (col.fog and cell('fog') ~= '') and yes(cell('fog')) or (s and s.fog) or false,
-          thunder = (col.thunder and cell('thunder') ~= '') and yes(cell('thunder')) or (s and s.thunder) or code >= 95,
-          visM = R.number(cell('vis')),
-        }
-        if w.fog and not w.visM then w.visM = 400 end
-        -- (the real weather's own: cloud layers, daylight, cloud base, dew point, height, pressure)
-        local low, mid, high = R.number(cell('low')), R.number(cell('mid')), R.number(cell('high'))
-        if low then w.cover.low = low end
-        if mid then w.cover.mid = mid end
-        if high then w.cover.high = high end
-        if R.number(cell('slTemp')) then w.slTempC = R.number(cell('slTemp')) end
-        if cell('isDay') ~= '' then w.isDay = yes(cell('isDay')) end
-        w.dewC, w.baseM, w.baseAglM = R.number(cell('dew')), R.number(cell('baseM')), R.number(cell('baseAglM'))
-        w.elevM, w.pressureHpa = R.number(cell('elevM')), R.number(cell('pressure'))
-        for _, c in ipairs(controls) do out[c] = w end
-      end
+      local w, note = weatherFrom(cell, function(k) return col[k] ~= nil end)
+      if note then problem(probs, file, ln, note.what, note.fix) end
+      if w then for _, c in ipairs(controls) do out[c] = w end end
     end
   end
   return out
+end
+
+-- One weather (BeamNG.Earth's weather message) from its fields as text: cell(k) gives '' for one not written, given(k)
+-- whether the field is there at all. Returns it, or nil; and a note when the sky was a slip or is not known.
+function weatherFrom(cell, given)
+  local note = nil
+  local skyText = cell('sky')
+  local code, s = tonumber(cell('wmo')) or tonumber(skyText), SKY_BY[R.fold(skyText)]
+  if not code and not s then
+    local hit = R.closest(skyText, SKY_NAMES)
+    s = hit and SKY_BY[R.fold(hit)] or nil
+    note = { what = string.format('"%s" is not a kind of weather the game knows%s.', skyText,
+      hit and ('. Read as "' .. hit .. '"') or ''), fix = hit and 'Fix the spelling to stop this message.'
+      or 'Use clear, cloudy, overcast, fog, drizzle, rain, heavy rain, snow or thunder. This weather is left out.' }
+  end
+  if not (code or s) then return nil, note end
+  code = code or s[2]
+  local cover = R.number(cell('cloud')) or (s and s[3]) or (code >= 3 and 100 or code * 25)
+  local temp = R.number(cell('temp'))
+  local snowy = (code >= 71 and code <= 77) or code == 85 or code == 86
+  local w = {
+    code = code, cover = { total = cover, low = cover, mid = cover, high = cover },
+    wind = { ms = R.number(cell('wind')) or 2, gustMs = R.number(cell('gust')) or (R.number(cell('wind')) or 2) * 2,
+      fromDeg = R.number(cell('from')) or 0 },
+    slTempC = temp or (snowy and -2 or 12), tempC = temp or (snowy and -2 or 12),
+    rainMmH = R.number(cell('rain')) or (s and s.rain) or 0,
+    snowCmH = R.number(cell('snow')) or (s and s.snow) or 0,
+    fog = (given('fog') and cell('fog') ~= '') and yes(cell('fog')) or (s and s.fog) or false,
+    thunder = (given('thunder') and cell('thunder') ~= '') and yes(cell('thunder')) or (s and s.thunder) or code >= 95,
+    visM = R.number(cell('vis')),
+  }
+  if w.fog and not w.visM then w.visM = 400 end
+  -- (the real weather's own: cloud layers, daylight, cloud base, dew point, height, pressure)
+  local low, mid, high = R.number(cell('low')), R.number(cell('mid')), R.number(cell('high'))
+  if low then w.cover.low = low end
+  if mid then w.cover.mid = mid end
+  if high then w.cover.high = high end
+  if R.number(cell('slTemp')) then w.slTempC = R.number(cell('slTemp')) end
+  if cell('isDay') ~= '' then w.isDay = yes(cell('isDay')) end
+  w.dewC, w.baseM, w.baseAglM = R.number(cell('dew')), R.number(cell('baseM')), R.number(cell('baseAglM'))
+  w.elevM, w.pressureHpa = R.number(cell('elevM')), R.number(cell('pressure'))
+  return w, note
+end
+
+-- A Weather line in a stage block, in words: "light rain, 95% cloud, wind 6 m/s from 240, gusts 12, 11 C, rain
+-- 0.8 mm/h, fog, visibility 400 m, night". Only the sky is needed. Returns the weather, and the parts not read.
+local function weatherLine(text)
+  local f, unread = {}, {}
+  for part in (text .. ','):gmatch('([^,;]*)[,;]') do
+    local t = R.trim(part)
+    local low = t:lower()
+    if t == '' then
+    elseif low:match('^code%s*%d+$') or low:match('^wmo%s*%d+$') then f.wmo = low:match('(%d+)')
+    elseif low:match('%%%s*cloud') or low:match('^cloud') then f.cloud = low:match('(%d+[%.]?%d*)')
+    elseif low:match('^gusts?') then f.gust = low:match('(%d+[%.]?%d*)')
+    elseif low:match('^wind') or low:match('m/s') then
+      f.wind = low:match('(%d+[%.]?%d*)%s*m/s') or low:match('^wind%s*(%d+[%.]?%d*)')
+      f.from = low:match('from%s*(%d+)')
+      local g = low:match('gusts?%s*(%d+[%.]?%d*)')
+      if g then f.gust = g end
+    elseif low:match('^%-?%d+[%.]?%d*%s*[\194\176]*%s*c$') then f.temp = low:match('(%-?%d+[%.]?%d*)')
+    elseif low:match('^rain%s*%d') then f.rain = low:match('(%d+[%.]?%d*)')
+    elseif low:match('^snow%s*%d') then f.snow = low:match('(%d+[%.]?%d*)')
+    elseif low:match('^vis') then f.vis = low:match('(%d+[%.]?%d*)')
+    elseif low == 'night' then f.isDay = 'no'
+    elseif low == 'day' or low == 'daylight' then f.isDay = 'yes'
+    elseif low == 'thunder' and f.sky then f.thunder = 'yes'
+    elseif (low == 'fog' or low == 'foggy') and f.sky then f.fog = 'yes'
+    elseif not f.sky then f.sky = t
+    else unread[#unread + 1] = t end
+  end
+  local w, note = weatherFrom(function(k) return f[k] or '' end, function(k) return f[k] ~= nil end)
+  return w, note, unread
 end
 
 -- line.csv as [[lat, lon, alt?]...]
@@ -949,6 +1020,217 @@ local function readLine(text, file, probs)
   return pts
 end
 
+------------------------------------------------------------------------------------------ stage blocks
+
+-- A rally.txt holds a block per stage after its settings:
+--   Stage: Meaford Mills
+--       Length: 10.46 km
+--       SS1:
+--           Weather: overcast, 90% cloud, wind 4 m/s
+--           Results:
+--               Car   Driver      Class   Championship   Time
+--               1     A. Vance    L4WD    National       6:39.4
+--       SS3:
+--           Cancelled
+-- The indents are for reading only: a "Stage:" line starts a block, an "SS3:" line a pass in it, a "Results:" line
+-- a table that runs to the next such line. A block ends at a setting of the rally's own ("Running order:", "Rules:").
+M.BLOCK_KEYS = keys({
+  length = { 'length', 'distance', 'km', 'stage length' },
+  weather = { 'weather', 'conditions' },
+  results = { 'results', 'result', 'times' },
+  cancelled = { 'cancelled', 'canceled' },
+})
+local STAGE_HEADS = { stage = true, specialstage = true }
+
+-- (the lines of a .txt as its own settings and its stage blocks: { { name, ln, lines }... }. implicit: the name of a
+-- stage.txt's own stage, whose Weather and Results lines start its one block)
+local function partition(lines, keyset, implicit)
+  local top, blocks, cur = {}, {}, nil
+  for _, ln in ipairs(lines) do
+    local t = ln.text
+    local head, value = t:match('^([^:=]-)%s*[:=]%s*(.*)$')
+    local fhead = head and R.fold(head) or ''
+    if not implicit and head and STAGE_HEADS[fhead] and value ~= '' then
+      cur = { name = R.unquote(value), ln = ln, lines = {} }
+      blocks[#blocks + 1] = cur
+    elseif implicit and not cur and head and (fhead == 'weather' or fhead == 'conditions' or
+      ((fhead == 'results' or fhead == 'times') and not value:lower():match('%.%a%a%a?$'))) then
+      cur = { name = implicit, ln = ln, lines = { ln } }
+      blocks[#blocks + 1] = cur
+    elseif cur then
+      local top0 = t ~= '' and R.exactKey(t, keyset)
+      local bk = t ~= '' and R.exactKey(t, M.BLOCK_KEYS)
+      -- (a file named on a Results or Weather line is the rally's own setting, not this block's)
+      local file = bk and value and value:lower():match('%.csv$')
+      if top0 and (not bk or file) then cur = nil top[#top + 1] = ln
+      else cur.lines[#cur.lines + 1] = ln end
+    else
+      top[#top + 1] = ln
+    end
+  end
+  return top, blocks
+end
+
+-- (a table row's cells: tabs (one each when it fits the header, as Excel pastes it, else any run of them), else two
+-- spaces or more, else commas or semicolons, else single spaces when that gives the header's number of cells)
+local function cellsOf(text, want)
+  local function split(t, pat)
+    local out = {}
+    for c in (t .. pat):gmatch('(.-)' .. pat) do out[#out + 1] = R.trim(c) end
+    return out
+  end
+  if text:find('\t') then
+    local one = split(text, '\t')
+    if want and #one == want then return one end
+    return split((text:gsub('\t+', '\t')), '\t')
+  end
+  if text:find('%S%s%s+%S') then return split((text:gsub('%s%s+', '\t')), '\t') end
+  if text:find('[,;]') then return split((text:gsub(';', ',')), ',') end
+  local words = split((text:gsub('%s+', '\t')), '\t')
+  if not want or #words == want then return words end
+  return nil
+end
+local DEFAULT_HEADER = { 'Car', 'Driver', 'Class', 'Championship', 'Time' }
+
+-- The stage blocks read: their passes' results (results-file entries), weather (control -> weather), lengths
+-- (stage -> km) and cancelled passes.
+local function readBlocks(blocks, file, passes, stageNames, probs)
+  local out = { results = {}, weather = {}, km = {}, cancelled = {} }
+  local function passesOf(stage)
+    local list = {}
+    for c, ps in pairs(passes) do if ps.stage == stage then list[#list + 1] = c end end
+    table.sort(list, function(a, b) return passes[a].run < passes[b].run end)
+    return list
+  end
+  for _, b in ipairs(blocks) do
+    -- the stage
+    local stage = nil
+    for _, n in ipairs(stageNames) do if R.fold(n) == R.fold(b.name) then stage = n end end
+    if not stage then
+      local hit = R.closest(b.name, stageNames)
+      if hit then
+        problem(probs, file, b.ln, string.format('There is no stage called "%s" in the map. Read as "%s".', b.name, hit),
+          'If that\'s right, fix the spelling to stop this message.')
+        stage = hit
+      else
+        problem(probs, file, b.ln, string.format('There is no stage called "%s" in the map.', b.name),
+          'Name the block as its line is named in the map. Until then this block is left out.')
+      end
+    end
+    if stage then
+      local mine = passesOf(stage)
+      local pass, tableOf, tables = nil, nil, {}
+      local function onlyPass(ln, what)
+        if pass then return pass end
+        if #mine == 1 then return mine[1] end
+        problem(probs, file, ln, string.format('%s runs %d times: which pass is this %s for?', stage, #mine, what),
+          string.format('Put the pass first, on a line of its own: %s:', mine[1] or 'SS1'))
+        return nil
+      end
+      for _, ln in ipairs(b.lines) do
+        local t = ln.text
+        if t ~= '' then
+          local n, rest = t:match('^[Ss][Ss]%s*(%d+)%s*[:=%.%-]?%s*(.-)$')
+          local byRun = nil
+          if not n then
+            byRun, rest = t:match('^[PpRr][au][sn]s?%s*(%d+)%s*[:=%.%-]?%s*(.-)$')    -- (Pass 2: / Run 2:)
+          end
+          local bk = (not tableOf or R.exactKey(t, M.BLOCK_KEYS) or R.fold(t) == 'cancelled') and
+            R.keyValue(t, M.BLOCK_KEYS)
+          local _, bv = nil, nil
+          if bk then _, bv = R.keyValue(t, M.BLOCK_KEYS) end
+          if n or byRun then
+            tableOf = nil
+            local c = n and ('SS' .. tonumber(n)) or nil
+            if byRun then
+              c = mine[tonumber(byRun)]
+              if not c then problem(probs, file, ln, string.format('%s has no run %s in the running order.', stage,
+                byRun), 'This pass is left out.') end
+            elseif not passes[c] then
+              problem(probs, file, ln, string.format('There is no %s in the running order.', c), 'This pass is left out.')
+              c = nil
+            elseif passes[c].stage ~= stage then
+              problem(probs, file, ln, string.format('%s is %s in the running order, not %s.', c, passes[c].stage, stage),
+                'Put it under its own stage. Until then it is left out.')
+              c = nil
+            end
+            pass = c or false
+            if pass and R.fold(rest or '') == 'cancelled' then out.cancelled[pass] = true
+            elseif rest and rest ~= '' then
+              problem(probs, file, ln, string.format('"%s" after the pass is not used.', rest),
+                'Put Weather, Results or Cancelled on lines of their own under it.', 'unused')
+            end
+          elseif bk == 'length' then
+            tableOf = nil
+            local km = R.number((bv or ''):gsub('%s*[Kk][Mm]%s*$', ''))
+            if km then out.km[stage] = km
+            else problem(probs, file, ln, string.format('"%s" is not a length.', bv or ''), 'Write it as: 10.46 km') end
+          elseif bk == 'weather' then
+            tableOf = nil
+            local w, note, unread = weatherLine(bv or '')
+            if note then problem(probs, file, ln, note.what, note.fix) end
+            if #unread > 0 then problem(probs, file, ln, string.format('"%s" not understood: left out.',
+              table.concat(unread, '", "')), 'Weather is the sky, then any of: 90% cloud, wind 4 m/s from 250, '
+              .. 'gusts 9, 12 C, rain 0.8, snow 0.6, fog, visibility 400 m, night.') end
+            if w and pass ~= false then
+              local targets = pass and { pass } or mine
+              for _, c in ipairs(targets) do out.weather[c] = w end
+            end
+          elseif bk == 'results' then
+            local c = pass ~= false and onlyPass(ln, 'Results') or nil
+            tableOf = { pass = c or false, rows = {}, ln = ln }
+            tables[#tables + 1] = tableOf
+            if bv and bv ~= '' then tableOf.rows[1] = { n = ln.n, raw = ln.raw, text = bv } end
+          elseif bk == 'cancelled' then
+            tableOf = nil
+            local c = pass ~= false and onlyPass(ln, 'Cancelled') or nil
+            if c then out.cancelled[c] = true end
+          elseif tableOf then
+            tableOf.rows[#tableOf.rows + 1] = { n = ln.n, raw = ln.raw, text = ln.tabbed or t }
+          else
+            problem(probs, file, ln, 'Not something a stage block holds: skipped.',
+              'A stage block holds Length, its passes (SS1:), and under each Weather, Results or Cancelled.')
+          end
+        end
+      end
+      -- the results tables
+      for _, tb in ipairs(tables) do
+        if tb.pass and #tb.rows > 0 then
+          local first = tb.rows[1]
+          local hcells = cellsOf(first.text)
+          local header = { cells = hcells or {}, n = first.n, raw = first.raw }
+          local data = {}
+          local named = false
+          for _, aliases in pairs({ RESULT_COLS.time, RESULT_COLS.driver, RESULT_COLS.car }) do
+            if R.column(header, aliases) then named = true end
+          end
+          local from = 2
+          if not named then
+            header = { cells = DEFAULT_HEADER, n = first.n, raw = first.raw }
+            from = 1
+            problem(probs, file, tb.ln, 'These results have no line of column names: read as Car, Driver, Class, '
+              .. 'Championship, Time.', 'Start them with a line like: Car  Driver  Class  Championship  Time')
+          end
+          for i = from, #tb.rows do
+            local r = tb.rows[i]
+            local cells = cellsOf(r.text, #header.cells)
+            if cells then data[#data + 1] = { cells = cells, n = r.n, raw = r.raw }
+            else
+              problem(probs, file, r, "Can't tell this row's columns apart: left out.",
+                'Put a tab, or two spaces, between the columns.')
+            end
+          end
+          local ps = passes[tb.pass]
+          local res = readResults(nil, file, passes, stageNames, probs, { header = header, rows = data,
+            fixed = { control = tb.pass, stage = ps.stage, run = ps.run, km = ps.km or out.km[ps.stage] } })
+          if res and res.stages[1] then out.results[#out.results + 1] = res.stages[1] end
+        end
+      end
+    end
+  end
+  return out
+end
+
 ------------------------------------------------------------------------------------------ one rally
 
 -- (the map's stage names, and the middle of its lines)
@@ -969,7 +1251,8 @@ local function readRally(ctx, rel, base, probs, virtual)
   local all = ctx.all
   local text = ctx.readText(rel)
   if not text then return nil, "can't read " .. rel end
-  local s, lists, places = settings(text, rel, M.RALLY_KEYS, probs)
+  local top, blocks = partition(R.lines(text), M.RALLY_KEYS)
+  local s, lists, places = settings(top, rel, M.RALLY_KEYS, probs)
   local spec = {}
   spec.name = s.name and s.name.value ~= '' and s.name.value or nil
   if not spec.name then
@@ -1083,6 +1366,12 @@ local function readRally(ctx, rel, base, probs, virtual)
         'Add "Running order:" with the stages and stops in order.', 'unused')
     end
   end
+  -- the stage blocks: lengths, and each pass's weather, results and cancelling
+  local bl = readBlocks(blocks, rel, passes, stageNames, probs)
+  for _, row in ipairs(ev.itinerary) do
+    if row.type == 'SS' and not row.ss_km and bl.km[row.stage] then row.ss_km = bl.km[row.stage] end
+  end
+  for _, ps in pairs(passes) do if not ps.km and bl.km[ps.stage] then ps.km = bl.km[ps.stage] end end
   -- weather
   local wxRel = nil
   if s.weather and s.weather.value ~= '' then
@@ -1108,6 +1397,21 @@ local function readRally(ctx, rel, base, probs, virtual)
         'Add "Running order:" to rally.txt.', 'unused')
     end
   end
+  -- (a stage block's weather over weather.csv's, said when both give a pass)
+  for _, row in ipairs(ev.itinerary) do
+    local w = row.type == 'SS' and bl.weather[row.control]
+    if w then
+      if row.weather then
+        problem(probs, rel, nil, string.format('%s has weather in both rally.txt and %s: rally.txt\'s is used.',
+          row.control, baseName(wxRel or 'weather.csv')), 'Keep it in one place to stop this message.')
+      end
+      row.weather = w
+    end
+  end
+  if next(bl.weather) and #ev.itinerary == 0 then
+    problem(probs, rel, nil, 'Weather needs a running order: not used.', 'Add "Running order:" with the stages in order.',
+      'unused')
+  end
   if next(ev.event) == nil then ev.event = nil end
   local evPath = rel .. '#event'
   virtual[evPath] = ev
@@ -1125,12 +1429,37 @@ local function readRally(ctx, rel, base, probs, virtual)
     resRel = findFile(all, base, 'results.csv', { csv = true })
     if resRel and baseName(resRel):lower() ~= 'results.csv' then resRel = nil end
   end
-  if resRel then
-    local res = readResults(ctx.readText(resRel) or '', resRel, passes, stageNames, probs)
-    if res then
-      virtual[resRel .. '#results'] = res
-      spec.results = resRel .. '#results'
+  local res = nil
+  if resRel then res = readResults(ctx.readText(resRel) or '', resRel, passes, stageNames, probs) end
+  -- (the stage blocks' results over results.csv's for the same pass, said; their cancelled passes)
+  if #bl.results > 0 or next(bl.cancelled) then
+    res = res or { stages = {} }
+    for _, e in ipairs(bl.results) do
+      local at = nil
+      for i, old in ipairs(res.stages) do if old.control == e.control then at = i end end
+      if at then
+        problem(probs, rel, nil, string.format('%s has results in both rally.txt and %s: rally.txt\'s are used.',
+          e.control, baseName(resRel or 'results.csv')), 'Keep them in one place to stop this message.')
+        res.stages[at] = e
+      else
+        res.stages[#res.stages + 1] = e
+      end
     end
+    for c in pairs(bl.cancelled) do
+      local hit = nil
+      for _, e in ipairs(res.stages) do if e.control == c then hit = e end end
+      if hit then hit.cancelled = true
+      else
+        local ps = passes[c]
+        res.stages[#res.stages + 1] = { control = c, stage = ps.stage, run = ps.run, km = ps.km, cancelled = true,
+          times = {} }
+      end
+    end
+  end
+  if res then
+    local path = (resRel or rel) .. '#results'
+    virtual[path] = res
+    spec.results = path
   end
   return spec
 end
@@ -1140,7 +1469,8 @@ end
 local function readStage(ctx, rel, probs, virtual)
   local all = ctx.all
   local text = ctx.readText(rel)
-  local s = settings(text or '', rel, M.STAGE_KEYS, probs)
+  local top, blocks = partition(R.lines(text or ''), M.STAGE_KEYS, '(this stage)')
+  local s = settings(top, rel, M.STAGE_KEYS, probs)
   local spec = { name = s.name and s.name.value ~= '' and s.name.value or nil, id = s.id and s.id.value or nil }
   if s.line and s.line.value ~= '' then
     local f, note = findFile(all, '', s.line.value, nil)
@@ -1225,19 +1555,38 @@ local function readStage(ctx, rel, probs, virtual)
     resRel = findFile(all, '', 'results.csv', { csv = true })
     if resRel and baseName(resRel):lower() ~= 'results.csv' then resRel = nil end
   end
+  local stageName = spec.name or 'Stage'
+  if spec.map then
+    local parsed = ctx.parseMap(spec.map)
+    if parsed and parsed.lines[1] then stageName = parsed.lines[1].name end
+  end
+  local one = { SS1 = { stage = stageName, run = 1 } }
+  local res = nil
   if resRel then
-    local stageName = spec.name or 'Stage'
-    if spec.map then
-      local parsed = ctx.parseMap(spec.map)
-      if parsed and parsed.lines[1] then stageName = parsed.lines[1].name end
+    res = readResults(ctx.readText(resRel) or '', resRel, one, { stageName }, probs)
+    if res then for _, st in ipairs(res.stages) do st.stage, st.control = stageName, 'SS1' end end
+  end
+  -- (its own Weather and Results lines: read as a stage block of its one pass)
+  for _, b in ipairs(blocks) do b.name = stageName end
+  local bl = readBlocks(blocks, rel, one, { stageName }, probs)
+  if bl.results[1] or bl.cancelled.SS1 then
+    if res and bl.results[1] then
+      problem(probs, rel, nil, 'Results in both stage.txt and ' .. baseName(resRel) .. ': stage.txt\'s are used.',
+        'Keep them in one place to stop this message.')
     end
-    local res = readResults(ctx.readText(resRel) or '', resRel, { SS1 = { stage = stageName, run = 1 } },
-      { stageName }, probs)
-    if res then
-      for _, st in ipairs(res.stages) do st.stage, st.control = stageName, 'SS1' end
-      virtual[resRel .. '#results'] = res
-      spec.results = resRel .. '#results'
-    end
+    res = { stages = { bl.results[1] or { control = 'SS1', stage = stageName, run = 1, times = {} } } }
+    if bl.cancelled.SS1 then res.stages[1].cancelled = true end
+  end
+  if res then
+    local path = (resRel or rel) .. '#results'
+    virtual[path] = res
+    spec.results = path
+  end
+  if bl.weather.SS1 then
+    local path = rel .. '#event'
+    virtual[path] = { itinerary = { { type = 'SS', control = 'SS1', stage = stageName, run = 1,
+      ss_km = bl.km[stageName], weather = bl.weather.SS1 } } }
+    spec.event = path
   end
   return spec
 end

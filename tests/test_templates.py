@@ -19,7 +19,7 @@ def main():
     r = subprocess.run([sys.executable, str(ROOT / 'tools' / 'make_templates.py'), '--check'], capture_output=True)
     check(r.returncode == 0, 'templates zip matches the folder (else run tools/make_templates.py)')
     files = [p for p in (ROOT / 'templates' / 'Earth Rally templates').rglob('*') if p.is_file()]
-    check(len(files) >= 7, 'the template files are there')
+    check(len(files) >= 5, 'the template files are there')
     for p in files:
         b = p.read_bytes()
         try:

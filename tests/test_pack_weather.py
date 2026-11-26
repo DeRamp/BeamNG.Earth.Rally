@@ -148,14 +148,15 @@ def main():
         (pack / 'map.kml').write_text(KML, encoding='utf-8')
         (pack / 'rally.txt').write_text(
             'Rally: Hand Made Rally\nDates: 10-11 Jan 2026\nTime zone: Europe/Berlin\nRunning order:\n'
-            '  Day 1\n  09:35  SS1  Alpha\n  14:05  Beta\n  Day 2\n  10:00  Alpha\n  Beta\n', encoding='utf-8')
+            '  Day 1\n  09:35  SS1  Alpha\n  14:05  Beta\n  Day 2\n  10:00  Alpha\n  Beta\n'
+            'Stage: Beta\n  SS4:\n    Weather: fog\n', encoding='utf-8')
         (pack / 'weather.csv').write_text('# my note\nSS,Sky\nSS3,clear\n', encoding='utf-8')
         calls.clear()
         said = []
         counts = pw.run(str(pack), fetcher=pw.Fetcher(get_json=fake, pause_s=0), today=dt.date(2026, 11, 19),
                         say=said.append)
         text = (pack / 'weather.csv').read_text(encoding='utf-8')
-        check(counts == {'Hand Made Rally': 2}, 'text pack: SS1 and SS2 fetched, SS3 kept, SS4 has no time')
+        check(counts == {'Hand Made Rally': 2}, 'text pack: SS1 and SS2 fetched, SS3 kept, SS4 in rally.txt')
         check(text.startswith('# my note\n') and 'Open-Meteo' in text, 'its notes kept, the source credited')
         rows = [ln.split(',') for ln in text.splitlines() if ln and not ln.startswith('#')]
         head = rows[0]
@@ -163,7 +164,7 @@ def main():
         check(set(by) == {'SS1', 'SS2', 'SS3'} and by['SS3']['Sky'] == 'clear', 'one row per stage, the kept one too')
         check(by['SS1']['Temp C'] == '19' and by['SS2']['Temp C'] == '24' and by['SS1']['Sky'] == 'overcast',
               'the hour of each start')
-        check(any('SS4' in s and 'no date or first car' in s for s in said), 'a stage with no time: said')
+        check('SS4' not in by and not any('SS4' in s for s in said), "SS4's weather written in rally.txt: left to it")
         # read back as the game does
         import lupa.luajit21 as lj
         lua = lj.LuaRuntime()

@@ -2,58 +2,60 @@
 #   EARTH RALLY  -  RALLY FILE
 #  ==========================================================================================
 #
+#   Everything about the rally is in this one file; only the map is separate.
+#
 #   1. Rename this folder to your rally's name.
 #   2. Put your stage map in it (.kml, .kmz or .gpx: one line per stage, drawn in the
-#      driving direction).
+#      driving direction, named after the stage).
 #   3. Fill in this file. Only "Rally" and "Map" are needed: delete anything you don't use.
 #   4. Put the folder in Earth Rally's import folder (Rally menu > Add > Open folder).
 #
 #   - Lines starting with # are notes for you. The game skips them.
-#   - Write each setting as  Name: value  ("rally = X" works too; capitals and spaces don't matter).
+#   - Write each setting as  Name: value  (capitals and spaces don't matter).
+#   - The indents are only there to make it easy to read: the game doesn't need them.
 #   - Each time the game reads this folder it writes "import report.txt" here. Open it to see
 #     what the game found, and what to fix.
 #
 #  ------------------------------------------------------------------------------------------
 
 
-Rally: My Forest Rally
-Map: my stages.kml                 # your map's file name, in this folder
-Dates: 7-8 Feb 2031                # or 2031-02-07 to 2031-02-08, or one day
-Town: Fernvale                     # shown under the rally's name
-# ID: my-forest-rally              # optional. Your times are saved under it: don't change it later.
+Rally:      My Forest Rally
+Map:        my stages.kml          # your map's file name, in this folder
+Dates:      7-8 Feb 2031           # or 2031-02-07 to 2031-02-08, or one day
+Town:       Fernvale               # shown under the rally's name
+Time zone:  Europe/London          # the schedule's clock. Left out: worked out from where the rally is.
+# ID:       my-forest-rally        # optional. Your times are saved under it: don't change it later.
+
+# Pictures, in this folder (.png or .jpg). Take the # off to use one.
+# Cover:    cover.jpg              # the rally's card in the menu
+# Logo:     logo.png
+# Photo:    photo.jpg              # the banner on the rally's page
 
 
-# --- Pictures (optional, in this folder: .png or .jpg; take the # off to use one) ----------
-
-# Cover: cover.jpg                 # the rally's card in the menu
-# Logo: logo.png
-# Photo: photo.jpg                 # the banner on the rally's page
-
-
-# --- Other files (optional) ----------------------------------------------------------------
-#   Left out, the game looks for these names in this folder by itself.
-
-# Results: results.csv             # the real crews' times: leaderboards, and your place
-# Weather: weather.csv             # each stage's weather
+Rules:
+	False start:       10, 60, 180 s           # 1st, 2nd, 3rd offence
+	Late:              10 s per minute         # late at a time control
+	Early:             60 s per minute         # early at a time control
+	Early is free at:  MTC in, Regroup in
+	Max lateness:      30 min
+	Start interval:    2 min
 
 
 # --- Places --------------------------------------------------------------------------------
 #   Where the start, services and overnight parks are. Paste the position from Google Maps
-#   (right-click the spot: the numbers at the top of the menu), or type it: 60.0102, -10.0451
+#   (right-click the spot: the numbers at the top of the menu), or type it.
 
-Place: Fernvale Park
-  At: 60.0102, -10.0451
-
-Place: Ridge Hotel
-  At: 60.0420, -10.1133
+Places:
+	Fernvale Park:     60.0102, -10.0451
+	Ridge Hotel:       60.0420, -10.1133
 
 
 # --- Running order -------------------------------------------------------------------------
 #   One line per stage or stop, top to bottom.
 #
-#   A stage:   its name, as the line is named in your map. Listed again, it is its second run.
-#              You can put the SS number in front ("SS3  Kilo Hill"); left out, it is counted.
-#              After the name you can add its length ("10.46 km") and "power stage".
+#   A stage:   its name, as the line is named in your map. Listed again, it is its next run.
+#              The SS number in front is optional: left out, it is counted.
+#              After the name you can add "power stage".
 #   A stop:    Start, Service, Regroup, Refuel or Finish, with "at" and a place from above.
 #   A new day: "Day 2" (and its date, if you like). The night before is an overnight.
 #
@@ -65,61 +67,81 @@ Place: Ridge Hotel
 #     - timed stops come in pairs: "Service in" / "Service out", "Regroup in" / "Regroup out",
 #       "MTC in" / "MTC out", "Parc ferme in" / "Parc ferme out"
 #     - a control only some classes go through: "only Regional"
-#   There's an example at the end of this file.
 
 Running order:
-  Day 1
-  Start at Fernvale Park
-  SS1  Meaford Mills      10.46 km
-  SS2  Kilo Hill           8.20 km
-  Service at Fernvale Park
-  SS3  Meaford Mills
-  SS4  Kilo Hill
-  Day 2
-  Start at Ridge Hotel
-  SS5  Long Gap           14.02 km
-  Service at Fernvale Park
-  SS6  Long Gap           power stage
-  Finish at Fernvale Park
+	Day 1   7 Feb 2031
+	08:00   TC0    Start at Fernvale Park
+	08:20   TC1    ATC                              20 min
+	08:23   SS1    Meaford Mills                    late 10 min
+	        TC2    ATC                              25 min
+	        SS2    Kilo Hill                        late 10 min
+	        TC2A   Service in at Fernvale Park      30 min
+	09:40   TC2B   Service out at Fernvale Park     30 min
+	        TC3    ATC                              22 min
+	        SS3    Meaford Mills                    late 10 min
+	        TC4    ATC                              25 min
+	        SS4    Kilo Hill                        late 10 min
+	        TC4A   MTC in at Ridge Hotel            40 min
+	Day 2   8 Feb 2031
+	08:00   TC4B   MTC out at Ridge Hotel
+	        TC5    ATC                              30 min
+	        SS5    Long Gap                         late 12 min
+	        TC5A   Service in at Fernvale Park      35 min
+	        TC5B   Service out at Fernvale Park     30 min
+	        TC6    ATC                              35 min
+	        SS6    Long Gap                         late 12 min    power stage
+	        TC6A   Finish at Fernvale Park          40 min
 
 
-# --- Rules (optional; shown on the rally's Rules tab) --------------------------------------
-
-False start: 10, 60, 180 s         # 1st, 2nd, 3rd offence
-Late: 10 s per minute              # late at a time control
-Early: 60 s per minute             # early at a time control
-Early is free at: MTC in, Regroup in
-Max lateness: 30 min
-Start interval: 2 min
-Time zone: Europe/London           # the schedule's clock. Left out: worked out from where the rally is.
-
-
-#  ------------------------------------------------------------------------------------------
-#   A timed running order: the same rally with its schedule. To use it, delete the running
-#   order above and take the # off the front of these lines.
-#  ------------------------------------------------------------------------------------------
+# --- Stages --------------------------------------------------------------------------------
+#   One block per stage, named as in the map. Everything in a block is optional.
 #
-# Running order:
-#   Day 1  7 Feb 2031
-#   08:00  TC0   Start at Fernvale Park
-#   08:20  TC1   ATC                              20 min
-#   08:23  SS1   Meaford Mills       10.46 km     late 10 min
-#          TC2   ATC                              25 min
-#          SS2   Kilo Hill            8.20 km     late 10 min
-#          TC2A  Service in at Fernvale Park      30 min
-#   09:40  TC2B  Service out at Fernvale Park     30 min
-#          TC3   ATC                              22 min
-#          SS3   Meaford Mills                    late 10 min
-#          TC4   ATC                              25 min
-#          SS4   Kilo Hill                        late 10 min
-#          TC4A  MTC in at Ridge Hotel            40 min
-#   Day 2  8 Feb 2031
-#   08:00  TC4B  MTC out at Ridge Hotel
-#          TC5   ATC                              30 min
-#          SS5   Long Gap            14.02 km     late 12 min
-#          TC5A  Service in at Fernvale Park      35 min
-#          TC5B  Service out at Fernvale Park     30 min
-#          TC5C  Regroup in at Fernvale Park      5 min    only Regional
-#          TC6   ATC                              35 min
-#          SS6   Long Gap                         late 12 min   power stage
-#          TC6A  Finish at Fernvale Park          40 min
+#   Length:    the official length, when the results give one
+#   SS1:       one of the stage's runs, from the running order. Under it:
+#     Weather:   the sky, then any of: 90% cloud, wind 4 m/s from 250, gusts 9, 12 C,
+#                rain 0.8, snow 0.6, fog, visibility 400 m, night
+#                (sky: clear, partly cloudy, cloudy, overcast, fog, drizzle, light rain, rain,
+#                heavy rain, light snow, snow, heavy snow, thunder)
+#     Results:   the real crews' times, a line of column names first. Paste them straight
+#                from Excel, or line them up with tabs or two spaces.
+#                Time: 6:39.4 or 399.4 seconds; N after it for a notional time;
+#                DNF, DNS or empty for no time.
+#     Cancelled: the run was cancelled
+#
+#   Prefer spreadsheets? results.csv and weather.csv in this folder still work instead.
+
+Stage: Meaford Mills
+	Length:  10.46 km
+
+	SS1:
+		Weather:  overcast, 90% cloud, wind 4 m/s from 250, 13.6 C
+		Results:
+			Car	Driver		Class	Championship	Time
+			1	A. Vance	L4WD	National	6:39.4
+			2	B. Okafor	O4WD	National	6:44.1
+			7	C. Lindqvist	L2WD	Regional	7:02.8
+
+	SS3:
+		Cancelled
+
+
+Stage: Kilo Hill
+	Length:  8.20 km
+
+	SS2:
+		Weather:  light rain, wind 6 m/s from 240, 11 C
+		Results:
+			Car  Driver        Class  Championship  Time
+			1    A. Vance      L4WD   National      5:12.0
+			2    B. Okafor     O4WD   National      5:20.3 N
+			7    C. Lindqvist  L2WD   Regional      DNF
+
+
+Stage: Long Gap
+	Length:  14.02 km
+
+	SS5:
+		Weather:  snow, wind 3 m/s, -2.5 C, visibility 3000 m
+
+	SS6:
+		Weather:  fog, 4 C

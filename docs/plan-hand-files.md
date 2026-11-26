@@ -7,6 +7,11 @@ A second way to write rally packs, for people making them by hand: plain text (`
 JSON. It covers everything the JSON packs do (`docs/rally-file.md`). It forgives the mistakes people make, and every
 import writes a report saying what it found and why anything was left out. The JSON packs keep working unchanged.
 
+Owner's decisions (2026-11-26, second round): **all of a rally's stage information in one file**, `rally.txt`,
+the map apart: a block per stage, with results and weather under each pass; seasons stay a `season.txt` beside
+rally folders; results.csv (and weather.csv) still accepted; `tools/pack_weather.py` is the owner's own tool and
+keeps writing weather.csv.
+
 Owner's decisions (2026-11-25/26): plain text and CSV, no JSON; seasons and real results included; everything the
 game supports, schedule and time controls included; the game writes an import report; when a folder has both a
 `.txt` and a `.json` manifest, the text one wins and the report says so; **one** running order, in `rally.txt`, as

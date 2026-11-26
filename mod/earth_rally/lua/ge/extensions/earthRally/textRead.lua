@@ -207,8 +207,10 @@ function M.lines(s)
     n = n + 1
     local t = raw:gsub('\t', '    ')
     local indent = #(t:match('^ *'))
-    t = t:gsub('^%s*#.*$', ''):gsub('^%s*//.*$', ''):gsub('%s+#.*$', ''):gsub('%s+//.*$', '')
-    out[#out + 1] = { n = n, raw = M.trim(raw), text = M.trim(t), indent = indent }
+    local function notes(x) return (x:gsub('^%s*#.*$', ''):gsub('^%s*//.*$', ''):gsub('%s+#.*$', ''):gsub('%s+//.*$', '')) end
+    t = notes(t)
+    -- (tabbed: the line with its tabs kept, for a table pasted from Excel, whose empty cells are two tabs)
+    out[#out + 1] = { n = n, raw = M.trim(raw), text = M.trim(t), indent = indent, tabbed = M.trim(notes(raw)) }
   end
   return out
 end

@@ -12,7 +12,7 @@ fetches weather: it uses what is stored here.
     python tools/pack_weather.py "Rally Files/Warden Test Rally V2" --force     (fetch again rows that have weather)
 
 A hand-made pack (rally.txt or season.txt, docs/making-rally-packs.md) gets a weather.csv beside each rally.txt
-instead, from its running order's times. Its .txt files are read by the mod's own reader (textPack.lua), under
+instead, from its running order's times; a pass whose weather is written in rally.txt is left to it. Its .txt files are read by the mod's own reader (textPack.lua), under
 LuaJIT through lupa (pip install lupa), so the tool and the game cannot read them differently.
 
 A rally still in the future gets nothing (the tool says so). Rows that already have weather are left alone unless
@@ -402,7 +402,8 @@ def text_rallies(root):
           local rows, passes = {}, {}
           for _, r in ipairs(ev.itinerary or {}) do
             if r.type == 'SS' then
-              rows[#rows + 1] = { control = r.control, stage = r.stage, date = r.date, first_car = r.first_car }
+              rows[#rows + 1] = { control = r.control, stage = r.stage, date = r.date, first_car = r.first_car,
+                written = r.weather ~= nil }
               passes[r.control] = { stage = r.stage, run = r.run }
             end
           end
@@ -424,6 +425,8 @@ def text_rallies(root):
           for _, p in ipairs(wprobs) do
             said[#said + 1] = (p.line and ('line ' .. p.line .. ': ') or '') .. tostring(p.what)
           end
+          -- (weather written in rally.txt itself, not weather.csv: left to it)
+          for _, row in ipairs(rows) do row.inRally = row.written and not have[row.control] or nil end
           out[#out + 1] = { name = spec.name or spec.map, map = spec.map, rows = rows, wx = wxRel, have = have,
             notes = notes, problems = said, timezone = ev.event and ev.event.timezone or nil }
         end
@@ -446,7 +449,8 @@ def text_rallies(root):
         rows = []
         for j in range(1, len(r.rows) + 1):
             x = r.rows[j]
-            rows.append({"type": "SS", "control": x.control, "stage": x.stage, "date": x.date, "first_car": x.first_car})
+            rows.append({"type": "SS", "control": x.control, "stage": x.stage, "date": x.date, "first_car": x.first_car,
+                         "in_rally": bool(x.inRally)})
         ev = {"event": {"timezone": r.timezone} if r.timezone else {}, "itinerary": rows}
         have = py(r.have) or {}
         notes = py(r.notes) or []
@@ -503,6 +507,8 @@ def run_text(root, force, fetcher, today, say):
         for row in ev["itinerary"]:
             if not force and row["control"] in old:
                 row["weather"] = {"kept": True}
+            elif row.get("in_rally"):
+                row["weather"] = {"kept": True}      # (written in rally.txt by hand: that one is used, always)
         got, had, none, future = fill_event(ev, stage_starts(map_path), fetcher, today, force, say)
         if future:
             say("  still in the future: no weather to store yet (the game keeps the player's own)")
