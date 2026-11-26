@@ -4,6 +4,11 @@ How to make files Earth Rally can import: a single stage, a whole rally, or a se
 real results, rules and pictures. This guide is for organisers, modders and anyone sharing stages. The full
 format, with every edge case, is in [`rally-file.md`](rally-file.md).
 
+**Start with the templates:** download
+[`Earth Rally templates.zip`](https://github.com/DeRamp/BeamNG.Earth.Rally/raw/main/templates/Earth%20Rally%20templates.zip),
+copy the folder you want, fill it in with Notepad and Excel, and drop it in the import folder. Every file explains
+itself. Read [Hand-made files](#hand-made-files-start-here) below.
+
 Everything goes in the import folder: **Open folder** on the menu's **Drive stage** page, or
 `%LOCALAPPDATA%\BeamNG\BeamNG.drive\current\earthRally\import\`. The mod imports new and changed files when it
 loads and whenever the folder changes. **Re-scan** imports everything again.
@@ -20,28 +25,117 @@ pack.
 ## Contents
 
 1. [What you can make](#what-you-can-make)
-2. [The stage map](#the-stage-map)
-3. [Laying out a pack](#laying-out-a-pack)
-4. [Stage pack: `stage.json`](#stage-pack-stagejson)
-5. [Rally pack: `rally.json`](#rally-pack-rallyjson)
-6. [Season pack: `season.json`](#season-pack-seasonjson)
-7. [The event file: itinerary, service and overnight](#the-event-file-itinerary-service-and-overnight)
-8. [The results file: leaderboards](#the-results-file-leaderboards)
-9. [Rules](#rules)
-10. [Pictures](#pictures)
-11. [Checking and updating a pack](#checking-and-updating-a-pack)
-12. [Sharing](#sharing)
+2. [Hand-made files (start here)](#hand-made-files-start-here)
+3. [The stage map](#the-stage-map)
+4. [JSON packs: laying out a pack](#laying-out-a-pack)
+5. [Stage pack: `stage.json`](#stage-pack-stagejson)
+6. [Rally pack: `rally.json`](#rally-pack-rallyjson)
+7. [Season pack: `season.json`](#season-pack-seasonjson)
+8. [The event file: itinerary, service and overnight](#the-event-file-itinerary-service-and-overnight)
+9. [The results file: leaderboards](#the-results-file-leaderboards)
+10. [Rules](#rules)
+11. [Pictures](#pictures)
+12. [Checking and updating a pack](#checking-and-updating-a-pack)
+13. [Sharing](#sharing)
 
 ## What you can make
 
 | You drop in | You get |
 |---|---|
 | A `.kml`, `.kmz` or `.gpx` map | One rally. Each line in it is a stage, run once each in map order. |
-| A **stage pack**: a folder or `.zip` with `stage.json` | One stage, with its own name, picture and results. |
-| A **rally pack**: a folder or `.zip` with `rally.json` | One rally with an itinerary, real results, rules and pictures. |
-| A **season pack**: a folder or `.zip` with `season.json` | Several rallies in order, with season standings. |
+| A **stage pack**: a folder or `.zip` with `stage.txt` (or `stage.json`) | One stage, with its own name, picture and results. |
+| A **rally pack**: a folder or `.zip` with `rally.txt` (or `rally.json`) | One rally with a running order, real results, rules and pictures. |
+| A **season pack**: a folder or `.zip` with `season.txt` (or `season.json`) | Several rallies in order, with season standings. |
 
-Every pack starts from a stage map, so make that first.
+Every pack starts from a stage map, so make that first. The `.txt` files are for people making packs by hand; the
+`.json` ones are for tools, and keep working as before. When a folder has both, the `.txt` is read.
+
+## Hand-made files (start here)
+
+Plain text and spreadsheets, no JSON. The game takes whatever it can make sense of, and **every import writes an
+`import report.txt`** in the pack's folder (beside a `.zip` or a loose map: `<name> - import report.txt`) saying
+what it found, what it left out and how to fix it, with the file and line. The same report opens in game from the
+**Drive stage** page's **Last import** lines.
+
+| File | What it is |
+|---|---|
+| `rally.txt` | **Everything about the rally in one file:** name, map, dates, town, pictures, rules, places, running order, and a block per stage with each pass's weather and results |
+| `season.txt` | A season: rounds (one folder per rally, each with its `rally.txt`), points, rules |
+| `stage.txt` | One stage: a map (or `line.csv`), its controls, weather and results |
+| `results.csv` | Optional, for people who keep times in a spreadsheet instead |
+| `line.csv` | A stage drawn as points, for a stage with no map |
+
+Only `Rally:` (or `Season:`, `Stage:`) and the map are needed. Leave out what you don't have.
+
+**Forgiving by design:**
+
+* `Rally: X` and `rally = X` are the same. Capitals, spacing, `#` notes and quotes don't matter. After the
+  running order, give each setting its colon (`Late: 10`).
+* Notepad's encodings, Word's curly quotes and Excel's `;` files all read.
+* Positions can be pasted from Google Maps, typed as `60.0102, -10.0451`, or in degrees and minutes. Longitude
+  first is spotted and swapped.
+* Times read as `6:39.4`, `399.4` or `0:06:39.4`; dates as `7 Feb 2031`, `2031-02-07` or `7-8 Feb 2031`.
+* A name that is a slip of a stage, place, file or setting is read as the one it nearly matches, and the report
+  says so.
+
+### The running order
+
+One line per stage or stop in `rally.txt`, under `Running order:`:
+
+```
+Running order:
+  Day 1
+  Start at Fernvale Park
+  SS1  Meaford Mills      10.46 km
+  SS2  Kilo Hill
+  Service at Fernvale Park
+  SS3  Meaford Mills
+  Day 2
+  Start at Ridge Hotel
+  SS4  Long Gap           power stage
+  Finish at Fernvale Park
+```
+
+* A **stage** is named as its line is in the map. Listed again, it is its next run. The `SS` number is optional.
+* A **stop** is `Start`, `Service`, `Regroup`, `Refuel` or `Finish`, then `at` and a place. Each place is a
+  `Place:` block with `At:` and its position, so services and overnights land in the right spot.
+* `Day 2` (with a date if you like) starts the next day: the night between is an overnight.
+* **Timed road sections** go on the same lines: a time at the front (`08:23`, the first car), minutes at the end
+  (`20 min`, the time allowed from the line before), `late 10 min` on a stage, `ATC` lines, timed stops in pairs
+  (`Service in` / `Service out`, `MTC in` / `MTC out`, `Regroup in` / `Regroup out`, `Parc ferme in` /
+  `Parc ferme out`), and `only Regional` for a control only some classes pass. The rally template ends with a
+  full example.
+
+### Stage blocks
+
+After the running order, a block per stage holds what belongs to it and to each of its passes:
+
+```
+Stage: Meaford Mills
+	Length:  10.46 km
+
+	SS1:
+		Weather:  overcast, 90% cloud, wind 4 m/s from 250, 13.6 C
+		Results:
+			Car  Driver        Class  Championship  Time
+			1    A. Vance      L4WD   National      6:39.4
+			2    B. Okafor     O4WD   National      5:20.3 N
+
+	SS3:
+		Cancelled
+```
+
+* The indents are only for reading: `Stage:` starts a block, `SS3:` (or `Pass 2:`) a pass in it.
+* **Weather** is the sky in words, then any of `90% cloud`, `wind 4 m/s from SW` (or km/h), `gusts 9`, `12 C`,
+  `rain 0.8`, `snow 0.6`, `fog`, `visibility 400 m` (or km), `night`. Written before the stage's first pass line,
+  it is the weather of every run of that stage.
+* **Results** start with a line of column names. Paste them straight from Excel, or line them up with two spaces
+  or more. A row must have every column: write `-` in an empty cell when lining up with spaces. `N` after a time
+  makes it notional; `DNF`, `DNS` or `-` is no time. Results before any pass line are for a stage that runs once.
+* **Length** in a block is the stage's official length for every run (the running order's `10.46 km` works too;
+  where they differ, the block's is used and the report says so).
+* `results.csv` beside `rally.txt` still works; where both give a pass, `rally.txt` wins and the
+  report says so.
 
 ## The stage map
 
@@ -173,7 +267,8 @@ The folder names are up to you: only the manifest's paths matter.
   folder** makes it).
 * **Not part of a pack:** `__MACOSX`, dot files (`.DS_Store`), `Thumbs.db` and `desktop.ini`.
 * **No `.kmz` inside a `.zip`.** Put the `.kml` in the pack instead. A `.kmz` in a folder pack is fine.
-* **JSON** must be valid: no comments, no trailing commas. The examples below follow that.
+* **JSON** must be valid: no comments, no trailing commas. The examples below follow that. When it isn't, the
+  import report gives the line and column.
 * Unknown fields are ignored. Every field is optional unless marked **required**.
 * Each manifest may carry `"format": 1`. A higher number than the mod knows is refused, so leave it at `1`.
 
@@ -445,16 +540,15 @@ folder, so the pack can be moved after import. A missing picture is reported and
 
 ## Checking and updating a pack
 
-1. Drop the pack into the import folder. Open the rally in the menu and read its **Import report**: each stage's
-   length and controls, and anything to fix.
-2. The report flags a line name the itinerary or results use that isn't in the map, a control far from its line,
-   control points that matched no stage (with a suggestion when one is close), a missing picture or an unreadable
-   file.
-3. A pack that fails as a whole (two manifests, a `format` too high, a `.kmz` in a `.zip`, a missing map) shows on
-   the **Drive stage** page's last-import line. Season-level warnings (a round listed twice, an id clash) are in
-   `beamng.log`.
-4. The report is kept until the game closes. After a restart, press **Re-scan** to see it again.
-5. Edit the pack where it is. The mod imports it again when its files change, or press **Re-scan**.
+1. Drop the pack into the import folder, then open the `import report.txt` the game writes in it (beside a `.zip`
+   or a loose map: `<name> - import report.txt`), or press **Report** on the **Drive stage** page's last-import line.
+2. The report says whether it imported, lists each problem with its file, line and what to do, and shows what the
+   game found: the stages against the map's lines, the running order with services and days, whether it is timed,
+   the results, weather, pictures and rules.
+3. A pack that can't be used at all says why: no map, two manifests, a `format` too high, a `.kmz` in a `.zip`,
+   or a `.json` with its line and column.
+4. Edit the pack where it is. The mod imports it again when its files change, and writes a new report. Editing the
+   report itself does nothing.
 
 To keep players' times when you update a pack:
 

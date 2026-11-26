@@ -42,7 +42,12 @@
         <div class="er-path">{{ st.importFolder }}</div>
         <template v-if="st.lastImport">
           <div class="er-report-h">Last import · {{ st.lastImport.at }}</div>
-          <div v-for="(l, i) in arr(st.lastImport.lines)" :key="i" :class="l.ok ? 'er-ok' : 'er-warn'">{{ l.ok ? "✓" : "!" }} {{ l.text }}</div>
+          <!-- (each line opens its import report: docs/mockups-hand-files/import.html, screen 1) -->
+          <div v-for="(l, i) in arr(st.lastImport.lines)" :key="i" class="er-iline" :class="lineClass(l)" :tabindex="l.report ? 0 : -1"
+            :bng-nav-item="l.report ? true : undefined" @click="l.report && emit('report', l.file)" @keydown.enter="l.report && emit('report', l.file)">
+            <span>{{ l.verdict === "failed" ? "✕" : l.verdict === "problems" || !l.ok ? "!" : "✓" }} {{ l.text }}</span>
+            <span v-if="l.report" class="er-go">Report</span>
+          </div>
         </template>
       </div>
       <div class="er-btns">
@@ -60,7 +65,12 @@ import { vBngUiNavFocus } from "@/common/directives"   // (the first card takes 
 import EarthRallyPic from "./EarthRallyPic.vue"
 import { state, arr, len, time, ord, months, days, shortName } from "./store.js"
 
-const emit = defineEmits(["season", "rally", "stage", "action"])
+const emit = defineEmits(["season", "rally", "stage", "action", "report"])
+function lineClass(l) {
+  if (l.verdict === "failed") return "er-bad"
+  if (l.verdict === "problems" || !l.ok) return "er-warn"
+  return "er-ok"
+}
 const st = computed(() => state.value || {})
 const seasons = computed(() => arr(st.value.home && st.value.home.seasons))
 const rallies = computed(() => arr(st.value.home && st.value.home.rallies))
@@ -106,4 +116,9 @@ function open(r) {
 .er-report-h { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 6px; }
 .er-ok { color: #6fd39a; }
 .er-warn { color: #ffd36b; }
+.er-bad { color: #ff7a66; }
+.er-iline { display: flex; align-items: baseline; gap: 10px; padding: 3px 6px; border-radius: 3px; outline: none;
+  &[tabindex="0"] { cursor: pointer; }
+  &:focus { box-shadow: 0 0 0 3px var(--er-orange); } }
+.er-go { margin-left: auto; font-size: 14px; color: #ddd; border: 1px solid #6f7480; border-radius: 4px; padding: 1px 10px; flex-shrink: 0; }
 </style>

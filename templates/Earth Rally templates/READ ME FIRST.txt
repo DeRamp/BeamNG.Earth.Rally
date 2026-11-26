@@ -1,0 +1,20 @@
+EARTH RALLY - TEMPLATES
+
+Three ways to share rallies, one folder each. Copy the one you want, fill it in, and put it in
+Earth Rally's import folder (in game: Rally menu > Add > Open folder).
+
+  My Stage    one stage on its own
+  My Rally    a rally: its stages in running order, services, days, results, weather, rules
+  My Season   several rallies with championship standings
+
+Everything about a rally goes in its one rally.txt: settings, rules, places, the running order,
+and a block per stage with each pass's weather and real results. Each folder needs your stage
+map (.kml, .kmz or .gpx) next to its .txt file. Draw it in
+Google My Maps or anything that saves KML: one line per stage, in the driving direction,
+named after the stage.
+
+Every .txt and .csv file explains itself: open it in Notepad (or Excel for .csv) and follow
+the notes. Mistakes are fine: each time the game reads a folder it writes "import report.txt"
+in it, saying what it found and what to fix.
+
+More: https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/making-rally-packs.md

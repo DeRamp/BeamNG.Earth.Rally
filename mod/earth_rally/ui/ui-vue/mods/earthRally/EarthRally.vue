@@ -72,7 +72,9 @@
         @continue="resumeRally" @card="openCard" @results="id => openResults(id, 'pick')" />
 
       <!-- ===== Rallies (Drive stage) ===== -->
-      <EarthRallyHome v-else-if="view === 'rallies'" @season="openSeason" @rally="openRally" @stage="openStage" @action="action" />
+      <EarthRallyHome v-else-if="view === 'rallies'" @season="openSeason" @rally="openRally" @stage="openStage" @action="action"
+        @report="openReport" />
+      <EarthRallyImportReport v-else-if="view === 'importReport'" :file="reportFile" @action="action" />
 
       <!-- ===== a season ===== -->
       <EarthRallySeason v-else-if="view === 'season' && ssn" ref="seasonView" :key="ssn.id" :s="ssn" @rally="openRally" />
@@ -429,6 +431,7 @@ import EarthRallyConsent from "./EarthRallyConsent.vue"
 import EarthRallyHelperPrompt from "./EarthRallyHelperPrompt.vue"
 import EarthRallyNamePrompt from "./EarthRallyNamePrompt.vue"
 import EarthRallyHome from "./EarthRallyHome.vue"
+import EarthRallyImportReport from "./EarthRallyImportReport.vue"
 import EarthRallyHomeMenu from "./EarthRallyHomeMenu.vue"
 import EarthRallyPick from "./EarthRallyPick.vue"
 import EarthRallyPrompts from "./EarthRallyPrompts.vue"
@@ -569,6 +572,7 @@ const crumbs = computed(() => {
   if (view.value === "settings") return settingsFrom.value === "timecard"
     ? [home, { label: "Time card", go: () => openCard() }, { label: "Settings" }] : [home, { label: "Settings" }]
   if (view.value === "timecard") return [home, { label: "Time card" }]
+  if (view.value === "importReport") return [home, { label: "Drive stage", go: () => go("rallies") }, { label: "Import report" }]
   if (view.value === "rallyStart") {
     if (startFrom.value === "pick") return [home, { label: "Drive rally", go: () => openPick(true) }, { label: "Start the rally" }]
     return [home, { label: "Drive stage", go: () => go("rallies") },
@@ -767,6 +771,9 @@ const controlsLine = computed(() => {
 })
 
 function go(v) { if (v === "settings") settingsFrom.value = null; view.value = v; busyMsg.value = "" }
+// (an import's report, from the Rallies page's Last import lines)
+const reportFile = ref("")
+function openReport(file) { reportFile.value = file || ""; go("importReport") }
 // (notes-rally-loop 6) Settings opened from the time card goes back to it; from anywhere else, Home (#39)
 const settingsFrom = ref(null)
 function openSettings() { const from = view.value === "timecard" ? "timecard" : null; go("settings"); settingsFrom.value = from }
@@ -936,6 +943,7 @@ function back() {
   // (#39: Drive rally, Drive stage and Settings go back to Home; so does the time card, where Home's Continue strip
   // is: the mock-up's homeSaved)
   if (view.value === "settings" && settingsFrom.value === "timecard") { openCard(); return }
+  if (view.value === "importReport") { go("rallies"); return }
   if (["timecard", "pick", "rallies", "settings"].includes(view.value)) {
     openHome()
     return

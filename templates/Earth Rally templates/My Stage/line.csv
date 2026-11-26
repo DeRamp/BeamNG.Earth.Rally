@@ -1,0 +1,7 @@
+# EARTH RALLY - STAGE LINE: only for a stage with no map. The stage's line as points, in driving order,
+# from before the start to past the finish. Height is optional. A point every 20-50 m is plenty.
+Lat,Lon,Height m
+60.00000,-10.00000,100
+60.00045,-10.00010,101
+60.00090,-10.00035,103
+60.00131,-10.00072,104
