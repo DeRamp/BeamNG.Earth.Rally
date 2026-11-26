@@ -478,10 +478,9 @@ function M.keepDamage(on)
       w.caught = (w.caught or 0) + 1
       if resetVehicle ~= false then log('I', logTag, 'keep damage: a set-down of the car kept its damage') end
       resetVehicle = false
-    elseif resetVehicle ~= false then
+    elseif same and resetVehicle ~= false then
       -- (#80: why a reset went through -- the log of the next skip says)
-      log('I', logTag, string.format('keep damage: a set-down let through (player car %s, keeping %s)',
-        tostring(same), tostring(on)))
+      log('I', logTag, 'keep damage: a set-down of the car let through (not keeping now)')
     end
     return orig(veh, pos, rot, a, b, c, d, resetVehicle, ...)
   end
