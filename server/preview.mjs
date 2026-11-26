@@ -79,6 +79,8 @@ env.BOARD = { fetch: req => boardWorker.fetch(req, benv) }
     await run("INSERT INTO players (id, secret_hash, name, created_at, banned) VALUES (?, 'x', ?, ?, ?)",
       "f" + String(i).padStart(3, "0"), names[i], Date.now(), names[i] === "x_cheater_x" ? 1 : 0)
   }
+  // (a name on the board with no run yet: the Board stats tab counts it)
+  await run("INSERT INTO players (id, secret_hash, name, created_at, banned) VALUES ('f999', 'x', 'mudlark', ?, 0)", Date.now())
   const bcars = ["Sunburst 2.0 Rally", "Covet Rally", "Scintilla Rally", "Pessima GTZ", "Bolide Rally (mod)"]
   const now = Date.now()
   let sn = 0
@@ -86,7 +88,7 @@ env.BOARD = { fetch: req => boardWorker.fetch(req, benv) }
     const id = (0xa000 + sn++).toString(16).padStart(16, "0")
     await run("INSERT INTO stages (id, name, rally, start_lat, start_lon, finish_lat, finish_lon, length_m, created_at) VALUES (?, ?, ?, 45, -120, 45.1, -120, ?, ?)",
       id, r.stages[si], r.rally, r.mins[si] * 1800, now - 3 * 86400000)
-    const n = Math.floor(4 + rnd() * 10)
+    const n = Math.floor(6 + rnd() * 16)
     for (let k = 0; k < n; k++) {
       const pid = "f" + String(Math.floor(rnd() * names.length)).padStart(3, "0")
       const board = rnd() < 0.6 ? "stock" : "open"
@@ -95,8 +97,10 @@ env.BOARD = { fetch: req => boardWorker.fetch(req, benv) }
       const ms = Math.round((r.mins[si] + rnd() * 2) * 60000)
       const tr = JSON.stringify(Array.from({ length: 40 }, (_, j) => [j * ms / 39, 45 + j * 0.1 / 39 + Math.sin(j / 4) * 0.004, -120 + Math.cos(j / 5) * 0.01]))
       await run("INSERT INTO runs (stage_id, board, player_id, car, time_ms, penalty_ms, trace, mod_version, submitted_at, wall_ratio, status, flags, resets) " +
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]')", id, board, pid, pick(bcars), ms, rnd() < 0.2 ? 10000 : 0, tr,
-        pick(["1.8.0-alpha", "1.8.1-alpha"]), now - Math.floor(rnd() * 3 * 86400000), 1 + rnd() * 0.05, status, flags)
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", id, board, pid, pick(bcars), ms, rnd() < 0.2 ? 10000 : 0, tr,
+        // (spread over 60 days, more of late, for the Board stats tab; a reset now and then)
+        pick(["1.8.0-alpha", "1.8.1-alpha", "1.9.4-alpha", "1.10.1-alpha"]), now - Math.floor(rnd() * rnd() * 60 * 86400000), 1 + rnd() * 0.05,
+        status, flags, JSON.stringify(rnd() < 0.4 ? [Math.round(ms * rnd())] : []))
     }
     // each player's best per board, as the Worker keeps it
     await run("INSERT OR REPLACE INTO best (stage_id, board, player_id, run_id, time_ms) SELECT stage_id, board, player_id, id, MIN(time_ms) " +

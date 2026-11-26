@@ -201,6 +201,21 @@ assert.equal(db.prepare("SELECT n FROM archive WHERE month = '2020-01'").get().n
   assert.equal(seen.pop().url, "https://board/v1/admin/stages/ab12/runs")
   await call("GET", "/api/board/flagged")
   assert.equal(seen.pop().url, "https://board/v1/admin/flagged")
+  // board stats: days passed on, checked; nothing else from the address
+  await call("GET", "/api/board/stats?days=90&x=1")
+  assert.deepEqual(seen.pop(), { method: "GET", url: "https://board/v1/admin/stats?days=90", auth: "Bearer admin:tok", body: null })
+  await call("GET", "/api/board/stats")
+  assert.equal(seen.pop().url, "https://board/v1/admin/stats?days=30")
+  await call("GET", "/api/board/stats?days=365")
+  assert.equal(seen.pop().url, "https://board/v1/admin/stats?days=365")
+  for (const d of ["0", "366", "abc", "7.5", "-1", "1e2", "30%26x=1", "", "007x"]) {
+    r = await call("GET", "/api/board/stats?days=" + d)
+    assert.equal(r.status, 400, d)
+  }
+  assert.equal(seen.length, 0)
+  assert.equal((await call("GET", "/api/board/stats?days=7", benv, null)).status, 401)
+  assert.equal((await call("POST", "/api/board/stats?days=7")).status, 404)
+  assert.equal(seen.length, 0)
   // nothing else passed on
   for (const [m, pth] of [["GET", "/api/board/players"], ["POST", "/api/board/stages"], ["GET", "/api/board/runs/1/move"],
     ["POST", "/api/board/runs/../players/x/ban"], ["POST", "/api/board/runs/1/delete"], ["DELETE", "/api/board/runs/1"]]) {

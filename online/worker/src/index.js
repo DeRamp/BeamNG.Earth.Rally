@@ -17,6 +17,7 @@
 //   GET  /v1/admin/stages/:id/runs                               -> { stage, runs }: every run, both boards, any status
 //   POST /v1/admin/runs/:id/move                                 the run to the other board (both boards worked out)
 //   POST /v1/admin/runs/:id/approve                              status ok and its reports deleted
+//   GET  /v1/admin/stats?days=N                                  -> the dashboard's Board stats tab in one (adminStats)
 //   GET  /v1/health                                              -> { ok, version }
 // A stage is described, never named by a key: { name, rally, start: [lat, lon], finish: [lat, lon], lengthM }.
 // The server finds the stage within a tolerance (checks.stageDistance), so players whose lines differ by a few
@@ -194,6 +195,66 @@ async function boardOf(db, stage, board, top, around, n) {
       prev = r.rn
       return row
     }),
+  }
+}
+
+// The Board stats tab of the owner's dashboard: totals, players, stages, cars and when runs come in, from the board's
+// own tables. Hidden runs and banned players are left out of everything (flagged runs count: they are kept, only
+// held back). Totals and tables are all time; daily, mod versions and the run times (for the time of day, bucketed
+// by the browser in its own time zone) cover the last `days` UTC days. Every list is capped.
+const DAY_MS = 86400000
+async function adminStats(db, days, now) {
+  const since = (Math.floor(now / DAY_MS) - (days - 1)) * DAY_MS, week = now - 7 * DAY_MS
+  const LIVE_RUNS = "WITH live AS (SELECT r.* FROM runs r JOIN players p ON p.id = r.player_id " +
+    "WHERE p.banned = 0 AND r.status != 'hidden') "
+  // (each player's place on each board: their best, ranked; only ok runs of players not banned)
+  const PLACES = "WITH placed AS (SELECT b.player_id, b.stage_id, b.board, " +
+    "RANK() OVER (PARTITION BY b.stage_id, b.board ORDER BY b.time_ms) AS pos " +
+    "FROM best b JOIN players p ON p.id = b.player_id JOIN runs r ON r.id = b.run_id " +
+    "WHERE p.banned = 0 AND r.status = 'ok') "
+  const all = (sql, ...a) => db.prepare(sql).bind(...a).all().then(x => x.results || [])
+  const [tot, reg, daily, firsts, players, stages, rallies, cars, mods, times] = await Promise.all([
+    db.prepare(LIVE_RUNS + "SELECT COUNT(*) AS runs, COUNT(DISTINCT l.player_id) AS drivers, " +
+      "COUNT(DISTINCT l.stage_id) AS stages, COUNT(DISTINCT s.rally) AS rallies, " +
+      "COALESCE(SUM(s.length_m), 0) AS lengthM, COALESCE(SUM(l.time_ms), 0) AS timeMs, " +
+      "COALESCE(SUM(l.board = 'stock'), 0) AS stock, COALESCE(SUM(l.board = 'open'), 0) AS open, " +
+      "COALESCE(SUM(l.status = 'flagged'), 0) AS flagged, " +
+      "AVG(CASE WHEN json_valid(l.resets) AND json_type(l.resets) = 'array' THEN json_array_length(l.resets) ELSE 0 END) AS resets, " +
+      "COUNT(DISTINCT CASE WHEN l.submitted_at >= ? THEN l.player_id END) AS active7, " +
+      "(SELECT COUNT(*) FROM (SELECT player_id FROM live GROUP BY player_id HAVING MIN(submitted_at) >= ?)) AS new7 " +
+      "FROM live l JOIN stages s ON s.id = l.stage_id").bind(week, week).first(),
+    db.prepare("SELECT COUNT(*) AS n FROM players WHERE banned = 0").first(),
+    all(LIVE_RUNS + "SELECT date(submitted_at / 1000, 'unixepoch') AS day, COUNT(*) AS runs, " +
+      "COUNT(DISTINCT player_id) AS players FROM live WHERE submitted_at >= ? GROUP BY day ORDER BY day LIMIT 400", since),
+    all(LIVE_RUNS + "SELECT day, COUNT(*) AS n FROM (SELECT date(MIN(submitted_at) / 1000, 'unixepoch') AS day " +
+      "FROM live GROUP BY player_id) GROUP BY day ORDER BY day LIMIT 2000"),
+    all(LIVE_RUNS + ", " + PLACES.slice(5) + "SELECT p.name, COUNT(l.id) AS runs, COUNT(DISTINCT l.stage_id) AS stages, " +
+      "MAX(l.submitted_at) AS lastAt, " +
+      "(SELECT COUNT(*) FROM placed x WHERE x.player_id = p.id AND x.pos = 1) AS records, " +
+      "(SELECT COUNT(*) FROM placed x WHERE x.player_id = p.id AND x.pos <= 3) AS podiums " +
+      "FROM players p LEFT JOIN live l ON l.player_id = p.id WHERE p.banned = 0 " +
+      "GROUP BY p.id ORDER BY runs DESC, lastAt DESC, p.name LIMIT 500"),
+    all(LIVE_RUNS + "SELECT s.name, s.rally, s.length_m AS lengthM, COUNT(*) AS runs, COUNT(DISTINCT l.player_id) AS players, " +
+      "(SELECT MIN(b.time_ms) FROM best b JOIN players p ON p.id = b.player_id JOIN runs r ON r.id = b.run_id " +
+      "WHERE b.stage_id = s.id AND b.board = 'stock' AND p.banned = 0 AND r.status = 'ok') AS recordMs " +
+      "FROM live l JOIN stages s ON s.id = l.stage_id GROUP BY s.id ORDER BY runs DESC, s.name LIMIT 200"),
+    all(LIVE_RUNS + "SELECT s.rally, COUNT(*) AS runs FROM live l JOIN stages s ON s.id = l.stage_id " +
+      "GROUP BY s.rally ORDER BY runs DESC LIMIT 50"),
+    all(LIVE_RUNS + "SELECT car, COUNT(*) AS runs FROM live WHERE car IS NOT NULL GROUP BY car ORDER BY runs DESC LIMIT 10"),
+    all(LIVE_RUNS + "SELECT mod_version AS v, COUNT(*) AS runs FROM live WHERE submitted_at >= ? " +
+      "GROUP BY mod_version ORDER BY runs DESC LIMIT 20", since),
+    all(LIVE_RUNS + "SELECT submitted_at AS at FROM live WHERE submitted_at >= ? ORDER BY submitted_at DESC LIMIT 20000", since),
+  ])
+  let sum = 0
+  return {
+    days, since: new Date(since).toISOString().slice(0, 10),
+    totals: { players: reg ? reg.n : 0, drivers: tot.drivers, active7: tot.active7, new7: tot.new7, runs: tot.runs,
+      stages: tot.stages, rallies: tot.rallies, km: tot.lengthM / 1000, timeMs: tot.timeMs, stock: tot.stock,
+      open: tot.open, flagged: tot.flagged, resetsPerRun: tot.runs ? tot.resets : null },
+    daily, growth: firsts.map(f => ({ day: f.day, players: (sum += f.n) })),
+    players, stages: stages.map(s => ({ ...s,
+      recordKmh: s.recordMs && s.lengthM ? s.lengthM / s.recordMs * 3600 : null })),
+    rallies, cars, mods, times: times.map(t => t.at),
   }
 }
 
@@ -398,6 +459,13 @@ async function route(req, env) {
     ).bind(Number(m[1])).first()
     if (!r) fail(404, "no such run")
     return json({ ...r, trace: JSON.parse(r.trace || "[]"), resets: JSON.parse(r.resets || "[]") })
+  }
+  if (req.method === "GET" && path === "/v1/admin/stats") {
+    admin(env, req)
+    const d = url.searchParams.get("days")
+    const days = d === null ? 30 : /^\d{1,3}$/.test(d) ? Number(d) : 0
+    if (days < 1 || days > 365) fail(400, "days is a whole number from 1 to 365")
+    return json(await adminStats(db, days, now))
   }
   if (req.method === "GET" && path === "/v1/admin/flagged") {
     admin(env, req)

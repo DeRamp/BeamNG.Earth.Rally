@@ -200,9 +200,16 @@ async function prune(env) {
 // The online board's admin calls (online/worker), made from here so the owner's browser holds only the dashboard key
 // and never the board's ADMIN_TOKEN (a secret of this Worker too: BOARD_ADMIN_TOKEN). Over the service binding BOARD
 // (wrangler.toml) when there is one, else the board's public address. Only these calls are passed on, and the body
-// sent is made here, never the browser's.
+// sent is made here, never the browser's. A target is built from the path's match and, for stats, the one query
+// value it takes, checked here (days: a whole number 1..365); no other part of the browser's address goes on.
 const BOARD_URL = "https://earth-rally-board.station68.workers.dev"
+const boardDays = url => {
+  const d = url.searchParams.get("days")
+  if (d === null) return 30
+  return /^\d{1,3}$/.test(d) && Number(d) >= 1 && Number(d) <= 365 ? Number(d) : null
+}
 const BOARD_CALLS = [
+  ["GET", /^\/api\/board\/stats$/, (m, url) => boardDays(url) && "/v1/admin/stats?days=" + boardDays(url)],
   ["GET", /^\/api\/board\/flagged$/, () => "/v1/admin/flagged"],
   ["GET", /^\/api\/board\/stages$/, () => "/v1/admin/stages"],
   ["GET", /^\/api\/board\/stages\/([0-9a-f]{1,32})\/runs$/, m => "/v1/admin/stages/" + m[1] + "/runs"],
@@ -217,10 +224,12 @@ async function boardApi(req, url, env) {
   let call = null, m = null
   for (const c of BOARD_CALLS) if (c[0] === req.method && (m = c[1].exec(url.pathname))) { call = c; break }
   if (!call) return empty(404)
+  const path = call[2](m, url)
+  if (!path) return json({ error: "days is a whole number from 1 to 365" }, 400)
   if (!env.BOARD_ADMIN_TOKEN) return json({ error: "BOARD_ADMIN_TOKEN is not set on the stats Worker" }, 503)
   const init = { method: call[0], headers: { authorization: "Bearer admin:" + env.BOARD_ADMIN_TOKEN, "content-type": "application/json" } }
   if (call[0] === "POST") init.body = JSON.stringify(call[3] ? call[3](m) : {})
-  const target = (env.BOARD ? "https://board" : (env.BOARD_URL || BOARD_URL)) + call[2](m)
+  const target = (env.BOARD ? "https://board" : (env.BOARD_URL || BOARD_URL)) + path
   let r
   try {
     r = await (env.BOARD ? env.BOARD.fetch(new Request(target, init)) : fetch(target, init))

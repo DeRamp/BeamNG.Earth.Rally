@@ -342,3 +342,54 @@ test("rename and rate limits", async () => {
     assert.equal((await t.call("GET", "/v1/nothing")).status, 404)
   } finally { t.done() }
 })
+
+test("admin: board stats", async () => {
+  const t = setup()
+  const A = "admin:letmein"
+  const STAGE2 = { name: "Second Road", rally: "Other Rally", start: [61, 25], finish: [61 + 8000 * DEG_PER_M, 25], lengthM: 8000 }
+  try {
+    const ann = await t.register("Ann"), bob = await t.register("Bob"), cid = await t.register("Cid")
+    const dan = await t.register("Dan"), eve = await t.register("Eve")
+    assert.ok(eve)
+    await t.drive(ann, 360000)
+    t.tick(61000)
+    await t.drive(ann, 355000, { board: "open" })
+    await t.drive(bob, 350000)
+    t.tick(61000)
+    await t.drive(bob, 400000, { stage: STAGE2 })
+    const c = await t.drive(cid, 340000)
+    await t.drive(dan, 330000)
+    // Cid's only run hidden, Dan banned: neither counts anywhere
+    await t.call("POST", `/v1/admin/runs/${c.body.runId}`, { status: "hidden" }, A)
+    await t.call("POST", `/v1/admin/players/${dan.split(":")[0]}`, { banned: true }, A)
+
+    assert.equal((await t.call("GET", "/v1/admin/stats")).status, 401)
+    assert.equal((await t.call("GET", "/v1/admin/stats", undefined, "admin:wrong")).status, 401)
+    assert.equal((await t.call("GET", "/v1/admin/stats", undefined, ann)).status, 401)
+    for (const d of ["0", "366", "abc", "7.5", "-3", "1e2"]) {
+      assert.equal((await t.call("GET", "/v1/admin/stats?days=" + d, undefined, A)).status, 400, d)
+    }
+    const s = (await t.call("GET", "/v1/admin/stats?days=7", undefined, A)).body
+    assert.equal(s.days, 7)
+    assert.deepEqual(s.totals, { players: 4, drivers: 2, active7: 2, new7: 2, runs: 4, stages: 2, rallies: 2, km: 38,
+      timeMs: 360000 + 355000 + 350000 + 400000, stock: 3, open: 1, flagged: 0, resetsPerRun: 0 })
+    assert.deepEqual(s.daily.map(d => [d.runs, d.players]), [[4, 2]])
+    assert.deepEqual(s.growth.map(g => g.players), [2])
+    const p = Object.fromEntries(s.players.map(x => [x.name, [x.runs, x.stages, x.records, x.podiums]]))
+    // (Bob: P1 on Stock on both stages; Ann: P2 on Stock and P1 on Open; Cid's hidden run and Dan's ban leave no mark)
+    assert.deepEqual(p, { Bob: [2, 2, 2, 2], Ann: [2, 1, 1, 2], Cid: [0, 0, 0, 0], Eve: [0, 0, 0, 0] })
+    const st = s.stages[0]
+    assert.deepEqual([st.name, st.rally, st.runs, st.players, st.recordMs], ["Test Road", "Test Rally", 3, 2, 350000])
+    assert.ok(Math.abs(st.recordKmh - 10000 / 350000 * 3600) < 1e-9)
+    assert.deepEqual(s.rallies, [{ rally: "Test Rally", runs: 3 }, { rally: "Other Rally", runs: 1 }])
+    assert.deepEqual(s.cars, [{ car: "Sunburst RS", runs: 4 }])
+    assert.deepEqual(s.mods, [{ v: "test", runs: 4 }])
+    assert.equal(s.times.length, 4)
+    // 40 days on: out of the range, still in the totals
+    t.tick(40 * 86400000)
+    const later = (await t.call("GET", "/v1/admin/stats", undefined, A)).body
+    assert.equal(later.days, 30)
+    assert.deepEqual([later.daily.length, later.mods.length, later.times.length, later.totals.runs, later.totals.active7, later.totals.new7],
+      [0, 0, 0, 4, 0, 0])
+  } finally { t.done() }
+})
