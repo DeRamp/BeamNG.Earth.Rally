@@ -231,6 +231,77 @@ end
 -- segments either side) and the curvature smoothed over smoothM (1 / m, signed the same way). M.corners reads its
 -- corners off these, and pacenotes.lua reads a corner's shape and the speed along the road off the same numbers, so
 -- the two never disagree about where a corner is tighter.
+-- (the pacenote rebuild, 2026-11-20, step 1) The line comes off the map as chords: the road graph's points sit every
+-- few metres in a bend and one edge apart on a straight, and are resampled every 4 m. Smoothing the turn over a fixed
+-- 15 m turns each point of a sparse bend into a spike of its own (fake short corners, a bend split where it looks
+-- straight between two points) and a long bend drawn as a few kinks into nothing at all. So the line is fitted first:
+-- each map point's turn is spread over the road it stands for -- either side of it, half the shorter of its two
+-- edges (FIT_SPREAD_MAX_M at most) -- and only then smoothed over smoothM (a Gaussian, smoothM wide).
+-- On a dense line (a driven or a game's line: a turn at every sample) that is the plain smoothing. A map point is a
+-- sample turning FIT_POINT_DEG or more (under it, the 1 cm rounding of a matched file); points next to each other are
+-- one, two at most (a map point falls between two samples).
+M.FIT = true
+M.FIT_POINT_DEG = 0.3
+M.FIT_SPREAD_MAX_M = 120
+M.FIT_SIGMA_DIV = 4
+
+local function fitTurns(turn, step, smoothM)
+  local n = #turn
+  local thr = math.rad(M.FIT_POINT_DEG)
+  -- the map points: runs of samples over the threshold, each { a, b (samples), t (its turn), c (its middle) }
+  local pts_ = {}
+  local i = 2
+  while i <= n - 1 do
+    if abs(turn[i]) >= thr then
+      local j, t, w = i, 0, 0
+      while j <= n - 1 and j <= i + 1 and abs(turn[j]) >= thr and (j == i or (turn[j] > 0) == (turn[i] > 0)) do
+        t, w = t + turn[j], w + j * abs(turn[j])
+        j = j + 1
+      end
+      pts_[#pts_ + 1] = { a = i, b = j - 1, t = t, c = w / math.max(1e-12, abs(t)) }
+      i = j
+    else
+      i = i + 1
+    end
+  end
+  local spread = {}
+  for k = 1, n do spread[k] = 0 end
+  local maxN = M.FIT_SPREAD_MAX_M / step
+  -- (a sample under the threshold keeps its own turn, on itself)
+  for k = 1, n do if abs(turn[k]) < thr then spread[k] = turn[k] end end
+  for m, p in ipairs(pts_) do
+    local prev, nxt = pts_[m - 1], pts_[m + 1]
+    -- (as far each way as the shorter of its two edges allows: a curve fitted to both edges has to fit on both, so
+    --  the first point of a bend after a long straight is turned at the bend, not spread back along the straight)
+    local back = math.min(maxN, math.max(0.5, (p.c - (prev and prev.c or 1)) / 2))
+    local fwd = math.min(maxN, math.max(0.5, ((nxt and nxt.c or n) - p.c) / 2))
+    back = math.min(back, fwd)
+    fwd = back
+    -- (uniform over [c - back, c + fwd], in samples, the ends taking their share)
+    local lo, hi = p.c - back, p.c + fwd
+    local len = hi - lo
+    for k = math.max(1, floor(lo)), math.min(n, math.ceil(hi)) do
+      local ov = math.min(hi, k + 0.5) - math.max(lo, k - 0.5)
+      if ov > 0 then spread[k] = spread[k] + p.t * ov / len end
+    end
+  end
+  -- the Gaussian (sigma smoothM / 4, out to 2 sigma either side)
+  local sig = math.max(step * 0.5, (smoothM or 15) / M.FIT_SIGMA_DIV) / step
+  local reach = math.max(1, math.ceil(2 * sig))
+  local wts = {}
+  for d = -reach, reach do wts[d] = math.exp(-0.5 * (d / sig) ^ 2) end
+  local k = {}
+  for a = 1, n do
+    local s, c = 0, 0
+    for d = -reach, reach do
+      local j = a + d
+      if j >= 1 and j <= n then s, c = s + spread[j] * wts[d], c + wts[d] end
+    end
+    k[a] = s / (c * step)
+  end
+  return k
+end
+
 function M.curvature(pts, step, smoothM)
   local half = math.max(1, floor((smoothM or 15) / step / 2 + 0.5))
   local n = #pts
@@ -241,6 +312,7 @@ function M.curvature(pts, step, smoothM)
     local h2 = atan2(pts[i + 1].y - pts[i].y, pts[i + 1].x - pts[i].x)
     turn[i] = wrap(h2 - h1)
   end
+  if M.FIT then return turn, fitTurns(turn, step, smoothM) end
   local k = {}
   for i = 1, n do
     local s, c = 0, 0
@@ -292,6 +364,112 @@ function M.corners(pts, step, opts)
     end
   end
   return out
+end
+
+-- A matched line doubling back on itself: the auto recce routes from each waypoint's road point to the next one's, and
+-- a waypoint put on a spur beside the stage's road (or a few metres past a junction, or behind the one before it)
+-- makes the route go out to it and back along the same road. On the owner's lines: out and back along a dead end of
+-- 280 m, stubs of 4 to 25 m at junctions. The co-driver hears each fold as a hairpin and the bends either side as
+-- corners that are not there. FOLD_DEG at one point is a fold (no road turns that much in one point of a line); the
+-- out-and-back round it is dropped: from the last point before it that the line comes back to (within FOLD_TOL_M,
+-- FOLD_MAX_M or less either side of the fold), the way back retracing the way out (each of its points within
+-- FOLD_RETRACE_M of it), to that point of return. A sharp turn at a junction that does not retrace keeps its road;
+-- only the one point of its apex can go.
+M.FOLD_DEG = 150
+M.FOLD_TOL_M = 4
+M.FOLD_RETRACE_M = 8
+M.FOLD_MAX_M = 600
+
+local function segDist(p, a, b)
+  local dx, dy = b.x - a.x, b.y - a.y
+  local l2 = dx * dx + dy * dy
+  local t = l2 > 1e-12 and ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2 or 0
+  if t < 0 then t = 0 elseif t > 1 then t = 1 end
+  local qx, qy = a.x + dx * t - p.x, a.y + dy * t - p.y
+  return sqrt(qx * qx + qy * qy)
+end
+
+-- pts: { {x, y}... }. Returns the indices of the points kept, in order, and how many were dropped.
+function M.foldBacks(pts)
+  local n = #pts
+  local out = {}
+  if n < 3 then
+    for k = 1, n do out[k] = k end
+    return out, 0
+  end
+  out[1] = 1
+  local cum = M.cumulative(pts)
+  local cosF = math.cos(math.rad(M.FOLD_DEG))
+  -- (the way back, k0..k1, within FOLD_RETRACE_M of the way out, out[oi]..i)
+  local function retraces(oi, i, k0, k1)
+    for k = k0, k1 do
+      local best = math.huge
+      local prev = pts[out[oi]]
+      for m = oi + 1, #out + 1 do
+        local q = m <= #out and pts[out[m]] or pts[i]
+        local d = segDist(pts[k], prev, q)
+        if d < best then best = d end
+        prev = q
+      end
+      if best > M.FOLD_RETRACE_M then return false end
+    end
+    return true
+  end
+  local i = 2
+  while i <= n do
+    local jumped = false
+    if i < n then
+      -- (from the last point kept that is not on top of this one)
+      local p = pts[out[#out]]
+      for oi = #out, 1, -1 do
+        if d2(pts[out[oi]], pts[i]) > 0.05 then p = pts[out[oi]] break end
+      end
+      local ax, ay = pts[i].x - p.x, pts[i].y - p.y
+      local bx, by = pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y
+      local la, lb = sqrt(ax * ax + ay * ay), sqrt(bx * bx + by * by)
+      if la > 0.05 and lb > 0.05 and (ax * bx + ay * by) / (la * lb) <= cosF then
+        local bi, bj = nil, nil
+        for oi = #out, 1, -1 do
+          local a = out[oi]
+          if cum[i] - cum[a] > M.FOLD_MAX_M then break end
+          local bestD, bestJ = M.FOLD_TOL_M, nil
+          for j = i + 1, n do
+            if cum[j] - cum[i] > M.FOLD_MAX_M then break end
+            local d = d2(pts[a], pts[j])
+            if d <= bestD then bestD, bestJ = d, j end
+          end
+          if bestJ and retraces(oi, i, i + 1, bestJ - 1) then bi, bj = oi, bestJ end
+        end
+        if bi then
+          for k = #out, bi + 1, -1 do out[k] = nil end
+          i = bj
+          jumped = true
+        end
+      end
+    end
+    if not jumped then
+      out[#out + 1] = i
+      i = i + 1
+    end
+  end
+  return out, n - #out
+end
+
+-- The same over a line of { lat, lon, ... } points (a matched or recce file's own shape): the points kept (the same
+-- tables), and how many were dropped.
+function M.dropFoldBacks(points)
+  if type(points) ~= 'table' or #points < 3 then return points, 0 end
+  local o = points[1]
+  local xy = {}
+  for i, p in ipairs(points) do
+    xy[i] = { x = M.metres(o[1], o[2], o[1], p[2]) * (p[2] < o[2] and -1 or 1),
+              y = M.metres(o[1], o[2], p[1], o[2]) * (p[1] < o[1] and -1 or 1) }
+  end
+  local keep, dropped = M.foldBacks(xy)
+  if dropped == 0 then return points, 0 end
+  local out = {}
+  for k, i in ipairs(keep) do out[k] = points[i] end
+  return out, dropped
 end
 
 return M

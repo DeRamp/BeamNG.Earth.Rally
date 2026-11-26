@@ -223,7 +223,9 @@ end
 -- The stage line (a recce, or the map line matched to the roads: { points = { {lat, lon, alt}... } }) cut round the
 -- stage: from a little before the start control to the end.
 local function stageLatLon(stage, source)
-  local pts = source.points
+  -- (a matched line that doubles back on itself -- out along a spur and back -- has the excursion dropped: geo.foldBacks)
+  local pts, folds = geo.dropFoldBacks(source.points)
+  if folds > 0 then log('I', logTag, string.format('stage line: %d points of out-and-back dropped', folds)) end
   local o = pts[1]
   local function flat(lat, lon)
     return { x = geo.metres(o[1], o[2], o[1], lon) * (lon < o[2] and -1 or 1),
@@ -814,11 +816,11 @@ local function stepBuild()
   end
   table.sort(lms, function(a, b) return a.s < b.s end)
   -- (only the calls the player's voice can say: rallyAdapter.speaks)
-  local okS, speaks, style = pcall(rallyA.speaks)
-  if not okS then speaks, style = nil, nil end
+  local okS, speaks, style, ladder = pcall(rallyA.speaks)
+  if not okS then speaks, style, ladder = nil, nil, nil end
   run.checks.voiceStyle = style or 'not known (every call written)'
   local okB, built = pcall(writer.build, run.line, { startM = run.startM, finishM = run.finishM, name = run.stage.name,
-    mute = mute, landmarks = lms, speaks = speaks,
+    mute = mute, landmarks = lms, speaks = speaks, ladder = ladder,
     -- (#47: the notes on past the finish to the stop control)
     stop = run.stopCtl and (function() local x, y = earth.toGame(run.stopCtl.lat, run.stopCtl.lon, 0)
       return x and { x = x, y = y } or nil end)() or nil,
@@ -827,6 +829,7 @@ local function stepBuild()
   writer.write(run.dir, built)
   run.built = built
   local ok, why = rallyA.load(run.id, run.dir)
+  if ok then rallyA.setOpening(built.openingM) end   -- (the first call says how far its corner is)
   rallyA.notesOn(false)        -- (no calls on the way to the start: on at GO)
   run.checks.rallyEngine = ok and 'loaded' or ('failed: ' .. tostring(why))
   run.checks.cornersFound = built.corners
@@ -846,6 +849,18 @@ local function stepBuild()
     local worst, lowest = rallyA.heightCheck(built.nodes)
     run.checks.heightKeptM = worst
     run.checks.lowestDrivelineZ = lowest
+    -- (the corners' grades as the game measures them, against ours: a game update that measures differently would
+    --  have every corner called a grade out. In the log only, until it has been checked in game)
+    local okG, gc = pcall(rallyA.gradeCheck)
+    if okG and gc then
+      run.checks.gradeCheck = string.format('%d of %d', gc.same, gc.checked)
+      log(gc.mismatch and 'W' or 'I', logTag, string.format('co-driver: %d of %d corner grades match%s',
+        gc.same, gc.checked, gc.mismatch and ' (this game version may measure corners differently)' or ''))
+      for _, f in ipairs(gc.far or {}) do
+        log('W', logTag, string.format('co-driver: note %d graded %d by the game, %d by us: called a grade out', f[1],
+          f[3], f[2]))
+      end
+    end
   end
   setState('place')
 end

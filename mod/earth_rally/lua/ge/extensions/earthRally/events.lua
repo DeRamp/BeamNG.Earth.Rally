@@ -451,6 +451,9 @@ function M.timedSpan(line, stage)
   local pts = type(line) == 'table' and line.points
   if type(pts) ~= 'table' or #pts < 2 then return nil end
   if line._span and line._spanFor == pts and line._spanStage == stage then return line._span end
+  local raw = pts
+  -- (as stageLatLon: a line doubling back on itself has the excursion dropped -- geo.foldBacks)
+  pts = geo.dropFoldBacks(pts)
   local o = pts[1]
   local mLat = geo.metres(o[1], o[2], o[1] + 0.01, o[2]) / 0.01
   local mLon = math.max(1e-6, geo.metres(o[1], o[2], o[1], o[2] + 0.01) / 0.01)
@@ -489,7 +492,7 @@ function M.timedSpan(line, stage)
     return { o[1] + p.y / mLat, o[2] + p.x / mLon }
   end
   local span = { lengthM = f - s, start = ll(s), finish = ll(f) }
-  line._span, line._spanFor, line._spanStage = span, pts, stage
+  line._span, line._spanFor, line._spanStage = span, raw, stage
   return span
 end
 

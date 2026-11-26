@@ -25,9 +25,11 @@ local M = {}
 -- The figures' own version, kept with them (`figures`): a line's saved figures are read back only when they are of
 -- this version, and worked out again otherwise (events.lineFigures). 2: chicanes counted as one corner, as they are
 -- one note (1.5.0). 3: long sweepers counted (pacenotes.sweepers). 4: open sixes, and the rest of a long bend
--- either side of a corner in it, counted as sweepers (1.6.2). A line saved before has no `figures` and is counted
--- again on its first look.
-M.VERSION = 4
+-- either side of a corner in it, counted as sweepers (1.6.2). 5: map-drawn bends (pacenotes.kinkSweepers), a corner
+-- the stage starts in, and a line's out-and-backs dropped (geo.foldBacks). 6: one corner finder over the fitted
+-- curvature (pacenotes.findCorners, the pacenote rebuild). A line saved before has no `figures` and
+-- is counted again on its first look.
+M.VERSION = 6
 
 M.CONTROL_OFF_LINE_M = 200  -- a start or finish control further than this from the line is not on it (runner.lua's
                             -- own rule where it cuts a line round a stage: stageLatLon)
@@ -51,6 +53,8 @@ end
 function M.of(points, stage)
   -- (two points are a line and measure as one: a straight, with no corners on it)
   if type(points) ~= 'table' or #points < 2 then return nil end
+  -- (as the run reads it: a line doubling back on itself has the excursion dropped, runner.lua stageLatLon)
+  points = geo.dropFoldBacks(points)
   local xy = frameAt(points[1][1], points[1][2])
   local line = {}
   for i, p in ipairs(points) do

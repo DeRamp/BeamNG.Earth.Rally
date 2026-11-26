@@ -195,6 +195,41 @@ do  -- the resample keeps the line's own end, at an even step before it (the out
   T.near(out[#out].x, 10.5, 1e-9, "the line's own end kept")
 end
 
+------------------------------------------------------------------------------------------ 0: out along a spur and back
+
+do
+  reset()
+  -- the organisers' line bulges 28 m north over 1150-1250 m, beside a dead-end spur off the stage's road there: a
+  -- waypoint lands on the spur, and the routes either side of it go out along it and back (geo.foldBacks drops that)
+  world.roads = { eastRoad('r', 3200, 20, 0),
+                  { name = 's', pts = { at(1100, 0), at(1150, 30), at(1200, 30), at(1250, 30) }, names = { 'r56' } } }
+  local line = {}
+  for _, p in ipairs({ { 0, 0 }, { 1000, 0 }, { 1150, 28 }, { 1250, 28 }, { 1400, 0 }, { 3000, 0 } }) do
+    local q = at(p[1], p[2])
+    line[#line + 1] = { q[1], q[2] }
+  end
+  local res = run(EVENT, stageOf(line))
+  local m = matchedFile()
+  T.check(res.ok == true and m ~= nil, 'a line beside a spur: matched (' .. tostring(res.why) .. ')')
+  local north = 0
+  for _, q in ipairs(m and m.points or {}) do
+    local n = geo.metres(LAT, q[2], q[1], q[2]) * (q[1] < LAT and -1 or 1)
+    if n > north then north = n end
+  end
+  T.check(m and north < 5, 'the spur is not driven out and back (' .. string.format('%.1f', north) .. ' m north at most)')
+  T.near(m and m.lengthM or 0, 3000, 30, 'the matched line is the stage\'s road, no spur in it')
+  T.check(m and #m.gaps == 0, 'no gaps')
+  -- an old line saved with the out-and-back in it: timed as the runner reads it, without (events.timedSpan)
+  local pts = {}
+  for x = 0, 1000, 4 do pts[#pts + 1] = at(x, 0) end
+  for y = 4, 200, 4 do pts[#pts + 1] = at(1000, y) end
+  for y = 196, 4, -4 do pts[#pts + 1] = at(1000.5, y) end
+  for x = 1004, 2000, 4 do pts[#pts + 1] = at(x, 0) end
+  local span = events.timedSpan({ points = pts }, stageOf(line))
+  T.near(span and span.lengthM or 0, 2000, 15, 'timedSpan: an out-and-back in an old line is not timed (' ..
+    tostring(span and span.lengthM) .. ')')
+end
+
 ------------------------------------------------------------------------------------------ 1: two windows stitched
 
 do
@@ -1019,6 +1054,106 @@ do
   T.check(far > 0 and wrong == 0 and exact + far == all,
     'grid: every node within the reach measured exactly, only those past it "too far" (' .. exact .. ' exact, ' ..
     far .. ' far, ' .. wrong .. ' wrong)')
+end
+
+-- The road's heights between the graph's nodes (the pacenote rebuild, step 4): the ground under a road near the
+-- stage read with rays while its window is loaded; the road's ground told by the road itself (a 6 m crest over the
+-- graph's straight line is kept, the valley under a bridge and a treetop are not), and the line eased onto it
+do
+  vec3 = vec3 or function(x, y, z) return { x = x, y = y, z = z } end
+  local wasRay = rawget(_G, 'castRayStatic')
+  -- a 300 m edge north from lat 47.0, at 100 m at both nodes; a 6 m crest round 100 m; a bridge with no collision
+  -- over a valley 20 m down from 200 to 230 m; a tree over the road at 60 m (a hit 8 m up, from rays above it)
+  local ground
+  ground = function(y) if y > 200 and y < 230 then return 80 end
+    return 100 + 6 * math.max(0, 1 - math.abs(y - 100) / 60) end
+  castRayStatic = function(pos, dir, len)
+    local g = ground(pos.y)
+    if pos.y > 58 and pos.y < 62 and pos.z > g + 8 then g = g + 8 end
+    local d = pos.z - g
+    if d >= 0 and d <= len then return d end
+    return len + 1
+  end
+  local M1 = math.rad(1) * 6371008.8
+  local lat1 = 47.0 + 300 / M1
+  local j = { stage = { line = { { 47.0, -123.0 }, { lat1, -123.0 } } },
+              graph = { nodes = { a = { lat = 47.0, lon = -123.0, alt = 100 }, b = { lat = lat1, lon = -123.0, alt = 100 },
+                                  c = { lat = 47.0, lon = -122.99, alt = 100 }, d = { lat = lat1, lon = -122.99, alt = 100 },
+                                  [7] = { lat = 47.0, lon = -123.0, alt = 100 } },
+                        edges = { { 'a', 'b' }, { 'c', 'd' } } } }
+  local kept = auto.sampleRays(j, { { 'a', 'b' }, { 'c', 'd' } })
+  T.check(kept > 50 and kept < 74, 'rays: the ground under the stage road, less the bridge, not the road 760 m off (' ..
+    kept .. ')')
+  local fr = auto.frame(47.0, -123.0)
+  local function line()
+    local res, flags = {}, {}
+    for s = 0, 300, 4 do
+      local p = fr.xy(47.0 + s / M1, -123.0)
+      res[#res + 1] = { x = p.x, y = p.y, z = 100 }
+      flags[#flags + 1] = 0
+    end
+    return res, flags
+  end
+  local res, flags = line()
+  local n = auto.rayHeights(res, flags, j.graph.rays, fr)
+  T.near(res[26].z, 105.6, 0.5, 'rays: a 6 m crest between two nodes is on the line (' .. res[26].z .. ')')
+  T.near(res[16].z, 102, 0.3, 'rays: the ground under a tree, not the tree (' .. res[16].z .. ')')
+  T.near(res[55].z, 100, 0.3, 'rays: the valley under a bridge is not the road (' .. res[55].z .. ')')
+  T.check(n > 50, 'rays: ' .. n .. ' points took a ground height')
+  -- mixed coverage: rays on the first half of the crest only; the line eases back to the graph, no step
+  local half = {}
+  for _, r in ipairs(j.graph.rays) do if (r[1] - 47.0) * M1 < 90 then half[#half + 1] = r end end
+  res, flags = line()
+  auto.rayHeights(res, flags, half, fr)
+  local worst = 0
+  for k = 2, #res do worst = math.max(worst, math.abs(res[k].z - res[k - 1].z)) end
+  T.check(worst < 1.2, string.format('rays: where they stop, no step (worst %.2f m over 4 m)', worst))
+  -- a node named by a number, and one with a '|' in its name
+  j.graph.nodes['x|y'] = { lat = 47.0, lon = -123.0, alt = 100 }
+  j.graph.rays = nil
+  T.check(auto.sampleRays(j, { { 7, 'b' }, { 'x|y', 'b' } }) > 50, 'rays: any node names')
+  -- a long bridge with no deck collision: 80 m over a valley 8 m down -- neither walk ever reaches the valley floor
+  local wasGround = ground
+  ground = function(y) if y > 20 and y < 100 then return 92 end return 100 end
+  local lat2 = 47.0 + 120 / M1
+  local jb = { stage = { line = { { 47.0, -123.0 }, { lat2, -123.0 } } },
+               graph = { nodes = { a = { lat = 47.0, lon = -123.0, alt = 100 }, b = { lat = lat2, lon = -123.0, alt = 100 } } } }
+  auto.sampleRays(jb, { { 'a', 'b' } })
+  local low = 0
+  for _, r in ipairs(jb.graph.rays) do if r[3] < 99 then low = low + 1 end end
+  T.check(low == 0 and #jb.graph.rays > 0, 'rays: a long bridge with no collision: the valley floor never kept (' ..
+    low .. ' of ' .. #jb.graph.rays .. ')')
+  ground = wasGround
+  -- the rays a frame at a time (RAY_BUDGET) keep the same ground as all at once
+  local jq = { stage = j.stage, graph = { nodes = j.graph.nodes } }
+  auto.rayQueue(jq, { { 'a', 'b' }, { 'c', 'd' } })
+  local frames = 1
+  while not auto.rayStep(jq, 7) do frames = frames + 1 end
+  local ja = { stage = j.stage, graph = { nodes = j.graph.nodes } }
+  auto.sampleRays(ja, { { 'a', 'b' }, { 'c', 'd' } })
+  local sameRays = #jq.graph.rays == #ja.graph.rays
+  for k, r in ipairs(ja.graph.rays) do
+    local q = jq.graph.rays[k]
+    if not (q and q[1] == r[1] and q[2] == r[2] and q[3] == r[3]) then sameRays = false end
+  end
+  T.check(frames == 2 and sameRays, 'rays: a few a frame (' .. frames .. ' frames), the same ground as all at once')
+  -- a point with no ray inside a run of them takes its neighbours' offset: no dip on a 3 m crest
+  local crestRays, resC, flagsC = {}, {}, {}
+  for k = 0, 50 do
+    local sm = k * 4
+    local p = fr.xy(47.0 + sm / M1, -123.0)
+    resC[#resC + 1] = { x = p.x, y = p.y, z = 100 }
+    flagsC[#flagsC + 1] = 0
+    if k % 3 ~= 0 then crestRays[#crestRays + 1] = { 47.0 + sm / M1, -123.0, 103 } end
+  end
+  auto.rayHeights(resC, flagsC, crestRays, fr)
+  local dip = 0
+  for k = 6, 46 do dip = math.max(dip, 103 - resC[k].z) end
+  T.check(dip < 0.05, string.format('rays: a point with none inside a run: no dip (%.2f m)', dip))
+  castRayStatic = nil
+  T.check(auto.sampleRays({ stage = j.stage, graph = { nodes = j.graph.nodes } }, { { 'a', 'b' } }) == 0,
+    'rays: no ray to cast, nothing found')
+  castRayStatic = wasRay
 end
 
 T.done('test_autorecce')
