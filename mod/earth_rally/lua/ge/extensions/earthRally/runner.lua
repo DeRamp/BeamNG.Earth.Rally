@@ -314,6 +314,14 @@ M._camUpdate = camUpdate
 function M.placeCar(veh, pos, dir)
   local l = math.sqrt(dir.x * dir.x + dir.y * dir.y + (dir.z or 0) ^ 2)
   if l < 1e-6 then return false end
+  -- (#80) setPositionRotation puts the car back in its built shape -- a repair. While damage is kept (a skip, a
+  -- rally), moved by the game's safeTeleport without its reset instead (it turns the car 180 degrees itself).
+  local sp = rawget(_G, 'spawn')
+  if M.keepingDamage() and sp and type(sp.safeTeleport) == 'function' then
+    local ok = pcall(sp.safeTeleport, veh, vec3(pos.x, pos.y, pos.z),
+      quatFromDir(vec3(dir.x / l, dir.y / l, (dir.z or 0) / l), vec3(0, 0, 1)), nil, nil, false, nil, false)
+    if ok then M.resetCameraSoon() return true end
+  end
   local q = quatFromEuler(0, 0, math.pi) * quatFromDir(vec3(dir.x / l, dir.y / l, (dir.z or 0) / l), vec3(0, 0, 1))
   veh:setPositionRotation(pos.x, pos.y, pos.z, q.x, q.y, q.z, q.w)
   M.resetCameraSoon()

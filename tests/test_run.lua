@@ -4786,6 +4786,10 @@ do
     runner.keepShape(true)
     T.check(getPlayerVehicle ~= gpv0 and getPlayerVehicle(0) == gpv0(0),
       'keep shape: any caller but BeamNG.Earth\'s core gets the real car')
+    local nc0 = #calls
+    runner.placeCar(gpv0(0), { x = 1, y = 2, z = 3 }, { x = 0, y = 1, z = 0 })
+    T.check(calls[nc0 + 1] and calls[nc0 + 1].reset == false,
+      'keep damage: the car set down by safeTeleport with no reset, not setPositionRotation (#80)')
     runner.keepDamage(false)
     T.check(getPlayerVehicle == gpv0, 'keep damage off: the game\'s getPlayerVehicle back')
   end
