@@ -41,7 +41,7 @@ loadScreen.moving = function() return runner.originMoving() or earth.rebasing() 
 local M = {}
 local logTag = 'earthRally'
 local logPausedSim         -- (below, by onUpdate)
-M.VERSION = '1.10.2-alpha+fixes'
+M.VERSION = '1.10.4-alpha'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_FLOOR_S = 1             -- the HUD's streams sent when what they show changes, and at least this often
 M.STREAM_GAP_S = 0.1              -- ... the stock stream at most this often outside waitStart / running
@@ -227,7 +227,7 @@ local function closeAfter(ok, why)
 end
 
 -- (rallyRun's) a move or a stage loading in a full rally: the screen, then the time card or driving.
-rallyRun.ui.loading = function(what, item, stage)
+rallyRun.ui.loading = function(what, item, stage, opts)
   local r = rallyRun.active()
   if not r then return end
   local kick = r.name
@@ -253,7 +253,13 @@ rallyRun.ui.loading = function(what, item, stage)
       end
       return #steps + 1
     end,
-    done = function() if rallyRun.active() then M.openMenu('timecard') end end })
+    -- (a skipped transit to a stage: the car at its board, "Load the stage?" next -- no time card over it)
+    done = function()
+      if not rallyRun.active() then return end
+      -- (... and only with its transit armed there: one that failed keeps its card, and says why)
+      if opts and opts.noCard and runner.approaching() then if menuOpen then M.closeMenu() end
+      else M.openMenu('timecard') end
+    end })
   showLoading('timecard')
 end
 
@@ -1966,6 +1972,15 @@ function M.uiRallyAction(what, eventId, opts)
       -- (not when Go arrived at a stop at once -- one with no place on the map: its card is the next step)
       local card = okS and rallyRun.uiCard()
       if okS and menuOpen and not (card and card.phase == 'stop') and not loadScreen.active() then M.closeMenu() end
+      return go(okS, why)
+    elseif what == 'skip' then
+      -- (+skiptransit: the time card's Skip transit -- the car taken there under the loading screen; not over a card
+      -- the skip opened at once, a stop's or the rally's end)
+      local okS, why = rallyRun.skipTransit()
+      local card = okS and rallyRun.uiCard()
+      if okS and menuOpen and not (card and (card.phase == 'stop' or card.done)) and not loadScreen.active() then
+        M.closeMenu()
+      end
       return go(okS, why)
     elseif what == 'quit' or what == 'abandon' then
       -- (left while the stages are being got ready: the auto recce under way stops with it)

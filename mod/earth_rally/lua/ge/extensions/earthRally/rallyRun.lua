@@ -98,6 +98,8 @@ local worldDue = false -- (a jump of the clock made while it was paused: the sky
 local worldFailed = false -- (BeamNG.Earth said no: not asked again until the clock's next real jump)
 local realT = 0        -- (real seconds, for the sky's drift from the rally clock)
 local wasPaused = false
+local skipFor = nil    -- (the stage whose transit was skipped: on time at its check-in, M.atControl)
+local skipClock        -- (below, M.canSkip)
 local skippedAt = nil  -- (realT of the last skip of a wait: the same key press's Interact swallowed, M.interactHeld)
 -- (main.lua) the rally clock stops while this says so: a loading screen or a menu up
 M.clockPaused = function() return false end
@@ -664,7 +666,7 @@ end
 
 function M.active() return R end
 -- (tests only: a rally put in place as it would be after a start or a continue)
-function M._setRally(r) R, wait, world, worldDue, worldFailed, skippedAt = r, nil, nil, false, false, nil end
+function M._setRally(r) R, wait, world, worldDue, worldFailed, skippedAt, skipFor = r, nil, nil, false, false, nil, nil end
 function M.inRun()
   local r = runner.current()
   return R ~= nil and r ~= nil and r.inRally == true
@@ -931,28 +933,34 @@ local function arrive(driven)
 end
 
 -- The car taken to the stop the rally is at (a teleport to its place; with none, it is done where the car is).
-local function goToStop()
+-- skip (M.skipTransit): checked in there once the car is in, as if driven in; a teleport that fails is no arrival
+-- then (false, why). Else arrive() -- nothing checked in.
+local driveToStop          -- (below)
+local function goToStop(skip)
   local it = R and rally.current(R)
   if not it or it.kind == 'stage' then return false end
+  local done = skip and function() skipClock() arrive(true) end or function() arrive() end
   toStop = nil
   runner.disarmApproach('the rally moved on')
   if runner.current() then pcall(runner.abort, true) end
-  if not (it.place and it.place.lat) then arrive() return true end
-  pcall(runner.keepDamage, false)
+  if not (it.place and it.place.lat) then done() return true end
+  -- (#80: a skip is no repair: the teleport keeps the damage; a service then mends it on arrival, as if driven in)
+  pcall(runner.keepDamage, skip and true or false)
   local ok, why = earth.teleport(it.place.lat, it.place.lon, it.place.name or it.label)
   if not ok then
     log('W', logTag, 'rally: could not go to ' .. tostring(it.label) .. ': ' .. tostring(why))
-    arrive()
+    if skip then driveToStop() return false, 'Could not take the car there.' end
+    done()
     return true
   end
-  move = { item = it, t = 0, ready = 0 }
+  move = { item = it, t = 0, ready = 0, thenDo = done }
   -- (the page stays up on a loading screen until the car is there and the world round it is in: #49)
   if M.ui.loading then M.ui.loading('move', it) elseif M.ui.closeMenu then M.ui.closeMenu() end
   return true
 end
 
 -- A service driven to: the GPS set to its place, done once the car is stopped at its board (M.update).
-local function driveToStop()
+driveToStop = function()
   local it = R and rally.current(R)
   if not (it and it.kind ~= 'stage' and it.place and it.place.lat) then return goToStop() end
   toStop = { item = it, lat = it.place.lat, lon = it.place.lon, t = 0 }
@@ -1007,7 +1015,10 @@ local function startLabel(it)
   local st = stageOf(it)
   return 'the start of ' .. tostring(it.ss) .. (st and (' ' .. st.name) or '')
 end
-local function goToStageStart(it)
+-- skip (M.skipTransit): the card left shut -- the car is at the board and "Load the stage?" comes next, as after
+-- driving in; the clock goes on to the due minute at the check-in (M.atControl, skipFor). Returns ok, why: a teleport
+-- that fails on a skip is no skip (the transit armed again from where the car is).
+local function goToStageStart(it, skip)
   toStop = nil
   runner.disarmApproach('the rally moved on')
   if runner.current() then pcall(runner.abort, true) end
@@ -1015,21 +1026,54 @@ local function goToStageStart(it)
   local stage = stageOf(it)
   local lat, lon = nil, nil
   if stage then lat, lon = runner.arrivalPoint(stage) end
-  local function arm()
+  local function arm(landed)
+    -- (#79) The teleport leaves the car on the raw point, turned as it was: set down on the road, facing the way on.
+    -- At the ATC: SKIP_BEFORE_ATC_M before its board (inside AT_BOARD_M: at the board, as if driven in), facing it;
+    -- with no ATC: behind the start line, facing along the stage. No road there yet: turned toward the start.
+    if landed and stage then  -- (not after a teleport that failed: the car left where the player has it)
+      local kind = select(3, runner.arrivalPoint(stage))
+      local fok, placed, how
+      if kind == 'ATC' then fok, placed, how = pcall(runner.faceAtc, stage, runner.SKIP_BEFORE_ATC_M)
+      else fok, placed, how = pcall(runner.faceStage, stage, R.eventId) end
+      -- (the road map is often not in yet just after a teleport: then on the matched file's ATC road point, turned
+      -- along its road, as the auto recce's landing does)
+      local atc = stage.controls and stage.controls.atc
+      if kind == 'ATC' and not (fok and placed) and atc then
+        local okR, onRoad = pcall(events.controlOnRoad, R.eventId, stage.id, 'atc', atc)
+        if okR and onRoad then fok, placed, how = pcall(runner.faceAtcFrom, stage, onRoad) end
+      end
+      local s = stage.controls and stage.controls.start
+      if not (fok and placed) and s and select(2, pcall(runner.turnToward, s.lat, s.lon)) == true then
+        fok, placed, how = true, true, 'turned toward the start only'
+      end
+      log('I', logTag, 'rally: set down at ' .. startLabel(it) .. ': ' .. (fok and (placed and tostring(how or 'done')
+        or ('left where it landed (' .. tostring(how) .. ')')) or tostring(placed))
+        .. string.format(' (keep damage %s, %d set-down(s) kept)', tostring(runner.keepingDamage()), runner.keepCaught()))
+    end
     local okT, whyT = armTransit()
     if not okT then say(tostring(whyT), 6, 'warning', R.name) end
-    if M.ui.openCard then M.ui.openCard() end
+    -- (a stage with no ATC to check in at -- loaded at its start, runner.arrivalPoint: the clock on now)
+    if skip and okT then
+      if stage and select(3, runner.arrivalPoint(stage)) == 'ATC' then skipFor = it else skipClock() end
+    end
+    if (not skip or not okT) and M.ui.openCard then M.ui.openCard() end
   end
   local at = { kind = 'stageStart', label = startLabel(it), name = stage and stage.name or nil }
-  -- (no service to mend it: BeamNG.Earth's set-down after a teleport is a repair, and a recovery must not be one)
-  if R.mode == 'realistic' then pcall(runner.keepDamage, true) end
+  -- (no service to mend it: BeamNG.Earth's set-down after a teleport is a repair, and a recovery must not be one;
+  -- #80: nor a skip of the transit, in any mode)
+  if skip or R.mode == 'realistic' then pcall(runner.keepDamage, true) end
   if not (lat and earth.teleport(lat, lon, at.label)) then
     log('W', logTag, 'rally: could not go to ' .. at.label .. ': its transit armed from here')
+    local wasSkip = skip
+    skip = false             -- (not there: no skip of the clock either)
     arm()
-    return
+    if wasSkip then return false, 'Could not take the car there.' end
+    return true
   end
-  move = { item = at, t = 0, ready = 0, thenDo = arm }
-  if M.ui.loading then M.ui.loading('move', at) elseif M.ui.closeMenu then M.ui.closeMenu() end
+  move = { item = at, t = 0, ready = 0, thenDo = function() arm(true) end }
+  if M.ui.loading then M.ui.loading('move', at, nil, skip and { noCard = true } or nil)
+  elseif M.ui.closeMenu then M.ui.closeMenu() end
+  return true
 end
 
 -- (the end of the rally by a recovery: what is said)
@@ -1163,6 +1207,11 @@ function M.atControl(it, stage)
   -- early at a cost when the setting says so: M.continueOk)
   wait = nil
   local dueT = timed() and R.order[R.pos] == it and dueAt(R.pos) or nil
+  -- (its transit skipped: the clock on to the due minute here, at the check-in -- never back)
+  if skipFor == it then
+    skipFor = nil
+    skipClock()
+  end
   if dueT then
     tc.due = wt.hm(dueT)
     if math.floor(R.clock.t / 60) < math.floor(dueT / 60) then
@@ -1266,6 +1315,7 @@ finish = function()
   t.finished[#t.finished + 1] = rally.finished(R, os.date('!%Y-%m-%dT%H:%M:%SZ'))
   writeFile(R.eventId, t)
   M.block(false)
+  pcall(runner.keepDamage, false)   -- (#80: a skip to the final service left it on: later teleports must repair again)
   trafficEnd()
   gpsOff()
   wait = nil
@@ -1290,7 +1340,7 @@ function M.start(id, opts)
   if not r then return false, why end
   if picked and settings.get('rallyTraffic') ~= picked then pcall(settings.set, 'rallyTraffic', picked) end
   if question then pcall(runner.askLayout, false) end
-  R, card, recoveredAt, question, move, toStop = r, nil, nil, nil, nil, nil
+  R, card, recoveredAt, question, move, toStop, skipFor = r, nil, nil, nil, nil, nil, nil
   savedResults = nil
   -- (the rally saved before is replaced now, as the start screen says, not only once the car is at the start)
   local t0 = M.readFile(id)
@@ -1310,6 +1360,7 @@ end
 -- Back to the rally saved for it, at its last service (or its start). Returns ok, why.
 function M.resume(id)
   if R and not R.done and R.eventId ~= id then return false, 'another rally is under way: leave it first' end
+  skipFor = nil
   local t = M.readFile(id)
   if not t.current then return false, 'there is no rally saved for this one' end
   if not load(id) then return false, 'that rally is not on this computer any more' end
@@ -1393,6 +1444,7 @@ end
 
 -- Leave the rally (continue later): BeamNG's recovery back, the run stopped. The save stays at its last service.
 function M.quit()
+  skipFor = nil
   if not R then return true end
   -- (Realistic, timed, left on a road section: the clock as it is now kept with the loop, so a Continue checks in at
   -- the next stop with the lateness so far)
@@ -1401,6 +1453,7 @@ function M.quit()
   pcall(setWorld, true)
   if M.inRun() then pcall(runner.abort, true) end
   runner.disarmApproach('the rally was left')
+  pcall(runner.keepDamage, false)   -- (#80: a skip's kept damage ends with the rally: later teleports repair again)
   if toStop or (R and not R.done) then gpsOff() end
   -- (the service's board and tent: taken away now, unless the rally ended there and the car stands by it)
   local s = props.site('service')
@@ -1897,6 +1950,43 @@ function M.resultsAction(what)
   return true
 end
 
+-- (+skiptransit) The player's skip of a road section, the time card's "Skip transit": on the way to a stage's time control,
+-- or to a service or overnight not yet reached. The car is taken there and, on a timed rally, the clock goes on to
+-- the due minute -- checked in on time, never earlier than that and never back (already late stays late). At a stop,
+-- checked in at its "in" control as if driven in; at a stage's time control, "Load the stage?" as if driven in.
+-- Not offered once the car is near (runner.STOP_HINT_M, where the line says to stop at the board): driven in from there.
+function M.canSkip()
+  if not R or R.done or rally.over(R) or prep or move or wait or question or runLive() then return false end
+  local it = rally.current(R)
+  if not it then return false end
+  local near = runner.STOP_HINT_M
+  if it.kind == 'stage' then
+    if not runner.approaching() then return false end
+    local ap = runner.approachInfo()
+    return not (ap and type(ap.distM) == 'number' and ap.distM <= near)
+  end
+  return toStop ~= nil and toStop.item == it and not rally.isServiced(R)
+    and not (type(toStop.distM) == 'number' and toStop.distM <= near)
+end
+
+skipClock = function()
+  if not (R and timed()) then return end
+  local dueT = dueAt(R.pos)
+  if dueT and R.clock.t < dueT then
+    log('I', logTag, string.format('rally: transit skipped, the clock %s -> %s', wt.hm(R.clock.t), wt.hm(dueT)))
+    R.clock.t = dueT
+    setWorld()
+  end
+end
+
+function M.skipTransit()
+  if not M.canSkip() then return false, 'no transit to skip' end
+  local it = rally.current(R)
+  log('I', logTag, 'rally: transit to ' .. tostring(itemLabel(it)) .. ' skipped')
+  if it.kind == 'stage' then return goToStageStart(it, true) end
+  return goToStop(true)
+end
+
 ------------------------------------------------------------------------------------------ the developer panel (#29)
 
 -- Skip the transit: the car taken to where it was driving (the next stage's start, or the service).
@@ -2037,6 +2127,7 @@ function M.uiCard()
     -- (interface 2: a timed rally only -- the card treats a rally as timed when clock is there)
     clock = timed() and { date = wt.dateText(R.clock.t), time = wt.hm(R.clock.t) } or nil,
     roadPenaltyS = timed() and rally.roadPenaltyS(R) or nil,
+    canSkip = (phase == 'transit' or phase == 'toStop') and M.canSkip() or nil,
     lateSPerMin = timed() and (R.lateSPerMin or rally.LATE_S_PER_MIN) or nil,
     earlySPerMin = timed() and (R.earlySPerMin or rally.EARLY_S_PER_MIN) or nil,
     earlyPenalty = timed() and settings.get('earlyPenalty') == true or nil,

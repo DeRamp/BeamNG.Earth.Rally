@@ -4326,6 +4326,137 @@ do
     teleports, moved = 0, false
   end
 
+  -- 3d1b. (+skiptransit) Skip transit, the time card's button: the car taken there, a timed rally's clock on to the due
+  -- minute (checked in on time), never back (late stays late); at a stop, checked in as if driven in
+  do
+    local rally = require('earthRally/rally')
+    local rallyRun = require('earthRally/rallyRun')
+    local wt = require('earthRally/worldTime')
+    local parkLat, parkLon = atcLat - 8000 / 111195, full[11][2]
+    local t0 = wt.parse('2031-02-07', '08:00')
+    rallyRun.ui.openCard = function() end
+    core_input_actionFilter = { setGroup = function() end, addAction = function() end }
+    local function rframes(n) for _ = 1, n do rallyRun.update(0.1, 0) frames(1) end end
+    car.lat, car.lon, car.speed = parkLat, parkLon, 0
+    T.check(rallyRun.start('test19t', { mode = 'casual', class = 'L4WD' }), 'skip: started')
+    rframes(60)
+    local R = rallyRun.active()
+    T.check(not rallyRun.canSkip() and rallyRun.uiCard().canSkip == nil and not rallyRun.skipTransit(),
+      'skip: at the start, nothing to skip')
+    T.check(rallyRun.goNext() and runner.approaching(), 'skip: on the transit to SS1')
+    T.check(rallyRun.canSkip() and rallyRun.uiCard().canSkip == true, 'skip: the transit to SS1 can be skipped')
+    R.clock.t = t0 + 5 * 60
+    -- (the teleport fails: no skip -- said, the clock as it was, the transit armed again)
+    local tp = beamngEarth_api.teleport
+    beamngEarth_api.teleport = function() return false end
+    local placeCarF, movedF = runner.placeCar, false
+    runner.placeCar = function(...) movedF = true return placeCarF(...) end
+    local okF, whyF = rallyRun.skipTransit()
+    beamngEarth_api.teleport = tp
+    rframes(5)
+    runner.placeCar = placeCarF
+    T.check(not movedF, 'skip: the teleport failed: the car not moved or turned (#79)')
+    T.check(not okF and whyF and R.clock.t == t0 + 5 * 60 and runner.approaching() and rallyRun.canSkip(),
+      'skip: the teleport failed: not skipped (' .. tostring(whyF) .. '), the transit armed again')
+    local placeCar0, placedDir = runner.placeCar, nil
+    runner.placeCar = function(v, pos, dir) placedDir = dir return placeCar0(v, pos, dir) end
+    local keep0, kept = runner.keepDamage, nil
+    runner.keepDamage = function(on) kept = on return keep0(on) end
+    T.check(rallyRun.skipTransit() and not rallyRun.canSkip(), 'skip: SS1\'s transit skipped')
+    T.check(kept == true, 'skip (Casual): the teleport keeps the car\'s damage, no repair (#80)')
+    rframes(60)
+    runner.placeCar, runner.keepDamage = placeCar0, keep0
+    T.check(geo_m(car.lat, car.lon, atcLat, atcLon) < runner.AT_BOARD_M, 'skip: the car at SS1\'s time control')
+    do  -- (#79: turned toward the start, not left as it was before the teleport)
+      local s1 = ev.stages[1].controls.start
+      local ax, ay = beamngEarth_api.toGame(atcLat, atcLon, 0)
+      local sx, sy = beamngEarth_api.toGame(s1.lat, s1.lon, 0)
+      T.check(placedDir and placedDir.x * (sx - ax) + placedDir.y * (sy - ay) > 0,
+        'skip: the car set down facing the way on to the start (#79)')
+    end
+    T.check(not rallyRun.canSkip(), 'skip: at the board, no skip offered')
+    T.check(rallyRun.askInfo() and rallyRun.askInfo().loadAsk and rallyRun.answerLoad('load'), 'skip: SS1 loaded')
+    T.check(R.clock.t == t0 + 20 * 60, 'skip: the clock on to the due minute at the check-in, 08:20 (' .. wt.hm(R.clock.t) .. ')')
+    rframes(10)
+    T.check(R.road.SS1 and R.road.SS1.kind == 'onTime' and R.road.SS1.penaltyS == 0,
+      'skip: checked in at SS1 on time (' .. tostring(R.road.SS1 and R.road.SS1.kind) .. ')')
+    pcall(runner.abort, true)
+    rallyRun.onFinished({ timeS = 200, stageS = 200, penaltyS = 0, startT = t0 + 20 * 60, finishT = t0 + 25 * 60 })
+    T.check(rallyRun.uiCard().phase == 'toStop' and rallyRun.canSkip(), 'skip: the drive to the final service can be skipped')
+    -- (already late: the clock stays, the lateness counted)
+    R.clock.t = t0 + 45 * 60 + 10
+    -- (near the stop: no skip; far: one)
+    car.lat, car.lon, car.speed = parkLat - 0.001, parkLon, 10
+    rframes(6)
+    T.check(not rallyRun.canSkip(), 'skip: 110 m from the final service, no skip offered')
+    car.lat, car.lon, car.speed = parkLat + 0.05, parkLon, 0
+    rframes(6)
+    -- (the teleport fails: nothing checked in, still driving there)
+    beamngEarth_api.teleport = function() return false end
+    okF = rallyRun.skipTransit()
+    beamngEarth_api.teleport = tp
+    T.check(not okF and R.road.stop3 == nil and rallyRun.uiCard().phase == 'toStop' and not rally.over(R),
+      'skip: the teleport to the stop failed: nothing checked in, still driving there')
+    rframes(3)
+    T.check(rallyRun.skipTransit(), 'skip: the drive to the final service skipped')
+    rframes(60)
+    T.check(geo_m(car.lat, car.lon, parkLat, parkLon) < 1 and rally.over(R), 'skip: at the final service, the rally over')
+    T.check(R.clock.t == t0 + 45 * 60 + 10 and R.road.stop3 and R.road.stop3.kind == 'late' and R.road.stop3.min == 5,
+      'skip: late already: the clock not put back, checked in 5 min late (' .. tostring(R.road.stop3 and R.road.stop3.kind) .. ')')
+    rallyRun.endRally()
+    rallyRun.abandon('test19t')
+    -- (a stage with no ATC: loaded at its start, no check-in card -- the clock on as the car is there)
+    local flat = { id = 'flat', name = 'Flat', lengthM = st.lengthM, radiusM = st.radiusM, centre = st.centre,
+      controls = { start = st.controls.start, ff = st.controls.ff }, line = st.line }
+    files['/earthRally/events/test19s.json'] = { format = 1, id = 'test19s', name = 'Test Rally 19S', stages = { flat },
+      itinerary = { { ss = 'SS1', stage = 'flat', run = 1, day = 1, km = 3, latenessMin = 10, outDate = '2031-02-07',
+        outAt = '08:00', outTargetMin = 20 } },
+      rallyStops = {}, rallyStart = { name = 'Park', lat = parkLat, lon = parkLon },
+      timing = { timezone = 'America/Chicago', start = { date = '2031-02-07', time = '08:00' } } }
+    files['/earthRally/matched/test19s__flat.json'] = { format = 1, points = recFrom }
+    events.list(true)
+    car.lat, car.lon, car.speed = parkLat, parkLon, 0
+    T.check(rallyRun.start('test19s', { mode = 'casual', class = 'L4WD' }), 'skip no ATC: started')
+    rframes(60)
+    R = rallyRun.active()
+    T.check(R.timed and rallyRun.goNext() and runner.approaching(), 'skip no ATC: on the transit to SS1')
+    R.clock.t = t0 + 5 * 60
+    -- (#79: set down behind the start line, facing along the stage -- not left turned as it was before the teleport)
+    local placeCar0, placedDir = runner.placeCar, nil
+    runner.placeCar = function(v, pos, dir) placedDir = dir return placeCar0(v, pos, dir) end
+    T.check(rallyRun.skipTransit(), 'skip no ATC: skipped')
+    rframes(60)
+    runner.placeCar = placeCar0
+    T.check(geo_m(car.lat, car.lon, st.controls.start.lat, st.controls.start.lon) < runner.CAR_BEHIND_LINE_M + 2
+      and R.clock.t == t0 + 20 * 60,
+      'skip no ATC: at the start, the clock on to 08:20 (' .. wt.hm(R.clock.t) .. ')')
+    local sx, sy = beamngEarth_api.toGame(st.line[1][1], st.line[1][2], 0)
+    local ex, ey = beamngEarth_api.toGame(st.line[#st.line][1], st.line[#st.line][2], 0)
+    T.check(placedDir and placedDir.x * (ex - sx) + placedDir.y * (ey - sy) > 0,
+      'skip no ATC: the car set down facing along the stage (#79)')
+    pcall(runner.abort, true)
+    rallyRun.endRally()
+    rallyRun.abandon('test19s')
+    -- (Realistic, untimed: free, nothing missed, no Super Rally)
+    files['/earthRally/events/test19n.json'] = { format = 1, id = 'test19n', name = 'Test Rally 19N', stages = ev.stages,
+      itinerary = { { ss = 'SS1', stage = 'hill', run = 1, day = 1, km = 3 }, { ss = 'SS2', stage = 'hill', run = 2, day = 1, km = 3 } },
+      rallyStops = {}, rallyStart = { name = 'Square', lat = parkLat, lon = parkLon } }
+    files['/earthRally/matched/test19n__hill.json'] = { format = 1, points = recFrom }
+    events.list(true)
+    car.lat, car.lon, car.speed = parkLat, parkLon, 0
+    T.check(rallyRun.start('test19n', { mode = 'realistic', class = 'L4WD' }), 'skip realistic: started')
+    rframes(60)
+    R = rallyRun.active()
+    T.check(rallyRun.goNext() and rallyRun.skipTransit(), 'skip realistic: SS1\'s transit skipped')
+    rframes(60)
+    T.check(geo_m(car.lat, car.lon, atcLat, atcLon) < 1 and (R.missed or 0) == 0 and not R.superRally
+      and rally.current(R).ss == 'SS1' and rallyRun.askInfo() and rallyRun.askInfo().loadAsk,
+      'skip realistic: at SS1\'s time control, nothing missed, asked to load')
+    core_input_actionFilter = nil
+    rallyRun.abandon('test19n')
+    teleports, moved = 0, false
+  end
+
   -- 3d2. (1.7.2) Stop while a full rally gets its stages ready stops them all, through the real prep: the owner
   -- pressed Stop once a stage before, as the next started a frame later. The prep ends at once with the ending
   -- those presses reached -- the stages with no line held out, the rally going on -- and says so; with no stage
@@ -4635,6 +4766,27 @@ do
   T.check(calls[2] and calls[2].reset == true, 'keepDamage: another car is reset as asked')
   runner.keepDamage(false)
   T.check(spawn.safeTeleport == plain and not runner.keepingDamage(), 'keepDamage off: the game\'s own function back')
+  -- (#80) the game's function replaced while on (a reload): asked again, it is wrapped again
+  runner.keepDamage(true)
+  spawn.safeTeleport = plain
+  runner.keepDamage(true)
+  local nc = #calls
+  spawn.safeTeleport(getPlayerVehicle(0), vec3(0, 0, 0), nil, nil, nil, false, nil, true)
+  T.check(spawn.safeTeleport ~= plain and calls[nc + 1] and calls[nc + 1].reset == false,
+    'keepDamage: the game\'s function replaced while on: wrapped again, the damage kept (#80)')
+  runner.keepDamage(false)
+  T.check(spawn.safeTeleport == plain, 'keepDamage off after the re-wrap: the game\'s own function back')
+  -- (#80) while damage is kept, the car is set down by the game's safeTeleport with no reset (setPositionRotation put
+  -- it back in its built shape)
+  do
+    local gpv0 = getPlayerVehicle
+    runner.keepDamage(true)
+    local nc0 = #calls
+    runner.placeCar(gpv0(0), { x = 1, y = 2, z = 3 }, { x = 0, y = 1, z = 0 })
+    T.check(calls[nc0 + 1] and calls[nc0 + 1].reset == false,
+      'keep damage: the car set down by safeTeleport with no reset, not setPositionRotation (#80)')
+    runner.keepDamage(false)
+  end
 
   local nRuns = #(events.results('test', 'hill').runs or {})
   anchor = { lat = 47.0, lon = -123.0 }

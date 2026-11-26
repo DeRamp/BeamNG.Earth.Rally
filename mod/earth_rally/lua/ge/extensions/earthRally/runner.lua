@@ -314,6 +314,16 @@ M._camUpdate = camUpdate
 function M.placeCar(veh, pos, dir)
   local l = math.sqrt(dir.x * dir.x + dir.y * dir.y + (dir.z or 0) ^ 2)
   if l < 1e-6 then return false end
+  -- (#80) setPositionRotation puts the car back in its built shape -- a repair. While damage is kept (a skip, a
+  -- rally), moved by the game's safeTeleport without its reset instead (it turns the car 180 degrees itself).
+  local sp = rawget(_G, 'spawn')
+  if M.keepingDamage() and sp and type(sp.safeTeleport) == 'function' then
+    -- (the game's own function, not our wrapper: our moves are not counted as BeamNG.Earth's set-downs kept)
+    local tp = M.keepOrig() or sp.safeTeleport
+    local ok = pcall(tp, veh, vec3(pos.x, pos.y, pos.z),
+      quatFromDir(vec3(dir.x / l, dir.y / l, (dir.z or 0) / l), vec3(0, 0, 1)), nil, nil, false, nil, false)
+    if ok then M.resetCameraSoon() return true end
+  end
   local q = quatFromEuler(0, 0, math.pi) * quatFromDir(vec3(dir.x / l, dir.y / l, (dir.z or 0) / l), vec3(0, 0, 1))
   veh:setPositionRotation(pos.x, pos.y, pos.z, q.x, q.y, q.z, q.w)
   M.resetCameraSoon()
@@ -443,6 +453,7 @@ end
 M.KEEP_DAMAGE_S = 300
 local keepWrap = nil      -- { orig, untilT }
 local wallClock = rawget(os, 'clockhp') or os.clock
+
 function M.keepDamage(on)
   local sp = rawget(_G, 'spawn')
   if not on then
@@ -450,18 +461,37 @@ function M.keepDamage(on)
     keepWrap = nil
     return
   end
-  if keepWrap or not (sp and type(sp.safeTeleport) == 'function') then
+  if not (sp and type(sp.safeTeleport) == 'function') then
     if keepWrap then keepWrap.untilT = wallClock() + M.KEEP_DAMAGE_S end
     return
   end
+  if keepWrap then
+    keepWrap.untilT = wallClock() + M.KEEP_DAMAGE_S
+    if sp.safeTeleport == keepWrap.fn then return end
+    -- (#80: the game's spawn.safeTeleport replaced since it was wrapped -- a reload: wrapped again, or nothing is kept)
+    log('W', logTag, 'keep damage: spawn.safeTeleport was replaced: wrapped again')
+    keepWrap = nil
+  end
   local orig = sp.safeTeleport
   local w = { orig = orig, untilT = wallClock() + M.KEEP_DAMAGE_S }
+  local function idOf(v)
+    local ok, id = pcall(function() return v:getId() end)
+    if ok and id then return id end
+    ok, id = pcall(function() return v:getID() end)
+    return ok and id or nil
+  end
   w.fn = function(veh, pos, rot, a, b, c, d, resetVehicle, ...)
     local pv = getPlayerVehicle and getPlayerVehicle(0)
-    local same = pv ~= nil and veh ~= nil and (pv == veh or select(2, pcall(function() return pv:getID() == veh:getID() end)) == true)
-    if same and (wallClock() < w.untilT or (run and run.inRally)) then
-      resetVehicle = false
+    local pid, vid = pv and idOf(pv), veh and idOf(veh)
+    local same = pv ~= nil and veh ~= nil and (pv == veh or (pid ~= nil and pid == vid))
+    local on = wallClock() < w.untilT or (run and run.inRally) or false
+    if same and on then
       w.caught = (w.caught or 0) + 1
+      if resetVehicle ~= false then log('I', logTag, 'keep damage: a set-down of the car kept its damage') end
+      resetVehicle = false
+    elseif same and resetVehicle ~= false then
+      -- (#80: why a reset went through -- the log of the next skip says)
+      log('I', logTag, 'keep damage: a set-down of the car let through (not keeping now)')
     end
     return orig(veh, pos, rot, a, b, c, d, resetVehicle, ...)
   end
@@ -469,6 +499,7 @@ function M.keepDamage(on)
   keepWrap = w
 end
 function M.keepingDamage() return keepWrap ~= nil end
+function M.keepOrig() return keepWrap and keepWrap.orig or nil end
 function M.keepCaught() return keepWrap and keepWrap.caught or 0 end
 
 local function carPos()
@@ -1256,15 +1287,16 @@ end
 -- beside it, best aligned with the way on to the start point `sp`, walked back along its bends), facing along it;
 -- never the organisers' point itself, which can be metres off the road. `pz` is a height to look for the ground near.
 -- Returns the spot ({ x, y, z, dx, dy, road }) without moving anything.
-local function spotBeforeAtc(a, sp, pz)
-  local spot = M.roadSpot(a.x, a.y, { x = sp.x - a.x, y = sp.y - a.y }, -M.CAR_BEFORE_ATC_M, sp)
+local function spotBeforeAtc(a, sp, pz, backM)
+  backM = backM or M.CAR_BEFORE_ATC_M
+  local spot = M.roadSpot(a.x, a.y, { x = sp.x - a.x, y = sp.y - a.y }, -backM, sp)
   local z, hit = groundNear(spot.x, spot.y, spot.z or pz)
   -- (a road from the place before the teleport, its road map not yet rebuilt here: its height is not the ground's)
   if spot.road and hit == false then
     spot = M.roadSpot(a.x, a.y, { x = sp.x - a.x, y = sp.y - a.y }, 0, sp)
     spot.road = false
     z = groundNear(a.x, a.y, pz)
-    spot.x, spot.y = a.x - spot.dx * M.CAR_BEFORE_ATC_M, a.y - spot.dy * M.CAR_BEFORE_ATC_M
+    spot.x, spot.y = a.x - spot.dx * backM, a.y - spot.dy * backM
   end
   spot.z = z + 1.0
   return spot
@@ -2475,7 +2507,10 @@ end
 -- after a teleport) the car is LEFT on the raw point: inside DRIVEN_THERE_MIN_M of it, so Run stage sets it down
 -- later on a road map that has caught up. Put 40 m back across a field instead, it would be kept there as "driven
 -- there".
-function M.faceAtc(stage)
+-- backM: how far before the board (CAR_BEFORE_ATC_M by default; the rally's skip transit, SKIP_BEFORE_ATC_M: inside
+-- AT_BOARD_M, so the car is at the board as if driven in).
+M.SKIP_BEFORE_ATC_M = 10
+function M.faceAtc(stage, backM)
   local p, veh = carPos()
   if not (p and veh and stage.line and #stage.line >= 1) then return false end
   local lat, lon, kind = M.arrivalPoint(stage)
@@ -2483,10 +2518,20 @@ function M.faceAtc(stage)
   local s = stage.controls and stage.controls.start or { lat = stage.line[1][1], lon = stage.line[1][2] }
   local a, sp = ctlGame({ lat = lat, lon = lon }), ctlGame(s)
   if not (a and sp) then return false end
-  local spot = spotBeforeAtc(a, sp, p.z)
+  local spot = spotBeforeAtc(a, sp, p.z, backM)
   if not spot.road then return false, 'no road on the map there' end
   M.placeCar(veh, spot, { x = spot.dx, y = spot.dy, z = 0 })
   return true, 'on the road map'
+end
+
+-- (#79) The car turned where it stands to face a point (lat / lon), a little above the ground: for a skip transit's
+-- landing at an ATC whose road is not on the road map yet. Returns true once done.
+function M.turnToward(lat, lon)
+  local p, veh = carPos()
+  if not (p and veh) then return false end
+  local t = ctlGame({ lat = lat, lon = lon })
+  if not t then return false end
+  return M.placeCar(veh, { x = p.x, y = p.y, z = p.z + 0.3 }, { x = t.x - p.x, y = t.y - p.y, z = 0 })
 end
 
 -- (1.7.3, item 4) After an auto recce whose landing found no road (faceAtc above: the road map round the car had not

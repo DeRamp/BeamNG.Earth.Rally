@@ -194,6 +194,10 @@
               <div v-else-if="c.transit">To {{ c.transit.name }}<template v-if="c.transit.distM != null"> · {{ len(c.transit.distM) }}</template>
                 <span v-if="c.transit.weather" class="er-bwx"><svg viewBox="0 0 24 24" v-html="wxIcon(c.transit.weather)"></svg>{{ wxText(c.transit.weather) }}</span></div>
               <div class="er-muted er-small">Follow the arrows.<template v-if="c.transit && c.transit.due"> Late costs a transit penalty for each minute.</template></div>
+              <!-- (+skiptransit) skip the drive: taken there, checked in on time -->
+              <div v-if="c.canSkip" class="er-btns">
+                <BngButton :accent="ACCENTS.outlined" @click="skipTransit">Skip transit</BngButton>
+              </div>
             </template>
             <template v-else-if="c.phase === 'toGo'">
               <h3>NEXT: {{ (c.at && c.at.label || "").toUpperCase() }}</h3>
@@ -326,6 +330,7 @@ function start() {
   })
 }
 function goNext() { rallyAction("go", c.value && c.value.id, null) }
+function skipTransit() { rallyAction("skip", c.value && c.value.id, null) }
 // the confirm up: null, 'leave' or 'retire' (taken down when the rally moves on)
 const ask = ref(null)
 watch(() => c.value && c.value.phase, () => { ask.value = null })

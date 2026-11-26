@@ -3,6 +3,35 @@
 Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/writing-standard.md). Downloads:
 [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
 
+## 1.10.4-alpha: reset and Select (2026-11-26)
+
+Works with BeamNG.drive 0.40.6 · [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+.
+
+### Fixed
+* **D-pad right** on a single stage or in a Casual rally puts you back on the stage road, not your last reset point.
+* **Back on the road** now repairs the car on a single stage and in a Casual rally.
+
+### New
+* **Select** on a pad opens and closes the rally menu during a full rally. Outside a rally it is still the map.
+* **Map** on the time card opens the map; **Rally menu** on the map, or Select, takes you back.
+
+### Known issues
+* On a stage, the game's own reset (keyboard **R**, PlayStation pads, wheels) is off: use **Backspace**.
+
+## 1.10.3-alpha: skip transit (2026-11-26)
+
+Works with BeamNG.drive 0.40.6 · [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+.
+
+Road sections can now be skipped from the time card.
+
+### New
+* **Skip transit** on the time card: the car is taken to the next control and checked in on time.
+* On a timed rally the clock moves on to your due time; a late car stays late.
+
+### Fixed
+* After a skip the car lands on the road, facing the way on.
+* A skip no longer repairs the car, in Casual or Realistic.
+
 ## 1.10.2-alpha: hand-made rally files (2026-11-26)
 
 Works with BeamNG.drive 0.40.6 · [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+.
