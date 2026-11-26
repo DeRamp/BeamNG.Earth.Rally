@@ -46,11 +46,15 @@ long dashes and odd spaces made plain. A line is `Key: value`, `Key = value` or 
 folded (capitals, spaces and punctuation ignored) against each setting's list of names (textPack.lua `*_KEYS`).
 `#` or `//` at a line's start or after a space starts a note. A setting given twice: the first, the second named.
 An unknown key: skipped, as "not used"; a slip of a known one: skipped, with "did you mean". A list
-(`Running order:`, `Rounds:`) runs until the next line with `Key:` for a known key.
+(`Running order:`, `Rounds:`) runs until a line with `Key:` for a whole known key that is not a stop ("Rally start:"
+stays in it), or a setting of two words or more with no colon (`False start 10`); a one-word setting after a list
+needs its colon (`Late: 10`), as a stage may be called "Late Hill".
 
-**Names** match folded (accents off: `Côte` is `cote`). A name that isn't one is read as the one it is a slip of
-(within a quarter of its letters, at most 3, two swapped letters counting one; and nearer than any other), and
-said; otherwise left out, and said. Files the same way, with or without their extension; a map named wrongly when
+**Names** match folded (accents off: `Côte` is `cote`; other scripts kept as they are). A name that isn't one is
+read as the one it is a slip of (within a quarter of its letters, at most 3, two swapped letters counting one, or
+cut short; never a longer name for a shorter; and nearer than any other), and said; otherwise left out, and said.
+A running order line that is a stage is never read as a date ("Mayfield 2"); a month is its whole name or short
+form. Files the same way, with or without their extension; a map named wrongly when
 the folder has one map uses that map.
 
 **rally.txt**: `Rally` (else the map's name), `Map` (else the folder's only map; none or several: refused), `Dates`,
@@ -88,11 +92,14 @@ stage's), the rules.
 **The rules**: `False start` (every number: `falseStartS`), `Late` (`lateSPerMin`), `Early` (`earlySPerMin`),
 `Max lateness` (`maxLatenessMin`), `Start interval` (`startIntervalMin`): the first number in each.
 
+A season whose results have no crew in the championship that scores (`Count only`, default National) is said, as
+its standings would be empty.
+
 **results.csv** (textRead.csv: `,` `;` or tab, quotes, blank rows, `#` notes): columns by any of their names
 (textPack.lua `RESULT_COLS`). With a `Time` column, one row per crew per stage, `SS` or `Stage` (+ `Run`) saying
 which; without, a column per stage headed `SS<n>` or a stage's name. A time: `6:39.4`, `399.4`, `0:06:39.4`, `N`
 after it for notional; `cancelled` cancels the pass; `DNF`, `DNS`, `-`, empty: no time. A crew twice on a pass:
-the first.
+the first. A row whose SS and Stage disagree with the running order: used by its SS, said once a pass.
 
 **weather.csv**: `SS` (or `Stage`: all its passes) and `Sky` (words, textPack.lua `SKY`, or a WMO `Code`); the rest
 optional: `Cloud %`, `Wind m/s`, `Gust m/s`, `Wind from`, `Temp C`, `Rain mm/h`, `Snow cm/h`, `Fog`, `Thunder`,

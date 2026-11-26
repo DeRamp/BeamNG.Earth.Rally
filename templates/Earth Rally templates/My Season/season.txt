@@ -9,6 +9,7 @@
 #   4. Put the folder in Earth Rally's import folder (Rally menu > Add > Open folder).
 #
 #   - Lines starting with # are notes for you. The game skips them.
+#   - Write each setting as  Name: value  ("season = X" works too; capitals and spaces don't matter).
 #   - Each time the game reads this folder it writes "import report.txt" here. Open it to see
 #     what the game found in every round, and what to fix.
 #
@@ -17,7 +18,7 @@
 
 Season: My Forest Series 2031
 Championship: Northern Forest Rally Championship     # shown under the name
-ID: my-forest-series-2031          # optional. Your times are saved under it: don't change it later.
+# ID: my-forest-series-2031        # optional. Your times are saved under it: don't change it later.
 
 
 # --- Rounds --------------------------------------------------------------------------------

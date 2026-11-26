@@ -179,6 +179,20 @@ def main():
         check(nprobs == 0 and w1.code == 3 and w1.tempC == 19 and w1.cover.low == 80 and w1.isDay == True
               and w1.pressureHpa == 1000, 'weather.csv read back by the game: every field, no problems')
 
+    # a weather file named in rally.txt, saved by Excel (Windows-1252, ;), with a column headed Weather: written there,
+    # its hand row kept by what it says
+    with tempfile.TemporaryDirectory() as tmp:
+        pack = Path(tmp) / 'Hand Two'
+        pack.mkdir()
+        (pack / 'map.kml').write_text(KML, encoding='utf-8')
+        (pack / 'rally.txt').write_text('Rally: Two\nWeather: wx.csv\nDates: 10 Jan 2026\nRunning order:\n'
+                                        '  09:35 Alpha\n  Beta\n', encoding='utf-8')
+        (pack / 'wx.csv').write_bytes('# caf\xe9 note\nStage;Weather;Temp C\nBeta;cloudy;4\n'.encode('cp1252'))
+        pw.run(str(pack), fetcher=pw.Fetcher(get_json=fake, pause_s=0), today=dt.date(2026, 11, 19), say=lambda m: None)
+        text = (pack / 'wx.csv').read_text(encoding='utf-8')
+        check(not (pack / 'weather.csv').exists() and 'SS1,Alpha,overcast' in text, 'the file rally.txt names')
+        check('SS2,Beta,overcast,3' in text and ',4,' in text and 'café' in text, 'a hand row in Excel\'s own form kept')
+
     print(f'{failed} failed' if failed else 'all ok')
     return 1 if failed else 0
 

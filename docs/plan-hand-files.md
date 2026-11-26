@@ -79,8 +79,12 @@ left (no name and no map, say), and always with the reason.
 - **Times and dates**: `6:39.4`, `399.4`, `0:06:39.4`, `6'39.4"`, `6m39.4s`, a decimal comma; `08:23`, `8.23`,
   `8h23`, `8:23 am`; `2031-02-07`, `7 Feb 2031`, `Feb 7 2031`, `7/2/2031` (day and month told apart where the other
   can't be a month; otherwise read as day first and reported). Durations `30`, `30 min`, `0:30`, `1h`.
-- **Stage names**: matched to the map's lines ignoring capitals, spaces, punctuation and accents, and an `SS3`
-  in front. A name that only nearly matches is not guessed into the rally: it is left out with "did you mean".
+- **Names** (stages, places, files, round folders, settings): matched ignoring capitals, spaces, punctuation and
+  accents, and an `SS3` in front. One that is a slip of a single name (a letter or two out, two swapped, or cut
+  short) is read as that name and the report says so on its line; a longer name is never taken for a shorter one
+  ("Kilo Hill North" is not "Kilo Hill"). Anything further off is left out, with "did you mean" when one is near.
+  (Changed in review, 2026-11-26: guessing with the report saying so, rather than leaving every slip out, is what
+  "very accepting of errors" asked for.)
 
 ## The import report
 
@@ -123,3 +127,5 @@ Until the game uses areas, an `Area:` line is reported under "Read but not used 
 
 - Service areas: `Area:` is read and said "not used yet" (the owner, 2026-11-25: may come later).
 - Not driven in game yet: the report page and the report files are checked offline only.
+- Reports are written beside every loose map and zip on each import, as the owner asked; one whose file is taken
+  out is deleted with it. If the folder gets cluttered, write them only for imports with problems.

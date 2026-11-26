@@ -119,9 +119,18 @@ function M.fold(s)
     -- (upper-case accented letters: the lower-case one is 32 code points on in Latin-1)
     local a, b = ch:byte(1, 2)
     if a == 0xC3 and b and b >= 0x80 and b <= 0x9E then lower = string.char(0xC3, b + 32) end
-    return ACCENTS[lower] or ''
+    if ACCENTS[lower] then return ACCENTS[lower] end
+    -- (a letter of another script, Greek or Cyrillic or Japanese: kept as it is, so two such names stay two)
+    if a == 0xC2 or (a == 0xE2 and ch:byte(2) == 0x80) then return '' end   -- (spaces and punctuation)
+    return '\1' .. ch .. '\2'
   end)
-  return (s:lower():gsub('[^%w]', ''))
+  s = s:lower()
+  -- (only the plain parts lose their spaces and punctuation)
+  local out = {}
+  for plain, kept in (s .. '\1\2'):gmatch('([^\1]*)\1([^\2]*)\2') do
+    out[#out + 1] = plain:gsub('[^%w]', '') .. kept
+  end
+  return table.concat(out)
 end
 
 -- (the number of single-letter edits from a to b, nil once it passes `most`)
@@ -158,9 +167,9 @@ function M.closest(want, names)
   for _, name in ipairs(names) do
     local f = M.fold(name)
     local most = math.max(1, math.min(3, floor(#f / 4)))
-    local d = M.distance(w, f, most)
-    -- (one name the start of the other: "Kilo" for "Kilo Hill")
-    if not d and #w >= 4 and (f:sub(1, #w) == w or w:sub(1, #f) == f) then d = most end
+    local d = f ~= '' and M.distance(w, f, most) or nil
+    -- (a name cut short: "Kilo" for "Kilo Hill"; never the other way, "Kilo Hill North" is not Kilo Hill)
+    if not d and f ~= '' and #w >= 4 and #w < #f and f:sub(1, #w) == w then d = most end
     if d then
       if not bestD or d < bestD then best, bestD, tie = name, d, false
       elseif d == bestD and name ~= best then tie = true end
@@ -219,11 +228,27 @@ function M.keyValue(text, keys)
     local head = table.concat(words, ' ', 1, take)
     local c = canon(head)
     if c then
-      local rest = text:sub(#head + 1):gsub('^%s*[:=]?%s*', '')
+      -- (where those words end in the line as written: "Start  interval 2 min")
+      local pat = '^%s*'
+      for i = 1, take do pat = pat .. words[i]:gsub('%p', '%%%0') .. (i < take and '%s+' or '') end
+      local _, e = text:find(pat)
+      local rest = text:sub((e or #head) + 1):gsub('^%s*[:=]?%s*', '')
       return c, M.trim(rest), head
     end
   end
   if k and k ~= '' and #k <= 30 and not k:find('^%d') and not k:find('[/\\]') then return nil, M.trim(k) end
+  return nil
+end
+
+-- The key a line's head before its colon is, exactly (no word-by-word fallback), or nil: inside a list only such a
+-- line ends it ("Rally start: Fernvale Park" is a stop, not the Rally setting).
+function M.exactKey(text, keys)
+  local k = text:match('^([^:=]-)%s*[:=]')
+  if not k or k == '' then return nil end
+  local f = M.fold(k)
+  for name, aliases in pairs(keys) do
+    for _, a in ipairs(aliases) do if a == f then return name end end
+  end
   return nil
 end
 
@@ -328,9 +353,13 @@ end
 
 local MONTHS = { jan = 1, feb = 2, mar = 3, apr = 4, may = 5, jun = 6, jul = 7, aug = 8, sep = 9, oct = 10, nov = 11,
   dec = 12 }
+local MONTH_WORDS = { january = 1, february = 2, march = 3, april = 4, june = 6, july = 7, august = 8,
+  september = 9, sept = 9, october = 10, november = 11, december = 12 }
+-- (a month's name or its short form, the whole word: "Mayfield" is not May)
 local function month(w)
-  w = w and w:lower() or ''
-  return #w >= 3 and MONTHS[w:sub(1, 3)] or nil
+  w = w and w:lower():gsub('%.$', '') or ''
+  if #w == 3 and MONTHS[w] then return MONTHS[w] end
+  return MONTH_WORDS[w]
 end
 local WEEKDAYS = { mon = true, tue = true, wed = true, thu = true, fri = true, sat = true, sun = true }
 local DAYS_IN = { 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
@@ -369,10 +398,15 @@ function M.date(s, year)
   local a, b, c = t:match('^(%d%d?)[/%.%-](%d%d?)[/%.%-](%d%d%d?%d?)$')
   if a then
     a, b = tonumber(a), tonumber(b)
-    if a > 12 then return iso(c, b, a) end
-    if b > 12 then return iso(c, a, b) end
-    return iso(c, b, a), nil, a ~= b
+    local r, either
+    if a > 12 then r = iso(c, b, a)
+    elseif b > 12 then r = iso(c, a, b)
+    else r, either = iso(c, b, a), a ~= b end
+    if r then return r, nil, either end
+    return nil, string.format('"%s" is not a day of the year: check the day and the month', M.trim(s))
   end
+  if y or dd or mon then return nil, string.format('"%s" is not a day of the year: check the day and the month',
+    M.trim(s)) end
   return nil, string.format('"%s" is not a date: write it as 7 Feb 2031 or 2031-02-07', M.trim(s))
 end
 
@@ -401,9 +435,9 @@ function M.dates(s)
     local yr = b and b:sub(1, 4) or right:match('(%d%d%d%d)')
     local a, whyA, eA = M.date(left, yr)
     if a and b then return { from = a, to = b }, nil, eA or eB end
-    return nil, whyA or whyB
+    return nil, whyA or whyB or string.format('"%s" is not a date', t)
   end
-  return nil, why
+  return nil, why or string.format('"%s" is not a date', t)
 end
 
 -- (the day after a 'YYYY-MM-DD', n days on)
@@ -426,7 +460,13 @@ end
 -- ("60,0102 -10,0451"), degrees minutes seconds (60°00'36.7"N 10°02'42.4"W), "N 60.0102 W 10.0451",
 -- "60.0102N 10.0451W", or a Google Maps link. Third answer: 'swapped' when it was plainly longitude first (a first
 -- number over 90). nil, why for anything else.
+local position
 function M.position(s)
+  local lat, lon, note = position(s)
+  if lat then return lat, lon, note end
+  return nil, lon or string.format('"%s" is not a position on Earth', M.trim(s))
+end
+function position(s)
   local t = M.trim(s)
   local function ok(lat, lon, note)
     if not (lat and lon) then return nil end

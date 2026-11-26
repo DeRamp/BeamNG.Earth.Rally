@@ -60,11 +60,11 @@ import { state, arr } from "./store.js"
 
 const props = defineProps({ file: { type: String, default: "" } })
 const emit = defineEmits(["action"])
-// (the report of the import of `file` in the last scan; the first one with a report when that file is not in it)
+// (the report of the import of `file` in the last scan; none when a later scan no longer has it)
 const rep = computed(() => {
   const li = state.value && state.value.lastImport
   const lines = arr(li && li.lines)
-  const hit = lines.find(l => l.report && l.file === props.file) || lines.find(l => l.report)
+  const hit = lines.find(l => l.report && l.file === props.file)
   return hit ? hit.report : null
 })
 </script>

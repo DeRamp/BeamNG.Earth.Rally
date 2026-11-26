@@ -102,4 +102,22 @@ T.check(delim == ';' and h.cells[2] == 'Time' and #rows == 2, 'csv: semicolons, 
 T.check(rows[1].cells[2] == '6:39,4' and rows[2].cells[2] == 'say "hi"' and rows[2].n == 6, 'csv: quotes, line numbers')
 T.check(R.column(h, { 'time', 'stagetime' }) == 2, 'column')
 
+-- (handoff review)
+T.check(R.fold('Ζάκυνθος') ~= R.fold('Κέρκυρα') and R.fold('Ζάκυνθος') ~= '', 'other scripts: names stay apart')
+T.check(R.closest('Kilo Hill', { 'Ζάκυνθος' }) == nil, 'other scripts: nothing matched to them by accident')
+T.check(R.closest('Kilo Hill North', { 'Kilo Hill', 'Long Gap' }) == nil, 'a longer name is not a shorter stage')
+T.check(R.closest('Kilo', { 'Kilo Hill', 'Long Gap' }) == 'Kilo Hill', 'a name cut short is')
+local nd, ndWhy = R.date('30/02/2031')
+T.check(nd == nil and type(ndWhy) == 'string', 'an impossible day: a reason, not nothing')
+local nds, ndsWhy = R.dates('31/04/2031')
+T.check(nds == nil and type(ndsWhy) == 'string', 'dates: an impossible day: a reason')
+T.check(R.date('Mayfield 2', '2031') == nil and R.date('Junction 12', '2031') == nil, 'a word starting like a month')
+T.check(R.date('2 Sept 2031') == '2031-09-02' and R.date('May 2 2031') == '2031-05-02', 'month words')
+local pa, pw = R.position('N 60.01 W 190.04')
+T.check(pa == nil and type(pw) == 'string', 'a position off the Earth: a reason')
+local k2, v2 = R.keyValue('Start  interval 2 min', { startInterval = { 'startinterval' } })
+T.check(k2 == 'startInterval' and v2 == '2 min', 'two spaces inside a key: the value whole (' .. tostring(v2) .. ')')
+T.check(R.exactKey('Rally start: Park', { rally = { 'rally' } }) == nil and
+  R.exactKey('Rally: X', { rally = { 'rally' } }) == 'rally', 'exactKey')
+
 T.done('test_textread')

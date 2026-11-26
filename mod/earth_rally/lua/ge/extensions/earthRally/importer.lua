@@ -908,6 +908,10 @@ function M.scan(force)
     if not d.removed then
       local ok, rep = pcall(importReport.write, d)
       if ok then d.report = rep else log('W', 'earthRally', 'import report for ' .. tostring(d.file) .. ': ' .. tostring(rep)) end
+    else
+      -- (a map or zip taken out: its report beside it goes too; a folder's went with the folder)
+      local old = M.IMPORT_DIR .. d.file .. ' - import report.txt'
+      if FS:fileExists(old) then pcall(FS.removeFile, FS, old) end
     end
     d.results = nil
   end

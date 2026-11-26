@@ -70,7 +70,8 @@ Only `Rally:` (or `Season:`, `Stage:`) and the map are needed. Leave out what yo
 
 **Forgiving by design:**
 
-* `Rally: X`, `rally = X` and `RALLY  X` are the same. Capitals, spacing, `#` notes and quotes don't matter.
+* `Rally: X` and `rally = X` are the same. Capitals, spacing, `#` notes and quotes don't matter. After the
+  running order, give each setting its colon (`Late: 10`).
 * Notepad's encodings, Word's curly quotes and Excel's `;` files all read.
 * Positions can be pasted from Google Maps, typed as `60.0102, -10.0451`, or in degrees and minutes. Longitude
   first is spotted and swapped.

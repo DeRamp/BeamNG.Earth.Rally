@@ -376,7 +376,7 @@ def text_rallies(root):
                 return f.read()
         except OSError:
             return None
-    make = lua.eval("""function(all, read)
+    make = lua.eval(r"""function(all, read)
       local R = require('earthRally/textRead')
       local imp = require('earthRally/importer')
       local tp = require('earthRally/textPack')
@@ -399,14 +399,29 @@ def text_rallies(root):
       for _, spec in ipairs(specs) do
         local ev = spec.event and m.virtual[spec.event]
         if spec.map and ev then
-          local rows = {}
+          local rows, passes = {}, {}
           for _, r in ipairs(ev.itinerary or {}) do
-            if r.type == 'SS' then rows[#rows + 1] = { control = r.control, stage = r.stage, date = r.date,
-              first_car = r.first_car } end
+            if r.type == 'SS' then
+              rows[#rows + 1] = { control = r.control, stage = r.stage, date = r.date, first_car = r.first_car }
+              passes[r.control] = { stage = r.stage, run = r.run }
+            end
           end
-          out[#out + 1] = { name = spec.name or spec.map, map = spec.map, rows = rows,
-            dir = spec.event:gsub('#event$', ''):match('^(.*)/[^/]*$') or '',
-            timezone = ev.event and ev.event.timezone or nil }
+          local dir = spec.event:gsub('#event$', ''):match('^(.*)/[^/]*$') or ''
+          local wxRel = spec.weatherFile or ((dir ~= '' and (dir .. '/') or '') .. 'weather.csv')
+          -- (what weather.csv has now, read as the game reads it: kept as it is unless fetched again)
+          local have, notes = {}, {}
+          local text = ctx.readText(wxRel)
+          if text then
+            local names = {}
+            local parsed = ctx.parseMap(spec.map)
+            for i, l in ipairs(parsed and parsed.lines or {}) do names[i] = l.name end
+            have = tp._readWeather(text, wxRel, passes, names, {})
+            for ln in (text .. '\n'):gmatch('([^\n]*)\n') do
+              if ln:match('^%s*#') and not ln:find('Open-Meteo', 1, true) then notes[#notes + 1] = ln end
+            end
+          end
+          out[#out + 1] = { name = spec.name or spec.map, map = spec.map, rows = rows, wx = wxRel, have = have,
+            notes = notes, timezone = ev.event and ev.event.timezone or nil }
         end
       end
       return out, nil
@@ -414,6 +429,13 @@ def text_rallies(root):
     res, why = make(lua.table_from(files), lambda rel: read(rel))
     if res is None:
         raise SystemExit(f"{root}: {why}")
+    def py(t):
+        if lj.lua_type(t) != "table":
+            return t
+        keys = list(t.keys())
+        if keys and all(isinstance(k, int) for k in keys):
+            return [py(t[k]) for k in sorted(keys)]
+        return {k: py(v) for k, v in t.items()}
     out = []
     for i in range(1, len(res) + 1):
         r = res[i]
@@ -422,7 +444,10 @@ def text_rallies(root):
             x = r.rows[j]
             rows.append({"type": "SS", "control": x.control, "stage": x.stage, "date": x.date, "first_car": x.first_car})
         ev = {"event": {"timezone": r.timezone} if r.timezone else {}, "itinerary": rows}
-        out.append((r.name, os.path.join(root, r.map), ev, os.path.join(root, r.dir, "weather.csv")))
+        have = py(r.have) or {}
+        notes = py(r.notes) or []
+        out.append((r.name, os.path.join(root, r.map), ev, os.path.join(root, r.wx), have if isinstance(have, dict)
+                    else {}, notes if isinstance(notes, list) else []))
     return out
 
 
@@ -436,27 +461,6 @@ def sky_word(code):
     return best or "overcast"
 
 
-def read_weather_csv(path):
-    """(the # lines kept, {SS: the row as written}) of an existing weather.csv, or ([], {})."""
-    if not os.path.isfile(path):
-        return [], {}
-    notes, rows = [], {}
-    with open(path, encoding="utf-8-sig", newline="") as f:
-        lines = f.read().splitlines()
-    import csv
-    body = [ln for ln in lines if ln.strip() and not ln.lstrip().startswith("#")]
-    notes = [ln for ln in lines if ln.lstrip().startswith("#") and "Open-Meteo" not in ln]
-    if not body:
-        return notes, rows
-    delim = max((",", ";", "\t"), key=lambda d: body[0].count(d))
-    reader = csv.reader(body, delimiter=delim)
-    header = next(reader)
-    for cells in reader:
-        row = dict(zip(header, cells))
-        ss = (row.get("SS") or "").strip().upper().replace(" ", "")
-        if ss:
-            rows[ss] = row
-    return notes, rows
 
 
 def weather_row(control, stage, w):
@@ -479,10 +483,11 @@ def run_text(root, force, fetcher, today, say):
     import csv
     import io
     counts = {}
-    for name, map_path, ev, wx_path in text_rallies(root):
+    for name, map_path, ev, wx_path, have, notes in text_rallies(root):
         say(f"{name}:")
-        notes, old = read_weather_csv(wx_path)
-        # (rows already in weather.csv count as had, unless --force)
+        stage_of = {r["control"]: r.get("stage") or "" for r in ev["itinerary"]}
+        # (rows already in weather.csv, as the game reads them: kept, and count as had, unless --force)
+        old = {c: weather_row(c, stage_of.get(c, ""), w) for c, w in have.items()}
         for row in ev["itinerary"]:
             if not force and row["control"] in old:
                 row["weather"] = {"kept": True}

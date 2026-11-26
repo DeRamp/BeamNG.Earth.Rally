@@ -21,7 +21,7 @@ M.REPORT_NAME = 'import report.txt'
 local function keys(t)
   local out = {}
   for k, list in pairs(t) do
-    out[k] = {}
+    out[k] = { label = list[1] }      -- (how a key is named to a person: its first name, never the code's)
     for i, a in ipairs(list) do out[k][i] = R.fold(a) end
   end
   return out
@@ -46,16 +46,16 @@ local PICTURES = { cover = { 'cover', 'cover picture', 'cover image', 'card' }, 
   photo = { 'photo', 'banner', 'picture', 'image', 'header' } }
 
 M.RALLY_KEYS = with({
-  name = { 'rally', 'name', 'title', 'rally name', 'event', 'event name' },
+  name = { 'rally', 'name', 'title', 'rally name', 'event name' },
   map = { 'map', 'maps', 'map file', 'stage map', 'kml', 'gpx', 'kmz' },
   dates = { 'dates', 'date', 'when' },
-  town = { 'town', 'city', 'hq', 'headquarters', 'base', 'venue' },
+  town = { 'town', 'city', 'hq', 'headquarters', 'venue' },
   timezone = { 'time zone', 'timezone', 'tz', 'zone' },
   id = { 'id', 'rally id' },
   cover = PICTURES.cover, logo = PICTURES.logo, photo = PICTURES.photo,
-  results = { 'results', 'result', 'results file', 'times' },
+  results = { 'results', 'result', 'results file' },
   weather = { 'weather', 'weather file' },
-  place = { 'place', 'location', 'service park', 'park' },
+  place = { 'place', 'location' },
   at = { 'at', 'position', 'pos', 'gps', 'coords', 'coordinates', 'lat lon', 'lat long', 'latlng' },
   area = { 'area', 'service area', 'bounds', 'bounding box', 'box', 'polygon' },
   order = { 'running order', 'order', 'itinerary', 'schedule', 'route', 'stage order', 'run order', 'stages' },
@@ -65,9 +65,9 @@ M.SEASON_KEYS = with({
   championship = { 'championship', 'series', 'subtitle' },
   id = { 'id', 'season id' },
   rounds = { 'rounds', 'rallies', 'events', 'calendar' },
-  points = { 'points', 'points scale', 'scoring', 'score' },
+  points = { 'points', 'points scale', 'scoring' },
   best = { 'best rounds', 'best', 'count best', 'best of' },
-  countOnly = { 'count only', 'standings for', 'only count', 'championship class', 'scores' },
+  countOnly = { 'count only', 'standings for', 'only count', 'championship class' },
 })
 M.STAGE_KEYS = with({
   name = { 'stage', 'name', 'title', 'stage name' },
@@ -75,7 +75,7 @@ M.STAGE_KEYS = with({
   line = { 'line', 'points', 'line file', 'track' },
   id = { 'id', 'stage id' },
   cover = PICTURES.cover, logo = PICTURES.logo, photo = PICTURES.photo,
-  results = { 'results', 'result', 'results file', 'times' },
+  results = { 'results', 'result', 'results file' },
   atc = { 'atc', 'arrival control', 'time control', 'tc' },
   start = { 'start', 'start line', 'start control' },
   ff = { 'finish', 'flying finish', 'ff', 'end' },
@@ -84,6 +84,8 @@ M.STAGE_KEYS = with({
 local LISTS = { order = true, rounds = true }
 
 ------------------------------------------------------------------------------------------ problems
+
+local KIND_OF      -- (kindOf, below: settings() asks it whether a "Key:" in a list is a stop)
 
 local function problem(out, file, ln, what, fix, level)
   local text = ln and ln.raw and ln.raw:gsub('%s+#.*$', ''):gsub('%s+//.*$', '') or nil
@@ -208,9 +210,18 @@ local function settings(text, file, keyset, probs)
       -- (inside a list, only a "Key:" with a colon ends it: a stage may be called "Map Hill")
       if inList then
         local head = ln.text:match('^([^:=]-)%s*[:=]')
-        if head and not head:find('^%d') then
+        -- (only "Key:" for a whole known key, and not a stop: "Service park: X" and "Rally start: X" stay in it)
+        if head and not head:find('^%d') and R.exactKey(ln.text, keyset) and select(2, KIND_OF(head)) ~= '' then
           k, v, written = R.keyValue(ln.text, keyset)
           if not k then k, v = nil, nil end
+        end
+        -- (no colon: a setting of two words or more, "False start 10", ends it too; one word, "Late", needs its
+        -- colon after a list, as a stage may be called "Late Hill")
+        if not k and not head then
+          local k2, v2, w2 = R.keyValue(ln.text, keyset)
+          if k2 and w2 and w2:find('%s') and not LISTS[k2] and k2 ~= 'place' and select(2, KIND_OF(w2)) ~= '' then
+            k, v, written = k2, v2, w2
+          end
         end
         if not k then
           lists[inList][#lists[inList] + 1] = ln
@@ -250,7 +261,7 @@ local function settings(text, file, keyset, probs)
         inList = nil
         local near = v and R.closestKey(v, keyset)
         if near then
-          local nice = near:gsub('(%u)', ' %1'):lower()
+          local nice = keyset[near].label or near
           problem(probs, file, ln, string.format('"%s" is not a setting the game knows. Did you mean "%s"?', v, nice),
             'Fix the spelling. Until then this line is skipped.')
         else
@@ -344,11 +355,22 @@ STOP_WORDS = function(s)
   return nil
 end
 M._kindOf = kindOf
+KIND_OF = kindOf
 
 -- (a running order line's own pieces, taken off it: the time at its front, its control code, its length, lateness,
 -- minutes, power stage and "only" classes; what is left is the stage or the stop)
 local function pieces(text)
   local p = {}
+  -- the time at the front, first: "8h23" is a time there, not 8 hours 23
+  do
+    local a, rest = R.trim(text):match('^(%S+)%s*(.*)$')
+    if a and a:find('%d') and (a:find('[:%.hH]') or a:lower():find('[ap]m$')) then
+      local c = R.clock(a)
+      local b, rest2 = rest:match('^(%S+)%s*(.*)$')
+      if not c and b and b:lower():match('^[ap]%.?m%.?$') then c, rest = R.clock(a .. ' ' .. b), rest2 end
+      if c then p.time, text = c, rest end
+    end
+  end
   local t = ' ' .. text .. ' '
   local only = t:match('%s[Oo][Nn][Ll][Yy]%s+(.-)%s*$')
   if only then
@@ -372,32 +394,25 @@ local function pieces(text)
   local km = t:match('%s(%d+[%.,]?%d*)%s*[Kk][Mm]%s')
   if km then p.km = R.number(km) t = t:gsub('%s%d+[%.,]?%d*%s*[Kk][Mm]%s', ' ', 1) end
   -- (minutes: "20 min", "1 h 30", "1h30 min", "+20")
-  local h, m = t:match('%s(%d+)%s*[Hh]%a*%s*(%d+)%s*[Mm]?%a*%s')
+  -- ("1 h 30", "1h30 min": an h straight after the hours, so "Route 7 Hill 2" is a name)
+  local h, m = t:match('%s(%d+)%s*[Hh]%s*(%d%d?)%s*[Mm]?[Ii]?[Nn]?%a*%s')
   if h then
     p.target = tonumber(h) * 60 + tonumber(m)
-    t = t:gsub('%s%d+%s*[Hh]%a*%s*%d+%s*[Mm]?%a*%s', ' ', 1)
+    t = t:gsub('%s%d+%s*[Hh]%s*%d%d?%s*[Mm]?[Ii]?[Nn]?%a*%s', ' ', 1)
   else
     local mins = t:match('%s%+?(%d+[%.,]?%d*)%s*[Mm][Ii][Nn]%a*%s') or t:match('%s%+(%d+)%s')
     if mins then
       p.target = R.number(mins)
       t = t:gsub('%s%+?%d+[%.,]?%d*%s*[Mm][Ii][Nn]%a*%s', ' ', 1):gsub('%s%+%d+%s', ' ', 1)
     else
-      local hrs = t:match('%s(%d+[%.,]?%d*)%s*[Hh][Oo]?[Uu]?[Rr]?[Ss]?%s')
+      local hrs = t:match('%s(%d+[%.,]?%d*)%s*[Hh]%s') or t:match('%s(%d+[%.,]?%d*)%s*[Hh][Oo][Uu][Rr][Ss]?%s')
       if hrs then
         p.target = R.number(hrs) * 60
-        t = t:gsub('%s%d+[%.,]?%d*%s*[Hh][Oo]?[Uu]?[Rr]?[Ss]?%s', ' ', 1)
+        t = t:gsub('%s%d+[%.,]?%d*%s*[Hh]%s', ' ', 1):gsub('%s%d+[%.,]?%d*%s*[Hh][Oo][Uu][Rr][Ss]?%s', ' ', 1)
       end
     end
   end
   t = R.trim(t)
-  -- the time at the front
-  local a, rest = t:match('^(%S+)%s*(.*)$')
-  if a and a:find('%d') and (a:find('[:%.hH]') or a:lower():find('[ap]m$')) then
-    local c = R.clock(a)
-    local b, rest2 = rest:match('^(%S+)%s*(.*)$')
-    if not c and b and b:lower():match('^[ap]%.?m%.?$') then c, rest = R.clock(a .. ' ' .. b), rest2 end
-    if c then p.time, t = c, R.trim(rest) end
-  end
   -- the control code: TC1, TC2A, SS12, RZ1 ("SS 3" too)
   local code, rest3 = t:match('^(%a%a?%a?%a?%d+%a?)[%s:%.%-]+(.*)$')
   if not code then code = t:match('^(%a%a?%a?%a?%d+%a?)$') rest3 = '' end
@@ -480,7 +495,10 @@ local function runningOrder(list, file, stageNames, places, dates, probs)
     local text = ln.text
     -- a new day: "Day 2", "Day 2 - 8 Feb 2031", or a date on its own
     local dn, drest = text:match('^[Dd][Aa][Yy]%s*(%d+)%s*[:%-,%.]?%s*(.-)%s*$')
-    local whole = not dn and text:find('%d') and R.date(text, dates and dates.from:sub(1, 4))
+    -- (a stage first: "Mayfield 2" is a stage, not a day)
+    local isStage = foldStage[R.fold(text)] or stageMatch(text)
+    if isStage then dn = nil end
+    local whole = not dn and not isStage and text:find('%d') and R.date(text, dates and dates.from:sub(1, 4))
     if dn or whole then
       local was = day
       day = dn and tonumber(dn) or (dayGiven and day + 1 or (#rows > 0 and day + 1 or 1))
@@ -489,7 +507,7 @@ local function runningOrder(list, file, stageNames, places, dates, probs)
       if dn and drest ~= '' then
         local why, either
         d, why, either = R.date(drest, dates and dates.from:sub(1, 4))
-        if not d then problem(probs, file, ln, why .. '.', 'Write the day as: Day 2  8 Feb 2031')
+        if not d then problem(probs, file, ln, (why or 'not a date') .. '.', 'Write the day as: Day 2  8 Feb 2031')
         elseif either then
           problem(probs, file, ln, string.format('"%s" could be day/month or month/day: read as %s.', drest, d),
             'Write the month as a word (8 Feb 2031) to stop this message.')
@@ -644,19 +662,22 @@ local function readResults(text, file, passes, stageNames, probs)
   for k, aliases in pairs(RESULT_COLS) do col[k] = R.column(header, aliases) end
   for i, c in ipairs(header.cells) do if R.trim(c) == '#' and not col.car then col.car = i end end
   local byKey, order = {}, {}
+  local said, curLn = {}, nil
+  local function NOTE(what, fix) problem(probs, file, curLn, what, fix) end
   local function stageFor(ssText, stageText, runText, ln)
+    curLn = ln
     local control = nil
     if ssText and ssText ~= '' then
       local n = ssText:match('(%d+)')
       control = n and ('SS' .. tonumber(n)) or nil
     end
     local pass = control and passes[control]
-    local name = nil
+    local name, guessed = nil, false
     if stageText and stageText ~= '' then
       for _, s in ipairs(stageNames) do if R.fold(s) == R.fold(stageText) then name = s end end
       if not name then
         local hit = R.closest(stageText, stageNames)
-        if hit then name = hit end
+        if hit then name, guessed = hit, true end
       end
       if not name and not pass then
         return nil, string.format('There is no stage called "%s" in the map.', stageText)
@@ -666,7 +687,17 @@ local function readResults(text, file, passes, stageNames, probs)
       if name and name ~= pass.stage then
         return nil, string.format('%s is %s in the running order, not %s.', control, pass.stage, stageText)
       end
+      -- (said once a pass: a name that matches no line, or only nearly, beside an SS that does)
+      if stageText and stageText ~= '' and (not name or guessed) and not said[control] then
+        said[control] = true
+        NOTE(string.format('%s is "%s" here and %s in the running order: %s used.', control, stageText, pass.stage,
+          control), 'If they are the same stage, write it as in the running order to stop this message.')
+      end
       return { control = control, stage = pass.stage, run = pass.run, km = pass.km }
+    end
+    if guessed then
+      NOTE(string.format('No stage called "%s". Read as "%s".', stageText, name),
+        'If that\'s right, fix the spelling to stop this message.')
     end
     if name then
       local run = R.number(runText or '') or 1
@@ -797,7 +828,7 @@ local WX_COLS = {
   snow = { 'snow', 'snowcmh', 'snowcm' }, fog = { 'fog' }, vis = { 'visibility', 'visibilitym', 'vis', 'vism' },
   thunder = { 'thunder' },
   -- (what tools/pack_weather.py writes beside them, from the real weather: all optional)
-  wmo = { 'code', 'wmo', 'wmocode', 'weathercode' }, isDay = { 'daylight', 'isday', 'day' },
+  wmo = { 'code', 'wmo', 'wmocode', 'weathercode' }, isDay = { 'daylight', 'isday' },
   low = { 'lowcloud', 'lowcloudpercent' }, mid = { 'midcloud', 'midcloudpercent' },
   high = { 'highcloud', 'highcloudpercent' }, slTemp = { 'sealeveltempc', 'sltempc', 'sealeveltemp' },
   dew = { 'dewc', 'dewpoint', 'dewpointc' }, baseM = { 'cloudbasem', 'cloudbase' },
@@ -830,7 +861,11 @@ local function readWeather(text, file, passes, stageNames, probs)
     elseif cell('stage') ~= '' then
       local name = nil
       for _, s in ipairs(stageNames) do if R.fold(s) == R.fold(cell('stage')) then name = s end end
-      name = name or R.closest(cell('stage'), stageNames)
+      if not name then
+        name = R.closest(cell('stage'), stageNames)
+        if name then problem(probs, file, ln, string.format('No stage called "%s". Read as "%s".', cell('stage'), name),
+          'If that\'s right, fix the spelling to stop this message.') end
+      end
       for c, ps in pairs(passes) do if ps.stage == name then controls[#controls + 1] = c end end
       if #controls == 0 then
         problem(probs, file, ln, string.format('There is no stage called "%s".', cell('stage')), 'This row is left out.')
@@ -888,7 +923,8 @@ local function readLine(text, file, probs)
   local cAlt = R.column(header, { 'height', 'heightm', 'alt', 'altitude', 'elevation', 'ele', 'z' })
   local pts = {}
   -- (no header: the first row is a point too)
-  if not (cLat and cLon) and R.position(table.concat(header.cells, ', ')) then table.insert(rows, 1, header) end
+  if not (cLat and cLon) and R.position(#header.cells >= 2 and (header.cells[1] .. ', ' .. header.cells[2])
+    or header.cells[1]) then table.insert(rows, 1, header) end
   for _, r in ipairs(rows) do
     local lat, lon, note
     if cLat and cLon then lat, lon = R.number(r.cells[cLat] or ''), R.number(r.cells[cLon] or '')
@@ -985,7 +1021,8 @@ local function readRally(ctx, rel, base, probs, virtual)
           s.dates.value, d.from), 'Write the month as a word (7 Feb 2031) to stop this message.')
       end
     else
-      problem(probs, rel, s.dates.ln, dwhy .. '.', 'Write it as 7-8 Feb 2031, or 2031-02-07 to 2031-02-08.')
+      problem(probs, rel, s.dates.ln, (dwhy or 'not a date') .. '.',
+        'Write it as 7-8 Feb 2031, or 2031-02-07 to 2031-02-08.')
     end
   end
   -- pictures, results, weather
@@ -1023,6 +1060,7 @@ local function readRally(ctx, rel, base, probs, virtual)
       problem(probs, rel, lists.order[1], 'No stage in the running order matches a line in the map: the stages run in map order.',
         'Name each stage as its line is named in the map.')
       ev.itinerary = {}
+      for i, name in ipairs(stageNames) do passes['SS' .. i] = { stage = name, run = 1 } end
     end
   else
     -- (no running order: the map's lines in order, as pack.lua runs them)
@@ -1048,6 +1086,7 @@ local function readRally(ctx, rel, base, probs, virtual)
     wxRel = findFile(all, base, 'weather.csv', { csv = true })
     if wxRel and baseName(wxRel):lower() ~= 'weather.csv' then wxRel = nil end
   end
+  spec.weatherFile = wxRel      -- (tools/pack_weather.py writes there)
   if wxRel then
     local wx = readWeather(ctx.readText(wxRel) or '', wxRel, passes, stageNames, probs)
     local any = false
@@ -1243,6 +1282,10 @@ local function readSeason(ctx, rel, probs, virtual)
       local n, target = ln.text:match('^[Rr]ound%s*(%d+)[%s:%.%-)]+(.+)$')
       if not n then n, target = ln.text:match('^(%d+)[%s:%.%-)]+(.+)$') end
       if not n then target = ln.text end
+      -- (a folder named with a number in front, "2031 Rally Wales", is that folder: the whole line first)
+      for _, f in ipairs(folders) do
+        if R.fold(f) == R.fold(ln.text) then n, target = nil, ln.text end
+      end
       target = R.unquote(R.trim(target or ''))
       local round = tonumber(n) or i
       if used[round] then
@@ -1324,6 +1367,26 @@ local function readSeason(ctx, rel, probs, virtual)
     rounds[i] = w.r
   end
   data.rounds = rounds
+  -- (standings that would come out empty: no crew in the results is in the championship that scores)
+  local want = st.championship
+  if want == nil then want = 'national' end
+  if want then
+    local any, seen = false, false
+    for _, r in ipairs(rounds) do
+      local res = r.results and virtual[r.results]
+      for _, stg in ipairs(res and res.stages or {}) do
+        for _, t in ipairs(stg.times or {}) do
+          seen = true
+          if R.fold(t.championship or '') == R.fold(want) then any = true end
+        end
+      end
+    end
+    if seen and not any then
+      problem(probs, rel, s.countOnly and s.countOnly.ln or nil, string.format(
+        'No crew in the results is in the "%s" championship, so the season standings are empty.', want),
+        'Write "Count only: all", or give results.csv a Championship column.')
+    end
+  end
   return data
 end
 
@@ -1338,7 +1401,7 @@ function M.read(ctx)
   for _, rel in ipairs(ctx.all) do if not isReport(rel) then all[#all + 1] = rel end end
   ctx.all = all
   local named, others = M.find(all)
-  if #named == 0 then
+  if #named == 0 and not ctx.jsonManifest then
     for _, rel in ipairs(others) do
       local k = M.firstKey(ctx.readText(rel) or '')
       if k then named[#named + 1] = { kind = k, file = rel } end
@@ -1367,12 +1430,28 @@ function M.read(ctx)
     local e = extOf(rel)
     if e == 'txt' or e == 'csv' or M.MAP_EXT[e] or e == 'json' then named2[#named2 + 1] = rel end
   end
+  local picList = {}
   local function pics(t)
-    for _, k in ipairs({ 'cover', 'logo', 'photo' }) do if type(t[k]) == 'string' then named2[#named2 + 1] = t[k] end end
+    for _, k in ipairs({ 'cover', 'logo', 'photo' }) do
+      if type(t[k]) == 'string' then named2[#named2 + 1] = t[k] picList[#picList + 1] = t[k] end
+    end
   end
   if m.kind == 'season' then for _, r in ipairs(data.rounds) do pics(r) end else pics(data) end
-  m.named = named2
+  m.named, m.pics = named2, picList
   return m
+end
+
+-- The ID line of a pack's hand-made manifest, without reading anything else (pack.lua tells two copies of a pack
+-- apart by it); nil when the pack has no text manifest, false when it has one with no ID.
+function M.idOf(ctx)
+  local all = {}
+  for _, rel in ipairs(ctx.all) do if not isReport(rel) then all[#all + 1] = rel end end
+  local named = M.find(all)
+  if #named ~= 1 then return nil end
+  local keyset = named[1].kind == 'season' and M.SEASON_KEYS or named[1].kind == 'rally' and M.RALLY_KEYS
+    or M.STAGE_KEYS
+  local s = settings(ctx.readText(named[1].file) or '', named[1].file, keyset, {})
+  return s.id and s.id.value ~= '' and s.id.value or false
 end
 
 M._settings, M._runningOrder, M._readResults, M._readWeather, M._findFile = settings, runningOrder, readResults,

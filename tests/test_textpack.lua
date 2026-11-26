@@ -128,8 +128,10 @@ local forestKml = kml('My map', { { 'Meaford Mills', 60.00, -10.00, 40 }, { 'Kil
 ------------------------------------------------------------------------------------------ the rally template as it ships
 local RA = IMP .. 'My Rally/'
 files[RA .. 'rally.txt'] = template('My Rally/rally.txt')
-files[RA .. 'results.csv'] = template('My Rally/results.csv')
-files[RA .. 'weather.csv'] = template('My Rally/weather.csv')
+-- (the example rows taken in, as a person keeping them would)
+local function examples(s) return (s:gsub('\n# (SS%d)', '\n%1')) end
+files[RA .. 'results.csv'] = examples(template('My Rally/results.csv'))
+files[RA .. 'weather.csv'] = examples(template('My Rally/weather.csv'))
 files[RA .. 'my stages.kml'] = forestKml
 local r1 = imp.scan()
 local d = find(r1, 'My Rally')
@@ -156,10 +158,24 @@ T.check(pass('SS1').weather and pass('SS1').weather.code == 3 and pass('SS1').we
 local bd = jsonReadFile('/earthRally/boards/my-forest-rally.json')
 T.check(bd and #bd.passes == 3 and #bd.passes[1].field == 3 and #bd.passes[2].field == 2, 'results: DNF left out')
 T.check(bd.passes[2].field[2][6] == true and bd.passes[3].cancelled and pass('SS3').cancelled, 'notional; cancelled')
-T.check(#d.warnings == 3 and has(d.warnings, 'There is no picture cover.jpg'), 'the only problems: missing pictures')
+T.check(#d.warnings == 0, 'no problems')
 local rep = written[RA .. 'import report.txt']
-T.check(rep and rep:find('IMPORTED WITH 3 PROBLEMS', 1, true) and rep:find('rally.txt, line 28', 1, true),
+T.check(rep and rep:find('\r\nIMPORTED\r\n', 1, true) and rep:find('3 crews on 3 stages', 1, true),
   'the import report written in the folder')
+-- the examples left as they ship: no made-up crews or weather in the rally
+clear(RA)
+files[RA .. 'rally.txt'] = template('My Rally/rally.txt')
+files[RA .. 'results.csv'] = template('My Rally/results.csv')
+files[RA .. 'weather.csv'] = template('My Rally/weather.csv')
+files[RA .. 'my stages.kml'] = forestKml
+local r0 = find(imp.scan(), 'My Rally')
+local e0 = jsonReadFile('/earthRally/events/my-forest-rally.json')
+local b0 = jsonReadFile('/earthRally/boards/my-forest-rally.json')
+T.check(r0 and r0.ok and #r0.warnings == 0 and e0.itinerary[1].weather == nil and (not b0 or #b0.passes == 0),
+  'the template as it ships: imports clean, its example rows not used')
+files[RA .. 'results.csv'] = examples(template('My Rally/results.csv'))
+files[RA .. 'weather.csv'] = examples(template('My Rally/weather.csv'))
+imp.scan()
 
 -- (the template's timed running order: the plain one taken out, the # taken off the timed one)
 local function timedRally()
@@ -265,6 +281,44 @@ T.check(has(m12.warnings, 'no date, so the times are not used'), 'times without 
 local m13 = scanWith(BASE .. 'Running order:\n  Kilo Hill\n  have a nice day\n')
 T.check(has(m13.warnings, 'neither a stage in the map nor a stop'), 'an unreadable running order line')
 
+-- (handoff review) a time written 8h23 at the front; a stage named like a month; lists that must not end early
+local marshKml = kml('M', { { 'Marsh Road', 60.00, -10.00, 30 }, { 'Kilo Hill', 60.03, -10.05, 30 } })
+local function scanMap(rally, map)
+  clear(RA)
+  files[RA .. 'my stages.kml'] = map
+  files[RA .. 'rally.txt'] = rally
+  return find(imp.scan(), 'My Rally'), jsonReadFile('/earthRally/events/my-forest-rally.json')
+end
+local h1, he1 = scanMap(BASE .. 'Running order:\n  8h00 Start at Park\n  08h23  SS1 Marsh Road\n  Rally start: Park\n'
+  .. '  Marsh Road 20 min\nStart interval 2 min\nStart interval: 3 min\n', marshKml)
+T.check(h1.ok and he1.itinerary[1].firstCar == '08:23' and he1.itinerary[1].stage == 'marsh-road',
+  '8h23 at the front is a time; Marsh Road is a stage, not March')
+T.check(#he1.itinerary == 2 and he1.itinerary[2].run == 2, '"Rally start:" inside the list stays in it')
+T.check(he1.rules and he1.rules.startIntervalMin == 2, '"Start interval 2 min" after the list is a setting')
+T.check(has(h1.warnings, 'Start interval is set twice'), 'and the second one said')
+-- an impossible date: said once, not again and again
+local d1 = scanMap('Rally: X\nDates: 30/02/2031\n', forestKml)
+T.check(d1 and d1.ok and has(d1.warnings, 'not a day of the year'), 'Dates 30/02: said, the rally imported')
+T.check(find(imp.scan(), 'My Rally') == nil, 'and not imported again while unchanged')
+-- a position off the Earth: one problem, not a crash
+local pz = scanMap(BASE .. 'Place: Park\n  At: N 60.01 W 190.04\n', forestKml)
+T.check(pz and pz.ok and has(pz.warnings, 'not a position'), 'a position off the Earth: a problem')
+-- results naming a stage the running order calls something else
+local rn = scanMap(BASE .. 'Running order:\n  Meaford Mills\n', forestKml)
+files[RA .. 'results.csv'] = 'SS,Stage,Driver,Time\nSS1,Mill Road,A,6:00\nSS1,Mill Road,B,6:10\n'
+local rn2 = find(imp.scan(), 'My Rally')
+local said = 0
+for _, w in ipairs(rn2.warnings) do if type(w) == 'table' and w.what:find('"Mill Road" here', 1, true) then said = said + 1 end end
+T.check(said == 1, 'results calling SS1 another name: used by its SS, said once')
+-- line.csv with no header and a height column
+clear(RA)
+files[IMP .. 'Hill/stage.txt'] = 'Stage: Hill\nLine: line.csv\n'
+files[IMP .. 'Hill/line.csv'] = '60.0,-10.0,100\n60.00045,-10.0001,101\n60.0009,-10.0002,102\n'
+local hl = find(imp.scan(), 'Hill')
+local hev = hl and hl.eventId and jsonReadFile('/earthRally/events/' .. hl.eventId .. '.json')
+T.check(hl and hl.ok and hev and #hev.stages[1].line == 3, 'line.csv with no header: its first point kept')
+clear(IMP .. 'Hill/')
+
 ------------------------------------------------------------------------------------------ the stage template
 local ST = IMP .. 'My Stage/'
 clear(RA)
@@ -307,6 +361,19 @@ files[SE .. 'season.txt'] = 'Season: Two\nRounds:\n  1  My Frist Round\n  2  Now
 local z3 = find(imp.scan(), 'My Season')
 T.check(z3 and z3.ok and z3.rallies == 2 and has(z3.warnings, 'used "My First Round"')
   and has(z3.warnings, 'no folder or map called "Nowhere"'), 'round folders: a slip used, a missing one said')
+-- a folder named with a year in front
+files[SE .. '2031 Rally Wales/rally.txt'] = 'Rally: Wales\n'
+files[SE .. '2031 Rally Wales/my stages.kml'] = forestKml
+files[SE .. 'season.txt'] = 'Season: Two\nCount only: Masters\nRounds:\n  2031 Rally Wales\n'
+files[SE .. '2031 Rally Wales/results.csv'] = 'SS,Driver,Championship,Time\nSS1,A,National,6:00\n'
+local z4 = find(imp.scan(), 'My Season')
+T.check(z4 and z4.ok and z4.rallies == 1, 'a round folder with a year in front')
+T.check(has(z4.warnings, 'season standings are empty'), 'standings that would be empty: said')
+-- every round failing: the reason is a round's, said once
+files[SE .. 'season.txt'] = 'Season: Two\nPoints: 10 5\nPoints: 3\nRounds:\n  Nowhere Else\n  1 Gone\n'
+local z5 = find(imp.scan(), 'My Season')
+T.check(z5 and not z5.ok and not z5.problem.what:find('set twice', 1, true), 'a failed season: not a minor note as its reason ('
+  .. tostring(z5 and z5.why) .. ')')
 
 ------------------------------------------------------------------------------------------ the templates folder dropped in whole
 clear(SE)

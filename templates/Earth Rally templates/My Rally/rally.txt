@@ -9,7 +9,7 @@
 #   4. Put the folder in Earth Rally's import folder (Rally menu > Add > Open folder).
 #
 #   - Lines starting with # are notes for you. The game skips them.
-#   - Capitals, spaces, ":" or "=" don't matter. "Rally: X", "rally = X" and "RALLY  X" all work.
+#   - Write each setting as  Name: value  ("rally = X" works too; capitals and spaces don't matter).
 #   - Each time the game reads this folder it writes "import report.txt" here. Open it to see
 #     what the game found, and what to fix.
 #
@@ -20,21 +20,21 @@ Rally: My Forest Rally
 Map: my stages.kml                 # your map's file name, in this folder
 Dates: 7-8 Feb 2031                # or 2031-02-07 to 2031-02-08, or one day
 Town: Fernvale                     # shown under the rally's name
-ID: my-forest-rally                # optional. Your times are saved under it: don't change it later.
+# ID: my-forest-rally              # optional. Your times are saved under it: don't change it later.
 
 
-# --- Pictures (optional, in this folder: .png or .jpg) -------------------------------------
+# --- Pictures (optional, in this folder: .png or .jpg; take the # off to use one) ----------
 
-Cover: cover.jpg                   # the rally's card in the menu
-Logo: logo.png
-Photo: photo.jpg                   # the banner on the rally's page
+# Cover: cover.jpg                 # the rally's card in the menu
+# Logo: logo.png
+# Photo: photo.jpg                 # the banner on the rally's page
 
 
 # --- Other files (optional) ----------------------------------------------------------------
 #   Left out, the game looks for these names in this folder by itself.
 
-Results: results.csv               # the real crews' times: leaderboards, and your place
-Weather: weather.csv               # each stage's weather
+# Results: results.csv             # the real crews' times: leaderboards, and your place
+# Weather: weather.csv             # each stage's weather
 
 
 # --- Places --------------------------------------------------------------------------------
