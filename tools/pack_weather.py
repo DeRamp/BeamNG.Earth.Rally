@@ -409,19 +409,23 @@ def text_rallies(root):
           local dir = spec.event:gsub('#event$', ''):match('^(.*)/[^/]*$') or ''
           local wxRel = spec.weatherFile or ((dir ~= '' and (dir .. '/') or '') .. 'weather.csv')
           -- (what weather.csv has now, read as the game reads it: kept as it is unless fetched again)
-          local have, notes = {}, {}
+          local have, notes, wprobs = {}, {}, {}
           local text = ctx.readText(wxRel)
           if text then
             local names = {}
             local parsed = ctx.parseMap(spec.map)
             for i, l in ipairs(parsed and parsed.lines or {}) do names[i] = l.name end
-            have = tp._readWeather(text, wxRel, passes, names, {})
+            have = tp._readWeather(text, wxRel, passes, names, wprobs)
             for ln in (text .. '\n'):gmatch('([^\n]*)\n') do
               if ln:match('^%s*#') and not ln:find('Open-Meteo', 1, true) then notes[#notes + 1] = ln end
             end
           end
+          local said = {}
+          for _, p in ipairs(wprobs) do
+            said[#said + 1] = (p.line and ('line ' .. p.line .. ': ') or '') .. tostring(p.what)
+          end
           out[#out + 1] = { name = spec.name or spec.map, map = spec.map, rows = rows, wx = wxRel, have = have,
-            notes = notes, timezone = ev.event and ev.event.timezone or nil }
+            notes = notes, problems = said, timezone = ev.event and ev.event.timezone or nil }
         end
       end
       return out, nil
@@ -446,8 +450,9 @@ def text_rallies(root):
         ev = {"event": {"timezone": r.timezone} if r.timezone else {}, "itinerary": rows}
         have = py(r.have) or {}
         notes = py(r.notes) or []
+        probs = py(r.problems) or []
         out.append((r.name, os.path.join(root, r.map), ev, os.path.join(root, r.wx), have if isinstance(have, dict)
-                    else {}, notes if isinstance(notes, list) else []))
+                    else {}, notes if isinstance(notes, list) else [], probs if isinstance(probs, list) else []))
     return out
 
 
@@ -468,7 +473,7 @@ def weather_row(control, stage, w):
         return "" if v is None else (f"{v:g}" if isinstance(v, (int, float)) and not isinstance(v, bool) else str(v))
     cover, wind = w.get("cover") or {}, w.get("wind") or {}
     return {"SS": control, "Stage": stage, "Sky": sky_word(int(w.get("code", 3))), "Code": n(w.get("code")),
-            "Daylight": "yes" if w.get("isDay", True) else "no", "Cloud %": n(cover.get("total")),
+            "Daylight": "" if w.get("isDay") is None else ("yes" if w["isDay"] else "no"), "Cloud %": n(cover.get("total")),
             "Low cloud %": n(cover.get("low")), "Mid cloud %": n(cover.get("mid")), "High cloud %": n(cover.get("high")),
             "Wind m/s": n(wind.get("ms")), "Gust m/s": n(wind.get("gustMs")), "Wind from": n(wind.get("fromDeg")),
             "Temp C": n(w.get("tempC")), "Sea level temp C": n(w.get("slTempC")), "Dew C": n(w.get("dewC")),
@@ -483,8 +488,15 @@ def run_text(root, force, fetcher, today, say):
     import csv
     import io
     counts = {}
-    for name, map_path, ev, wx_path, have, notes in text_rallies(root):
+    for name, map_path, ev, wx_path, have, notes, probs in text_rallies(root):
         say(f"{name}:")
+        if probs:
+            # (a row the game can't read would be lost on rewriting: the file is left as it is until it is put right)
+            say(f"  {os.path.basename(wx_path)} has rows the game can't read; fix them first (nothing written):")
+            for p in probs:
+                say(f"    {p}")
+            counts[name] = 0
+            continue
         stage_of = {r["control"]: r.get("stage") or "" for r in ev["itinerary"]}
         # (rows already in weather.csv, as the game reads them: kept, and count as had, unless --force)
         old = {c: weather_row(c, stage_of.get(c, ""), w) for c, w in have.items()}

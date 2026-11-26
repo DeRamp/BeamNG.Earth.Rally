@@ -120,4 +120,12 @@ T.check(k2 == 'startInterval' and v2 == '2 min', 'two spaces inside a key: the v
 T.check(R.exactKey('Rally start: Park', { rally = { 'rally' } }) == nil and
   R.exactKey('Rally: X', { rally = { 'rally' } }) == 'rally', 'exactKey')
 
+T.check(R.fold('KRAŠOVO') == R.fold('Krašovo') and R.fold('Krašovo') == 'krasovo', 'capitals of Central Europe')
+T.check(R.fold('ŁÓDŹ') == R.fold('Łódź') and R.fold('ΚΈΡΚΥΡΑ') ~= '' and R.fold('МОСКВА') == R.fold('Москва'),
+  'capitals of other scripts')
+T.check(not R.fold('Ζάκυνθος'):find('[%z\1-\31]'), 'no control bytes in a fold')
+T.check(R.date('7 Februar 2031') == '2031-02-07' and R.date('7 février 2031') == '2031-02-07', 'other languages')
+local _, why2 = R.date('TBC 2031')
+T.check(why2 and not why2:find('day of the year', 1, true), 'not a date: not told to check the day')
+
 T.done('test_textread')

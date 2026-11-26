@@ -219,7 +219,8 @@ local function settings(text, file, keyset, probs)
         -- colon after a list, as a stage may be called "Late Hill")
         if not k and not head then
           local k2, v2, w2 = R.keyValue(ln.text, keyset)
-          if k2 and w2 and w2:find('%s') and not LISTS[k2] and k2 ~= 'place' and select(2, KIND_OF(w2)) ~= '' then
+          if k2 and w2 and w2:find('%s') and not LISTS[k2] and k2 ~= 'place' and select(2, KIND_OF(w2)) ~= ''
+            and v2:match('^[%+%-]?%d') then
             k, v, written = k2, v2, w2
           end
         end
@@ -368,7 +369,8 @@ local function pieces(text)
       local c = R.clock(a)
       local b, rest2 = rest:match('^(%S+)%s*(.*)$')
       if not c and b and b:lower():match('^[ap]%.?m%.?$') then c, rest = R.clock(a .. ' ' .. b), rest2 end
-      if c then p.time, text = c, rest end
+      -- ("12.50 km" is a length)
+      if c and not (b and b:lower():match('^km')) and not a:lower():match('km$') then p.time, text = c, rest end
     end
   end
   local t = ' ' .. text .. ' '
@@ -395,20 +397,21 @@ local function pieces(text)
   if km then p.km = R.number(km) t = t:gsub('%s%d+[%.,]?%d*%s*[Kk][Mm]%s', ' ', 1) end
   -- (minutes: "20 min", "1 h 30", "1h30 min", "+20")
   -- ("1 h 30", "1h30 min": an h straight after the hours, so "Route 7 Hill 2" is a name)
-  local h, m = t:match('%s(%d+)%s*[Hh]%s*(%d%d?)%s*[Mm]?[Ii]?[Nn]?%a*%s')
+  local HRS = '[Hh][OoRr]?[UuSs]?[Rr]?[Ss]?'      -- (h, hr, hrs, hour, hours)
+  local h, m = t:match('%s(%d+)%s*' .. HRS .. '%s*(%d%d?)%s*[Mm]?[Ii]?[Nn]?%a*%s')
   if h then
     p.target = tonumber(h) * 60 + tonumber(m)
-    t = t:gsub('%s%d+%s*[Hh]%s*%d%d?%s*[Mm]?[Ii]?[Nn]?%a*%s', ' ', 1)
+    t = t:gsub('%s%d+%s*' .. HRS .. '%s*%d%d?%s*[Mm]?[Ii]?[Nn]?%a*%s', ' ', 1)
   else
     local mins = t:match('%s%+?(%d+[%.,]?%d*)%s*[Mm][Ii][Nn]%a*%s') or t:match('%s%+(%d+)%s')
     if mins then
       p.target = R.number(mins)
       t = t:gsub('%s%+?%d+[%.,]?%d*%s*[Mm][Ii][Nn]%a*%s', ' ', 1):gsub('%s%+%d+%s', ' ', 1)
     else
-      local hrs = t:match('%s(%d+[%.,]?%d*)%s*[Hh]%s') or t:match('%s(%d+[%.,]?%d*)%s*[Hh][Oo][Uu][Rr][Ss]?%s')
+      local hrs = t:match('%s(%d+[%.,]?%d*)%s*' .. HRS .. '%s')
       if hrs then
         p.target = R.number(hrs) * 60
-        t = t:gsub('%s%d+[%.,]?%d*%s*[Hh]%s', ' ', 1):gsub('%s%d+[%.,]?%d*%s*[Hh][Oo][Uu][Rr][Ss]?%s', ' ', 1)
+        t = t:gsub('%s%d+[%.,]?%d*%s*' .. HRS .. '%s', ' ', 1)
       end
     end
   end
@@ -695,7 +698,8 @@ local function readResults(text, file, passes, stageNames, probs)
       end
       return { control = control, stage = pass.stage, run = pass.run, km = pass.km }
     end
-    if guessed then
+    if guessed and not said['~' .. stageText] then
+      said['~' .. stageText] = true
       NOTE(string.format('No stage called "%s". Read as "%s".', stageText, name),
         'If that\'s right, fix the spelling to stop this message.')
     end
@@ -847,7 +851,7 @@ local function readWeather(text, file, passes, stageNames, probs)
       'See the notes at the top of the template.')
     return {}
   end
-  local out = {}
+  local out, saidWx = {}, {}
   for _, r in ipairs(rows) do
     local ln = { n = r.n, raw = r.raw }
     local function cell(k) return col[k] and R.trim(r.cells[col[k]] or '') or '' end
@@ -863,8 +867,11 @@ local function readWeather(text, file, passes, stageNames, probs)
       for _, s in ipairs(stageNames) do if R.fold(s) == R.fold(cell('stage')) then name = s end end
       if not name then
         name = R.closest(cell('stage'), stageNames)
-        if name then problem(probs, file, ln, string.format('No stage called "%s". Read as "%s".', cell('stage'), name),
-          'If that\'s right, fix the spelling to stop this message.') end
+        if name and not saidWx[cell('stage')] then
+          saidWx[cell('stage')] = true
+          problem(probs, file, ln, string.format('No stage called "%s". Read as "%s".', cell('stage'), name),
+            'If that\'s right, fix the spelling to stop this message.')
+        end
       end
       for c, ps in pairs(passes) do if ps.stage == name then controls[#controls + 1] = c end end
       if #controls == 0 then
@@ -1035,6 +1042,9 @@ local function readRally(ctx, rel, base, probs, virtual)
       elseif not f then
         problem(probs, rel, s[k].ln, string.format('There is no picture %s in the folder.', s[k].value),
           'Put it in the folder (.png or .jpg), or delete this line.')
+        -- (watched: put there later, the pack is read again)
+        virtual.__watch = virtual.__watch or {}
+        table.insert(virtual.__watch, join(base, R.unquote(s[k].value)))
       end
       spec[k] = f
     end
@@ -1437,6 +1447,8 @@ function M.read(ctx)
     end
   end
   if m.kind == 'season' then for _, r in ipairs(data.rounds) do pics(r) end else pics(data) end
+  for _, rel in ipairs(m.virtual.__watch or {}) do named2[#named2 + 1] = rel picList[#picList + 1] = rel end
+  m.virtual.__watch = nil
   m.named, m.pics = named2, picList
   return m
 end

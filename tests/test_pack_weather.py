@@ -193,6 +193,14 @@ def main():
         check(not (pack / 'weather.csv').exists() and 'SS1,Alpha,overcast' in text, 'the file rally.txt names')
         check('SS2,Beta,overcast,3' in text and ',4,' in text and 'café' in text, 'a hand row in Excel\'s own form kept')
 
+        # a row the game can't read: the file left alone, said
+        (pack / 'wx.csv').write_text('SS;Weather\nSS1;sunshine and lollipops\n', encoding='utf-8')
+        said = []
+        pw.run(str(pack), force=True, fetcher=pw.Fetcher(get_json=fake, pause_s=0), today=dt.date(2026, 11, 19),
+               say=said.append)
+        check((pack / 'wx.csv').read_text(encoding='utf-8').startswith('SS;Weather') and any('fix them first' in m
+              for m in said), "a row the game can't read: nothing written, said")
+
     print(f'{failed} failed' if failed else 'all ok')
     return 1 if failed else 0
 

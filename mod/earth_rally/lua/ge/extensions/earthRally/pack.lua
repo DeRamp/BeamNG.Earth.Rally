@@ -1349,6 +1349,7 @@ local function importPack(p, index, force, gone)
   local src, why
   if p.kind == 'zip' then src, why = zipSource(p.path, p.name) else src = folderSource(p.path, p.name) end
   local textish = false      -- (a hand-made pack: its unchanged check needs no reading, entry.text)
+  local mpics = nil          -- (its pictures, for that check: kept on a failed import too)
   -- (where its import report goes: in the folder beside its manifest, or beside the zip)
   local reportPath = p.kind == 'zip' and (importer.IMPORT_DIR .. p.name .. ' - ' .. textPack.REPORT_NAME) or nil
   local function fail(w, f, probs)
@@ -1359,7 +1360,7 @@ local function importPack(p, index, force, gone)
     local wt = whyText(w)
     index.packs[p.name] = { reader = M.READER, fingerprint = f or fp or ('failed:' .. wt), stat = st, failed = true,
       seasonId = keep.seasonId, eventIds = keep.eventIds, rounds = keep.rounds, nameSlug = keep.nameSlug,
-      kind = keep.kind, text = textish or nil }
+      kind = keep.kind, text = textish or nil, pics = mpics }
     log('W', 'earthRally', 'import ' .. p.name .. ': ' .. wt)
     for _, pr in ipairs(probs or {}) do log('W', 'earthRally', '  ' .. whyText(pr)) end
     return { file = p.name, ok = false, why = type(w) == 'table' and tostring(w.what) or wt,
@@ -1378,10 +1379,12 @@ local function importPack(p, index, force, gone)
     local okM, m, mwhy, mprobs = pcall(M.manifest, src)
     if not okM then
       log('E', 'earthRally', 'import ' .. p.name .. ': ' .. tostring(m))
-      m, mwhy, mprobs = nil, { what = 'The rally file could not be read: ' .. tostring(m),
+      m, mwhy, mprobs = nil, { what = 'The rally file could not be read: ' .. (type(m) == 'table' and tostring(m.what or
+        m.msg) or tostring(m)),
         fix = 'Check it against the template. If it still fails, report it with this file.' }, nil
     end
     textish = (m and m.text) or (not m and textPack.find(src.list and src.list() or {})[1] ~= nil)
+    mpics = m and m.pics or nil
     if p.kind == 'folder' then
       local named = m and namedFiles(src, m) or candidates(src)
       st = folderStat(src, named)

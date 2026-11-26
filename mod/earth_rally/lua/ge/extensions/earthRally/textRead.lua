@@ -113,22 +113,31 @@ end
 -- same name when their folds are equal ("Kilo Hill", "kilo-hill", "KILO HILL!").
 function M.fold(s)
   if type(s) ~= 'string' then return '' end
-  s = s:gsub('[\192-\255][\128-\191]*', function(ch)
-    if ACCENTS[ch] then return ACCENTS[ch] end
-    local lower = ch:lower()
-    -- (upper-case accented letters: the lower-case one is 32 code points on in Latin-1)
-    local a, b = ch:byte(1, 2)
-    if a == 0xC3 and b and b >= 0x80 and b <= 0x9E then lower = string.char(0xC3, b + 32) end
-    if ACCENTS[lower] then return ACCENTS[lower] end
-    -- (a letter of another script, Greek or Cyrillic or Japanese: kept as it is, so two such names stay two)
-    if a == 0xC2 or (a == 0xE2 and ch:byte(2) == 0x80) then return '' end   -- (spaces and punctuation)
-    return '\1' .. ch .. '\2'
-  end)
-  s = s:lower()
-  -- (only the plain parts lose their spaces and punctuation)
   local out = {}
-  for plain, kept in (s .. '\1\2'):gmatch('([^\1]*)\1([^\2]*)\2') do
-    out[#out + 1] = plain:gsub('[^%w]', '') .. kept
+  for ch in s:gmatch('[%z\1-\127\194-\244][\128-\191]*') do
+    local b1 = ch:byte(1)
+    if b1 < 128 then
+      if ch:match('%w') then out[#out + 1] = ch:lower() end
+    elseif ACCENTS[ch] then
+      out[#out + 1] = ACCENTS[ch]
+    elseif #ch == 2 then
+      -- (two-byte letters: Latin-1 and Extended-A, Greek, Cyrillic; upper case made lower, punctuation dropped)
+      local cp = (b1 - 0xC0) * 64 + (ch:byte(2) - 0x80)
+      if cp >= 0xC0 and cp <= 0xDE and cp ~= 0xD7 then cp = cp + 32
+      elseif cp >= 0x100 and cp <= 0x17F and cp ~= 0x130 and cp ~= 0x138 and cp ~= 0x149 and cp ~= 0x17F then
+        local oddUpper = (cp >= 0x139 and cp <= 0x148) or (cp >= 0x179 and cp <= 0x17E)
+        if (oddUpper and cp % 2 == 1) or (not oddUpper and cp % 2 == 0) then cp = cp + 1 end
+      elseif cp >= 0x391 and cp <= 0x3AB then cp = cp + 32
+      elseif cp >= 0x410 and cp <= 0x42F then cp = cp + 32
+      elseif cp >= 0x400 and cp <= 0x40F then cp = cp + 80 end
+      local c = utf8char(cp)
+      if ACCENTS[c] then out[#out + 1] = ACCENTS[c]
+      elseif cp >= 0xC0 and cp ~= 0xD7 and cp ~= 0xF7 then out[#out + 1] = c end
+    elseif #ch == 3 and b1 == 0xE2 then
+      -- (dashes, quotes and spaces: dropped)
+    else
+      out[#out + 1] = ch                 -- (other scripts as they are: two such names stay two)
+    end
   end
   return table.concat(out)
 end
@@ -354,10 +363,18 @@ end
 local MONTHS = { jan = 1, feb = 2, mar = 3, apr = 4, may = 5, jun = 6, jul = 7, aug = 8, sep = 9, oct = 10, nov = 11,
   dec = 12 }
 local MONTH_WORDS = { january = 1, february = 2, march = 3, april = 4, june = 6, july = 7, august = 8,
-  september = 9, sept = 9, october = 10, november = 11, december = 12 }
+  september = 9, sept = 9, october = 10, november = 11, december = 12,
+  -- (German, French, Spanish, Italian)
+  januar = 1, februar = 2, marz = 3, juni = 6, juli = 7, oktober = 10, dezember = 12,
+  janvier = 1, fevrier = 2, mars = 3, avril = 4, mai = 5, juin = 6, juillet = 7, aout = 8, septembre = 9,
+  octobre = 10, novembre = 11, decembre = 12,
+  enero = 1, febrero = 2, marzo = 3, abril = 4, mayo = 5, junio = 6, julio = 7, agosto = 8, septiembre = 9,
+  octubre = 10, noviembre = 11, diciembre = 12,
+  gennaio = 1, febbraio = 2, aprile = 4, maggio = 5, giugno = 6, luglio = 7, settembre = 9, ottobre = 10,
+  dicembre = 12 }
 -- (a month's name or its short form, the whole word: "Mayfield" is not May)
 local function month(w)
-  w = w and w:lower():gsub('%.$', '') or ''
+  w = w and M.fold(w) or ''
   if #w == 3 and MONTHS[w] then return MONTHS[w] end
   return MONTH_WORDS[w]
 end
@@ -383,13 +400,13 @@ function M.date(s, year)
     local r = iso(y, m, d)
     if r then return r end
   end
-  local dd, mon, yy = t:match('^(%d%d?) (%a+)%.? ?(%d*)$')
+  local dd, mon, yy = t:match('^(%d%d?) ([%a\128-\255]+)%.? ?(%d*)$')
   if dd and month(mon) then
     local r = iso(yy ~= '' and yy or year, month(mon), dd)
     if r then return r end
     if yy == '' and not year then return nil, string.format('"%s" has no year', M.trim(s)) end
   end
-  mon, dd, yy = t:match('^(%a+)%.? (%d%d?) ?(%d*)$')
+  mon, dd, yy = t:match('^([%a\128-\255]+)%.? (%d%d?) ?(%d*)$')
   if mon and month(mon) then
     local r = iso(yy ~= '' and yy or year, month(mon), dd)
     if r then return r end
@@ -405,8 +422,9 @@ function M.date(s, year)
     if r then return r, nil, either end
     return nil, string.format('"%s" is not a day of the year: check the day and the month', M.trim(s))
   end
-  if y or dd or mon then return nil, string.format('"%s" is not a day of the year: check the day and the month',
-    M.trim(s)) end
+  if y or (mon and month(mon)) or (dd and month(select(2, t:match('^(%d%d?) ([%a\128-\255]+)')))) then
+    return nil, string.format('"%s" is not a day of the year: check the day and the month', M.trim(s))
+  end
   return nil, string.format('"%s" is not a date: write it as 7 Feb 2031 or 2031-02-07', M.trim(s))
 end
 

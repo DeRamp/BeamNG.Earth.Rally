@@ -319,6 +319,21 @@ local hev = hl and hl.eventId and jsonReadFile('/earthRally/events/' .. hl.event
 T.check(hl and hl.ok and hev and #hev.stages[1].line == 3, 'line.csv with no header: its first point kept')
 clear(IMP .. 'Hill/')
 
+local tp = require('earthRally/textPack')
+local q1 = tp._pieces('SS1 Kilo Hill 1 hr 30')
+local q2 = tp._pieces('ATC 2 hrs')
+local q3 = tp._pieces('ATC 1 hour 30 min')
+local q4 = tp._pieces('12.50 km Kilo Hill')
+T.check(q1.target == 90 and q2.target == 120 and q3.target == 90 and q2.rest == 'ATC', 'hours written every way')
+T.check(q4.time == nil and q4.km == 12.5, '12.50 km at the front is a length')
+-- a map taken out after it failed: its report goes with it
+files[IMP .. 'Broken.kml'] = '<kml><Document></Document></kml>'
+imp.scan()
+T.check(files[IMP .. 'Broken.kml - import report.txt'] ~= nil, 'a failed map has its report')
+files[IMP .. 'Broken.kml'] = nil
+imp.scan()
+T.check(files[IMP .. 'Broken.kml - import report.txt'] == nil, 'taken out: its report too')
+
 ------------------------------------------------------------------------------------------ the stage template
 local ST = IMP .. 'My Stage/'
 clear(RA)
