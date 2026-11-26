@@ -1,0 +1,17 @@
+#  EARTH RALLY - RALLY FILE, one round of a season.
+#  Made like the "My Rally" template: see the notes there for everything a rally can have.
+#  Each time the game reads the season it writes "import report.txt" in the season's folder.
+
+Rally: My First Round
+Map: my stages.kml
+Dates: 7-8 Feb 2031
+
+Running order:
+  Meaford Mills
+  Kilo Hill
+  Service at Fernvale Park
+  Meaford Mills
+  Kilo Hill
+
+Place: Fernvale Park
+  At: 60.0102, -10.0451

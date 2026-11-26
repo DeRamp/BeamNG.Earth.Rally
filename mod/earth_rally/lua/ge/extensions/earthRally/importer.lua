@@ -707,7 +707,7 @@ end
 -- One line per thing worth telling about an import (the window and the log).
 function M.reportLines(report)
   local out = {}
-  for _, w in ipairs(report.warnings or {}) do out[#out + 1] = w end
+  for _, w in ipairs(report.warnings or {}) do out[#out + 1] = type(w) == 'table' and tostring(w.what) or w end
   for _, s in ipairs(report.stages or {}) do
     local roles = #s.controls > 0 and table.concat(s.controls, ', ') or 'no controls found'
     out[#out + 1] = string.format('%s: %.1f km; controls: %s', s.name, s.km, roles)
@@ -838,8 +838,9 @@ function M.scan(force)
         if ext == 'kmz' then s, why = readKmz(path) end
         local okP, parsed = false, nil
         if s then okP, parsed = pcall(M.parse, s, ext == 'gpx' and 'gpx' or 'kml') end
+        local reportPath = M.IMPORT_DIR .. fileName .. ' - import report.txt'
         if not s or not okP then
-          done[#done + 1] = { file = fileName, ok = false, why = why or tostring(parsed) }
+          done[#done + 1] = { file = fileName, ok = false, why = why or tostring(parsed), reportPath = reportPath }
           -- (told once, until it changes; the rally it made before kept to it: #50)
           index.files[fileName] = { fingerprint = fp, failed = true, eventId = entry and entry.eventId }
           log('W', 'earthRally', 'import ' .. fileName .. ': ' .. tostring(why or parsed))
@@ -861,12 +862,13 @@ function M.scan(force)
             if entry and entry.eventId and entry.eventId ~= id then noteGone(index, entry.eventId, fileName) end
             index.files[fileName] = { fingerprint = fp, eventId = id, date = os.date('!%Y-%m-%dT%H:%M:%SZ') }
             M.lastReports[id] = { file = fileName, lines = M.reportLines(report) }
-            done[#done + 1] = { file = fileName, eventId = id, name = name, stages = #event.stages, ok = true }
+            done[#done + 1] = { file = fileName, eventId = id, name = name, stages = #event.stages, ok = true,
+              results = { { event = event, report = report } }, reportPath = reportPath, warnings = report.warnings }
             log('I', 'earthRally', string.format('imported %s: %s, %d stages', fileName, name, #event.stages))
             for _, l in ipairs(M.lastReports[id].lines) do log('I', 'earthRally', '  ' .. l) end
           else
             local why2 = okB and table.concat(M.reportLines(report or {}), '; ') or tostring(event)
-            done[#done + 1] = { file = fileName, ok = false, why = why2 }
+            done[#done + 1] = { file = fileName, ok = false, why = why2, reportPath = reportPath }
             index.files[fileName] = { fingerprint = fp, failed = true, eventId = entry and entry.eventId }
             log('W', 'earthRally', 'import ' .. fileName .. ': ' .. why2)
           end
@@ -898,6 +900,16 @@ function M.scan(force)
       for _, id in ipairs(e.eventIds or {}) do index.gone[id] = nil end
     end
     if next(index.gone) == nil then index.gone = nil end
+  end
+  -- every import's report: written beside the file or in the pack's folder, and kept on the entry for the menu
+  -- (the rallies themselves dropped from the entry: the menu only needs the report)
+  local importReport = require('earthRally/importReport')
+  for _, d in ipairs(done) do
+    if not d.removed then
+      local ok, rep = pcall(importReport.write, d)
+      if ok then d.report = rep else log('W', 'earthRally', 'import report for ' .. tostring(d.file) .. ': ' .. tostring(rep)) end
+    end
+    d.results = nil
   end
   -- (also when only the naming rules moved on, so the re-import is not asked for again on every start; and when a
   -- pack was only touched, so its new size and time spare the next start hashing it again)

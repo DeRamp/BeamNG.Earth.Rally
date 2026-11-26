@@ -163,6 +163,18 @@ The owner asked for it, 2026-11-18. Released 2026-11-19.
 | ✔ | An Earth Rally tile on the game's Play > Rally page that opens the menu with no level loaded | built |
 | ✔ | BeamNG.Earth loads only when a stage is driven or a rally started, then the button runs | built |
 
+## +handfiles: hand-made rally files (built on 1.10.0)
+
+The owner asked for it, 2026-11-25: rally files people can write by hand, forgiving of mistakes, that explain
+themselves, on top of the JSON packs (which keep working). Plan in docs/plan-hand-files.md. Built, not yet driven.
+
+| | Item | Size |
+|---|---|---|
+| ✔ | `season.txt`, `rally.txt`, `stage.txt`, `results.csv`, `weather.csv`, `line.csv`: everything the JSON packs carry, timed running order included | built |
+| ✔ | An import report for every import, written beside the file and shown in game from the Last import lines | built |
+| ✔ | Downloadable templates (`templates/Earth Rally templates.zip`); `tools/pack_weather.py` fills `weather.csv` | built |
+| | Service areas as a box or polygon (`Area:` is read and not used yet) | S |
+
 ## 1.9.0: make and share stages
 
 Players build their own stages and pass them around.

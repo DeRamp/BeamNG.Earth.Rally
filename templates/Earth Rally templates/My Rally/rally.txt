@@ -1,0 +1,125 @@
+#  ==========================================================================================
+#   EARTH RALLY  -  RALLY FILE
+#  ==========================================================================================
+#
+#   1. Rename this folder to your rally's name.
+#   2. Put your stage map in it (.kml, .kmz or .gpx: one line per stage, drawn in the
+#      driving direction).
+#   3. Fill in this file. Only "Rally" and "Map" are needed: delete anything you don't use.
+#   4. Put the folder in Earth Rally's import folder (Rally menu > Add > Open folder).
+#
+#   - Lines starting with # are notes for you. The game skips them.
+#   - Capitals, spaces, ":" or "=" don't matter. "Rally: X", "rally = X" and "RALLY  X" all work.
+#   - Each time the game reads this folder it writes "import report.txt" here. Open it to see
+#     what the game found, and what to fix.
+#
+#  ------------------------------------------------------------------------------------------
+
+
+Rally: My Forest Rally
+Map: my stages.kml                 # your map's file name, in this folder
+Dates: 7-8 Feb 2031                # or 2031-02-07 to 2031-02-08, or one day
+Town: Fernvale                     # shown under the rally's name
+ID: my-forest-rally                # optional. Your times are saved under it: don't change it later.
+
+
+# --- Pictures (optional, in this folder: .png or .jpg) -------------------------------------
+
+Cover: cover.jpg                   # the rally's card in the menu
+Logo: logo.png
+Photo: photo.jpg                   # the banner on the rally's page
+
+
+# --- Other files (optional) ----------------------------------------------------------------
+#   Left out, the game looks for these names in this folder by itself.
+
+Results: results.csv               # the real crews' times: leaderboards, and your place
+Weather: weather.csv               # each stage's weather
+
+
+# --- Places --------------------------------------------------------------------------------
+#   Where the start, services and overnight parks are. Paste the position from Google Maps
+#   (right-click the spot: the numbers at the top of the menu), or type it: 60.0102, -10.0451
+
+Place: Fernvale Park
+  At: 60.0102, -10.0451
+
+Place: Ridge Hotel
+  At: 60.0420, -10.1133
+
+
+# --- Running order -------------------------------------------------------------------------
+#   One line per stage or stop, top to bottom.
+#
+#   A stage:   its name, as the line is named in your map. Listed again, it is its second run.
+#              You can put the SS number in front ("SS3  Kilo Hill"); left out, it is counted.
+#              After the name you can add its length ("10.46 km") and "power stage".
+#   A stop:    Start, Service, Regroup, Refuel or Finish, with "at" and a place from above.
+#   A new day: "Day 2" (and its date, if you like). The night before is an overnight.
+#
+#   Timed road sections (optional, for a rally with a real schedule):
+#     - a time at the front of a line: the first car's time there        08:23
+#     - minutes at the end: the time allowed from the line before         20 min
+#     - a stage's lateness time                                           late 10 min
+#     - a time control before a stage: a line with just "ATC" (and its code, if you like)
+#     - timed stops come in pairs: "Service in" / "Service out", "Regroup in" / "Regroup out",
+#       "MTC in" / "MTC out", "Parc ferme in" / "Parc ferme out"
+#     - a control only some classes go through: "only Regional"
+#   There's an example at the end of this file.
+
+Running order:
+  Day 1
+  Start at Fernvale Park
+  SS1  Meaford Mills      10.46 km
+  SS2  Kilo Hill           8.20 km
+  Service at Fernvale Park
+  SS3  Meaford Mills
+  SS4  Kilo Hill
+  Day 2
+  Start at Ridge Hotel
+  SS5  Long Gap           14.02 km
+  Service at Fernvale Park
+  SS6  Long Gap           power stage
+  Finish at Fernvale Park
+
+
+# --- Rules (optional; shown on the rally's Rules tab) --------------------------------------
+
+False start: 10, 60, 180 s         # 1st, 2nd, 3rd offence
+Late: 10 s per minute              # late at a time control
+Early: 60 s per minute             # early at a time control
+Early is free at: MTC in, Regroup in
+Max lateness: 30 min
+Start interval: 2 min
+Time zone: Europe/London           # the schedule's clock. Left out: worked out from where the rally is.
+
+
+#  ------------------------------------------------------------------------------------------
+#   A timed running order: the same rally with its schedule. To use it, delete the running
+#   order above and take the # off the front of these lines.
+#  ------------------------------------------------------------------------------------------
+#
+# Running order:
+#   Day 1  7 Feb 2031
+#   08:00  TC0   Start at Fernvale Park
+#   08:20  TC1   ATC                              20 min
+#   08:23  SS1   Meaford Mills       10.46 km     late 10 min
+#          TC2   ATC                              25 min
+#          SS2   Kilo Hill            8.20 km     late 10 min
+#          TC2A  Service in at Fernvale Park      30 min
+#   09:40  TC2B  Service out at Fernvale Park     30 min
+#          TC3   ATC                              22 min
+#          SS3   Meaford Mills                    late 10 min
+#          TC4   ATC                              25 min
+#          SS4   Kilo Hill                        late 10 min
+#          TC4A  MTC in at Ridge Hotel            40 min
+#   Day 2  8 Feb 2031
+#   08:00  TC4B  MTC out at Ridge Hotel
+#          TC5   ATC                              30 min
+#          SS5   Long Gap            14.02 km     late 12 min
+#          TC5A  Service in at Fernvale Park      35 min
+#          TC5B  Service out at Fernvale Park     30 min
+#          TC5C  Regroup in at Fernvale Park      5 min    only Regional
+#          TC6   ATC                              35 min
+#          SS6   Long Gap                         late 12 min   power stage
+#          TC6A  Finish at Fernvale Park          40 min

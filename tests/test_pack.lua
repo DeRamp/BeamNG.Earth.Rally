@@ -328,7 +328,7 @@ T.check(why('No Name'):find('no name', 1, true), 'a season with no name refused'
 T.check(why('No Map'):find('no map', 1, true), 'a rally with no map refused')
 T.check(why('Gone Map'):find("can't find nowhere.kml", 1, true), 'a map that is not there')
 T.check(why('Two'):find('more than one manifest', 1, true), 'two manifests refused')
-T.check(why('Stuff'):find('not a rally pack', 1, true), 'a folder with no manifest reported')
+T.check(why('Stuff'):find('No rally file at the top', 1, true), 'a folder with no manifest reported')
 local h = find(r5, 'Half')
 T.check(h and h.ok and h.rallies == 1 and table.concat(h.warnings, ' '):find('round 2', 1, true),
   'a round with no map: left out with a warning, the rest imported')
@@ -910,10 +910,11 @@ do
   T.check(out[1].outAt == '10:00', 'schedule: the service out time carried')
   -- (S) the class filter: substring, any case; a warning for the dropped row only
   local dropped = 0
-  for _, m in ipairs(warns) do if m:find('TC1R', 1, true) then dropped = dropped + 1 end end
+  local function txt(m) return type(m) == 'table' and m.what or m end
+  for _, m in ipairs(warns) do if txt(m):find('TC1R', 1, true) then dropped = dropped + 1 end end
   T.check(dropped == 1, 'class filter: one warning for the regional-only row')
   local kept = true
-  for _, m in ipairs(warns) do if m:find('TC2', 1, true) then kept = false end end
+  for _, m in ipairs(warns) do if txt(m):find('TC2', 1, true) then kept = false end end
   T.check(kept, "class filter: 'ARC National 2WD' kept, no warning")
 end
 

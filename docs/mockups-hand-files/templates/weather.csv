@@ -1,8 +1,0 @@
-# EARTH RALLY - WEATHER: each stage's weather. tools/pack_weather.py fills this from the real weather; or write your own.
-# Sky: clear, cloudy, overcast, fog, drizzle, rain, heavy rain, snow, thunder (or the WMO weather code). Only SS and Sky are needed.
-# A stage not listed has the player's own weather.
-SS,Sky,Cloud %,Wind m/s,Gust m/s,Wind from,Temp C,Rain mm/h,Snow cm/h,Fog,Visibility m
-SS1,overcast,90,4,9,250,13.6,0,0,no,20000
-SS2,light rain,100,6,12,240,11.0,0.8,0,no,8000
-SS5,snow,100,3,6,10,-2.5,0,0.6,no,3000
-SS6,fog,100,1,2,,4.0,0,0,yes,400

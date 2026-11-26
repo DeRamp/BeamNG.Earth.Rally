@@ -1,7 +1,0 @@
-# EARTH RALLY - STAGE LINE: points in driving order, from before the start to past the finish. Height is optional.
-# Pasted Google Maps positions ("60.00045, -10.0001") in one column work too.
-Lat,Lon,Height m
-60.00000,-10.00000,100
-60.00045,-10.00010,101
-60.00090,-10.00035,103
-60.00131,-10.00072,104

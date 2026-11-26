@@ -1,0 +1,10 @@
+# EARTH RALLY - WEATHER: each stage's weather. Optional: delete this file if you have none.
+# Only SS and Sky are needed. A stage that isn't listed has the player's own weather.
+# Sky: clear, partly cloudy, cloudy, overcast, fog, drizzle, light rain, rain, heavy rain,
+#      light snow, snow, heavy snow, thunder (or a WMO weather code number).
+# Wind from: the direction in degrees (0 north, 90 east). Fog: yes or no.
+SS,Sky,Cloud %,Wind m/s,Gust m/s,Wind from,Temp C,Rain mm/h,Snow cm/h,Fog,Visibility m
+SS1,overcast,90,4,9,250,13.6,0,0,no,20000
+SS2,light rain,100,6,12,240,11,0.8,0,no,8000
+SS5,snow,100,3,6,10,-2.5,0,0.6,no,3000
+SS6,fog,,1,,,4,,,yes,400

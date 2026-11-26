@@ -41,7 +41,7 @@ loadScreen.moving = function() return runner.originMoving() or earth.rebasing() 
 local M = {}
 local logTag = 'earthRally'
 local logPausedSim         -- (below, by onUpdate)
-M.VERSION = '1.10.0-alpha'
+M.VERSION = '1.10.0-alpha+handfiles'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_FLOOR_S = 1             -- the HUD's streams sent when what they show changes, and at least this often
 M.STREAM_GAP_S = 0.1              -- ... the stock stream at most this often outside waitStart / running
@@ -544,18 +544,27 @@ function M.scanImports(always)
   for _, d in ipairs(done) do
     local text
     local many = (d.rallies or 1) > 1      -- (a season pack: pack.lua)
+    local rep = d.report                   -- (importReport.lua: the same as the file written beside it)
     if d.removed then
       text = d.file .. ' taken out of the import folder (' .. (many and 'its rallies are' or 'its rally is') .. ' kept)'
+    elseif rep then
+      text = rep.headline
+      if d.ok then
+        text = text .. string.format(' (%s%d stage%s)', many and (d.rallies .. ' rallies, ') or '', d.stages or 0,
+          d.stages == 1 and '' or 's')
+      end
     elseif d.ok and many then
       text = string.format('%s: %s, %d rallies, %d stages', d.file, tostring(d.name), d.rallies, d.stages)
     elseif d.ok then text = string.format('%s: %s, %d stage%s', d.file, tostring(d.name), d.stages, d.stages == 1 and '' or 's')
     else text = 'Could not import ' .. d.file .. ': ' .. tostring(d.why) end
-    if d.ok and d.warnings and #d.warnings > 0 then
-      text = text .. string.format(' (%d warning%s: see the log)', #d.warnings, #d.warnings == 1 and '' or 's')
-    end
     said[#said + 1] = text
-    lines[#lines + 1] = { text = text, ok = d.ok == true }
-    if d.ok and not d.removed then
+    lines[#lines + 1] = { text = text, ok = d.ok == true, file = d.file, verdict = rep and rep.verdict or nil,
+      report = rep }
+    if d.ok and not d.removed and rep and rep.verdict == 'problems' then
+      runner.say(string.format('%d stage%s, with %d problem%s: see its import report (Drive stage page).', d.stages,
+        d.stages == 1 and '' or 's', #rep.problems, #rep.problems == 1 and '' or 's'), 8, 'warning',
+        'Imported ' .. tostring(d.name))
+    elseif d.ok and not d.removed then
       runner.say(string.format('%d stage%s. Open Earth Rally (Ctrl+Alt+K) to drive one.', d.stages,
         d.stages == 1 and '' or 's'), 6, 'success', 'Imported ' .. tostring(d.name))
     else

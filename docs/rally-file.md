@@ -33,6 +33,78 @@ say, and is one even when its name reads as a control. A `#pt-` tag naming none 
 read as if there were no tag. Untagged points are read from the organisers' words (importer.lua `markKinds`). A point
 is kept on the stage whose line is nearest it, within 100 m.
 
+## Hand-made files (`season.txt`, `rally.txt`, `stage.txt`)
+
+The same packs, written by hand (docs/plan-hand-files.md; the templates are in `templates/`). textPack.lua turns
+them into the tables the JSON files below give, so everything after reading is shared. A folder (or zip) whose top
+holds `season.txt`, `rally.txt` or `stage.txt` (any case, `rally.txt.txt` too; or any other `.txt` whose first
+setting is `Season:`, `Rally:` or `Stage:`) is a hand-made pack. With a `.json` manifest beside it the `.txt` is read
+and the JSON named as a problem. Two `.txt` manifests are refused, naming both. There is no `format` number.
+
+**Reading a `.txt`** (textRead.lua): UTF-8 with or without a BOM, UTF-16 either way, Windows-1252; curly quotes,
+long dashes and odd spaces made plain. A line is `Key: value`, `Key = value` or `Key  value`; keys are matched
+folded (capitals, spaces and punctuation ignored) against each setting's list of names (textPack.lua `*_KEYS`).
+`#` or `//` at a line's start or after a space starts a note. A setting given twice: the first, the second named.
+An unknown key: skipped, as "not used"; a slip of a known one: skipped, with "did you mean". A list
+(`Running order:`, `Rounds:`) runs until the next line with `Key:` for a known key.
+
+**Names** match folded (accents off: `Côte` is `cote`). A name that isn't one is read as the one it is a slip of
+(within a quarter of its letters, at most 3, two swapped letters counting one; and nearer than any other), and
+said; otherwise left out, and said. Files the same way, with or without their extension; a map named wrongly when
+the folder has one map uses that map.
+
+**rally.txt**: `Rally` (else the map's name), `Map` (else the folder's only map; none or several: refused), `Dates`,
+`Town` (`event.hq.town`), `Time zone` (`event.timezone`), `ID`, `Cover` / `Logo` / `Photo`, `Results` (else
+`results.csv`), `Weather` (else `weather.csv`), the rules (below), `Early is free at` (`time_rules.
+early_checkin_allowed`, stop words as row types), `Place:` blocks (`At:` a position; `Area:` read, not used yet,
+said) as `locations` with the folded name as id, and `Running order:`.
+
+**The running order**, one row a line:
+
+| Line | Row |
+|---|---|
+| `Day N [date]`, or a date alone | the next day: `day` N, `date` the one given, else `Dates`' first day + N - 1 |
+| a stage's name, `SS3 Name`, `Stage 3: Name` | `SS`: `control` `SS<n>` (given, else the last + 1), `stage` the map line's name, `run` counted |
+| `Start` / `Finish` | `MTC_OUT` / `MTC_IN` |
+| `Service in` / `Service out`; `Service` | `SVC_IN` / `SVC_OUT`; `SVC_IN` |
+| `Regroup in` / `Regroup out`; `Regroup` | `RGC_IN` / `RGC_OUT`; `RGC_IN` |
+| `MTC in` / `MTC out`, `Parc ferme in` / `out`, `Refuel` | `MTC_IN` / `MTC_OUT`, `PF_IN` / `PE_OUT`, `REFUEL` |
+| `ATC`, `TC`, or a control code alone (`TC3`) | `ATC` |
+
+On any line: a time first (`08:23`, `8.23`, `8:23 am`) is `first_car`; a control code (`TC2A`) is `control`;
+`at <place>` is `location` (a place not given is added by name, with no position, and said); `N min` (`1 h 30`,
+`+20`) is `target_min`; on a stage, `N km` is `ss_km`, `late N min` `lateness_min`, `power stage`; `only A, B` is
+`classes`. Minutes on a stage line add an `ATC` row before it. A time with no date anywhere is said once.
+
+**season.txt**: `Season` (required), `Championship`, `ID`, `Points` (`standings.points`), `Best rounds` (`all` or
+a number), `Count only` (`standings.championship`; `all`: false), the rules, and `Rounds:`: `N  folder` (or a map
+in the season's folder), the number optional. With no list, every sub-folder with a rally in it, by its `Dates`. A
+round's folder is read as a rally.txt with its paths from that folder; one with only a map is that map.
+
+**stage.txt**: `Stage`, `Map` or `Line` (`line.csv`: `Lat`, `Lon`, `Height m`, or a position per row), `ATC` /
+`Start` / `Finish` / `Stop` positions (`controls`, with a line only), `ID`, pictures, `Results` (every row this
+stage's), the rules.
+
+**The rules**: `False start` (every number: `falseStartS`), `Late` (`lateSPerMin`), `Early` (`earlySPerMin`),
+`Max lateness` (`maxLatenessMin`), `Start interval` (`startIntervalMin`): the first number in each.
+
+**results.csv** (textRead.csv: `,` `;` or tab, quotes, blank rows, `#` notes): columns by any of their names
+(textPack.lua `RESULT_COLS`). With a `Time` column, one row per crew per stage, `SS` or `Stage` (+ `Run`) saying
+which; without, a column per stage headed `SS<n>` or a stage's name. A time: `6:39.4`, `399.4`, `0:06:39.4`, `N`
+after it for notional; `cancelled` cancels the pass; `DNF`, `DNS`, `-`, empty: no time. A crew twice on a pass:
+the first.
+
+**weather.csv**: `SS` (or `Stage`: all its passes) and `Sky` (words, textPack.lua `SKY`, or a WMO `Code`); the rest
+optional: `Cloud %`, `Wind m/s`, `Gust m/s`, `Wind from`, `Temp C`, `Rain mm/h`, `Snow cm/h`, `Fog`, `Thunder`,
+`Visibility m`, and what `tools/pack_weather.py` writes from the real weather (`Daylight`, cloud layers,
+`Sea level temp C`, `Dew C`, cloud base, `Elevation m`, `Pressure hPa`). Missing: from the sky (wind 2 m/s, 12 °C,
+-2 °C in snow).
+
+**The import report** (importReport.lua) is written on every import, hand-made or not: `import report.txt` in a
+folder pack's root, `<name> - import report.txt` beside a zip or a loose map. The importer never reads it, and it
+is no part of a pack's fingerprint. A failed hand-made pack is fingerprinted by every `.txt`, `.csv`, `.json` and
+map in it, so it is read again when any changes.
+
 ## Season (`kind: "season"`)
 
 ```jsonc

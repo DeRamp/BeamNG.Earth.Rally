@@ -10,6 +10,8 @@
 local importer = require('earthRally/importer')
 local events = require('earthRally/events')
 local boards = require('earthRally/boards')
+local textPack = require('earthRally/textPack')
+local textRead = require('earthRally/textRead')
 
 local M = {}
 
@@ -140,6 +142,17 @@ local function folderSource(dir, name)
       table.sort(out)
       return out
     end,
+    -- (every file in the pack, at any depth, as pack paths: the hand-made files find theirs by name)
+    list = function()
+      local out = {}
+      for _, f in ipairs(FS:findFiles(root, '*', -1, false, false) or {}) do
+        local rel = norm(f:sub(1, #root):lower() == root:lower() and f:sub(#root + 1) or baseName(f))
+        if rel and not ignored(baseName(rel)) and not rel:lower():find('__macosx/', 1, true) then out[#out + 1] = rel end
+      end
+      table.sort(out)
+      return out
+    end,
+    root = root,
     close = function() end,
   }
 end
@@ -188,6 +201,17 @@ local function zipSource(path, name)
       return ok and r ~= false
     end,
     rootJson = function() return rootJson end,
+    list = function()
+      local out = {}
+      for n in pairs(entries) do
+        local rel = n:sub(#prefix + 1)
+        if n:sub(1, #prefix) == prefix and not ignored(baseName(rel)) and not rel:lower():find('__macosx/', 1, true) then
+          out[#out + 1] = rel
+        end
+      end
+      table.sort(out)
+      return out
+    end,
     close = function() zip:close() end,
   }
 end
@@ -286,18 +310,174 @@ local function decode(s)
   return ok and type(r) == 'table' and r or nil
 end
 
--- The pack's manifest: its data, its kind and its file, or nil and why.
+-- Where a JSON text goes wrong, for a person to fix: line, column and what, or nil when it reads (the game's reader
+-- may still refuse it). A small strict reader: it only looks, it keeps nothing.
+local function jsonWhere(s)
+  local pos, n = 1, #s
+  local function err(msg) error({ pos = pos, msg = msg }, 0) end
+  local function ws()
+    pos = s:find('[^ \t\r\n]', pos) or n + 1
+    local two = s:sub(pos, pos + 1)
+    if two == '//' or two == '/*' then err('a note (// or /*) is not allowed in JSON') end
+  end
+  local function str()
+    pos = pos + 1
+    while true do
+      local c = s:sub(pos, pos)
+      if c == '' then err('a text in quotes is never closed') end
+      if c == '\n' then err('a text in quotes runs past the end of its line: a " is missing') end
+      if c == '\\' then pos = pos + 2 elseif c == '"' then pos = pos + 1 return else pos = pos + 1 end
+    end
+  end
+  local value
+  local function list(close, keyed)
+    pos = pos + 1
+    ws()
+    if s:sub(pos, pos) == close then pos = pos + 1 return end
+    while true do
+      ws()
+      local c = s:sub(pos, pos)
+      if c == close then err('a comma before ' .. close .. ' is not allowed in JSON') end
+      if keyed then
+        if c == "'" then err("names need \" quotes, not '") end
+        if c ~= '"' then err('a name must be in "quotes"') end
+        str()
+        ws()
+        if s:sub(pos, pos) ~= ':' then err('a : is missing after the name') end
+        pos = pos + 1
+      end
+      value()
+      ws()
+      local d = s:sub(pos, pos)
+      if d == ',' then pos = pos + 1
+      elseif d == close then pos = pos + 1 return
+      elseif d == '' then err('the file ends before a ' .. close .. ' closes what was opened')
+      else err('a comma is missing before this') end
+    end
+  end
+  value = function()
+    ws()
+    local c = s:sub(pos, pos)
+    if c == '{' then list('}', true)
+    elseif c == '[' then list(']', false)
+    elseif c == '"' then str()
+    elseif c:match('[%-%d]') then pos = s:find('[^%-%d%.eE%+]', pos) or n + 1
+    elseif s:sub(pos, pos + 3) == 'true' or s:sub(pos, pos + 3) == 'null' then pos = pos + 4
+    elseif s:sub(pos, pos + 4) == 'false' then pos = pos + 5
+    elseif c == '' then err('the file ends too soon')
+    elseif c == "'" then err("texts need \" quotes, not '")
+    else err('"' .. c .. '" is not allowed here: a text needs "quotes"') end
+  end
+  local ok, e = pcall(function()
+    value()
+    ws()
+    if pos <= n then err('there is more after the end') end
+  end)
+  if ok or type(e) ~= 'table' then return nil end
+  local line, col = 1, 1
+  for i = 1, math.min(e.pos, n + 1) - 1 do
+    if s:sub(i, i) == '\n' then line, col = line + 1, 1 else col = col + 1 end
+  end
+  return line, col, e.msg
+end
+M._jsonWhere = jsonWhere
+
+-- (a JSON file the game can't read, as a problem for the import report: where it goes wrong)
+local function jsonProblem(src, rel, fix)
+  local s = src.read(rel)
+  if type(s) ~= 'string' then return { file = rel, what = "can't find " .. rel, fix = fix } end
+  local line, col, what = jsonWhere(textRead.text(s) or s)
+  if line then
+    return { file = rel, line = line, text = (textRead.lines(textRead.text(s) or s)[line] or {}).raw,
+      what = string.format('%s can\'t be read: %s (line %d, column %d).', baseName(rel), what, line, col), fix = fix }
+  end
+  return { file = rel, what = baseName(rel) .. " can't be read: it is not JSON the game understands.", fix = fix }
+end
+
+-- (a JSON file of the pack, or the table a hand-made file stands in for it: textPack's virtual files)
+local function readJson(src, rel)
+  if src.virtual and rel and src.virtual[rel] then return src.virtual[rel] end
+  return decode(src.read(rel))
+end
+
+-- (a map in the pack, parsed once: the hand-made files read its line names before the rally is made from it)
+local readMap
+local function parsedMap(src, rel)
+  src.parsed = src.parsed or {}
+  local c = src.parsed[rel]
+  if c then return c[1], c[2] end
+  local s, why, mapKind = readMap(src, rel)
+  local parsed = nil
+  if s then
+    local okP, r = pcall(importer.parse, s, mapKind)
+    if okP then parsed = r else why = baseName(rel) .. ': ' .. tostring(r) end
+  end
+  src.parsed[rel] = { parsed, why }
+  return parsed, why
+end
+
+-- The hand-made manifest (textPack), when the pack has one: as M.manifest's answer.
+local function textManifest(src)
+  if not src.list then return nil end
+  local ctx = {
+    all = src.list(),
+    readText = function(rel) return textRead.text(src.read(rel)) end,
+    parseMap = function(rel) return parsedMap(src, rel) end,
+  }
+  local m, _, why, probs = textPack.read(ctx)
+  if m then
+    src.virtual = m.virtual
+    -- (a .json manifest beside it: the .txt is read, and the report says so)
+    for _, rel in ipairs(src.rootJson()) do
+      local stem = rel:lower():match('^(%a+)%.json$')
+      local data = decode(src.read(rel))
+      if M.KINDS[stem] or (data and M.KINDS[data.kind]) then
+        table.insert(m.problems, 1, { file = rel, what = string.format('%s and %s are both in the folder.', rel,
+          m.file), fix = string.format('Only %s was read. Delete or rename %s to stop this message.', m.file, rel) })
+      end
+    end
+    return m
+  end
+  if why then return nil, why, probs end
+  return nil
+end
+
+-- The pack's manifest: its data, its kind and its file, or nil and why (a string, or a problem for the report); and
+-- the problems found on the way when it is a hand-made one that could not be used.
 function M.manifest(src)
-  local found = {}
+  local tm, twhy, tprobs = textManifest(src)
+  if tm then return tm end
+  if twhy then return nil, twhy, tprobs end
+  local found, broken = {}, {}
   for _, rel in ipairs(src.rootJson()) do
     local data = decode(src.read(rel))
     if data then
       local kind = data.kind
       if kind == nil then kind = rel:lower():match('^(%a+)%.json$') end
       if M.KINDS[kind] then found[#found + 1] = { data = data, kind = kind, file = rel } end
+    elseif M.KINDS[rel:lower():match('^(%a+)%.json$') or ''] then
+      broken[#broken + 1] = rel
     end
   end
-  if #found == 0 then return nil, 'not a rally pack (no season.json, rally.json or stage.json at its top)' end
+  if #found == 0 and #broken > 0 then
+    return nil, jsonProblem(src, broken[1], 'Fix it in a text editor, or make the pack with the .txt templates instead.')
+  end
+  if #found == 0 then
+    -- (rally folders one level in: the templates' folder, or several rallies dropped in one folder)
+    local inside = {}
+    for _, rel in ipairs(src.list and src.list() or {}) do
+      local dir, file = rel:match('^([^/]+)/([^/]+)$')
+      local stem = file and file:lower():gsub('%.txt$', ''):gsub('%.txt$', ''):gsub('%.json$', '')
+      if dir and (stem == 'season' or stem == 'rally' or stem == 'stage') then inside[#inside + 1] = dir end
+    end
+    if #inside > 0 then
+      return nil, { what = string.format('No rally file at the top of the folder, but %s inside it: %s.',
+        #inside == 1 and 'there is one in a folder' or 'there are some in folders', table.concat(inside, ', ')),
+        fix = 'Put each of those folders in the import folder on its own. (A season needs a season.txt at its top.)' }
+    end
+    return nil, { what = 'No rally file at the top of the folder: no season.txt, rally.txt or stage.txt (or .json).',
+      fix = 'Copy a template folder (My Stage, My Rally or My Season) and fill it in.' }
+  end
   if #found > 1 then
     local names = {}
     for i, f in ipairs(found) do names[i] = f.file end
@@ -319,6 +499,7 @@ local function rallySpecs(src, m)
   local out = {}
   for i, r in ipairs(type(m.data.rounds) == 'table' and m.data.rounds or {}) do
     local one = { spec = r, base = '', round = tonumber(r.round) or i }
+    if type(r) == 'table' and r.why then one.why = r.why end
     if type(r) == 'table' and r.rally then
       local rel = join('', r.rally)
       local data = rel and decode(src.read(rel))
@@ -340,6 +521,11 @@ end
 
 -- The files a manifest names, as pack paths (what a folder pack's fingerprint is made of).
 local function namedFiles(src, m)
+  if m.named then
+    local out, seen = {}, {}
+    for _, rel in ipairs(m.named) do if not seen[rel] then seen[rel] = true out[#out + 1] = rel end end
+    return out
+  end
   local out = { m.file }
   for _, r in ipairs(rallySpecs(src, m)) do
     if r.manifest then out[#out + 1] = r.manifest end
@@ -566,8 +752,8 @@ local function itineraryOf(evFile, stages, lineId, warn)
       end
       local names = {}
       for _, c in ipairs(row.classes) do names[#names + 1] = tostring(c) end
-      warn(string.format('itinerary %s %s: for %s only, not on the National road: left out', str(row.control),
-        str(row.type), table.concat(names, ', ')))
+      warn({ what = string.format('%s%s is only for %s: not on the National road, so its time is not counted.',
+        row.control and (str(row.control) .. ' ') or '', str(row.type), table.concat(names, ', ')), level = 'unused' })
       return false
     end
     for _, row in ipairs(evFile.itinerary) do
@@ -721,7 +907,7 @@ local function lineParsed(spec, name)
 end
 
 -- (a map's text and its kind, or nil and why)
-local function readMap(src, rel)
+function readMap(src, rel)
   local lower = rel:lower()
   if lower:match('%.kmz$') then
     if src.zip then return nil, 'a .kmz inside a .zip: put the .kml in the pack instead' end
@@ -748,11 +934,9 @@ local function makeRally(src, spec, base, ctx, kind)
   else
     mapRel = join(base, spec.map)
     if not mapRel then return nil, 'no map named' end
-    local s, why, mapKind = readMap(src, mapRel)
-    if not s then return nil, why end
-    local okP
-    okP, parsed = pcall(importer.parse, s, mapKind)
-    if not okP then return nil, baseName(mapRel) .. ': ' .. tostring(parsed) end
+    local why
+    parsed, why = parsedMap(src, mapRel)
+    if not parsed then return nil, why end
     srcFile = src.name .. '/' .. mapRel
   end
   local name = given or importer.eventName(parsed.name, mapRel or 'Stage')
@@ -773,8 +957,8 @@ local function makeRally(src, spec, base, ctx, kind)
   local evFile = nil
   local evRel = join(base, spec.event)
   if evRel then
-    evFile = decode(src.read(evRel))
-    if not evFile then warn("can't read the event file " .. evRel) end
+    evFile = readJson(src, evRel)
+    if not evFile then warn(jsonProblem(src, evRel, 'Until then the rally has no running order.')) end
   end
   local info = evFile and type(evFile.event) == 'table' and evFile.event or {}
   -- (rallyStops: the full rally's services and overnights, 1.7.0; nil without an event file: no full rally)
@@ -793,10 +977,16 @@ local function makeRally(src, spec, base, ctx, kind)
 
   local boardsPath = M.BOARDS_DIR .. id .. '.json'
   local resRel = join(base, spec.results)
-  local results = resRel and decode(src.read(resRel))
-  if resRel and not results then warn("can't read the results file " .. resRel) end
+  local results = resRel and readJson(src, resRel)
+  if resRel and not results then warn(jsonProblem(src, resRel, 'Until then the rally has no leaderboards.')) end
   if results then
-    local b = boardsOf(results, lineId, event.itinerary, importer._fingerprint(src.read(resRel)), warn)
+    local resBytes = src.read(resRel:gsub('#results$', '')) or ''
+    local b = boardsOf(results, lineId, event.itinerary, importer._fingerprint(resBytes), warn)
+    local crews = {}
+    for _, ps in ipairs(b.passes) do for _, t in ipairs(ps.field) do crews[t[2] .. '#' .. t[3]] = true end end
+    local nCrews = 0
+    for _ in pairs(crews) do nCrews = nCrews + 1 end
+    report.found = { crews = nCrews, resultPasses = #b.passes }
     ensureDir(M.BOARDS_DIR)
     jsonWriteFile(boardsPath, b, true)
     event.boards = id .. '.json'
@@ -981,7 +1171,14 @@ local function importSeason(src, m, index, entry, ids, fp, out)
     if seenRound[r.round] then
       warn(label .. ' is listed twice: the second left out')
     elseif r.why then
-      warn(label .. ': ' .. r.why)
+      if type(r.why) == 'table' then
+        local w = {}
+        for k, v in pairs(r.why) do w[k] = v end
+        w.what = label:gsub('^r', 'R') .. ' left out: ' .. tostring(w.what)
+        warn(w)
+      else
+        warn(label .. ': ' .. r.why)
+      end
     else
       seenRound[r.round] = true
       local given
@@ -997,9 +1194,10 @@ local function importSeason(src, m, index, entry, ids, fp, out)
       if given then roundsOut[#roundsOut + 1] = given end
       if ev then
         season.rounds[#season.rounds + 1] = ev.id
-        out.rallies[#out.rallies + 1] = { id = ev.id, name = ev.name, stages = #ev.stages, report = rep }
+        out.rallies[#out.rallies + 1] = { id = ev.id, name = ev.name, stages = #ev.stages, report = rep, event = ev,
+          round = r.round }
       else
-        warn(label .. ': ' .. tostring(rep))
+        warn(type(rep) == 'table' and rep or (label .. ': ' .. tostring(rep)))
       end
     end
   end
@@ -1049,7 +1247,29 @@ end
 -- (1.7.0: the event file's services read too) a pack last imported by an older reader -- or by an older Earth Rally
 -- sharing the user folder -- is imported again, whatever its fingerprint. Kept per pack, and set only by an import
 -- that went through.
-M.READER = 4      -- (4: the schedule read too, the rally-loop plan)
+M.READER = 5      -- (4: the schedule read too, the rally-loop plan; 5: the hand-made files, and import reports)
+
+-- (a problem as one line of text: a string as it is, a table by its what)
+local function whyText(w)
+  if type(w) == 'table' then
+    local where = w.file and (w.file .. (w.line and (', line ' .. w.line) or '') .. ': ') or ''
+    return where .. tostring(w.what) .. (w.fix and (' ' .. w.fix) or '')
+  end
+  return tostring(w)
+end
+M.whyText = whyText
+
+-- (the files a folder pack with no usable manifest is told apart by: every text, table and map in it, so a hand-made
+-- pack that failed is looked at again when any of them changes)
+local function candidates(src)
+  local out = {}
+  for _, rel in ipairs(src.list and src.list() or src.rootJson()) do
+    local e = (rel:match('%.([%w]+)$') or ''):lower()
+    if (e == 'txt' or e == 'csv' or e == 'json' or e == 'kml' or e == 'kmz' or e == 'gpx')
+      and not baseName(rel):lower():find('import report', 1, true) then out[#out + 1] = rel end
+  end
+  return out
+end
 local function importPack(p, index, force, gone)
   local entry = index.packs[p.name]
   if entry and entry.reader ~= M.READER then force = true end
@@ -1101,40 +1321,44 @@ local function importPack(p, index, force, gone)
   end
   local src, why
   if p.kind == 'zip' then src, why = zipSource(p.path, p.name) else src = folderSource(p.path, p.name) end
-  local function fail(w, f)
+  -- (where its import report goes: in the folder beside its manifest, or beside the zip)
+  local reportPath = p.kind == 'zip' and (importer.IMPORT_DIR .. p.name .. ' - ' .. textPack.REPORT_NAME) or nil
+  local function fail(w, f, probs)
     -- (told once, until it changes; the ids it had kept for when it is put right: its own, or those of the pack it
     -- was found to be under its old name)
     local keep = entry or {}
     if not (keep.seasonId or keep.eventIds) and adopted then keep = adopted end
-    index.packs[p.name] = { reader = M.READER, fingerprint = f or fp or ('failed:' .. w), stat = st, failed = true,
+    local wt = whyText(w)
+    index.packs[p.name] = { reader = M.READER, fingerprint = f or fp or ('failed:' .. wt), stat = st, failed = true,
       seasonId = keep.seasonId, eventIds = keep.eventIds, rounds = keep.rounds, nameSlug = keep.nameSlug,
       kind = keep.kind }
-    log('W', 'earthRally', 'import ' .. p.name .. ': ' .. w)
-    return { file = p.name, ok = false, why = w }
+    log('W', 'earthRally', 'import ' .. p.name .. ': ' .. wt)
+    for _, pr in ipairs(probs or {}) do log('W', 'earthRally', '  ' .. whyText(pr)) end
+    return { file = p.name, ok = false, why = type(w) == 'table' and tostring(w.what) or wt,
+      problem = type(w) == 'table' and w or { what = wt }, problems = probs, reportPath = reportPath,
+      packKind = p.kind }
   end
   if not src then return fail(why), true end
   local touched = false
+  if p.kind == 'folder' then reportPath = src.root and (src.root .. textPack.REPORT_NAME) or nil end
   local ok, res = pcall(function()
-    local m, mwhy = M.manifest(src)
+    local m, mwhy, mprobs = M.manifest(src)
     if p.kind == 'folder' then
-      if m then
-        local named = namedFiles(src, m)
-        st = folderStat(src, named)
-        if not force and entry and st and entry.stat == st then return 'same' end
-        fp = folderFingerprint(src, named)
-      else
-        fp = 'none:' .. table.concat(src.rootJson(), '|')
-      end
+      local named = m and namedFiles(src, m) or candidates(src)
+      st = folderStat(src, named)
+      if not force and entry and st and entry.stat == st then return 'same' end
+      fp = (m and '' or 'none:') .. folderFingerprint(src, named)
       if not force and entry and entry.fingerprint == fp then
         if st and entry.stat ~= st then entry.stat, touched = st, true end
         return 'same'
       end
     end
-    if not m then return fail(mwhy, fp) end
-    local out = { rallies = {}, warnings = {}, kind = m.kind }
+    if not m then return fail(mwhy, fp, mprobs) end
+    local out = { rallies = {}, warnings = {}, kind = m.kind, manifest = m.file }
+    for _, pr in ipairs(m.problems or {}) do out.warnings[#out.warnings + 1] = pr end
     if m.kind == 'season' then
       local okS, swhy = importSeason(src, m, index, entry, ids, fp, out)
-      if not okS then return fail(swhy, fp) end
+      if not okS then return fail(swhy, fp, out.warnings) end
     else
       if not m.data.map and not (m.kind == 'stage' and type(m.data.line) == 'table') then
         return fail(m.file .. ' names no map', fp)
@@ -1157,14 +1381,14 @@ local function importPack(p, index, force, gone)
           if kept and not taken(kept) then return kept end
           return firstFree(slug, taken)
         end }, m.kind)
-      if not ev then return fail(tostring(rep), fp) end
-      out.rallies[1] = { id = ev.id, name = ev.name, stages = #ev.stages, report = rep }
+      if not ev then return fail(type(rep) == 'table' and rep or tostring(rep), fp, out.warnings) end
+      out.rallies[1] = { id = ev.id, name = ev.name, stages = #ev.stages, report = rep, event = ev }
       out.name, out.nameSlug = ev.name, idOr(ev.name, m.kind)
     end
     return out
   end)
   src.close()
-  if not ok then return fail(tostring(res), fp), true end
+  if not ok then return fail(type(res) == 'table' and res.what and res or tostring(res), fp), true end
   if res == 'same' then return nil, touched end
   if res.ok == false then return res, true end
 
@@ -1172,15 +1396,19 @@ local function importPack(p, index, force, gone)
   for i, r in ipairs(res.rallies) do
     ids[i], stages = r.id, stages + r.stages
     importer.lastReports[r.id] = { file = p.name, lines = importer.reportLines(r.report) }
-    for _, w in ipairs(r.report.warnings) do res.warnings[#res.warnings + 1] = r.name .. ': ' .. w end
+    for _, w in ipairs(r.report.warnings) do
+      if type(w) == 'table' then res.warnings[#res.warnings + 1] = w
+      else res.warnings[#res.warnings + 1] = (#res.rallies > 1 and (r.name .. ': ') or '') .. w end
+    end
   end
   index.packs[p.name] = { reader = M.READER, fingerprint = fp, stat = st, kind = res.kind, seasonId = res.seasonId, eventIds = ids,
                           rounds = res.rounds, nameSlug = res.nameSlug, date = os.date('!%Y-%m-%dT%H:%M:%SZ') }
   log('I', 'earthRally', string.format('imported %s: %s, %d rall%s, %d stages', p.name, tostring(res.name), #ids,
     #ids == 1 and 'y' or 'ies', stages))
-  for _, w in ipairs(res.warnings) do log('W', 'earthRally', '  ' .. w) end
+  for _, w in ipairs(res.warnings) do log('W', 'earthRally', '  ' .. whyText(w)) end
   return { file = p.name, ok = true, name = res.name, eventId = ids[1], seasonId = res.seasonId, rallies = #ids,
-           stages = stages, warnings = res.warnings }, true
+           stages = stages, warnings = res.warnings, results = res.rallies, packKind = p.kind, kind = res.kind,
+           manifest = res.manifest, reportPath = reportPath }, true
 end
 
 -- Every pack in the import folder imported when new or changed (every one with force); packs taken out forgotten,

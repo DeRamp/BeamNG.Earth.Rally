@@ -1,0 +1,14 @@
+# EARTH RALLY - RESULTS: the real crews' stage times. Optional: delete this file if you have none.
+# One row per crew per stage. Open it in Excel or Google Sheets, or any text editor.
+# SS or Stage says which stage (either is enough). Time: 6:39.4 (minutes:seconds) or 399.4 (seconds).
+# Put N after a notional time (given, not driven): 5:20.3 N.  "cancelled" in Time cancels the whole stage.
+# DNF, DNS, retired or an empty Time: no time for that crew. Columns can be in any order.
+# One row per crew with a column per stage (headed SS1, SS2...) works too.
+SS,Stage,Car,Driver,Class,Championship,Time
+SS1,Meaford Mills,1,A. Vance,L4WD,National,6:39.4
+SS1,Meaford Mills,2,B. Okafor,O4WD,National,6:44.1
+SS1,Meaford Mills,7,C. Lindqvist,L2WD,Regional,7:02.8
+SS2,Kilo Hill,1,A. Vance,L4WD,National,5:12.0
+SS2,Kilo Hill,2,B. Okafor,O4WD,National,5:20.3 N
+SS2,Kilo Hill,7,C. Lindqvist,L2WD,Regional,DNF
+SS3,Meaford Mills,,,,,cancelled

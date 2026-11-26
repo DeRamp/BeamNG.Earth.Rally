@@ -1,32 +1,34 @@
 # Hand-made rally files (plan)
 
-Drafted with the owner, 2026-11-25. Not built: this plan, the templates and the mock-up wait for the owner's OK.
-Feature build: `1.10.0-alpha+handfiles`, numbered at merge.
+Drafted with the owner, 2026-11-25; built 2026-11-26 as `1.10.0-alpha+handfiles` (numbered at merge). Not yet
+driven in game.
 
 A second way to write rally packs, for people making them by hand: plain text (`.txt`) and spreadsheets (`.csv`), no
 JSON. It covers everything the JSON packs do (`docs/rally-file.md`). It forgives the mistakes people make, and every
 import writes a report saying what it found and why anything was left out. The JSON packs keep working unchanged.
 
-Owner's decisions (2026-11-25): plain text and CSV, no JSON; seasons and real results included; everything the game
-supports, schedule and time controls included; the game writes an import report; when a folder has both a `.txt`
-and a `.json` manifest, the text one wins and the report says so.
+Owner's decisions (2026-11-25/26): plain text and CSV, no JSON; seasons and real results included; everything the
+game supports, schedule and time controls included; the game writes an import report; when a folder has both a
+`.txt` and a `.json` manifest, the text one wins and the report says so; **one** running order, in `rally.txt`, as
+simple as possible, with the timed parts optional on the same lines (no `schedule.csv`); weather by hand as words;
+a template people download and fill in; the in-game report opened from the Last import lines.
 
 ## The files
 
-Templates, every line explained in the file itself: [`mockups-hand-files/templates/`](mockups-hand-files/templates/).
+Templates, every line explained in the file itself: [`templates/Earth Rally templates/`](../templates/Earth%20Rally%20templates/),
+downloadable as `templates/Earth Rally templates.zip` (`tools/make_templates.py` builds it).
 
 | File | What it is | Needed |
 |---|---|---|
 | `season.txt` | A season: name, rounds in order, standings, rules | for a season |
-| `rally.txt` | A rally: name, map, dates, town, pictures, places, running order, rules | for a rally |
+| `rally.txt` | A rally: name, map, dates, town, pictures, places, running order (timed or not), rules | for a rally |
 | `stage.txt` | One stage: name, map or `line.csv`, controls, pictures, rules | for a stage |
-| `schedule.csv` | The timed itinerary, one row per control (organisers' route book) | no |
 | `results.csv` | Real crews' times, one row per crew per stage, or one column per stage | no |
 | `weather.csv` | Each stage's weather (`tools/pack_weather.py` fills it, or by hand) | no |
 | `line.csv` | A stage's line as points, for a stage with no map | no |
 | the map | `.kml` / `.kmz` / `.gpx`, as today: lines, control points, `#pt-` organisers' points | yes |
 
-A rally folder needs only `rally.txt` and the map. `results.csv`, `schedule.csv` and `weather.csv` are picked up by
+A rally folder needs only `rally.txt` and the map. `results.csv` and `weather.csv` are picked up by
 name when `rally.txt` doesn't name them. A season is a folder with `season.txt` and one folder per round; with no
 `Rounds:` list, every rally folder in it is a round, in date order.
 
@@ -43,10 +45,10 @@ name when `rally.txt` doesn't name them. A season is a folder with `season.txt` 
 | event `timezone` | `Time zone` |
 | event `time_rules.early_checkin_allowed` | `Early is free at` |
 | event `locations[]` (id, name, lat, lon) | `Place:` blocks with `At:` |
-| event `service[]` (controls served by a place) | `Service at <place>` in the running order, or `Service in` / `Service out` rows in `schedule.csv` |
+| event `service[]` (controls served by a place) | `Service at <place>`, or `Service in` / `Service out` lines, in the running order |
 | itinerary SS rows: `control`, `stage`, `run`, `ss_km`, `day`, `power_stage` | running order lines (`SS1  Meaford Mills  10.46 km  power stage`, `Day 2`); run counted from repeats |
-| itinerary stops: `SVC_IN/OUT`, `MTC_IN/OUT`, `RGC_IN/OUT`, `PE_IN/OUT`, `PF_IN`, `ATC`, `REFUEL` | `schedule.csv` `What` column, in words (`Service in`, `MTC out`, `Regroup in`, `Parc ferme out`, `ATC`, `Refuel`); `Start`, `Finish` |
-| schedule: `date`, `first_car`, `target_min`, `lateness_min`, `classes` | `schedule.csv`: `Date`, `Time`, `Target min`, `Lateness min`, `Only for` |
+| itinerary stops: `SVC_IN/OUT`, `MTC_IN/OUT`, `RGC_IN/OUT`, `PE_OUT`, `PF_IN`, `ATC`, `REFUEL` | running order lines in words (`Service in`, `MTC out`, `Regroup in`, `Parc ferme out`, `ATC`, `Refuel`); `Start`, `Finish` |
+| schedule: `date`, `first_car`, `target_min`, `lateness_min`, `classes` | on the same lines: `Day 2  8 Feb 2031`, `08:23` in front, `20 min`, `late 10 min`, `only Regional` |
 | SS row `weather` (code, cover, wind, temps, rain, snow, fog, visibility...) | `weather.csv`, one row per SS; `Sky` in words or a WMO code |
 | `weather_source` | written by `tools/pack_weather.py` as a `#` line in `weather.csv` |
 | results `stages[]`: `control`, `stage`, `run`, `km`, `cancelled` | `results.csv` `SS`, `Stage`, `Km`; `cancelled` in the Time column |
@@ -101,27 +103,23 @@ Until the game uses areas, an `Area:` line is reported under "Read but not used 
 
 ## How it's built
 
-- `textPack.lua` (new): reads `season.txt` / `rally.txt` / `stage.txt` and the CSVs into the same tables the JSON
-  files give `pack.lua` today (manifest, event file, results). Pure Lua, no game calls, so it tests offline.
-  Everything after that (`makeRally`, ids, boards, the full rally, timing, weather) is unchanged.
-- `textRead.lua` (new): the forgiving pieces (encodings, keys, CSV, positions, times, dates, name matching), shared.
-- `pack.lua`: finds a `.txt` manifest before a `.json` one; carries problems as `{ file, line, text, what, fix }`
-  instead of strings; JSON decode errors with line and column. `importer.lua`: the same for loose maps.
-- `importReport.lua` (new; `report.lua` is "Report a problem"): writes the report file. `main.lua` / Vue: the Import
-  report page.
-- `tools/pack_weather.py`: writes `weather.csv` for a text pack, as it writes event JSON for a JSON pack.
-- The templates ship in the mod and are put in the import folder as `_templates/` (skipped by the importer).
-- Docs: a section in `making-rally-packs.md` leading with the text files; `rally-file.md` gets the format.
-- Tests: `tests/test_textpack.py`: every template imports to the same result as its JSON twin; a catalogue of broken
-  files (each mistake above, a blank file, a wrong map name, swapped positions, `.txt` beside `.json`) each gives the
-  right problem on the right line.
+- `textRead.lua`: the forgiving pieces (encodings, keys, names, CSV, positions, times, dates).
+- `textPack.lua`: `season.txt` / `rally.txt` / `stage.txt` and the CSVs as the tables the JSON files give
+  `pack.lua` (a manifest, and the event and results files as virtual files), with every problem as
+  `{ file, line, text, what, fix, level }`. Everything after reading (`makeRally`, ids, boards, the full rally,
+  timing, weather) is the JSON packs' own code.
+- `pack.lua`: the `.txt` manifest first, a `.json` beside it named; problems carried as tables; broken JSON with
+  its line and column; a failed hand-made pack fingerprinted by all its files, so a fix is picked up; rally folders
+  one level in named. `importer.lua`: loose maps report too.
+- `importReport.lua`: the report as data and as `import report.txt`; `main.lua` keeps it on each Last import line;
+  `EarthRallyImportReport.vue` shows it (the mock-up's screens 2 and 3).
+- `tools/pack_weather.py`: a hand-made pack gets `weather.csv`, from its running order as textPack.lua reads it
+  (through lupa).
+- Tests: `test_textread` (every way a value can be written), `test_textpack` (the templates as they ship, the timed
+  running order, the mistakes, the season and stage templates, broken JSON), `test_pack_weather` (weather.csv, and
+  read back), `test_templates` (the zip is the folder's).
 
-## For the owner to decide
+## Not done
 
-1. **Running order and schedule**: a simple `Running order:` list in `rally.txt` for most people, and
-   `schedule.csv` for a full timed route book (it replaces the list). Or only one of the two?
-2. **Weather by hand**: `Sky` in words (clear, overcast, rain, snow, fog...) mapped to the game's weather, with the
-   rest optional. Enough?
-3. **Templates in the import folder**: put there by the game (`_templates/`), or only shipped in the docs and on the
-   wiki?
-4. **Report on the Rallies page**: open it from the "Last import" lines (mock-up), or a button beside **Re-scan**?
+- Service areas: `Area:` is read and said "not used yet" (the owner, 2026-11-25: may come later).
+- Not driven in game yet: the report page and the report files are checked offline only.

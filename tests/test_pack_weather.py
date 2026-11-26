@@ -140,6 +140,45 @@ def main():
         msg, api = pw.Fetcher(get_json=down, pause_s=0).hour(50.0, 10.0, '2026-01-10', 9, None, dt.date(2026, 11, 19))
         check(msg and api == 'historical forecast' and 'timezone=auto' in calls[0], 'the archive down: the other API')
 
+    # a hand-made pack: rally.txt's timed running order, weather.csv written beside it, and read back by the game's
+    # reader as it is written
+    with tempfile.TemporaryDirectory() as tmp:
+        pack = Path(tmp) / 'Hand Made'
+        pack.mkdir()
+        (pack / 'map.kml').write_text(KML, encoding='utf-8')
+        (pack / 'rally.txt').write_text(
+            'Rally: Hand Made Rally\nDates: 10-11 Jan 2026\nTime zone: Europe/Berlin\nRunning order:\n'
+            '  Day 1\n  09:35  SS1  Alpha\n  14:05  Beta\n  Day 2\n  10:00  Alpha\n  Beta\n', encoding='utf-8')
+        (pack / 'weather.csv').write_text('# my note\nSS,Sky\nSS3,clear\n', encoding='utf-8')
+        calls.clear()
+        said = []
+        counts = pw.run(str(pack), fetcher=pw.Fetcher(get_json=fake, pause_s=0), today=dt.date(2026, 11, 19),
+                        say=said.append)
+        text = (pack / 'weather.csv').read_text(encoding='utf-8')
+        check(counts == {'Hand Made Rally': 2}, 'text pack: SS1 and SS2 fetched, SS3 kept, SS4 has no time')
+        check(text.startswith('# my note\n') and 'Open-Meteo' in text, 'its notes kept, the source credited')
+        rows = [ln.split(',') for ln in text.splitlines() if ln and not ln.startswith('#')]
+        head = rows[0]
+        by = {r[0]: dict(zip(head, r)) for r in rows[1:]}
+        check(set(by) == {'SS1', 'SS2', 'SS3'} and by['SS3']['Sky'] == 'clear', 'one row per stage, the kept one too')
+        check(by['SS1']['Temp C'] == '19' and by['SS2']['Temp C'] == '24' and by['SS1']['Sky'] == 'overcast',
+              'the hour of each start')
+        check(any('SS4' in s and 'no date or first car' in s for s in said), 'a stage with no time: said')
+        # read back as the game does
+        import lupa.luajit21 as lj
+        lua = lj.LuaRuntime()
+        lua.execute("package.path = ... .. '/?.lua;' .. package.path", pw.LUA)
+        readw = lua.eval("""function(text)
+          local tp = require('earthRally/textPack')
+          local probs = {}
+          local w = tp._readWeather(text, 'weather.csv', { SS1 = { stage = 'Alpha', run = 1 },
+            SS2 = { stage = 'Beta', run = 1 }, SS3 = { stage = 'Alpha', run = 2 } }, { 'Alpha', 'Beta' }, probs)
+          return w.SS1, #probs
+        end""")
+        w1, nprobs = readw(text)
+        check(nprobs == 0 and w1.code == 3 and w1.tempC == 19 and w1.cover.low == 80 and w1.isDay == True
+              and w1.pressureHpa == 1000, 'weather.csv read back by the game: every field, no problems')
+
     print(f'{failed} failed' if failed else 'all ok')
     return 1 if failed else 0
 
