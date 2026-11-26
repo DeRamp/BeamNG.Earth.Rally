@@ -209,7 +209,7 @@ const boardDays = url => {
   return /^\d{1,3}$/.test(d) && Number(d) >= 1 && Number(d) <= 365 ? Number(d) : null
 }
 const BOARD_CALLS = [
-  ["GET", /^\/api\/board\/stats$/, (m, url) => boardDays(url) && "/v1/admin/stats?days=" + boardDays(url)],
+  ["GET", /^\/api\/board\/stats$/, (m, url) => { const d = boardDays(url); return d && "/v1/admin/stats?days=" + d }],
   ["GET", /^\/api\/board\/flagged$/, () => "/v1/admin/flagged"],
   ["GET", /^\/api\/board\/stages$/, () => "/v1/admin/stages"],
   ["GET", /^\/api\/board\/stages\/([0-9a-f]{1,32})\/runs$/, m => "/v1/admin/stages/" + m[1] + "/runs"],

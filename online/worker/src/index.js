@@ -205,7 +205,9 @@ async function boardOf(db, stage, board, top, around, n) {
 const DAY_MS = 86400000
 async function adminStats(db, days, now) {
   const since = (Math.floor(now / DAY_MS) - (days - 1)) * DAY_MS, week = now - 7 * DAY_MS
-  const LIVE_RUNS = "WITH live AS (SELECT r.* FROM runs r JOIN players p ON p.id = r.player_id " +
+  // (the columns needed only: never the trace)
+  const LIVE_RUNS = "WITH live AS (SELECT r.id, r.stage_id, r.board, r.player_id, r.car, r.time_ms, r.mod_version, " +
+    "r.submitted_at, r.status, r.resets FROM runs r JOIN players p ON p.id = r.player_id " +
     "WHERE p.banned = 0 AND r.status != 'hidden') "
   // (each player's place on each board: their best, ranked; only ok runs of players not banned)
   const PLACES = "WITH placed AS (SELECT b.player_id, b.stage_id, b.board, " +
@@ -228,12 +230,13 @@ async function adminStats(db, days, now) {
       "COUNT(DISTINCT player_id) AS players FROM live WHERE submitted_at >= ? GROUP BY day ORDER BY day LIMIT 400", since),
     all(LIVE_RUNS + "SELECT day, COUNT(*) AS n FROM (SELECT date(MIN(submitted_at) / 1000, 'unixepoch') AS day " +
       "FROM live GROUP BY player_id) GROUP BY day ORDER BY day LIMIT 2000"),
-    all(LIVE_RUNS + ", " + PLACES.slice(5) + "SELECT p.name, COUNT(l.id) AS runs, COUNT(DISTINCT l.stage_id) AS stages, " +
-      "MAX(l.submitted_at) AS lastAt, " +
-      "(SELECT COUNT(*) FROM placed x WHERE x.player_id = p.id AND x.pos = 1) AS records, " +
-      "(SELECT COUNT(*) FROM placed x WHERE x.player_id = p.id AND x.pos <= 3) AS podiums " +
-      "FROM players p LEFT JOIN live l ON l.player_id = p.id WHERE p.banned = 0 " +
-      "GROUP BY p.id ORDER BY runs DESC, lastAt DESC, p.name LIMIT 500"),
+    all(LIVE_RUNS + ", " + PLACES.slice(5) + ", places AS (SELECT player_id, SUM(pos = 1) AS records, SUM(pos <= 3) AS podiums " +
+      "FROM placed GROUP BY player_id), mine AS (SELECT player_id, COUNT(*) AS runs, COUNT(DISTINCT stage_id) AS stages, " +
+      "MAX(submitted_at) AS lastAt FROM live GROUP BY player_id) " +
+      "SELECT p.name, COALESCE(m.runs, 0) AS runs, COALESCE(m.stages, 0) AS stages, m.lastAt, " +
+      "COALESCE(x.records, 0) AS records, COALESCE(x.podiums, 0) AS podiums " +
+      "FROM players p LEFT JOIN mine m ON m.player_id = p.id LEFT JOIN places x ON x.player_id = p.id WHERE p.banned = 0 " +
+      "ORDER BY runs DESC, m.lastAt DESC, p.name LIMIT 100"),
     all(LIVE_RUNS + "SELECT s.name, s.rally, s.length_m AS lengthM, COUNT(*) AS runs, COUNT(DISTINCT l.player_id) AS players, " +
       "(SELECT MIN(b.time_ms) FROM best b JOIN players p ON p.id = b.player_id JOIN runs r ON r.id = b.run_id " +
       "WHERE b.stage_id = s.id AND b.board = 'stock' AND p.banned = 0 AND r.status = 'ok') AS recordMs " +

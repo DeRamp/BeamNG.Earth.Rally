@@ -602,7 +602,7 @@ function daily() {
 // ---- Leaderboards: the online board's moderation, through this Worker's /api/board/... (the Worker holds the board's
 // admin token; this page holds only the dashboard key). After each action everything shown is read again.
 var lb = { loaded: false, stages: [], flagged: [], stage: null, runs: [], sel: null, mode: "best", find: "", confirm: null, trace: null, busy: false,
-  pickOpen: true, phBoard: "stock", phOpen: null };     // (the phone's stage list open, its board, its opened row)
+  pickOpen: false, phBoard: "stock", phOpen: null };     // (the phone's stage list open, its board, its opened row)
 function api(method, path) {
   return fetch("/api/board/" + path, { method: method, headers: { authorization: "Bearer " + key() }, cache: "no-store" })
     .then(function (r) {
@@ -837,9 +837,9 @@ $("v-boards").addEventListener("click", function (e) {
   // (the phone's: the stage list button, the Stock / Open switch, a row opened or closed)
   if (e.target.closest("#pickBtn")) { lb.pickOpen = !lb.pickOpen; drawBoards(); return; }
   var sw = e.target.closest("[data-sw]");
-  if (sw) { lb.phBoard = sw.getAttribute("data-sw"); lb.phOpen = null; lb.confirm = null; drawBoards(); return; }
+  if (sw) { lb.phBoard = sw.getAttribute("data-sw"); lb.phOpen = null; lb.confirm = null; lb.trace = null; drawBoards(); return; }
   var row = e.target.closest("[data-row]");
-  if (row) { var id = Number(row.getAttribute("data-row")); lb.phOpen = lb.phOpen === id ? null : id; lb.confirm = null; drawBoards(); }
+  if (row) { var id = Number(row.getAttribute("data-row")); lb.phOpen = lb.phOpen === id ? null : id; lb.confirm = null; lb.trace = null; drawBoards(); }
 });
 $("stageFind").addEventListener("input", function () { lb.find = this.value; drawBoards(); });
 
@@ -855,7 +855,7 @@ function loadBStats() {
     bs.data = d; bsError(""); drawBStats();
   }).catch(function (e) {
     if (mine !== bs.asked || e.message === "locked") return;
-    bsError("Could not load the board stats: " + e.message);
+    bsError("Could not load the board stats: " + e.message + (bs.data ? ". Showing the last ones loaded (" + bsRange(bs.data) + ")." : ""));
   });
 }
 function bsRange(d) { return d.days === 365 ? "12 months" : d.days + " days"; }
