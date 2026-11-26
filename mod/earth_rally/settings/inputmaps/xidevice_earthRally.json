@@ -6,6 +6,10 @@
       "action": "earthRally_rallyRecover"
     },
     {
+      "control": "btn_back",
+      "action": "earthRally_rallySelect"
+    },
+    {
       "control": "btn_a",
       "action": "earthRally_cardOk"
     },

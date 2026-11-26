@@ -183,6 +183,8 @@ export const lastPlace = { at: null }
 // Where the rally start screen was opened from, kept across the game's vehicle picker (the page is unmounted under it)
 export const keep = { startFrom: null }
 export function closeMenu() { engineLua("if earthRally_main then earthRally_main.closeMenu() end") }
+// (2026-11-26) the time card's Map: BeamNG.Earth's map, with a Rally menu button on it to come back
+export function openMap() { engineLua("if earthRally_main then earthRally_main.openMap() end") }
 
 // The poll while a page or card is open (a count: started / stopped by each)
 let users = 0

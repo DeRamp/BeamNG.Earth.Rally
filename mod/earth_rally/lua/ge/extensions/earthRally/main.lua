@@ -41,7 +41,7 @@ loadScreen.moving = function() return runner.originMoving() or earth.rebasing() 
 local M = {}
 local logTag = 'earthRally'
 local logPausedSim         -- (below, by onUpdate)
-M.VERSION = '1.10.2-alpha'
+M.VERSION = '1.10.2-alpha+fixes'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_FLOOR_S = 1             -- the HUD's streams sent when what they show changes, and at least this often
 M.STREAM_GAP_S = 0.1              -- ... the stock stream at most this often outside waitStart / running
@@ -2441,6 +2441,99 @@ local function stageResetBlock(on)
 end
 M._stageResetBlocked = function() return stageBlocked end
 
+------------------------------------------------------------------------------------------ Select and the map in a rally
+-- (2026-11-26, the owner: "To open the BeamNG Rally menu, what about using select on the controller, but only while
+-- you're already in a rally") During a full rally the pad's Select (earthRally_rallySelect, xidevice btn_back) opens
+-- the time card, closes it, and from BeamNG.Earth's map goes back to it. The time card has a Map button, and the map a
+-- Rally menu button of ours laid over it (ui-vue index.js). Outside a rally Select is BeamNG.Earth's map, as before.
+-- Select is also the game's map key (toggleBigMap), which BeamNG.Earth sends to beamngEarth_settings.toggleMap. While
+-- a rally runs that function is wrapped (official BeamNG.Earth, no API for this: guarded, put back when the rally
+-- ends): a call is held one frame and dropped when Select was ours within SELECT_SWALLOW_S, either order. The map key
+-- on the keyboard (M) and every other device still opens the map.
+M.SELECT_SWALLOW_S = 0.3
+local selectAt = -math.huge
+local mapWrap, mapPending, mapBtnShown = nil, false, false
+local clockS = rawget(os, 'clockhp') or os.clock
+local function rallyLive() local r = rallyRun.active() return r ~= nil and not r.done end
+local function earthSettings()
+  local st = rawget(_G, 'beamngEarth_settings')
+  return type(st) == 'table' and st or nil
+end
+local function mapRoute() local st = earthSettings() return (st and type(st.MAP_ROUTE) == 'string' and st.MAP_ROUTE) or 'beamngEarthMap' end
+local function map3dOn()
+  local m3 = rawget(_G, 'beamngEarth_map3d')
+  local ok, on = pcall(function() return m3 and m3.isActive and m3.isActive() end)
+  return ok and on == true, m3
+end
+local function mapIsOpen() return lastUi == mapRoute() or (map3dOn()) end
+-- BeamNG.Earth's own toggle (ours never: the wrap's original when it is on)
+local function earthToggle()
+  local st = earthSettings()
+  local f = (mapWrap and mapWrap.mod == st and mapWrap.orig) or (st and st.toggleMap)
+  if type(f) ~= 'function' then return false end
+  local ok, err = pcall(f)
+  if not ok then log('E', logTag, 'map: ' .. tostring(err)) end
+  return ok
+end
+local function mapWrapSync(on)
+  local st = earthSettings()
+  if on and st and type(st.toggleMap) == 'function' then
+    if mapWrap and mapWrap.mod == st and st.toggleMap == mapWrap.fn then return end
+    local w = { mod = st, orig = st.toggleMap }
+    w.fn = function() mapPending = true end
+    st.toggleMap = w.fn
+    mapWrap = w
+  elseif not on and mapWrap then
+    if mapWrap.mod.toggleMap == mapWrap.fn then mapWrap.mod.toggleMap = mapWrap.orig end
+    mapWrap, mapPending = nil, false
+  end
+end
+local function mapButton(show)
+  show = show == true
+  if show == mapBtnShown then return end
+  mapBtnShown = show
+  local gh = rawget(_G, 'guihooks')
+  if gh and gh.trigger then pcall(gh.trigger, 'EarthRallyMapButton', { show = show }) end
+end
+-- Every frame: the wrap on while a rally runs, a held map key let through, the map's button shown or hidden.
+local function mapStep()
+  local live = rallyLive()
+  mapWrapSync(live)
+  if mapPending then
+    mapPending = false
+    if clockS() - selectAt > M.SELECT_SWALLOW_S then earthToggle() end
+  end
+  mapButton(live and lastUi == mapRoute())
+end
+local function mapOff() mapWrapSync(false) mapButton(false) end
+M._mapWrapped = function() return mapWrap ~= nil end
+M._mapButtonShown = function() return mapBtnShown end
+
+-- The map's Rally menu button, and Select on the map: back to the time card (the 3D map closed first; the 2D map's
+-- page goes when ours takes its place, and tells BeamNG.Earth so itself).
+function M.mapToMenu()
+  if mpOn or not rallyLive() then return false end
+  local on3d, m3 = map3dOn()
+  if on3d and m3.exit then pcall(m3.exit) end
+  return M.openMenu()
+end
+-- The time card's Map button.
+function M.openMap()
+  if mpOn or not rallyLive() then return false end
+  if mapIsOpen() then return true end
+  if not earthSettings() then return false end
+  return earthToggle()
+end
+-- The pad's Select (actions earthRally_rallySelect). Returns false outside a rally: the button is the map's there.
+function M.rallySelect()
+  if mpOn or not rallyLive() then return false end
+  selectAt = clockS()
+  mapPending = false
+  if menuOpen then return M.closeMenu() end
+  if mapIsOpen() then return M.mapToMenu() end
+  return M.toggleMenu()
+end
+
 ------------------------------------------------------------------------------------------ multiplayer (plan F)
 -- In a BeamMP session Earth Rally does nothing (the owner, 2026-11-19: "a very multiplayer unfriendly mod"): no stage
 -- or rally starts, a stage under way is stopped and a rally under way left as Save and quit leaves it, no HUD, no input
@@ -2464,6 +2557,7 @@ local function mpStop()
   pcall(rallyRun.release)
   pcall(cardInput.reset)        -- (the card's buttons given back to the game)
   pcall(stageResetBlock, false) -- (the game's own reset given back)
+  pcall(mapOff)                 -- (BeamNG.Earth's map key given back, the map's button hidden)
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)
 end
@@ -2501,6 +2595,7 @@ function M.onUpdate(dtReal, dtSim)
   end
   pcall(rallyRun.update, dtReal, dtSim)
   do local okS, live = pcall(runner.singleStageLive) pcall(stageResetBlock, okS and live) end
+  do local okM, errM = pcall(mapStep) if not okM then log('E', logTag, 'map step: ' .. tostring(errM)) end end
   local okP, errP = pcall(stepRallyPrep, dtReal or 0)
   if not okP then log('E', logTag, 'rally prep: ' .. tostring(errP)) end
   -- (1.7.3, item 3) a road-graph window waiting to be asked again after a timeout
@@ -2691,6 +2786,7 @@ function M.onClientEndMission()
   pcall(rallyRun.release)
   pcall(cardInput.reset)        -- (the card's buttons given back to the game)
   pcall(stageResetBlock, false) -- (the game's own reset given back)
+  pcall(mapOff)                 -- (BeamNG.Earth's map key given back, the map's button hidden)
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)
   pcall(earth.reset)
@@ -2725,6 +2821,7 @@ function M.onModDeactivated()
   pcall(rallyRun.release)
   pcall(cardInput.reset)        -- (the card's buttons given back to the game)
   pcall(stageResetBlock, false) -- (the game's own reset given back)
+  pcall(mapOff)                 -- (BeamNG.Earth's map key given back, the map's button hidden)
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)
   pcall(earth.reset)
@@ -2755,6 +2852,7 @@ function M.onExtensionUnloaded()
   pcall(rallyRun.release)
   pcall(cardInput.reset)        -- (the card's buttons given back to the game)
   pcall(stageResetBlock, false) -- (the game's own reset given back)
+  pcall(mapOff)                 -- (BeamNG.Earth's map key given back, the map's button hidden)
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)
   pcall(earth.reset)

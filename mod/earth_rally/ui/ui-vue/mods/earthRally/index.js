@@ -1,4 +1,4 @@
-import { lua } from "@/bridge"
+import { lua, useBridge } from "@/bridge"
 
 // Earth Rally's menu (ui/ui-vue/mods/README.md, as BeamNG.Earth's own mod does it):
 //   a full-screen route "earthRally" (EarthRally.vue: Rallies, a rally, a stage, Settings), opened from Lua with
@@ -71,12 +71,60 @@ async function registerPauseTab() {
   }
 }
 
+// (2026-11-26) A Rally menu button over BeamNG.Earth's map while a full rally runs: back to the time card. The map is
+// BeamNG.Earth's page, so the button is ours, laid over it: shown and hidden by Lua (main.lua mapButtonSync, event
+// EarthRallyMapButton), the pad's Select doing the same. Plain DOM, no part of BeamNG.Earth's page touched.
+const MAP_BTN_ID = "earthRallyMapButton"
+const MAP_BTN_EVENT = "EarthRallyMapButton"
+let mapBtnOn = null
+function mapButtonEl() {
+  let el = document.getElementById(MAP_BTN_ID)
+  if (el) return el
+  el = document.createElement("button")
+  el.id = MAP_BTN_ID
+  el.type = "button"
+  el.innerHTML = '<span style="display:inline-block;min-width:1.6em;padding:0 0.35em;margin-right:0.55em;border:1px solid ' +
+    'rgba(255,255,255,0.6);border-radius:0.3em;font-size:0.8em;line-height:1.5em">Select</span>Rally menu'
+  Object.assign(el.style, {
+    position: "fixed", left: "50%", top: "4.6em", transform: "translateX(-50%)", zIndex: "10000", display: "none",
+    alignItems: "center", padding: "0.45em 1.1em", border: "0", borderRadius: "0.35em", cursor: "pointer",
+    background: "rgba(14, 18, 24, 0.88)", color: "#fff", font: "600 15px/1.3 sans-serif",
+    boxShadow: "0 2px 10px rgba(0, 0, 0, 0.45)",
+  })
+  el.addEventListener("click", () => {
+    if (window.bngApi && window.bngApi.engineLua) window.bngApi.engineLua("if earthRally_main then earthRally_main.mapToMenu() end")
+  })
+  document.body.appendChild(el)
+  return el
+}
+function onMapButton(d) {
+  try { mapButtonEl().style.display = d && d.show ? "flex" : "none" } catch (e) { /* no page yet */ }
+}
+function mapButtonOn() {
+  try {
+    if (mapBtnOn) return
+    const bridge = useBridge()
+    bridge.events.on(MAP_BTN_EVENT, onMapButton)
+    mapBtnOn = bridge
+  } catch (e) {
+    console.error("Earth Rally: map button failed", e)
+  }
+}
+function mapButtonOff() {
+  try { if (mapBtnOn) mapBtnOn.events.off(MAP_BTN_EVENT, onMapButton) } catch (e) { /* gone */ }
+  mapBtnOn = null
+  const el = document.getElementById(MAP_BTN_ID)
+  if (el) el.remove()
+}
+
 export async function onLoad() {
+  mapButtonOn()
   await registerPauseTab()
   await registerRoute()
 }
 
 export async function onUnload() {
+  mapButtonOff()
   try { await lua.extensions.ui_pause_actions.unregisterModTab(TAB_ID) } catch (e) { /* none */ }   // (its buttons with it)
   try {
     if (window.bngRoutes) window.bngRoutes.remove([SOURCE])

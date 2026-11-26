@@ -234,6 +234,7 @@
               </div>
             </template>
             <div v-else class="er-btns">
+              <BngButton :accent="ACCENTS.outlined" @click="openMap">Map</BngButton>
               <BngButton :accent="ACCENTS.outlined" @click="ask = 'leave'">Save and quit</BngButton>
               <BngButton :accent="ACCENTS.outlined" @click="ask = 'retire'">Retire</BngButton>
             </div>
@@ -256,7 +257,7 @@
 import { ref, computed, watch, nextTick } from "vue"
 import { BngButton, ACCENTS } from "@/common/components/base"
 import { vBngUiNavFocus } from "@/common/directives"
-import { pickCar, state, action, mmss, rallyStart, rallyCard, rallyAction, busyMsg, closeMenu, focusButton, arr, len, time, longTime, ord, wxText, wxIcon } from "./store.js"
+import { pickCar, state, action, mmss, rallyStart, rallyCard, rallyAction, busyMsg, closeMenu, openMap, focusButton, arr, len, time, longTime, ord, wxText, wxIcon } from "./store.js"
 
 const props = defineProps({ kind: { type: String, default: "card" }, id: { type: String, default: null } })
 const emit = defineEmits(["view"])

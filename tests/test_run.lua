@@ -5068,6 +5068,66 @@ do
   rallyRun._setRally(nil)
 end
 
+------------------------------------------------------------------------------------------ Select and the map in a rally
+-- (2026-11-26) The pad's Select opens the time card during a full rally, the map key it shares is dropped then, the
+-- map's Rally menu button shown on BeamNG.Earth's map only, and everything given back when the rally ends.
+do
+  local main = require('earthRally/main')
+  local rallyRun = require('earthRally/rallyRun')
+  local toggles, navs, shown = 0, {}, {}
+  local orig = function() toggles = toggles + 1 end
+  local oldSt, oldGh, oldRouter = rawget(_G, 'beamngEarth_settings'), guihooks, rawget(_G, 'ui_router')
+  beamngEarth_settings = { MAP_ROUTE = 'beamngEarthMap', toggleMap = orig }
+  guihooks = { trigger = function(n, d) if n == 'EarthRallyMapButton' then shown[#shown + 1] = d.show end end }
+  ui_router = { navigate = function(st) navs[#navs + 1] = st end }
+  local swallow = main.SELECT_SWALLOW_S
+  main.onUiChangedState('play')
+  T.check(main.rallySelect() == false, "Select, no rally: nothing of ours (the button is the map's)")
+  main.onUpdate(0.016, 0.016)
+  T.check(not main._mapWrapped() and beamngEarth_settings.toggleMap == orig, "no rally: BeamNG.Earth's map key untouched")
+  rallyRun._setRally({ id = 'sel', mode = 'casual', order = {}, pos = 1, serviced = {} })
+  main.onUpdate(0.016, 0.016)
+  T.check(main._mapWrapped() and beamngEarth_settings.toggleMap ~= orig, 'a rally: the map key wrapped')
+  -- Select: the game's map key comes with it, before or after ours: dropped, the time card opened
+  beamngEarth_settings.toggleMap()
+  T.check(main.rallySelect() ~= false and navs[#navs] == 'earthRally', 'Select in a rally: the time card')
+  main.onUpdate(0.016, 0.016)
+  T.check(toggles == 0, 'Select in a rally: the map key that came with it dropped')
+  main.onUiChangedState('earthRally')
+  main.rallySelect()
+  beamngEarth_settings.toggleMap()
+  main.onUpdate(0.016, 0.016)
+  T.check(navs[#navs] == 'play' and toggles == 0, 'Select on the time card: closed, no map')
+  main.onUiChangedState('play')
+  -- the map key alone (M on the keyboard): let through a frame later
+  main.SELECT_SWALLOW_S = -1
+  beamngEarth_settings.toggleMap()
+  T.check(toggles == 0, 'the map key alone: held a frame')
+  main.onUpdate(0.016, 0.016)
+  T.check(toggles == 1, "the map key alone: then BeamNG.Earth's map")
+  main.SELECT_SWALLOW_S = swallow
+  -- the time card's Map button; on the map, our Rally menu button shown; Select there: back to the time card
+  main.onUiChangedState('earthRally')
+  T.check(main.openMap() == true and toggles == 2, "Map on the time card: BeamNG.Earth's own map opened")
+  main.onUiChangedState('beamngEarthMap')
+  main.onUpdate(0.016, 0.016)
+  T.check(shown[#shown] == true and main._mapButtonShown(), 'on the map in a rally: our Rally menu button shown')
+  T.check(main.rallySelect() ~= false and navs[#navs] == 'earthRally', 'Select on the map: back to the time card')
+  main.onUiChangedState('earthRally')
+  main.onUpdate(0.016, 0.016)
+  T.check(shown[#shown] == false, 'off the map: the button hidden')
+  -- the rally over: all given back
+  main.onUiChangedState('beamngEarthMap')
+  main.onUpdate(0.016, 0.016)
+  rallyRun._setRally(nil)
+  main.onUpdate(0.016, 0.016)
+  T.check(not main._mapWrapped() and beamngEarth_settings.toggleMap == orig and shown[#shown] == false,
+    'the rally over: the map key given back, the button hidden')
+  T.check(main.mapToMenu() == false and main.openMap() == false, "no rally: the map's button and Map do nothing")
+  main.onUiChangedState('play')
+  beamngEarth_settings, guihooks, ui_router = oldSt, oldGh, oldRouter
+end
+
 ------------------------------------------------------------------------------------------ plan F: off in multiplayer
 do
   local main = require('earthRally/main')
