@@ -942,7 +942,8 @@ local function goToStop(skip)
   runner.disarmApproach('the rally moved on')
   if runner.current() then pcall(runner.abort, true) end
   if not (it.place and it.place.lat) then done() return true end
-  pcall(runner.keepDamage, false)
+  -- (#80: a skip is no repair: the teleport keeps the damage; a service then mends it on arrival, as if driven in)
+  pcall(runner.keepDamage, skip and true or false)
   local ok, why = earth.teleport(it.place.lat, it.place.lon, it.place.name or it.label)
   if not ok then
     log('W', logTag, 'rally: could not go to ' .. tostring(it.label) .. ': ' .. tostring(why))
@@ -1055,8 +1056,9 @@ local function goToStageStart(it, skip)
     if (not skip or not okT) and M.ui.openCard then M.ui.openCard() end
   end
   local at = { kind = 'stageStart', label = startLabel(it), name = stage and stage.name or nil }
-  -- (no service to mend it: BeamNG.Earth's set-down after a teleport is a repair, and a recovery must not be one)
-  if R.mode == 'realistic' then pcall(runner.keepDamage, true) end
+  -- (no service to mend it: BeamNG.Earth's set-down after a teleport is a repair, and a recovery must not be one;
+  -- #80: nor a skip of the transit, in any mode)
+  if skip or R.mode == 'realistic' then pcall(runner.keepDamage, true) end
   if not (lat and earth.teleport(lat, lon, at.label)) then
     log('W', logTag, 'rally: could not go to ' .. at.label .. ': its transit armed from here')
     local wasSkip = skip
@@ -1310,6 +1312,7 @@ finish = function()
   t.finished[#t.finished + 1] = rally.finished(R, os.date('!%Y-%m-%dT%H:%M:%SZ'))
   writeFile(R.eventId, t)
   M.block(false)
+  pcall(runner.keepDamage, false)   -- (#80: a skip to the final service left it on: later teleports must repair again)
   trafficEnd()
   gpsOff()
   wait = nil
@@ -1447,6 +1450,7 @@ function M.quit()
   pcall(setWorld, true)
   if M.inRun() then pcall(runner.abort, true) end
   runner.disarmApproach('the rally was left')
+  pcall(runner.keepDamage, false)   -- (#80: a skip's kept damage ends with the rally: later teleports repair again)
   if toStop or (R and not R.done) then gpsOff() end
   -- (the service's board and tent: taken away now, unless the rally ended there and the car stands by it)
   local s = props.site('service')

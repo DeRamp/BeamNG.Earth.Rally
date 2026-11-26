@@ -4349,9 +4349,12 @@ do
       'skip: the teleport failed: not skipped (' .. tostring(whyF) .. '), the transit armed again')
     local placeCar0, placedDir = runner.placeCar, nil
     runner.placeCar = function(v, pos, dir) placedDir = dir return placeCar0(v, pos, dir) end
+    local keep0, kept = runner.keepDamage, nil
+    runner.keepDamage = function(on) kept = on return keep0(on) end
     T.check(rallyRun.skipTransit() and not rallyRun.canSkip(), 'skip: SS1\'s transit skipped')
+    T.check(kept == true, 'skip (Casual): the teleport keeps the car\'s damage, no repair (#80)')
     rframes(60)
-    runner.placeCar = placeCar0
+    runner.placeCar, runner.keepDamage = placeCar0, keep0
     T.check(geo_m(car.lat, car.lon, atcLat, atcLon) < runner.AT_BOARD_M, 'skip: the car at SS1\'s time control')
     do  -- (#79: turned toward the start, not left as it was before the teleport)
       local s1 = ev.stages[1].controls.start
