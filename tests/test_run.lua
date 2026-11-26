@@ -4765,33 +4765,16 @@ do
     'keepDamage: the game\'s function replaced while on: wrapped again, the damage kept (#80)')
   runner.keepDamage(false)
   T.check(spawn.safeTeleport == plain, 'keepDamage off after the re-wrap: the game\'s own function back')
-  -- (#80) BeamNG.Earth's teleport lifts the car by cluster -1 (every node back where it was built): the stand-in moves
-  -- it by its reference node instead; any other cluster, and every other call, goes to the car as it was asked
+  -- (#80) while damage is kept, the car is set down by the game's safeTeleport with no reset (setPositionRotation put
+  -- it back in its built shape)
   do
-    local got = {}
-    local fake = { getRefNodeId = function() return 7 end,
-      getNodePosition = function(_, n) return { x = 1, y = 2, z = 3 } end,
-      setClusterPosRelRot = function(_, cid, x, y, z) got[#got + 1] = { cid, x, y, z } end,
-      applyClusterVelocityScaleAdd = function(_, cid) got[#got + 1] = { 'vel', cid } end,
-      getId = function() return 42 end }
-    local s = runner._standIn(fake)
-    s:setClusterPosRelRot(-1, 10, 20, 30, 0, 0, 0, 1)
-    s:setClusterPosRelRot(3, 5, 5, 5, 0, 0, 0, 1)
-    T.check(got[1][1] == 7 and got[1][2] == 11 and got[1][3] == 22 and got[1][4] == 33 and got[2][2] == 7
-      and got[3][1] == 3 and s:getId() == 42 and runner._realCar(s) == fake,
-      'keep damage: BeamNG.Earth\'s cluster -1 lift turned into a move by the reference node (#80)')
     local gpv0 = getPlayerVehicle
     runner.keepDamage(true)
-    T.check(getPlayerVehicle == gpv0, 'keep damage on its own: getPlayerVehicle left alone (the stand-in: one teleport)')
-    runner.keepShape(true)
-    T.check(getPlayerVehicle ~= gpv0 and getPlayerVehicle(0) == gpv0(0),
-      'keep shape: any caller but BeamNG.Earth\'s core gets the real car')
     local nc0 = #calls
     runner.placeCar(gpv0(0), { x = 1, y = 2, z = 3 }, { x = 0, y = 1, z = 0 })
     T.check(calls[nc0 + 1] and calls[nc0 + 1].reset == false,
       'keep damage: the car set down by safeTeleport with no reset, not setPositionRotation (#80)')
     runner.keepDamage(false)
-    T.check(getPlayerVehicle == gpv0, 'keep damage off: the game\'s getPlayerVehicle back')
   end
 
   local nRuns = #(events.results('test', 'hill').runs or {})

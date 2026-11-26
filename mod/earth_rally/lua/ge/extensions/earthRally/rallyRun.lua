@@ -944,7 +944,6 @@ local function goToStop(skip)
   if not (it.place and it.place.lat) then done() return true end
   -- (#80: a skip is no repair: the teleport keeps the damage; a service then mends it on arrival, as if driven in)
   pcall(runner.keepDamage, skip and true or false)
-  if skip then pcall(runner.keepShape, true) end
   local ok, why = earth.teleport(it.place.lat, it.place.lon, it.place.name or it.label)
   if not ok then
     log('W', logTag, 'rally: could not go to ' .. tostring(it.label) .. ': ' .. tostring(why))
@@ -1060,7 +1059,7 @@ local function goToStageStart(it, skip)
   local at = { kind = 'stageStart', label = startLabel(it), name = stage and stage.name or nil }
   -- (no service to mend it: BeamNG.Earth's set-down after a teleport is a repair, and a recovery must not be one;
   -- #80: nor a skip of the transit, in any mode)
-  if skip or R.mode == 'realistic' then pcall(runner.keepDamage, true) pcall(runner.keepShape, true) end
+  if skip or R.mode == 'realistic' then pcall(runner.keepDamage, true) end
   if not (lat and earth.teleport(lat, lon, at.label)) then
     log('W', logTag, 'rally: could not go to ' .. at.label .. ': its transit armed from here')
     local wasSkip = skip
@@ -1771,7 +1770,6 @@ function M.update(dt, dtSim)
     move.ready = earth.ready() and move.t > 2 and (move.ready + dt) or 0
     if move.ready >= runner.TELEPORT_SETTLE_S or move.t > M.MOVE_WAIT_S then
       if move.t > M.MOVE_WAIT_S then log('W', logTag, 'rally: the world took long to load at the stop') end
-      pcall(runner.keepShape, false)   -- (#80: the stand-in only for the teleport itself)
       local thenDo = move.thenDo
       if thenDo then move = nil thenDo() else arrive() end
     end
