@@ -1023,15 +1023,22 @@ local function goToStageStart(it, skip)
   local stage = stageOf(it)
   local lat, lon = nil, nil
   if stage then lat, lon = runner.arrivalPoint(stage) end
-  local function arm()
+  local function arm(landed)
     -- (#79) The teleport leaves the car on the raw point, turned as it was: set down on the road, facing the way on.
     -- At the ATC: SKIP_BEFORE_ATC_M before its board (inside AT_BOARD_M: at the board, as if driven in), facing it;
     -- with no ATC: behind the start line, facing along the stage. No road there yet: turned toward the start.
-    if stage then
+    if landed and stage then  -- (not after a teleport that failed: the car left where the player has it)
       local kind = select(3, runner.arrivalPoint(stage))
       local fok, placed, how
       if kind == 'ATC' then fok, placed, how = pcall(runner.faceAtc, stage, runner.SKIP_BEFORE_ATC_M)
       else fok, placed, how = pcall(runner.faceStage, stage, R.eventId) end
+      -- (the road map is often not in yet just after a teleport: then on the matched file's ATC road point, turned
+      -- along its road, as the auto recce's landing does)
+      local atc = stage.controls and stage.controls.atc
+      if kind == 'ATC' and not (fok and placed) and atc then
+        local okR, onRoad = pcall(events.controlOnRoad, R.eventId, stage.id, 'atc', atc)
+        if okR and onRoad then fok, placed, how = pcall(runner.faceAtcFrom, stage, onRoad) end
+      end
       local s = stage.controls and stage.controls.start
       if not (fok and placed) and s and select(2, pcall(runner.turnToward, s.lat, s.lon)) == true then
         fok, placed, how = true, true, 'turned toward the start only'
@@ -1058,7 +1065,7 @@ local function goToStageStart(it, skip)
     if wasSkip then return false, 'Could not take the car there.' end
     return true
   end
-  move = { item = at, t = 0, ready = 0, thenDo = arm }
+  move = { item = at, t = 0, ready = 0, thenDo = function() arm(true) end }
   if M.ui.loading then M.ui.loading('move', at, nil, skip and { noCard = true } or nil)
   elseif M.ui.closeMenu then M.ui.closeMenu() end
   return true

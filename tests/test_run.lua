@@ -4338,9 +4338,13 @@ do
     -- (the teleport fails: no skip -- said, the clock as it was, the transit armed again)
     local tp = beamngEarth_api.teleport
     beamngEarth_api.teleport = function() return false end
+    local placeCarF, movedF = runner.placeCar, false
+    runner.placeCar = function(...) movedF = true return placeCarF(...) end
     local okF, whyF = rallyRun.skipTransit()
     beamngEarth_api.teleport = tp
     rframes(5)
+    runner.placeCar = placeCarF
+    T.check(not movedF, 'skip: the teleport failed: the car not moved or turned (#79)')
     T.check(not okF and whyF and R.clock.t == t0 + 5 * 60 and runner.approaching() and rallyRun.canSkip(),
       'skip: the teleport failed: not skipped (' .. tostring(whyF) .. '), the transit armed again')
     local placeCar0, placedDir = runner.placeCar, nil
