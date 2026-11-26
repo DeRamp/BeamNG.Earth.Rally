@@ -767,7 +767,10 @@ else
   local a = ra[1]
   T.check(#ra == 1 and a.ok and a.rallies == 8, 'ARA: 8 rallies (' .. tostring(a and (a.why or a.rallies)) .. ')')
   local unjoined = {}
-  for _, w in ipairs(a and a.warnings or {}) do if w:find('results', 1, true) then unjoined[#unjoined + 1] = w end end
+  for _, w in ipairs(a and a.warnings or {}) do
+    w = pack.whyText(w)
+    if w:find('results', 1, true) then unjoined[#unjoined + 1] = w end
+  end
   T.check(#unjoined == 0, 'ARA: every results stage joined to a line (' .. table.concat(unjoined, '; ') .. ')')
   local araSeason = mem['/earthRally/seasons/ara-nationals-2026.json']
   local rounds = araSeason and araSeason.rounds or {}
