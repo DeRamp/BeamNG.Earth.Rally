@@ -397,6 +397,26 @@ T.check(field(qb2, 'SS2') and #field(qb2, 'SS2').field == 2 and field(qb2, 'SS2'
   'an Excel paste: a # column, an empty first cell; Canceled')
 local q3, _, qb3 = scanBlocks('Stage: Kilo Hill\n  Results:\n    SS  Driver  Time\n    SS2  Ann  6:00\n')
 T.check(field(qb3, 'SS2') and #field(qb3, 'SS2').field == 1, 'a table row starting with SS2 stays a row')
+-- (third pass) a header on the Results line over tab-indented rows; a hand header over Excel rows; trailing notes;
+-- a #12 car; commas with no space; wind from 250 at 4 m/s; a results file named with "times"
+local _, _, qb5 = scanBlocks('Stage: Kilo Hill\n\tResults: Car  Driver  Time\n\t\t1\tAnn\t6:00\n\t\t2\tBob\t6:05   # quick\n')
+T.check(field(qb5, 'SS2') and #field(qb5, 'SS2').field == 2, 'a header on the Results line; a note after a row')
+local _, _, qb6 = scanBlocks('Stage: Kilo Hill\n  Results:\n  Car  Driver        Time\n\t\t\t#12    A. Vance  6:00\n')
+T.check(field(qb6, 'SS2') and #field(qb6, 'SS2').field == 1 and field(qb6, 'SS2').field[1][3] == '#12',
+  'header and rows indented differently; a #12 car')
+local _, qe7 = scanBlocks('Stage: Kilo Hill\n  Weather: overcast,90% cloud,wind from 250 at 4 m/s,5 knots\n')
+local w7 = qe7.itinerary[2].weather
+T.check(w7 and w7.code == 3 and w7.cover.total == 90 and w7.wind.fromDeg == 250, 'commas with no space; wind from X at Y')
+clear(RA)
+files[IMP .. 'T/stage.txt'] = 'Stage: Kilo Hill\nResults: stage times.csv\nLength: 8.2 km\n'
+files[IMP .. 'T/stage times.csv'] = 'Driver,Time\nAnn,5:00\n'
+files[IMP .. 'T/k.kml'] = kml('X', { { 'Kilo Hill', 60.03, -10.05, 30 } })
+local q8 = find(imp.scan(), 'T')
+local qe8 = q8 and q8.eventId and jsonReadFile('/earthRally/events/' .. q8.eventId .. '.json')
+local qb8 = q8 and q8.eventId and jsonReadFile('/earthRally/boards/' .. q8.eventId .. '.json')
+T.check(qb8 and #qb8.passes[1].field == 1 and qe8.itinerary[1].km == 8.2 and not qe8.rallyStops,
+  'a results file named with "times"; a stage\'s Length; never a full rally')
+clear(IMP .. 'T/')
 -- an untimed running order with lengths on its lines
 local _, qe4 = scanBlocks('', nil)
 files[RA .. 'rally.txt'] = 'Rally: X\nRunning order:\n  SS1 Meaford Mills  10.46 km\n  Kilo Hill 8.2 km\n'
@@ -420,8 +440,8 @@ files[ST .. 'line.csv'] = nil
 files[ST .. 'kilo hill.kml'] = kml('X', { { 'Kilo Hill', 60.03, -10.05, 30 } })
 local s2 = find(imp.scan(), 'My Stage')
 T.check(s2 and s2.ok and s2.stages == 1 and #s2.warnings == 0, 'the stage template with a map')
-local sb = jsonReadFile('/earthRally/boards/kilo-hill.json')
-local sev = jsonReadFile('/earthRally/events/kilo-hill.json')
+local sb = s2 and jsonReadFile('/earthRally/boards/' .. s2.eventId .. '.json')
+local sev = s2 and jsonReadFile('/earthRally/events/' .. s2.eventId .. '.json')
 T.check(sb and #sb.passes == 1 and #sb.passes[1].field == 2 and sev.itinerary[1].weather.code == 3,
   'stage.txt\'s own Weather and Results')
 

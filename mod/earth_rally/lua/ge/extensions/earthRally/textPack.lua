@@ -236,7 +236,8 @@ local function settings(text, file, keyset, probs)
           goto continue
         end
         -- (a place named like a setting, "HQ: 60.01, -10.04", is a place here)
-        if k and inList == 'placesList' and R.position(ln.text:match('^[^:=]-[:=]%s*(.*)$') or '') then k = nil end
+        local pv0 = ln.text:match('^[^:=]-[:=]%s*(.*)$') or ''
+        if k and inList == 'placesList' and pv0:find('%d%.%d') and R.position(pv0) then k = nil end
         if not k and inList == 'placesList' then
           -- "Fernvale Park: 60.0102, -10.0451", "Fernvale Park  60.0102, -10.0451", or the name alone
           local name, pos = ln.text:match('^(.-)%s*[:=]%s*(.+)$')
@@ -985,22 +986,27 @@ local function weatherLine(text)
     return nil
   end
   -- (parts split at ";" and at "," with a space after: "13,6 C" is one number)
-  for part in (text:gsub(',%s', ';') .. ';'):gmatch('([^;]*);') do
-    local t = R.trim(part)
+  local safe = text:gsub('(%d),(%d)', '%1\1%2'):gsub(',', ';')
+  for part in (safe .. ';'):gmatch('([^;]*);') do
+    local t = R.trim(part:gsub('\1', ','))
     local low = t:lower()
     local bad = false
     if t == '' then
     elseif low:match('^code%s*%d+$') or low:match('^wmo%s*%d+$') then f.wmo = low:match('(%d+)')
-    elseif low:match('%d%s*%%%s*cloud') or low:match('^clouds?%s*%d') then f.cloud = R.number(low:match(NUM))
+    elseif low:match('%d%s*%%%s*cloud') or (low:match('^cloud') and low:match('%d')) then
+      f.cloud = R.number(low:match(NUM))
     elseif low:match('^gusts?%s*%d') then f.gust = speed(low:gsub('^gusts?%s*', '')) bad = f.gust == nil
-    elseif low:match('^wind%s*%d') or low:match('%d%s*m/s') or low:match('%d%s*km/h') or low:match('%d%s*mph') then
-      local sp = low:gsub('^wind%s*', ''):gsub('%s*from.*$', ''):gsub('%s*gusts?.*$', '')
-      f.wind = speed(sp)
+    elseif (low:match('^wind') and low:match('%d')) or low:match('%d%s*m/s') or low:match('%d%s*km/h')
+      or low:match('%d%s*mph') or low:match('%d%s*kno?ts?') then
+      local sp = R.trim(low:gsub('^wind%s*', ''):gsub('from%s*%S+', ''):gsub('gusts?.*$', ''):gsub('^%s*at%s*', '')
+        :gsub('knots?', 'kt'))
+      local wv = speed(sp)
       local from = low:match('from%s*(%a+)')
-      f.from = low:match('from%s*(%d+)') or (from and COMPASS[from])
+      local fv = low:match('from%s*(%d+)') or (from and COMPASS[from])
       local g = low:match('gusts?%s*(.+)$')
       if g then f.gust = speed(g) end
-      bad = f.wind == nil or (low:find('from', 1, true) and f.from == nil)
+      bad = wv == nil or (low:find('from', 1, true) and fv == nil)
+      f.wind, f.from = wv or f.wind, fv or f.from
     elseif low:match('^' .. NUM .. '%s*[\194\176]*%s*c$') then f.temp = R.number(low:match(NUM))
     elseif low:match('^rain%s*%d') then f.rain = R.number(low:match(NUM))
     elseif low:match('^snow%s*%d') then f.snow = R.number(low:match(NUM))
@@ -1073,6 +1079,7 @@ local STAGE_HEADS = { stage = true, specialstage = true }
 -- (a Results line's value: a file's name, unless it reads as the table's column names)
 local function FILE_VALUE(v)
   if not v or v == '' then return false end
+  if v:match('%.%a%a%a?%a?$') then return true end
   local f = R.fold(v)
   return not (f:find('time', 1, true) or f:find('driver', 1, true) or f:find('crew', 1, true))
 end
@@ -1171,11 +1178,15 @@ local function readBlocks(blocks, file, passes, stageNames, probs)
       end
       for _, ln in ipairs(b.lines) do
         local t = ln.text
+        if t == '' and tableOf and ln.tabbed and ln.tabbed ~= '' then t = ln.tabbed end
         if t ~= '' then
           -- (a pass line: "SS3:", "SS3", "SS3: Cancelled", "Pass 2:"; a table row starting SS3 has more after it)
           local n, rest = t:match('^[Ss][Ss]%s*(%d+)%s*[:=]%s*(.-)$')
           if not n then n = t:match('^[Ss][Ss]%s*(%d+)$') rest = '' end
-          if not n then n, rest = t:match('^[Ss][Ss]%s*(%d+)%s+(.-)$') if n and R.fold(rest) ~= 'cancelled' then n = nil end end
+          if not n then
+            n, rest = t:match('^[Ss][Ss]%s*(%d+)%s+(.-)$')
+            if n and R.fold(rest) ~= 'cancelled' and R.fold(rest) ~= 'canceled' then n = nil end
+          end
           local byRun = nil
           if not n then
             byRun, rest = t:match('^[PpRr][au][sn]s?%s*(%d+)%s*[:=]?%s*(.-)$')    -- (Pass 2: / Run 2:)
@@ -1226,8 +1237,7 @@ local function readBlocks(blocks, file, passes, stageNames, probs)
             local c = pass ~= false and onlyPass(ln, 'Results') or nil
             tableOf = { pass = c or false, rows = {}, ln = ln }
             tables[#tables + 1] = tableOf
-            if bv and bv ~= '' then tableOf.rows[1] = { n = ln.n, raw = ln.raw, text = bv } end
-            if not c and pass ~= false and #mine == 0 then tableOf.pass = false end
+            if bv and bv ~= '' then tableOf.rows[1] = { n = ln.n, raw = ln.raw, text = bv } tableOf.fromValue = true end
           elseif bk == 'cancelled' then
             tableOf = nil
             local c = pass ~= false and onlyPass(ln, 'Cancelled') or nil
@@ -1245,11 +1255,22 @@ local function readBlocks(blocks, file, passes, stageNames, probs)
         if tb.pass and #tb.rows > 0 then
           -- (the table's indent is its first line's leading tabs: a row's one tab more is an empty first cell, as
           -- Excel pastes it)
-          local indent = #(tb.rows[1].text:match('^\t*'))
+          -- (the least leading tabs of its lines is the indent: a row with more, and tabs between its cells, has
+          -- empty first cells, as Excel pastes them; any other leading space is indent)
+          local indent = nil
+          for i, r in ipairs(tb.rows) do
+            if not (i == 1 and tb.fromValue) then
+              local lead = #(r.text:match('^[ \t]*'):gsub(' ', ''))
+              if not indent or lead < indent then indent = lead end
+            end
+          end
+          indent = indent or 0
           local function body(x)
-            x = x:sub(1, indent):match('^\t*$') and x:sub(indent + 1) or x:gsub('^\t+', '')
-            if not x:find('\t') then x = R.trim(x) end
-            return x
+            local lead = #(x:match('^[ \t]*'):gsub(' ', ''))
+            local rest = x:gsub('^[ \t]+', '')
+            if lead > indent and rest:find('\t') then rest = ('\t'):rep(lead - indent) .. rest end
+            if not rest:find('\t') then rest = R.trim(rest) end
+            return rest
           end
           for _, r in ipairs(tb.rows) do r.text = body(r.text) end
           local first = tb.rows[1]
@@ -1641,7 +1662,8 @@ local function readStage(ctx, rel, probs, virtual)
   local one = { SS1 = { stage = stageName, run = 1 } }
   local res = nil
   if resRel then
-    res = readResults(ctx.readText(resRel) or '', resRel, one, { stageName }, probs)
+    res = readResults(ctx.readText(resRel) or '', resRel, one, { stageName }, probs,
+      { fixed = { control = 'SS1', stage = stageName, run = 1 } })
     if res then for _, st in ipairs(res.stages) do st.stage, st.control = stageName, 'SS1' end end
   end
   -- (its own Weather and Results lines: read as a stage block of its one pass)
@@ -1662,7 +1684,7 @@ local function readStage(ctx, rel, probs, virtual)
     virtual[path] = res
     spec.results = path
   end
-  if bl.weather.SS1 then
+  if bl.weather.SS1 or bl.km[stageName] then
     local path = rel .. '#event'
     virtual[path] = { itinerary = { { type = 'SS', control = 'SS1', stage = stageName, run = 1,
       ss_km = bl.km[stageName], weather = bl.weather.SS1 } } }

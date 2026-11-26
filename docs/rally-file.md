@@ -61,7 +61,7 @@ the folder has one map uses that map.
 `Name: position` lines (or `Name  position`, or a name alone), each with its own `At:` or `Area:` under it if
 wanted; `Place:` + `At:` blocks work too.
 
-**Stage blocks** (rally.txt; stage.txt has one, for its own stage, from its first `Weather` or `Results` line): a
+**Stage blocks** (rally.txt; stage.txt has one, for its own stage, from its first `Weather`, `Results`, `Length` or `Cancelled` line): a
 `Stage: <name>` line starts one, and it runs until a line with one of the rally's own settings (`Running order:`,
 `Town:`...). In it: `Length` (`ss_km` of every pass that has none), a pass line (`SS3:`, or `Pass 2:` / `Run 2:`,
 its stage's second run; `SS3: Cancelled` on one line too), and under a pass `Weather`, `Results` and `Cancelled`.

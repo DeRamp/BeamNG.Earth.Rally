@@ -212,7 +212,18 @@ function M.lines(s)
     -- (tabbed: the line with its tabs kept, for a table pasted from Excel, whose empty cells are two tabs)
     -- (tables: a # inside is a column or a car number, only one at the line's start a note; spaces trimmed, tabs
     -- kept, as an empty first or last cell is a tab there)
-    local tabbed = raw:match('^%s*#') and '' or raw:gsub('^ +', ''):gsub(' +$', ''):gsub('\r', '')
+    -- (a line starting "# " is a note, "#12" a car number; a trailing " # words" a note, unless the words are
+    -- columns lined up with two spaces, "#  Driver  Time")
+    local tabbed = raw:gsub('\r', '')
+    if tabbed:match('^%s*#[%s]') or tabbed:match('^%s*#$') or tabbed:match('^%s*//') then tabbed = ''
+    else
+      local at = tabbed:find(' +#[^\t]*$')
+      if at then
+        local tail = tabbed:sub(at):gsub('^ +', '')
+        if not tail:find('%s%s') and tail:match('^#%s') then tabbed = tabbed:sub(1, at - 1) end
+      end
+      tabbed = tabbed:gsub('^ +', ''):gsub(' +$', '')
+    end
     out[#out + 1] = { n = n, raw = M.trim(raw), text = M.trim(t), indent = indent, tabbed = tabbed }
   end
   return out
