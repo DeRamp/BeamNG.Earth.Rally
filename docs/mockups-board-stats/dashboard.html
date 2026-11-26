@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mock-up: dashboard on a phone, Board stats tab</title>
+<!-- Mock-up for the stats dashboard (server/src/dashboard.js): the Leaderboards tab on a phone, and a new Board stats
+     tab worked out from the online board's runs only. Fake data. 1920x1080; "Now / Proposed" at the top.
+     On the real page the phone layout is a CSS media query (max-width 700px); here the phone frame stands in for it. -->
+<style>
+* { box-sizing: border-box; }
+:root {
+  --page: #0d0d0d; --surface: #1a1a19; --line: #2c2c2a; --grid: #2a2a28;
+  --ink: #f0efec; --ink2: #c3c2b7; --muted: #8d8c84;
+  --s1: #3987e5; --s2: #d95926; --accent: #c75b1e; --warn: #fab219; --crit: #d03b3b;
+}
+html, body { margin: 0; background: #050505; color: var(--ink); font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
+.mock { width: 1920px; height: 1080px; display: grid; grid-template-columns: 1420px 1fr; gap: 24px; padding: 64px 24px 24px; position: relative; }
+.bar0 { position: absolute; top: 14px; left: 24px; right: 24px; display: flex; gap: 14px; align-items: center; }
+.bar0 .t { color: var(--muted); font-size: 13px; } .bar0 .seg { display: flex; border: 1px solid #3a3a37; border-radius: 4px; overflow: hidden; }
+.bar0 .seg span { padding: 5px 14px; cursor: pointer; color: var(--ink2); } .bar0 .seg span.on { background: var(--accent); color: #fff; }
+.frame { background: var(--page); border: 1px solid #333; border-radius: 6px; overflow: auto; position: relative; }
+.frame .cap { position: sticky; top: 0; z-index: 5; background: #050505; color: var(--muted); font-size: 12px; padding: 4px 10px; border-bottom: 1px solid #222; }
+.phoneWrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.phone { width: 390px; height: 844px; border-radius: 34px; border: 10px solid #222; overflow-y: auto; overflow-x: auto; background: var(--page); }
+.phoneWrap .cap { color: var(--muted); font-size: 12px; }
+.note { color: var(--muted); font-size: 12.5px; max-width: 390px; line-height: 1.6; }
+.note b { color: var(--ink2); }
+
+/* ---------- the dashboard, as it is (desktop) ---------- */
+.dash header { display: flex; align-items: center; gap: 18px; padding: 18px 28px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.dash header h1 { margin: 0; font-size: 20px; } .dash header h1 span { color: var(--accent); }
+.dash nav { display: flex; gap: 4px; margin-left: 24px; }
+.dash nav a { padding: 6px 12px; border-radius: 4px; color: var(--ink2); text-decoration: none; cursor: pointer; white-space: nowrap; }
+.dash nav a.on { background: #2a2a28; color: var(--ink); }
+.dash .range { margin-left: auto; display: flex; border: 1px solid #3a3a37; border-radius: 4px; overflow: hidden; }
+.dash .range span { padding: 5px 11px; color: var(--ink2); white-space: nowrap; } .dash .range span.on { background: #3a3a37; color: var(--ink); }
+.dash .who { color: var(--muted); font-size: 12px; } .dash .who a { color: var(--muted); text-decoration: underline; }
+.dash main { padding: 22px 28px 40px; }
+.tiles { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 14px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; min-width: 0; }
+.tile .k { color: var(--ink2); font-size: 12.5px; } .tile .v { font-size: 28px; font-weight: 650; margin-top: 2px; }
+.tile .d { color: var(--muted); font-size: 12px; }
+.grid2 { display: grid; grid-template-columns: 1.7fr 1fr; gap: 14px; margin-bottom: 14px; }
+.grid2e { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px; min-width: 0; }
+.card h2 { margin: 0 0 2px; font-size: 15px; } .card .sub { color: var(--muted); font-size: 12.5px; margin-bottom: 10px; }
+.legend { display: flex; gap: 16px; font-size: 12.5px; color: var(--ink2); margin-bottom: 6px; }
+.legend i { display: inline-block; width: 12px; height: 10px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+svg text { fill: var(--muted); font-size: 11px; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; color: var(--ink2); font-weight: 500; font-size: 12.5px; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 7px 8px; border-bottom: 1px solid #232321; } td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+td.best { color: #e9c46a; }
+.hbar-row { display: grid; grid-template-columns: 150px 1fr 60px; gap: 10px; align-items: center; padding: 4px 0; }
+.hbar-row .lbl { color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hbar-row .track div { height: 10px; background: var(--s1); border-radius: 0 4px 4px 0; }
+.hbar-row .num { text-align: right; font-variant-numeric: tabular-nums; }
+.pill { font-size: 11.5px; padding: 1px 7px; border-radius: 9px; border: 1px solid; white-space: nowrap; }
+.pill.ok { color: #8fd6aa; border-color: #2f6e48; } .pill.warn { color: var(--warn); border-color: #8a6a1a; } .pill.crit { color: #f08a8a; border-color: var(--crit); }
+.btn { font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 4px; border: 1px solid #3a3a37; background: #232321; color: var(--ink2); white-space: nowrap; }
+.btn.go { border-color: #2f6e48; color: #8fd6aa; } .btn.bad { border-color: #6e2f2f; color: #f08a8a; }
+.acts { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.lb { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 14px; }
+.picker input, .pickIn { width: 100%; font: inherit; padding: 7px 10px; margin-bottom: 8px; color: var(--ink); background: #0d0d0d; border: 1px solid #3a3a37; border-radius: 4px; }
+.st { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 7px 10px; border-radius: 4px; border-left: 3px solid transparent; }
+.st.on { background: #2a2a28; border-left-color: var(--accent); } .st .c { color: var(--ink2); font-size: 12.5px; }
+.grp { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; margin: 10px 10px 2px; }
+.boards { display: grid; gap: 14px; }
+.board td, .board th { padding: 6px 4px; font-size: 12.5px; white-space: nowrap; } .board .btn { padding: 1px 6px; font-size: 11.5px; }
+.stagehead { display: flex; align-items: baseline; gap: 14px; margin-bottom: 12px; flex-wrap: wrap; }
+.stagehead h2 { margin: 0; font-size: 18px; } .stagehead .m { color: var(--muted); font-size: 12.5px; }
+.chips { margin-left: auto; display: flex; border: 1px solid #3a3a37; border-radius: 4px; overflow: hidden; font-size: 12.5px; }
+.chips span { padding: 3px 10px; color: var(--ink2); white-space: nowrap; } .chips span.on { background: #3a3a37; color: var(--ink); }
+.count { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 9px; background: #4a3a10; color: var(--warn); }
+.new { outline: 2px dashed #4fb87a; outline-offset: 3px; }
+.phonly { display: none; }
+
+/* ---------- proposed: the phone layout (on the page: @media (max-width: 700px)) ---------- */
+.prop .phone .dash header { padding: 12px 14px 0; gap: 8px; }
+.prop .phone .dash header h1 { font-size: 17px; }
+.prop .phone .dash .who { margin-left: auto; }
+.prop .phone .dash nav { order: 5; margin: 0 -14px; padding: 0 10px 8px; width: calc(100% + 28px); overflow-x: auto; scrollbar-width: none; }
+.prop .phone .dash .range { order: 6; margin: 0 0 10px; width: 100%; }
+.prop .phone .dash .range span { flex: 1; text-align: center; padding: 6px 0; }
+.prop .phone .dash .range.none { display: none; }
+.prop .phone .dash main { padding: 12px 10px 30px; }
+.prop .phone .tiles { grid-template-columns: 1fr 1fr; gap: 8px; }
+.prop .phone .tile { padding: 10px 12px; } .prop .phone .tile .v { font-size: 22px; }
+.prop .phone .grid2, .prop .phone .grid2e, .prop .phone .lb { grid-template-columns: 1fr; gap: 10px; }
+.prop .phone .card { padding: 12px; }
+.prop .phone .hbar-row { grid-template-columns: 110px 1fr 44px; }
+.prop .phone .desk { display: none; } .prop .phone .phonly { display: block; }
+.prop .phone .scrollx { overflow-x: auto; }
+/* stage picker: one button; the list opens under it */
+.pickBtn { display: flex; align-items: center; justify-content: space-between; width: 100%; font: inherit; padding: 10px 12px; color: var(--ink); background: #0d0d0d; border: 1px solid #3a3a37; border-radius: 6px; }
+.pickBtn .sm { color: var(--muted); font-size: 12px; }
+/* a board as rows: pos, player and car, time; tap opens the rest */
+.mrow { display: grid; grid-template-columns: 30px 1fr auto; gap: 8px; align-items: center; padding: 9px 4px; border-bottom: 1px solid #232321; }
+.mrow .p { color: var(--ink2); text-align: right; font-variant-numeric: tabular-nums; }
+.mrow .nm { min-width: 0; } .mrow .nm div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mrow .nm .s { color: var(--muted); font-size: 12px; }
+.mrow .t { font-variant-numeric: tabular-nums; text-align: right; } .mrow .t .s { color: var(--muted); font-size: 11.5px; }
+.mrow.open { background: #222220; border-bottom: 0; }
+.mdet { background: #222220; padding: 4px 8px 10px 42px; border-bottom: 1px solid #232321; font-size: 12.5px; color: var(--ink2); }
+.mdet .acts { justify-content: flex-start; margin-top: 8px; } .mdet .btn { padding: 6px 10px; font-size: 13px; }
+.mflag { padding: 10px 2px; border-bottom: 1px solid #232321; }
+.mflag .l1 { display: flex; justify-content: space-between; gap: 8px; } .mflag .l2 { color: var(--muted); font-size: 12px; margin: 2px 0 6px; }
+.mflag .acts { justify-content: flex-start; } .mflag .btn { padding: 6px 10px; font-size: 13px; }
+.boardSw { display: flex; border: 1px solid #3a3a37; border-radius: 4px; overflow: hidden; margin: 2px 0 8px; }
+.boardSw span { flex: 1; text-align: center; padding: 7px 0; color: var(--ink2); } .boardSw span.on { background: #3a3a37; color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="mock" id="mock">
+  <div class="bar0"><span class="t">Earth Rally stats dashboard. Mock-up, fake data.</span>
+    <div class="seg" id="segState"><span data-s="now">Now</span><span data-s="prop" class="on">Proposed</span></div>
+    <div class="seg" id="segTab"><span data-t="boards" class="on">Leaderboards</span><span data-t="bstats">Board stats (new)</span></div>
+    <span class="t" style="margin-left:auto">Green dashed outline = new</span></div>
+  <div class="frame"><div class="cap">Desktop, 1400 px</div><div id="desk"></div></div>
+  <div class="phoneWrap"><div class="cap">Phone, 390 px</div><div class="phone"><div id="ph"></div></div>
+    <div class="note" id="note"></div></div>
+</div>
+
+<script>
+var state = "prop", tab = "boards";
+var players = ["DeRamp", "gravelgoblin", "Kimi_R", "sidewaysSue", "Ollie.B", "flatout_finn", "mudlark"];
+var B = [ // a stage's board: pos, player, time, car, date, mod, status
+  [1, "gravelgoblin", "4:12.3", "Sunburst RS", "24/11", "1.10.0", "ok"],
+  [2, "DeRamp", "4:15.9", "Sunburst RS", "26/11", "1.10.1", "ok"],
+  [3, "Kimi_R", "4:21.0", "Covet", "22/11", "1.9.4", "ok"],
+  ["–", "flatout_finn", "3:58.2", "Sunburst RS", "25/11", "1.10.0", "flagged"],
+  [4, "sidewaysSue", "4:33.7", "ETK 800", "20/11", "1.9.3", "ok"],
+  [5, "Ollie.B", "4:49.4", "Covet", "19/11", "1.8.2", "ok"],
+];
+function esc(s) { return String(s); }
+function pill(s) { return s === "ok" ? "<span class='pill ok'>ok</span>" : "<span class='pill warn'>flagged</span>"; }
+
+function header(active, rangeOn) {
+  return "<header><h1><span>Earth</span> Rally stats</h1><nav>" +
+    [["overview", "Overview"], ["stages", "Stages &amp; rallies"], ["versions", "Versions &amp; errors"], ["boards", "Leaderboards"], ["bstats", "Board stats"]]
+      .filter(function (x) { return state === "prop" || x[0] !== "bstats"; })
+      .map(function (x) { return "<a class='" + (x[0] === active ? "on" : "") + (x[0] === "bstats" ? " new" : "") + "'>" + x[1] + "</a>"; }).join("") +
+    "</nav><div class='range" + (rangeOn ? "" : " none") + "'><span>7 days</span><span class='on'>30 days</span><span>90 days</span><span>12 months</span></div>" +
+    "<div class='who'>Last event 2026-11-26 · <a>forget key</a></div></header>";
+}
+
+// ---------- Leaderboards
+function flaggedDesk() {
+  return "<div class='card' style='margin-bottom:14px; border-color:#5a4512'><h2>Flagged <span class='count'>1</span></h2>" +
+    "<div class='sub'>Runs the server held back and runs other players reported.</div><div class='scrollx'><table><tr><th>When</th><th>Stage</th><th>Board</th><th>Player</th><th class='n'>Time</th><th>Car</th><th>Flags</th><th class='n'>Clock ratio</th><th class='n'>Reports</th><th></th></tr>" +
+    "<tr><td>25 Nov 21:14</td><td>Maryhill Loops</td><td>Stock</td><td>flatout_finn</td><td class='n'>3:58.2</td><td>Sunburst RS</td><td><span class='pill crit'>clock</span></td><td class='n'>0.81</td><td class='n'>0</td>" +
+    "<td><div class='acts'><button class='btn'>View trace</button><button class='btn go'>Approve</button><button class='btn bad'>Hide</button></div></td></tr></table></div></div>";
+}
+function flaggedPhone() {
+  return "<div class='card' style='margin-bottom:10px; border-color:#5a4512'><h2>Flagged <span class='count'>1</span></h2>" +
+    "<div class='mflag'><div class='l1'><b>flatout_finn</b><span>3:58.2</span></div>" +
+    "<div class='l2'>Maryhill Loops · Stock · Sunburst RS · 25 Nov 21:14</div>" +
+    "<div style='margin-bottom:8px'><span class='pill crit'>clock</span> <span style='color:var(--muted); font-size:12px'>clock ratio 0.81 · 0 reports</span></div>" +
+    "<div class='acts'><button class='btn'>View trace</button><button class='btn go'>Approve</button><button class='btn bad'>Hide</button></div></div></div>";
+}
+function pickerDesk() {
+  return "<div class='card picker'><h2>Stages</h2><div class='sub'>Number = runs; badge = flagged or reported.</div><input placeholder='Find a stage or rally'>" +
+    "<div class='grp'>ARA 2026: Olympus</div><div class='st on'><span>Maryhill Loops</span><span class='c'>9</span><span class='count'>1</span></div>" +
+    "<div class='st'><span>Brooks Memorial</span><span class='c'>6</span><span></span></div><div class='st'><span>Nooksack Falls</span><span class='c'>4</span><span></span></div>" +
+    "<div class='grp'>Warden Test Rally</div><div class='st'><span>Canal Road</span><span class='c'>7</span><span></span></div><div class='st'><span>Old Quarry</span><span class='c'>3</span><span></span></div>" +
+    "<div class='grp'>No rally (own stages)</div><div class='st'><span>Home loop</span><span class='c'>2</span><span></span></div></div>";
+}
+function pickerPhone() {
+  return "<div class='new' style='margin-bottom:10px'><button class='pickBtn'><span>Maryhill Loops <span class='sm'>· ARA 2026: Olympus</span></span><span>&#9662;</span></button></div>";
+}
+function boardDesk(name, sub, rows) {
+  var h = "<div class='card board'><h2>" + name + "</h2><div class='sub'>" + sub + "</div><div class='scrollx'><table><tr><th class='n'>Pos</th><th>Player</th><th class='n'>Time</th><th class='n'>Pen.</th><th>Car</th><th>Date</th><th>Mod</th><th>Status, flags</th><th class='n'>Rep.</th><th></th></tr>";
+  rows.forEach(function (r) {
+    h += "<tr><td class='n'>" + r[0] + "</td><td>" + r[1] + "</td><td class='n'" + (r[0] === 1 ? " style='color:#e9c46a'" : "") + ">" + r[2] + "</td><td class='n'></td><td>" + r[3] +
+      "</td><td>" + r[4] + "</td><td>" + r[5] + "</td><td>" + pill(r[6]) + "</td><td class='n'></td><td><div class='acts'>" +
+      (r[6] === "flagged" ? "<button class='btn go'>Approve</button><button class='btn bad'>Hide</button>" : "<button class='btn'>Hide</button>") +
+      "<button class='btn'>&#8594; Open</button><button class='btn bad'>Ban</button></div></td></tr>";
+  });
+  return h + "</table></div></div>";
+}
+function boardPhone(rows) {
+  var h = "<div class='card board new'><div class='boardSw'><span class='on'>Stock · 5</span><span>Open · 1</span></div>";
+  rows.forEach(function (r, i) {
+    var open = i === 1;
+    h += "<div class='mrow" + (open ? " open" : "") + "'><span class='p'>" + r[0] + "</span><div class='nm'><div>" + r[1] + (r[6] === "flagged" ? " <span class='pill warn'>flagged</span>" : "") + "</div>" +
+      "<div class='s'>" + r[3] + " · " + r[4] + "</div></div><div class='t'" + (r[0] === 1 ? " style='color:#e9c46a'" : "") + ">" + r[2] + "</div></div>";
+    if (open) h += "<div class='mdet'>Mod " + r[5] + " · no penalty · no reports · <span class='pill ok'>ok</span>" +
+      "<div class='acts'><button class='btn'>View trace</button><button class='btn'>Hide</button><button class='btn'>&#8594; Open</button><button class='btn bad'>Ban</button></div></div>";
+  });
+  return h + "<div class='sub' style='margin:8px 0 0'>Tap a row for its details and actions.</div></div>";
+}
+function boardsView(phone) {
+  var prop = state === "prop" && phone;
+  var head = "<div class='card' style='margin-bottom:" + (prop ? 10 : 14) + "px'><div class='stagehead'><h2>Maryhill Loops</h2><span class='m'>ARA 2026: Olympus · 11.4 km" +
+    (prop ? "" : " · first run 2026-11-18 · stage id 3fa9c1") + "</span><div class='chips'><span class='on'>Best per player</span><span>Every run</span></div></div>" +
+    (prop ? "" : "<div class='sub' style='margin:0'>Greyed: hidden, or a banned player. Flagged rows show where they would place, with no position. Move: the run goes to the other board.</div>") + "</div>";
+  if (prop) return flaggedPhone() + pickerPhone() + head + boardPhone(B);
+  return flaggedDesk() + "<div class='lb'>" + pickerDesk() + "<div>" + head + "<div class='boards'>" +
+    boardDesk("Stock", "The game's own cars as they come · 5 on the board · 6 runs", B) +
+    boardDesk("Open", "Anything · 1 on the board · 1 run", [[1, "DeRamp", "4:02.8", "Sunburst RS (custom)", "21/11", "1.9.4", "ok"]]) + "</div></div></div>";
+}
+
+// ---------- Board stats
+function tiles() {
+  var t = [["Players", "7", "With a name on the board"], ["Driving", "6", "Sent at least one time"], ["Active, 7 days", "4", "Sent a time this week"],
+    ["Runs", "58", "Times sent, every board"], ["Stages", "16", "With a time, in 8 rallies"], ["Distance", "512 km", "Every run, end to end"],
+    ["Time driven", "6:41:12", "Every run's clock"], ["Runs per player", "9.7", "Average"], ["Stock / Open", "86% / 14%", "Share of runs"],
+    ["Flagged", "3%", "Held back by the server"], ["Resets per run", "0.6", "Average"], ["New this week", "2", "First time sent"]];
+  return "<div class='tiles'>" + t.map(function (x) {
+    return "<div class='tile'><div class='k'>" + x[0] + "</div><div class='v'>" + x[1] + "</div><div class='d'>" + x[2] + "</div></div>";
+  }).join("") + "</div>";
+}
+function bars(W, H) {
+  // runs per day (bars) and players that day (line), 30 days
+  var runs = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,6,3,9,7,2,5,8,4,6,1,3];
+  var pl = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,3,2,4,3,1,3,4,2,3,1,2];
+  var L = 28, Bm = 20, T = 6, n = runs.length, bw = (W - L - 6) / n, max = 10, g = "";
+  function y(v) { return T + (H - T - Bm) * (1 - v / max); }
+  [0, 5, 10].forEach(function (v) { g += "<line x1='" + L + "' x2='" + (W - 6) + "' y1='" + y(v) + "' y2='" + y(v) + "' stroke='var(--grid)'/><text x='" + (L - 5) + "' y='" + (y(v) + 4) + "' text-anchor='end'>" + v + "</text>"; });
+  runs.forEach(function (v, i) { g += "<rect x='" + (L + i * bw + 1) + "' y='" + y(v) + "' width='" + Math.max(1, bw - 2) + "' height='" + (y(0) - y(v)) + "' fill='var(--s1)' rx='1'/>"; });
+  g += "<path fill='none' stroke='var(--s2)' stroke-width='2' d='" + pl.map(function (v, i) { return (i ? "L" : "M") + (L + i * bw + bw / 2).toFixed(1) + " " + y(v).toFixed(1); }).join("") + "'/>";
+  ["10-28", "11-07", "11-17", "11-26"].forEach(function (d, i) { g += "<text x='" + (L + [0, 10, 20, 29][i] * bw + bw / 2) + "' y='" + (H - 4) + "' text-anchor='middle'>" + d + "</text>"; });
+  return "<svg width='100%' viewBox='0 0 " + W + " " + H + "' height='" + H + "'>" + g + "</svg>";
+}
+function growth(W, H) {
+  var c = [1,1,2,2,3,3,4,4,4,5,5,6,6,7,7,7,7,7,7], L = 22, Bm = 20, T = 6, n = c.length, g = "";
+  function x(i) { return L + i * (W - L - 6) / (n - 1); } function y(v) { return T + (H - T - Bm) * (1 - v / 8); }
+  [0, 4, 8].forEach(function (v) { g += "<line x1='" + L + "' x2='" + (W - 6) + "' y1='" + y(v) + "' y2='" + y(v) + "' stroke='var(--grid)'/><text x='" + (L - 5) + "' y='" + (y(v) + 4) + "' text-anchor='end'>" + v + "</text>"; });
+  g += "<path fill='none' stroke='var(--s1)' stroke-width='2' d='" + c.map(function (v, i) { return (i ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1); }).join("") + "'/>";
+  ["11-08", "11-17", "11-26"].forEach(function (d, i) { g += "<text x='" + x([0, 9, 18][i]) + "' y='" + (H - 4) + "' text-anchor='middle'>" + d + "</text>"; });
+  return "<svg width='100%' viewBox='0 0 " + W + " " + H + "' height='" + H + "'>" + g + "</svg>";
+}
+function hbars(rows, fmt) {
+  var max = Math.max.apply(null, rows.map(function (r) { return r[1]; }));
+  return rows.map(function (r) {
+    return "<div class='hbar-row'><span class='lbl'>" + r[0] + "</span><span class='track'><div style='width:" + (r[1] / max * 100) + "%'></div></span><span class='num'>" + (fmt ? fmt(r[1]) : r[1]) + "</span></div>";
+  }).join("");
+}
+function hours() {
+  var h = [0,0,0,0,0,0,0,1,1,2,1,2,3,2,2,3,4,6,8,9,7,5,2,1], max = 9, g = "", W = 400, H = 90;
+  h.forEach(function (v, i) { var bh = v / max * (H - 18); g += "<rect x='" + (i * W / 24 + 1) + "' y='" + (H - 16 - bh) + "' width='" + (W / 24 - 2) + "' height='" + bh + "' fill='var(--s1)' rx='1'/>"; });
+  [0, 6, 12, 18].forEach(function (i) { g += "<text x='" + (i * W / 24 + 2) + "' y='" + (H - 3) + "'>" + String(i).padStart(2, "0") + ":00</text>"; });
+  return "<svg width='100%' viewBox='0 0 " + W + " " + H + "' height='" + H + "'>" + g + "</svg>";
+}
+function playersTable(phone) {
+  var rows = [["DeRamp", 17, 11, 3, 2, "26 Nov"], ["gravelgoblin", 12, 6, 4, 1, "24 Nov"], ["Kimi_R", 9, 5, 1, 0, "25 Nov"], ["sidewaysSue", 8, 7, 2, 0, "20 Nov"],
+    ["Ollie.B", 7, 4, 0, 0, "19 Nov"], ["flatout_finn", 5, 3, 0, 0, "25 Nov"], ["mudlark", 0, 0, 0, 0, "–"]];
+  var h = "<table><tr><th>Player</th><th class='n'>Runs</th><th class='n'>Stages</th><th class='n'>Fastest</th>" + (phone ? "" : "<th class='n'>Podiums</th><th>Last run</th>") + "</tr>";
+  rows.forEach(function (r) {
+    h += "<tr><td>" + r[0] + "</td><td class='n'>" + r[1] + "</td><td class='n'>" + r[2] + "</td><td class='n best'>" + (r[3] || "–") + "</td>" +
+      (phone ? "" : "<td class='n'>" + (r[3] + r[4] + 1 > 1 ? r[3] + r[4] + 2 : "–") + "</td><td>" + r[5] + "</td>") + "</tr>";
+  });
+  return h + "</table>";
+}
+function stagesTable(phone) {
+  var rows = [["Maryhill Loops", "ARA 2026: Olympus", 11.4, 14, 6, "4:12.3", 98], ["Canal Road", "Warden Test Rally", 6.2, 9, 4, "3:41.0", 101],
+    ["Brooks Memorial", "ARA 2026: Olympus", 9.8, 7, 4, "5:02.6", 117], ["Nooksack Falls", "ARA 2026: Olympus", 14.1, 5, 3, "8:44.1", 97], ["Old Quarry", "Warden Test Rally", 3.9, 4, 2, "2:51.9", 82]];
+  var h = "<table><tr><th>Stage</th>" + (phone ? "" : "<th>Rally</th><th class='n'>Length</th>") + "<th class='n'>Runs</th><th class='n'>Players</th><th class='n'>Record</th>" + (phone ? "" : "<th class='n'>Record speed</th>") + "</tr>";
+  rows.forEach(function (r) {
+    h += "<tr><td>" + r[0] + "</td>" + (phone ? "" : "<td>" + r[1] + "</td><td class='n'>" + r[2] + " km</td>") + "<td class='n'>" + r[3] + "</td><td class='n'>" + r[4] +
+      "</td><td class='n best'>" + r[5] + "</td>" + (phone ? "" : "<td class='n'>" + r[6] + " km/h</td>") + "</tr>";
+  });
+  return h + "</table>";
+}
+function bstatsView(phone) {
+  if (state === "now") return "<div class='card'><div class='empty' style='color:var(--muted)'>There is no Board stats tab today.</div></div>";
+  return "<div class='new'>" + tiles() +
+    "<div class='grid2'><div class='card'><h2>Runs per day</h2><div class='sub'>Last 30 days (the range above)</div>" +
+    "<div class='legend'><span><i style='background:var(--s1)'></i>Runs</span><span><i style='background:var(--s2); height:3px'></i>Players that day</span></div>" + bars(phone ? 340 : 760, phone ? 160 : 210) + "</div>" +
+    "<div class='card'><h2>Players over time</h2><div class='sub'>Everyone who has sent a time, by the day of their first</div>" + growth(phone ? 340 : 440, phone ? 140 : 210) + "</div></div>" +
+    "<div class='grid2e'><div class='card'><h2>Players</h2><div class='sub'>Every name on the board. Fastest = stage records held" + (phone ? "" : "; podiums = top-3 places, either board") + "</div>" + playersTable(phone) + "</div>" +
+    "<div class='card'><h2>Stages</h2><div class='sub'>Most driven first. Record = fastest on the Stock board</div>" + stagesTable(phone) + "</div></div>" +
+    "<div class='grid2e'><div class='card'><h2>Rallies</h2><div class='sub'>Runs per rally</div>" + hbars([["ARA 2026: Olympus", 26], ["Warden Test Rally", 13], ["ARA 2026: Sno*Drift", 8], ["Own stages", 6], ["ARA 2026: Oregon", 5]]) + "</div>" +
+    "<div class='card'><h2>Cars</h2><div class='sub'>Runs per car</div>" + hbars([["Sunburst RS", 29], ["Covet", 12], ["ETK 800", 7], ["Pessima", 5], ["Sunburst RS (custom)", 5]]) + "</div></div>" +
+    "<div class='grid2e'><div class='card'><h2>Mod version</h2><div class='sub'>Share of runs, last 30 days</div>" + hbars([["1.10.1-alpha", 31], ["1.10.0-alpha", 28], ["1.9.4-alpha", 22], ["1.8.2-alpha", 19]], function (v) { return v + "%"; }) + "</div>" +
+    "<div class='card'><h2>Time of day</h2><div class='sub'>When runs are sent, your local time</div>" + hours() + "</div></div></div>";
+}
+
+function render() {
+  document.getElementById("mock").className = "mock " + (state === "prop" ? "prop" : "");
+  [["desk", false], ["ph", true]].forEach(function (x) {
+    var el = document.getElementById(x[0]);
+    el.className = "dash";
+    el.innerHTML = header(tab, tab !== "boards") + "<main>" + (tab === "boards" ? boardsView(x[1]) : bstatsView(x[1])) + "</main>";
+  });
+  document.getElementById("note").innerHTML = state === "now"
+    ? "<b>Now:</b> the desktop page shrunk to a phone. The nav and range wrap, the stage list sits above both boards, and each board is a 10-column table you scroll sideways."
+    : tab === "boards"
+      ? "<b>Proposed, phone:</b> the date range hides (it does nothing here). Tabs scroll sideways. The stage list becomes one button that opens it. One board at a time (Stock / Open). Each run is one row: place, player, car and date, time. Tap a row for mod, penalty, reports and the actions. Flagged runs are cards. Desktop is unchanged."
+      : "<b>Proposed:</b> a new tab, worked out from the leaderboard's runs only (no stats opt-in needed: everyone with Leaderboards on counts). Tiles go two across on a phone; the wide tables drop their extra columns.";
+}
+document.getElementById("segState").onclick = function (e) { var s = e.target.dataset.s; if (!s) return; state = s; seg("segState", "s", s); render(); };
+document.getElementById("segTab").onclick = function (e) { var t = e.target.dataset.t; if (!t) return; tab = t; seg("segTab", "t", t); render(); };
+function seg(id, k, v) { document.querySelectorAll("#" + id + " span").forEach(function (x) { x.classList.toggle("on", x.dataset[k] === v); }); }
+render();
+</script>
+</body>
+</html>

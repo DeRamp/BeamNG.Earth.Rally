@@ -11,6 +11,10 @@ fetches weather: it uses what is stored here.
     python tools/pack_weather.py "Rally Files/Warden Test Rally V2"
     python tools/pack_weather.py "Rally Files/Warden Test Rally V2" --force     (fetch again rows that have weather)
 
+A hand-made pack (rally.txt or season.txt, docs/making-rally-packs.md) gets a weather.csv beside each rally.txt
+instead, from its running order's times; a pass whose weather is written in rally.txt is left to it. Its .txt files are read by the mod's own reader (textPack.lua), under
+LuaJIT through lupa (pip install lupa), so the tool and the game cannot read them differently.
+
 A rally still in the future gets nothing (the tool says so). Rows that already have weather are left alone unless
 --force. Polite: one request per map cell (0.1 degrees) and day, cached for the run, a short timeout, a pause
 between requests, User-Agent "EarthRally-pack-weather" and nothing else about you.
@@ -56,6 +60,19 @@ CODE_FLOORS = ((range(51, 58), 0.3, 0.0), (range(61, 68), 1.0, 0.0), (range(80, 
                (range(71, 78), 0.0, 0.5), ((85, 86), 0.0, 0.5), (range(95, 100), 4.0, 0.0))
 
 MANIFESTS = ("season", "rally", "stage")
+LUA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "mod", "earth_rally", "lua", "ge",
+                   "extensions")
+# (weather.csv's columns, as textPack.lua reads them back: Sky and the hand-made ones first, then the real weather's)
+WX_COLUMNS = ("SS", "Stage", "Sky", "Code", "Daylight", "Cloud %", "Low cloud %", "Mid cloud %", "High cloud %",
+              "Wind m/s", "Gust m/s", "Wind from", "Temp C", "Sea level temp C", "Dew C", "Rain mm/h", "Snow cm/h",
+              "Fog", "Thunder", "Visibility m", "Cloud base m", "Cloud base above ground m", "Elevation m",
+              "Pressure hPa")
+SKY_WORDS = ((0, "clear"), (1, "mainly clear"), (2, "partly cloudy"), (3, "overcast"), (45, "fog"), (48, "fog"),
+             (51, "drizzle"), (53, "drizzle"), (55, "drizzle"), (56, "drizzle"), (57, "drizzle"), (61, "light rain"),
+             (63, "rain"), (65, "heavy rain"), (66, "light rain"), (67, "heavy rain"), (71, "light snow"),
+             (73, "snow"), (75, "heavy snow"), (77, "light snow"), (80, "light rain"), (81, "rain"),
+             (82, "heavy rain"), (85, "light snow"), (86, "heavy snow"), (95, "thunder"), (96, "thunder"),
+             (99, "thunder"))
 
 
 # --------------------------------------------------------------------------------------------------- weather
@@ -317,10 +334,219 @@ def fill_event(ev, starts, fetcher, today, force=False, say=print):
     return got, had, none, future
 
 
+# --------------------------------------------------------------------------------------------------- hand-made packs
+
+def text_root(folder):
+    """The folder holding a hand-made pack's season.txt / rally.txt (the folder, or the one folder inside it), else
+    None."""
+    def has(d):
+        for n in os.listdir(d):
+            stem = n.lower()
+            while stem.endswith(".txt"):
+                stem = stem[:-4]
+            if stem in ("season", "rally") and os.path.isfile(os.path.join(d, n)):
+                return True
+        return False
+    if has(folder):
+        return folder
+    inner = [n for n in os.listdir(folder) if not n.startswith(".") and n != "__MACOSX"]
+    if len(inner) == 1 and os.path.isdir(os.path.join(folder, inner[0])) and has(os.path.join(folder, inner[0])):
+        return os.path.join(folder, inner[0])
+    return None
+
+
+def text_rallies(root):
+    """[(name, map path, SS rows, weather.csv path)] of a hand-made pack: read by textPack.lua, as the game reads it."""
+    try:
+        import lupa.luajit21 as lj
+    except ImportError:
+        raise SystemExit("reading rally.txt needs lupa: pip install lupa")
+    lua = lj.LuaRuntime()
+    lua.execute("package.path = ... .. '/?.lua;' .. package.path", LUA.replace("\\", "/"))
+    lua.execute("function log() end")
+    files = []
+    for d, _, names in os.walk(root):
+        for n in names:
+            files.append(os.path.relpath(os.path.join(d, n), root).replace(os.sep, "/"))
+    files.sort()
+
+    def read(rel):
+        try:
+            with open(os.path.join(root, rel), "rb") as f:
+                return f.read()
+        except OSError:
+            return None
+    make = lua.eval(r"""function(all, read)
+      local R = require('earthRally/textRead')
+      local imp = require('earthRally/importer')
+      local tp = require('earthRally/textPack')
+      local list = {}
+      for i = 1, #all do list[i] = all[i] end
+      local ctx = { all = list,
+        readText = function(rel) return R.text(read(rel)) end,
+        parseMap = function(rel)
+          local s = read(rel)
+          if not s then return nil, 'no ' .. rel end
+          if rel:lower():match('%.kmz$') then return nil, 'a .kmz: save the map as .kml for this tool' end
+          local ok, p = pcall(imp.parse, s, rel:lower():match('%.gpx$') and 'gpx' or 'kml')
+          if ok then return p end
+          return nil, tostring(p)
+        end }
+      local m, _, why = tp.read(ctx)
+      if not m then return nil, why and why.what or 'no rally.txt or season.txt' end
+      local out = {}
+      local specs = m.kind == 'season' and m.data.rounds or { m.data }
+      for _, spec in ipairs(specs) do
+        local ev = spec.event and m.virtual[spec.event]
+        if spec.map and ev then
+          local rows, passes = {}, {}
+          for _, r in ipairs(ev.itinerary or {}) do
+            if r.type == 'SS' then
+              rows[#rows + 1] = { control = r.control, stage = r.stage, date = r.date, first_car = r.first_car,
+                written = r.weather ~= nil }
+              passes[r.control] = { stage = r.stage, run = r.run }
+            end
+          end
+          local dir = spec.event:gsub('#event$', ''):match('^(.*)/[^/]*$') or ''
+          local wxRel = spec.weatherFile or ((dir ~= '' and (dir .. '/') or '') .. 'weather.csv')
+          -- (what weather.csv has now, read as the game reads it: kept as it is unless fetched again)
+          local have, notes, wprobs = {}, {}, {}
+          local text = ctx.readText(wxRel)
+          if text then
+            local names = {}
+            local parsed = ctx.parseMap(spec.map)
+            for i, l in ipairs(parsed and parsed.lines or {}) do names[i] = l.name end
+            have = tp._readWeather(text, wxRel, passes, names, wprobs)
+            for ln in (text .. '\n'):gmatch('([^\n]*)\n') do
+              if ln:match('^%s*#') and not ln:find('Open-Meteo', 1, true) then notes[#notes + 1] = ln end
+            end
+          end
+          local said = {}
+          for _, p in ipairs(wprobs) do
+            said[#said + 1] = (p.line and ('line ' .. p.line .. ': ') or '') .. tostring(p.what)
+          end
+          -- (weather written in rally.txt itself, not weather.csv: left to it)
+          for _, row in ipairs(rows) do row.inRally = row.written and not have[row.control] or nil end
+          out[#out + 1] = { name = spec.name or spec.map, map = spec.map, rows = rows, wx = wxRel, have = have,
+            notes = notes, problems = said, timezone = ev.event and ev.event.timezone or nil }
+        end
+      end
+      return out, nil
+    end""")
+    res, why = make(lua.table_from(files), lambda rel: read(rel))
+    if res is None:
+        raise SystemExit(f"{root}: {why}")
+    def py(t):
+        if lj.lua_type(t) != "table":
+            return t
+        keys = list(t.keys())
+        if keys and all(isinstance(k, int) for k in keys):
+            return [py(t[k]) for k in sorted(keys)]
+        return {k: py(v) for k, v in t.items()}
+    out = []
+    for i in range(1, len(res) + 1):
+        r = res[i]
+        rows = []
+        for j in range(1, len(r.rows) + 1):
+            x = r.rows[j]
+            rows.append({"type": "SS", "control": x.control, "stage": x.stage, "date": x.date, "first_car": x.first_car,
+                         "in_rally": bool(x.inRally)})
+        ev = {"event": {"timezone": r.timezone} if r.timezone else {}, "itinerary": rows}
+        have = py(r.have) or {}
+        notes = py(r.notes) or []
+        probs = py(r.problems) or []
+        out.append((r.name, os.path.join(root, r.map), ev, os.path.join(root, r.wx), have if isinstance(have, dict)
+                    else {}, notes if isinstance(notes, list) else [], probs if isinstance(probs, list) else []))
+    return out
+
+
+def sky_word(code):
+    best = None
+    for c, w in SKY_WORDS:
+        if c == code:
+            return w
+        if c <= code:
+            best = w
+    return best or "overcast"
+
+
+
+
+def weather_row(control, stage, w):
+    def n(v):
+        return "" if v is None else (f"{v:g}" if isinstance(v, (int, float)) and not isinstance(v, bool) else str(v))
+    cover, wind = w.get("cover") or {}, w.get("wind") or {}
+    return {"SS": control, "Stage": stage, "Sky": sky_word(int(w.get("code", 3))), "Code": n(w.get("code")),
+            "Daylight": "" if w.get("isDay") is None else ("yes" if w["isDay"] else "no"), "Cloud %": n(cover.get("total")),
+            "Low cloud %": n(cover.get("low")), "Mid cloud %": n(cover.get("mid")), "High cloud %": n(cover.get("high")),
+            "Wind m/s": n(wind.get("ms")), "Gust m/s": n(wind.get("gustMs")), "Wind from": n(wind.get("fromDeg")),
+            "Temp C": n(w.get("tempC")), "Sea level temp C": n(w.get("slTempC")), "Dew C": n(w.get("dewC")),
+            "Rain mm/h": n(w.get("rainMmH")), "Snow cm/h": n(w.get("snowCmH")), "Fog": "yes" if w.get("fog") else "no",
+            "Thunder": "yes" if w.get("thunder") else "no", "Visibility m": n(w.get("visM")),
+            "Cloud base m": n(w.get("baseM")), "Cloud base above ground m": n(w.get("baseAglM")),
+            "Elevation m": n(w.get("elevM")), "Pressure hPa": n(w.get("pressureHpa"))}
+
+
+def run_text(root, force, fetcher, today, say):
+    """A hand-made pack: weather.csv written beside each rally.txt. Returns {rally name: rows given weather}."""
+    import csv
+    import io
+    counts = {}
+    for name, map_path, ev, wx_path, have, notes, probs in text_rallies(root):
+        say(f"{name}:")
+        if probs:
+            # (a row the game can't read would be lost on rewriting: the file is left as it is until it is put right)
+            say(f"  {os.path.basename(wx_path)} has rows the game can't read; fix them first (nothing written):")
+            for p in probs:
+                say(f"    {p}")
+            counts[name] = 0
+            continue
+        stage_of = {r["control"]: r.get("stage") or "" for r in ev["itinerary"]}
+        # (rows already in weather.csv, as the game reads them: kept, and count as had, unless --force)
+        old = {c: weather_row(c, stage_of.get(c, ""), w) for c, w in have.items()}
+        for row in ev["itinerary"]:
+            if not force and row["control"] in old:
+                row["weather"] = {"kept": True}
+            elif row.get("in_rally"):
+                row["weather"] = {"kept": True}      # (written in rally.txt by hand: that one is used, always)
+        got, had, none, future = fill_event(ev, stage_starts(map_path), fetcher, today, force, say)
+        if future:
+            say("  still in the future: no weather to store yet (the game keeps the player's own)")
+        if got:
+            by = {}
+            for row in ev["itinerary"]:
+                w = row.get("weather")
+                if w and not w.get("kept"):
+                    by[row["control"]] = weather_row(row["control"], row.get("stage") or "", w)
+            merged = dict(old)
+            merged.update(by)
+            order = [r["control"] for r in ev["itinerary"] if r["control"] in merged]
+            order += [k for k in merged if k not in order]
+            buf = io.StringIO()
+            for ln in notes or ["# EARTH RALLY - WEATHER: each stage's weather. A stage that isn't listed has the "
+                                "player's own weather."]:
+                buf.write(ln + "\n")
+            buf.write(f"# Weather data by {ev.get('weather_source', CREDIT)} (CC BY 4.0)\n")
+            wr = csv.DictWriter(buf, fieldnames=list(WX_COLUMNS), extrasaction="ignore", lineterminator="\n")
+            wr.writeheader()
+            for k in order:
+                wr.writerow({c: merged[k].get(c, "") for c in WX_COLUMNS})
+            with open(wx_path, "w", encoding="utf-8", newline="") as f:
+                f.write(buf.getvalue())
+        say(f"  {got} stages given weather" + (f", {had} had it already" if had else "")
+            + (f", {none} without" if none else ""))
+        counts[name] = got
+    say(f"{fetcher.requests} requests")
+    return counts
+
+
 def run(folder, force=False, fetcher=None, today=None, say=print):
     """Every event file of the pack given its weather. Returns {rally name: rows given weather}."""
     fetcher = fetcher or Fetcher()
     today = today or dt.date.today()
+    troot = text_root(folder)
+    if troot:
+        return run_text(troot, force, fetcher, today, say)
     root, _, kind, data = pack_root(folder)
     counts = {}
     for name, map_path, ev_path in rallies_of(root, kind, data):

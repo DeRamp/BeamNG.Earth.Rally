@@ -1,0 +1,62 @@
+EARTH RALLY - IMPORT REPORT
+My Rally (folder)  ·  read 26 Nov 2026, 06:02
+The game writes this file each time it reads this. Editing it changes nothing.
+
+================================================================================================
+IMPORTED WITH 5 PROBLEMS
+It's in the menu. Fix the problems below and the game reads it again by itself.
+================================================================================================
+
+
+PROBLEMS
+------------------------------------------------------------------------------------------------
+
+1. rally.json
+   rally.json and rally.txt are both in the folder.
+   Only rally.txt was read. Delete or rename rally.json to stop this message.
+
+2. rally.txt, line 30:  Photo: photo.jpg
+   There is no picture photo.jpg in the folder.
+   Put it in the folder (.png or .jpg), or delete this line.
+
+3. rally.txt, line 49:  At: -10.1133, 60.0420
+   This looks like longitude first. Read as 60.0420, -10.1133 (Ridge Hotel).
+   If that's right, swap them in the file to stop this message.
+
+4. rally.txt, line 78:  SS4  Kilo Hil
+   There is no stage called "Kilo Hil" in the map. Read as "Kilo Hill".
+   If that's right, fix the spelling to stop this message.
+
+5. results.csv, line 12:  SS2,Kilo Hill,2,B. Okafor,O4WD,National,5.20.3
+   "5.20.3" is not a time. Write it as 5:20.3 (minutes:seconds) or seconds.
+   This crew is left out of SS2's leaderboard.
+
+
+
+WHAT THE GAME FOUND
+------------------------------------------------------------------------------------------------
+
+My Forest Rally
+  Dates          7 Feb 2031 - 8 Feb 2031
+  Town           Fernvale
+  Map            my stages.kml: 3 stage lines
+  Stages         Meaford Mills 1.9 km SS1, SS3 (cancelled)
+                 Kilo Hill 1.4 km SS2, SS4
+                 Long Gap 2.5 km SS5, SS6 (power stage)
+  Running order  Start at Fernvale Park
+                 Day 1 SS1 · SS2 · Service A (Fernvale Park) · SS3 · SS4
+                 Day 2 SS5 · Service B (Fernvale Park) · SS6
+  Timed          No: road sections are not timed
+  Results        3 crews on 3 stages
+  Weather        4 stages
+  Pictures       cover, logo
+  Rules          False start 10 / 60 / 180 s, late 10 s per minute, early 60 s per minute, max
+                 lateness 30 min, start interval 2 min
+
+
+READ BUT NOT USED
+------------------------------------------------------------------------------------------------
+
+1. rally.txt, line 31:  Organiser: Fernvale Motor Club
+   Not something the game uses: skipped.
+
