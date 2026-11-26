@@ -443,13 +443,81 @@ end
 M.KEEP_DAMAGE_S = 300
 local keepWrap = nil      -- { orig, untilT }
 local wallClock = rawget(os, 'clockhp') or os.clock
+
+-- (#80) BeamNG.Earth's own teleport (beamngEarth/core.lua, commitTeleport) lifts the car to the new place with
+-- setClusterPosRelRot(-1, ...): cluster -1 puts every node back where the car was built -- its dents gone, its
+-- broken-off parts still missing -- before any safeTeleport is made, so the wrapper above never sees it. While
+-- damage is kept, that file alone (its caller checked) is handed a stand-in for the player's car whose cluster -1
+-- moves go by the reference node, as BeamNG.Earth's own setCarAt does: the car moved as it is. Everything else gets
+-- the real car. Put back with the wrapper. STOPGAP until BeamNG.Earth's teleport can keep damage upstream.
+M.SHAPE_CALLER = 'beamngEarth/core.lua'
+local shapeWrap = nil     -- { orig = getPlayerVehicle, fn }
+local standIns = setmetatable({}, { __mode = 'k' })
+local function realCar(v) return type(v) == 'table' and rawget(v, '_real') or v end
+local function standIn(veh)
+  local s = standIns[veh]
+  if s then return s end
+  s = setmetatable({ _real = veh }, { __index = function(t, k)
+    local f = veh[k]
+    if type(f) ~= 'function' then return f end
+    local m
+    if k == 'setClusterPosRelRot' then
+      m = function(_, cid, x, y, z, rx, ry, rz, rw)
+        if cid ~= -1 then return veh:setClusterPosRelRot(cid, x, y, z, rx, ry, rz, rw) end
+        local ref = veh:getRefNodeId()
+        local rel = veh:getNodePosition(ref)
+        if shapeWrap then shapeWrap.caught = (shapeWrap.caught or 0) + 1 end
+        log('I', logTag, 'keep damage: BeamNG.Earth teleport moved the car as it is (its shape kept)')
+        return veh:setClusterPosRelRot(ref, x + rel.x, y + rel.y, z + rel.z, 0, 0, 0, 1)
+      end
+    elseif k == 'applyClusterVelocityScaleAdd' then
+      m = function(_, cid, ...)
+        if cid == -1 then cid = veh:getRefNodeId() end
+        return veh:applyClusterVelocityScaleAdd(cid, ...)
+      end
+    else
+      m = function(_, ...) return f(veh, ...) end
+    end
+    rawset(t, k, m)
+    return m
+  end })
+  standIns[veh] = s
+  return s
+end
+local function keepShape(on)
+  local dbg = rawget(_G, 'debug')
+  if not on then
+    if shapeWrap and rawget(_G, 'getPlayerVehicle') == shapeWrap.fn then _G.getPlayerVehicle = shapeWrap.orig end
+    shapeWrap = nil
+    return
+  end
+  local gpv = rawget(_G, 'getPlayerVehicle')
+  if type(gpv) ~= 'function' or not (dbg and dbg.getinfo) then return end
+  if shapeWrap and gpv == shapeWrap.fn then return end
+  local w = { orig = gpv }
+  w.fn = function(...)
+    local v = w.orig(...)
+    if v == nil then return v end
+    local okI, info = pcall(dbg.getinfo, 2, 'S')
+    local src = okI and info and info.source or ''
+    if src:find(M.SHAPE_CALLER, 1, true) then return standIn(v) end
+    return v
+  end
+  _G.getPlayerVehicle = w.fn
+  shapeWrap = w
+end
+M._standIn, M._realCar = standIn, realCar
+function M.shapeKept() return shapeWrap and shapeWrap.caught or 0 end
+
 function M.keepDamage(on)
   local sp = rawget(_G, 'spawn')
   if not on then
     if keepWrap and sp and sp.safeTeleport == keepWrap.fn then sp.safeTeleport = keepWrap.orig end
     keepWrap = nil
+    keepShape(false)
     return
   end
+  keepShape(true)
   if not (sp and type(sp.safeTeleport) == 'function') then
     if keepWrap then keepWrap.untilT = wallClock() + M.KEEP_DAMAGE_S end
     return
@@ -470,7 +538,8 @@ function M.keepDamage(on)
     return ok and id or nil
   end
   w.fn = function(veh, pos, rot, a, b, c, d, resetVehicle, ...)
-    local pv = getPlayerVehicle and getPlayerVehicle(0)
+    veh = realCar(veh)       -- (the stand-in BeamNG.Earth was handed: the game's own function gets the real car)
+    local pv = getPlayerVehicle and realCar(getPlayerVehicle(0))
     local pid, vid = pv and idOf(pv), veh and idOf(veh)
     local same = pv ~= nil and veh ~= nil and (pv == veh or (pid ~= nil and pid == vid))
     local on = wallClock() < w.untilT or (run and run.inRally) or false
