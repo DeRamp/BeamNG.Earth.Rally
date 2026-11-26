@@ -3,6 +3,23 @@
 Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/writing-standard.md). Downloads:
 [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
 
+## 1.10.1-alpha: the co-driver's calls (2026-11-26)
+
+Works with BeamNG.drive 0.40.6 · [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+.
+
+The co-driver's pacenotes are rebuilt from the road's real shape.
+
+### Changed
+* **Corner grades** come from the road's own radius, closer to a pro co-driver's notes.
+* Every bend you can see gets a call. One long bend is no longer called as a run of short corners.
+* **Crests** are found from the ground along the stage after **Auto recce**, not only from the map.
+* The first call says how far away its corner is. A stage that starts in a corner calls it.
+* A corner behind a crest is called with the crest.
+* The **Casual** co-driver grades corners as easy, medium and hard to match.
+
+### Fixed
+* A matched stage line that runs out and back along a side road no longer gets calls there.
+
 ## 1.10.0-alpha: the rally loop (2026-11-19)
 
 Works with BeamNG.drive 0.40.6 · [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+.

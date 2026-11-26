@@ -37,6 +37,7 @@ function M.load(id, dir)
   zSnap.conformSplineGeometry = function(spline, _useRaycast, minNumDivisions)
     return geom.catmullRomFree(spline, minNumDivisions, nil, nil)
   end
+  M.openingM = nil           -- (the stage's own, set after the load: M.setOpening)
   local ok, res, why = pcall(r.loadMission, id, dir, nil, nil, { owner = 'external' })
   zSnap.conformSplineGeometry = original
   if not ok then return false, tostring(res) end
@@ -96,6 +97,7 @@ function M.notesOn(on)
   if rm and rm.setPacenoteProcessingEnabled then
     local ok = pcall(rm.setPacenoteProcessingEnabled, rm, on and true or false)
     log('I', logTag, 'co-driver: pacenotes ' .. (on and 'on' or 'off') .. (ok and '' or ' (the rally engine refused)'))
+    if on then M.applyOpening() end
   else
     log('W', logTag, 'co-driver: pacenotes ' .. (on and 'on' or 'off') .. ' asked, but no rally engine is loaded')
   end
@@ -136,11 +138,14 @@ function M.speaks()
   for name in pairs(ct.modifiers) do out[name] = true end
   for name in pairs(type(ct.modifierAliases) == 'table' and ct.modifierAliases or {}) do out[name] = true end
   local corner = type(ct.corner) == 'table' and ct.corner or {}
+  -- (its ladder: the most diameter of each grade but the last -- the step a note carries moves along this one)
+  local ladder = require('earthRally/pacenotes').ladderOf(type(corner.numbering) == 'table' and
+                                                           corner.numbering.intensity or nil)
   for _, key in ipairs({ 'shapes', 'shapeAliases', 'descriptors', 'descriptorAliases' }) do
     local prefix = key:find('^shape') and 'shape:' or 'descriptor:'
     for name in pairs(type(corner[key]) == 'table' and corner[key] or {}) do out[prefix .. name] = true end
   end
-  return out, style
+  return out, style, ladder
 end
 
 -- Stage the co-driver for a fresh run (after the car was put at the start line).
@@ -150,6 +155,117 @@ function M.resync()
     local ok, err = pcall(rm.resyncAfterTeleport, rm)
     if not ok then log('W', logTag, 'rally resync failed: ' .. tostring(err)) end
   end
+  M.applyOpening()
+end
+
+-- The first call says how far its corner is ("600 caution two right"): stageWriter.openingCall. The game clears
+-- every note's `before` field and fills in the distance calls itself (path.autofillDistanceCalls) whenever the rally
+-- engine builds its assets -- the stage's load, and a voice pack change (reloadVoicepackAssets); a resync after a
+-- teleport, a settings change or a reset leaves the field alone, but recompiles the note's words from it. So it is
+-- set after the load (M.setOpening) and set again on every resync and at GO (M.applyOpening: nothing done when it
+-- is there already). Said from the voice pack's audio for that distance, the same clip as a distance after a note
+-- (pacenote.audioItemsStructuredOffline: a phrase per word group, the distance one of them); a style with no distance
+-- calls (the casual voices) says nothing for it, as for every distance.
+M.BLOCKER = '#'           -- rallyUtil.autofill_blocker: a field the notebook's author fixed
+M.openingM = nil
+
+-- m: the metres from the start line to the first note's corner start (stageWriter's built.openingM), or nil: none.
+function M.setOpening(m)
+  M.openingM = m
+  return M.applyOpening()
+end
+
+-- The opening distance put on the loaded notebook's first note, if it is not there. True when it is there.
+function M.applyOpening()
+  local m = M.openingM
+  if not m then return false end
+  local writer = require('earthRally/stageWriter')
+  if not (m >= writer.OPENING_MIN_M) then return false end   -- (as openingCall: one at 80 m is said)
+  local rm = M.manager()
+  local nb = rm and rm.notebook
+  local ok, pn = pcall(function() return nb.pacenotes.sorted[1] end)
+  if not ok or type(pn) ~= 'table' or type(pn.setNoteFieldBefore) ~= 'function' or
+     type(pn.getNoteFieldBefore) ~= 'function' then
+    return false
+  end
+  -- (the voice's own distance rules, as autofill reads them: its text compositor's style)
+  local rules = nil
+  local okC, comp = pcall(nb.getTextCompositor, nb)
+  if okC and type(comp) == 'table' then
+    if type(comp.distanceCallsEnabled) == 'function' then
+      local okE, on = pcall(comp.distanceCallsEnabled, comp)
+      if okE and on == false then return false end
+    end
+    if type(comp.getConfig) == 'function' then
+      local okG, cfg = pcall(comp.getConfig, comp)
+      if okG and type(cfg) == 'table' and type(cfg.distance) == 'table' then rules = cfg.distance end
+    end
+  end
+  local okS, str = pcall(writer.openingCall, { openingM = m }, rules)
+  if not okS then str = writer.openingCall({ openingM = m }) end
+  if not str then return false end
+  -- (the words as the game's own compositor rounds them, where it can: the same as ours today, and not left behind
+  --  if a game update changes them)
+  if okC and type(comp) == 'table' and type(comp.distanceToString) == 'function' then
+    local okD, s = pcall(comp.distanceToString, comp, m)
+    if okD and type(s) == 'string' and s ~= '' then str = s end
+  end
+  local okB, cur = pcall(pn.getNoteFieldBefore, pn)
+  if okB and cur == M.BLOCKER then return false end
+  if okB and cur == str then return true end
+  local okW, err = pcall(function()
+    pn:setNoteFieldBefore(str, m)
+    -- (the words and audio the queue plays are compiled once and cached: compiled again with the distance)
+    if type(pn.clearCachedFgData) == 'function' then pn:clearCachedFgData() end
+    if type(pn.asCompiled) == 'function' then pn:asCompiled() end
+  end)
+  if not okW then
+    log('W', logTag, 'co-driver: opening distance not set: ' .. tostring(err))
+    return false
+  end
+  log('I', logTag, string.format('co-driver: the first call opens with "%s" (%.0f m to its corner)', str, m))
+  return true
+end
+
+-- The pacenote rebuild's self-check (2026-11-20, step 6). Each corner's grade is ours (pacenotes.fitRadius), and the
+-- note carries the step that makes the game's own measurement say it -- worked out offline against the game's
+-- rally Lua of 0.40.5 (the circle through the note's ends and the road half way, on its one to six ladder). If a
+-- game update measures differently, every corner is called a grade or more out and nothing else shows it. So after
+-- the load, each corner note's measurement is read back from the engine (its structuredForProjection, what its
+-- compositors say the note from) and graded as we graded the circle: { checked, same, far }, or nil when the
+-- engine's notes cannot be read. Fewer than GRADE_CHECK_SHARE the same, over GRADE_CHECK_MIN or more, is a mismatch.
+-- far: the corners the game grades two or more from our grade ({ n, ours, game }), which the step cannot bring back.
+-- Log only until it has been checked in game (it may never see a measurement at load, or flag near a ladder's edge).
+M.GRADE_CHECK_MIN = 5
+M.GRADE_CHECK_SHARE = 0.7
+function M.gradeCheck()
+  local rm = M.manager()
+  local nb = rm and rm.notebook
+  local ok, list = pcall(function() return nb.pacenotes.sorted end)
+  if not ok or type(list) ~= 'table' then return nil end
+  local pacenotes = require('earthRally/pacenotes')
+  local checked, same, far = 0, 0, {}
+  for n, note in ipairs(list) do
+    local m = type(note) == 'table' and type(note.metadata) == 'table' and note.metadata.earthRally
+    if type(m) == 'table' and type(m.circleR) == 'number' and m.grade and
+       type(note.structuredForProjection) == 'function' then
+      local okP, proj = pcall(note.structuredForProjection, note)
+      local corner = nil
+      if okP and type(proj) == 'table' and type(proj.items) == 'table' then
+        for _, it in pairs(proj.items) do
+          if type(it) == 'table' and it.type == 'corner' then corner = it break end
+        end
+      end
+      if corner and type(corner.intensity) == 'number' then
+        checked = checked + 1
+        local g = pacenotes.gradeOf(corner.intensity)
+        if g == pacenotes.gradeOf(2 * m.circleR) then same = same + 1 end
+        if type(m.grade) == 'number' and math.abs(g - m.grade) >= 2 then far[#far + 1] = { n, m.grade, g } end
+      end
+    end
+  end
+  return { checked = checked, same = same, far = far,
+           mismatch = checked >= M.GRADE_CHECK_MIN and same < M.GRADE_CHECK_SHARE * checked }
 end
 
 return M

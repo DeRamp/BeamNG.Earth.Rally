@@ -2624,6 +2624,8 @@ end
 do
   local main = require('earthRally/main')
   local auto = require('earthRally/autoRecce')
+  -- (the windows here are answered with no frame between: every ray at once; the budget a frame is below)
+  auto.RAY_BUDGET = nil
   settings.reset()
   runner.abort(true)
   events.list(true)
@@ -2728,8 +2730,21 @@ do
   T.check(main.uiState().auto ~= nil, 'and the refusal does not lose the one still running')
   T.check(not main.uiAction('drive', 'test8', 'hill').ok, 'and no run while one is under way')
   T.check(not main.uiAction('recce', 'test8', 'hill').ok, 'and no recce either')
-  -- the progress moves as the windows come in
+  -- the progress moves as the windows come in; with more rays than a frame's budget, a window waits for the next
+  -- frame, the next window not yet asked for
+  auto.RAY_BUDGET = 1
+  local asked = #graph.pending
   table.remove(graph.pending, 1)()
+  local waited = main.uiState().auto
+  T.check(waited and waited.done == 0 and #graph.pending == asked - 1,
+    'more rays than a frame casts: the window waits for the next frame (' .. tostring(waited and waited.done) .. ')')
+  local frames = 0
+  while main.uiState().auto and main.uiState().auto.done == 0 and frames < 200 do
+    main.onUpdate(0.016, 0.016)
+    frames = frames + 1
+  end
+  T.check(frames > 1 and #graph.pending == asked, 'and is done a few frames on, the next asked (' .. frames .. ')')
+  auto.RAY_BUDGET = nil
   local p2 = main.uiState().auto
   T.check(p2 and p2.done == 1, 'a window answered: one done (' .. tostring(p2 and p2.done) .. ')')
   -- Stop
@@ -3235,6 +3250,7 @@ do
   local main = require('earthRally/main')
   local auto = require('earthRally/autoRecce')
   local rallyRun = require('earthRally/rallyRun')
+  auto.RAY_BUDGET = nil
   local geo_m = require('earthRally/geo').metres
   local line = event.stages[1].line
   local far = {}

@@ -465,6 +465,71 @@ def landmarks(np, roads, res, res_along, flags):
     return juncs, bridges
 
 
+FOLD_DEG, FOLD_TOL_M, FOLD_RETRACE_M, FOLD_MAX_M = 150.0, 4.0, 8.0, 600.0
+
+
+def _seg_dist(p, a, b):
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    l2 = dx * dx + dy * dy
+    t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2 if l2 > 1e-12 else 0.0
+    t = max(0.0, min(1.0, t))
+    return math.hypot(a[0] + dx * t - p[0], a[1] + dy * t - p[1])
+
+
+def fold_backs(pts):
+    """The indices of the points kept when the line's out-and-backs are dropped: the mod's geo.foldBacks, point for
+    point (a point turning FOLD_DEG or more is a fold; the way back retracing the way out within FOLD_RETRACE_M is
+    dropped, to where the line comes back within FOLD_TOL_M of a point before the fold, FOLD_MAX_M either side)."""
+    n = len(pts)
+    if n < 3:
+        return list(range(n))
+    cum = [0.0]
+    for a, b in zip(pts, pts[1:]):
+        cum.append(cum[-1] + math.hypot(b[0] - a[0], b[1] - a[1]))
+    cos_f = math.cos(math.radians(FOLD_DEG))
+    out = [0]
+
+    def retraces(oi, i, k0, k1):
+        for k in range(k0, k1 + 1):
+            leg = [pts[x] for x in out[oi:]] + [pts[i]]
+            if min(_seg_dist(pts[k], a, b) for a, b in zip(leg, leg[1:])) > FOLD_RETRACE_M:
+                return False
+        return True
+    i = 1
+    while i < n:
+        jumped = False
+        if i < n - 1:
+            # (from the last point kept that is not on top of this one)
+            p = next((pts[x] for x in reversed(out) if math.hypot(pts[i][0] - pts[x][0], pts[i][1] - pts[x][1]) > 0.05),
+                     pts[out[-1]])
+            ax, ay = pts[i][0] - p[0], pts[i][1] - p[1]
+            bx, by = pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]
+            la, lb = math.hypot(ax, ay), math.hypot(bx, by)
+            if la > 0.05 and lb > 0.05 and (ax * bx + ay * by) / (la * lb) <= cos_f:
+                found = None
+                for oi in range(len(out) - 1, -1, -1):
+                    a = out[oi]
+                    if cum[i] - cum[a] > FOLD_MAX_M:
+                        break
+                    best_d, best_j = FOLD_TOL_M, None
+                    for j in range(i + 1, n):
+                        if cum[j] - cum[i] > FOLD_MAX_M:
+                            break
+                        d = math.hypot(pts[j][0] - pts[a][0], pts[j][1] - pts[a][1])
+                        if d <= best_d:
+                            best_d, best_j = d, j
+                    if best_j is not None and retraces(oi, i, i + 1, best_j - 1):
+                        found = (oi, best_j)
+                if found:
+                    del out[found[0] + 1:]
+                    i = found[1]
+                    jumped = True
+        if not jumped:
+            out.append(i)
+            i += 1
+    return out
+
+
 def match_stage(np, md, mapcells, dem, stage, roadsmod=None):
     line = stage['line']
     frame = Frame(line[0][0], line[0][1])
@@ -555,6 +620,16 @@ def match_stage(np, md, mapcells, dem, stage, roadsmod=None):
         i = j
     if not out:
         return None
+    # (an out-and-back along a spur or past a junction dropped, as the mod's recce does: geo.foldBacks)
+    keep = fold_backs(out)
+    if len(keep) < len(out):
+        new_idx, k = [], 0
+        for idx in range(len(out)):
+            while k + 1 < len(keep) and keep[k + 1] <= idx:
+                k += 1
+            new_idx.append(k)
+        out = [out[i] for i in keep]
+        gap_idx = [(new_idx[a], new_idx[b]) for a, b in gap_idx]
     # the matched line every OUT_STEP_M, with heights; the points on a stretch with no road flagged (the mod calls no
     # notes there)
     out_cum = [0.0]

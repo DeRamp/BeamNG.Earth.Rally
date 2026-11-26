@@ -13,3 +13,5 @@ dist/
 # Claude Code: per-session worktrees and personal settings
 .claude/worktrees/
 .claude/settings.local.json
+# tools/pacenote_check results: positions on organisers' routes
+out/
