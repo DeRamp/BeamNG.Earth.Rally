@@ -41,7 +41,7 @@ loadScreen.moving = function() return runner.originMoving() or earth.rebasing() 
 local M = {}
 local logTag = 'earthRally'
 local logPausedSim         -- (below, by onUpdate)
-M.VERSION = '1.10.0-alpha'
+M.VERSION = '1.10.0-alpha+skiptransit'
 M.ROUTE = 'earthRally'            -- the menu page's route (ui/ui-vue/mods/earthRally/index.js)
 M.STREAM_FLOOR_S = 1             -- the HUD's streams sent when what they show changes, and at least this often
 M.STREAM_GAP_S = 0.1              -- ... the stock stream at most this often outside waitStart / running
@@ -1957,6 +1957,11 @@ function M.uiRallyAction(what, eventId, opts)
       -- (not when Go arrived at a stop at once -- one with no place on the map: its card is the next step)
       local card = okS and rallyRun.uiCard()
       if okS and menuOpen and not (card and card.phase == 'stop') and not loadScreen.active() then M.closeMenu() end
+      return go(okS, why)
+    elseif what == 'skip' then
+      -- (1.10.1: the time card's Skip transit -- the car taken there under the loading screen, the card shut)
+      local okS, why = rallyRun.skipTransit()
+      if okS and menuOpen and not loadScreen.active() then M.closeMenu() end
       return go(okS, why)
     elseif what == 'quit' or what == 'abandon' then
       -- (left while the stages are being got ready: the auto recce under way stops with it)

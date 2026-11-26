@@ -4299,6 +4299,67 @@ do
     teleports, moved = 0, false
   end
 
+  -- 3d1b. (1.10.1) Skip transit, the time card's button: the car taken there, a timed rally's clock on to the due
+  -- minute (checked in on time), never back (late stays late); at a stop, checked in as if driven in
+  do
+    local rally = require('earthRally/rally')
+    local rallyRun = require('earthRally/rallyRun')
+    local wt = require('earthRally/worldTime')
+    local parkLat, parkLon = atcLat - 8000 / 111195, full[11][2]
+    local t0 = wt.parse('2031-02-07', '08:00')
+    rallyRun.ui.openCard = function() end
+    core_input_actionFilter = { setGroup = function() end, addAction = function() end }
+    local function rframes(n) for _ = 1, n do rallyRun.update(0.1, 0) frames(1) end end
+    car.lat, car.lon, car.speed = parkLat, parkLon, 0
+    T.check(rallyRun.start('test19t', { mode = 'casual', class = 'L4WD' }), 'skip: started')
+    rframes(60)
+    local R = rallyRun.active()
+    T.check(not rallyRun.canSkip() and rallyRun.uiCard().canSkip == nil and not rallyRun.skipTransit(),
+      'skip: at the start, nothing to skip')
+    T.check(rallyRun.goNext() and runner.approaching(), 'skip: on the transit to SS1')
+    T.check(rallyRun.canSkip() and rallyRun.uiCard().canSkip == true, 'skip: the transit to SS1 can be skipped')
+    R.clock.t = t0 + 5 * 60
+    T.check(rallyRun.skipTransit() and not rallyRun.canSkip(), 'skip: SS1\'s transit skipped')
+    rframes(60)
+    T.check(geo_m(car.lat, car.lon, atcLat, atcLon) < 1, 'skip: the car at SS1\'s time control')
+    T.check(R.clock.t == t0 + 20 * 60, 'skip: the clock on to the due minute, 08:20 (' .. wt.hm(R.clock.t) .. ')')
+    T.check(rallyRun.askInfo() and rallyRun.askInfo().loadAsk and rallyRun.answerLoad('load'), 'skip: SS1 loaded')
+    rframes(10)
+    T.check(R.road.SS1 and R.road.SS1.kind == 'onTime' and R.road.SS1.penaltyS == 0,
+      'skip: checked in at SS1 on time (' .. tostring(R.road.SS1 and R.road.SS1.kind) .. ')')
+    pcall(runner.abort, true)
+    rallyRun.onFinished({ timeS = 200, stageS = 200, penaltyS = 0, startT = t0 + 20 * 60, finishT = t0 + 25 * 60 })
+    T.check(rallyRun.uiCard().phase == 'toStop' and rallyRun.canSkip(), 'skip: the drive to the final service can be skipped')
+    -- (already late: the clock stays, the lateness counted)
+    R.clock.t = t0 + 45 * 60 + 10
+    car.lat, car.lon = parkLat + 0.05, parkLon
+    T.check(rallyRun.skipTransit(), 'skip: the drive to the final service skipped')
+    rframes(60)
+    T.check(geo_m(car.lat, car.lon, parkLat, parkLon) < 1 and rally.over(R), 'skip: at the final service, the rally over')
+    T.check(R.clock.t == t0 + 45 * 60 + 10 and R.road.stop3 and R.road.stop3.kind == 'late' and R.road.stop3.min == 5,
+      'skip: late already: the clock not put back, checked in 5 min late (' .. tostring(R.road.stop3 and R.road.stop3.kind) .. ')')
+    rallyRun.endRally()
+    rallyRun.abandon('test19t')
+    -- (Realistic, untimed: free, nothing missed, no Super Rally)
+    files['/earthRally/events/test19n.json'] = { format = 1, id = 'test19n', name = 'Test Rally 19N', stages = ev.stages,
+      itinerary = { { ss = 'SS1', stage = 'hill', run = 1, day = 1, km = 3 }, { ss = 'SS2', stage = 'hill', run = 2, day = 1, km = 3 } },
+      rallyStops = {}, rallyStart = { name = 'Square', lat = parkLat, lon = parkLon } }
+    files['/earthRally/matched/test19n__hill.json'] = { format = 1, points = recFrom }
+    events.list(true)
+    car.lat, car.lon, car.speed = parkLat, parkLon, 0
+    T.check(rallyRun.start('test19n', { mode = 'realistic', class = 'L4WD' }), 'skip realistic: started')
+    rframes(60)
+    R = rallyRun.active()
+    T.check(rallyRun.goNext() and rallyRun.skipTransit(), 'skip realistic: SS1\'s transit skipped')
+    rframes(60)
+    T.check(geo_m(car.lat, car.lon, atcLat, atcLon) < 1 and (R.missed or 0) == 0 and not R.superRally
+      and rally.current(R).ss == 'SS1' and rallyRun.askInfo() and rallyRun.askInfo().loadAsk,
+      'skip realistic: at SS1\'s time control, nothing missed, asked to load')
+    core_input_actionFilter = nil
+    rallyRun.abandon('test19n')
+    teleports, moved = 0, false
+  end
+
   -- 3d2. (1.7.2) Stop while a full rally gets its stages ready stops them all, through the real prep: the owner
   -- pressed Stop once a stage before, as the next started a frame later. The prep ends at once with the ending
   -- those presses reached -- the stages with no line held out, the rally going on -- and says so; with no stage
