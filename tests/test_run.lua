@@ -4361,6 +4361,29 @@ do
       'skip: late already: the clock not put back, checked in 5 min late (' .. tostring(R.road.stop3 and R.road.stop3.kind) .. ')')
     rallyRun.endRally()
     rallyRun.abandon('test19t')
+    -- (a stage with no ATC: loaded at its start, no check-in card -- the clock on as the car is there)
+    local flat = { id = 'flat', name = 'Flat', lengthM = st.lengthM, radiusM = st.radiusM, centre = st.centre,
+      controls = { start = st.controls.start, ff = st.controls.ff }, line = st.line }
+    files['/earthRally/events/test19s.json'] = { format = 1, id = 'test19s', name = 'Test Rally 19S', stages = { flat },
+      itinerary = { { ss = 'SS1', stage = 'flat', run = 1, day = 1, km = 3, latenessMin = 10, outDate = '2031-02-07',
+        outAt = '08:00', outTargetMin = 20 } },
+      rallyStops = {}, rallyStart = { name = 'Park', lat = parkLat, lon = parkLon },
+      timing = { timezone = 'America/Chicago', start = { date = '2031-02-07', time = '08:00' } } }
+    files['/earthRally/matched/test19s__flat.json'] = { format = 1, points = recFrom }
+    events.list(true)
+    car.lat, car.lon, car.speed = parkLat, parkLon, 0
+    T.check(rallyRun.start('test19s', { mode = 'casual', class = 'L4WD' }), 'skip no ATC: started')
+    rframes(60)
+    R = rallyRun.active()
+    T.check(R.timed and rallyRun.goNext() and runner.approaching(), 'skip no ATC: on the transit to SS1')
+    R.clock.t = t0 + 5 * 60
+    T.check(rallyRun.skipTransit(), 'skip no ATC: skipped')
+    rframes(60)
+    T.check(geo_m(car.lat, car.lon, st.controls.start.lat, st.controls.start.lon) < 1 and R.clock.t == t0 + 20 * 60,
+      'skip no ATC: at the start, the clock on to 08:20 (' .. wt.hm(R.clock.t) .. ')')
+    pcall(runner.abort, true)
+    rallyRun.endRally()
+    rallyRun.abandon('test19s')
     -- (Realistic, untimed: free, nothing missed, no Super Rally)
     files['/earthRally/events/test19n.json'] = { format = 1, id = 'test19n', name = 'Test Rally 19N', stages = ev.stages,
       itinerary = { { ss = 'SS1', stage = 'hill', run = 1, day = 1, km = 3 }, { ss = 'SS2', stage = 'hill', run = 2, day = 1, km = 3 } },

@@ -256,7 +256,9 @@ rallyRun.ui.loading = function(what, item, stage, opts)
     -- (a skipped transit to a stage: the car at its board, "Load the stage?" next -- no time card over it)
     done = function()
       if not rallyRun.active() then return end
-      if opts and opts.noCard then if menuOpen then M.closeMenu() end else M.openMenu('timecard') end
+      -- (... and only with its transit armed there: one that failed keeps its card, and says why)
+      if opts and opts.noCard and runner.approaching() then if menuOpen then M.closeMenu() end
+      else M.openMenu('timecard') end
     end })
   showLoading('timecard')
 end

@@ -1026,7 +1026,10 @@ local function goToStageStart(it, skip)
   local function arm()
     local okT, whyT = armTransit()
     if not okT then say(tostring(whyT), 6, 'warning', R.name) end
-    if skip and okT then skipFor = it end
+    -- (a stage with no ATC to check in at -- loaded at its start, runner.arrivalPoint: the clock on now)
+    if skip and okT then
+      if stage and select(3, runner.arrivalPoint(stage)) == 'ATC' then skipFor = it else skipClock() end
+    end
     if (not skip or not okT) and M.ui.openCard then M.ui.openCard() end
   end
   local at = { kind = 'stageStart', label = startLabel(it), name = stage and stage.name or nil }
@@ -1309,7 +1312,7 @@ function M.start(id, opts)
   if not r then return false, why end
   if picked and settings.get('rallyTraffic') ~= picked then pcall(settings.set, 'rallyTraffic', picked) end
   if question then pcall(runner.askLayout, false) end
-  R, card, recoveredAt, question, move, toStop = r, nil, nil, nil, nil, nil
+  R, card, recoveredAt, question, move, toStop, skipFor = r, nil, nil, nil, nil, nil, nil
   savedResults = nil
   -- (the rally saved before is replaced now, as the start screen says, not only once the car is at the start)
   local t0 = M.readFile(id)
@@ -1329,6 +1332,7 @@ end
 -- Back to the rally saved for it, at its last service (or its start). Returns ok, why.
 function M.resume(id)
   if R and not R.done and R.eventId ~= id then return false, 'another rally is under way: leave it first' end
+  skipFor = nil
   local t = M.readFile(id)
   if not t.current then return false, 'there is no rally saved for this one' end
   if not load(id) then return false, 'that rally is not on this computer any more' end
@@ -1412,6 +1416,7 @@ end
 
 -- Leave the rally (continue later): BeamNG's recovery back, the run stopped. The save stays at its last service.
 function M.quit()
+  skipFor = nil
   if not R then return true end
   -- (Realistic, timed, left on a road section: the clock as it is now kept with the loop, so a Continue checks in at
   -- the next stop with the lateness so far)
