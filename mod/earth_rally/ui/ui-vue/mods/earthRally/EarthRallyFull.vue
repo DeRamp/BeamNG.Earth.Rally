@@ -194,7 +194,7 @@
               <div v-else-if="c.transit">To {{ c.transit.name }}<template v-if="c.transit.distM != null"> · {{ len(c.transit.distM) }}</template>
                 <span v-if="c.transit.weather" class="er-bwx"><svg viewBox="0 0 24 24" v-html="wxIcon(c.transit.weather)"></svg>{{ wxText(c.transit.weather) }}</span></div>
               <div class="er-muted er-small">Follow the arrows.<template v-if="c.transit && c.transit.due"> Late costs a transit penalty for each minute.</template></div>
-              <!-- (1.10.1) skip the drive: taken there, checked in on time -->
+              <!-- (+skiptransit) skip the drive: taken there, checked in on time -->
               <div v-if="c.canSkip" class="er-btns">
                 <BngButton :accent="ACCENTS.outlined" @click="skipTransit">Skip transit</BngButton>
               </div>

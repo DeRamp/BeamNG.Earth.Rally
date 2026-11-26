@@ -4299,7 +4299,7 @@ do
     teleports, moved = 0, false
   end
 
-  -- 3d1b. (1.10.1) Skip transit, the time card's button: the car taken there, a timed rally's clock on to the due
+  -- 3d1b. (+skiptransit) Skip transit, the time card's button: the car taken there, a timed rally's clock on to the due
   -- minute (checked in on time), never back (late stays late); at a stop, checked in as if driven in
   do
     local rally = require('earthRally/rally')
@@ -4319,11 +4319,20 @@ do
     T.check(rallyRun.goNext() and runner.approaching(), 'skip: on the transit to SS1')
     T.check(rallyRun.canSkip() and rallyRun.uiCard().canSkip == true, 'skip: the transit to SS1 can be skipped')
     R.clock.t = t0 + 5 * 60
+    -- (the teleport fails: no skip -- said, the clock as it was, the transit armed again)
+    local tp = beamngEarth_api.teleport
+    beamngEarth_api.teleport = function() return false end
+    local okF, whyF = rallyRun.skipTransit()
+    beamngEarth_api.teleport = tp
+    rframes(5)
+    T.check(not okF and whyF and R.clock.t == t0 + 5 * 60 and runner.approaching() and rallyRun.canSkip(),
+      'skip: the teleport failed: not skipped (' .. tostring(whyF) .. '), the transit armed again')
     T.check(rallyRun.skipTransit() and not rallyRun.canSkip(), 'skip: SS1\'s transit skipped')
     rframes(60)
     T.check(geo_m(car.lat, car.lon, atcLat, atcLon) < 1, 'skip: the car at SS1\'s time control')
-    T.check(R.clock.t == t0 + 20 * 60, 'skip: the clock on to the due minute, 08:20 (' .. wt.hm(R.clock.t) .. ')')
+    T.check(not rallyRun.canSkip(), 'skip: at the board, no skip offered')
     T.check(rallyRun.askInfo() and rallyRun.askInfo().loadAsk and rallyRun.answerLoad('load'), 'skip: SS1 loaded')
+    T.check(R.clock.t == t0 + 20 * 60, 'skip: the clock on to the due minute at the check-in, 08:20 (' .. wt.hm(R.clock.t) .. ')')
     rframes(10)
     T.check(R.road.SS1 and R.road.SS1.kind == 'onTime' and R.road.SS1.penaltyS == 0,
       'skip: checked in at SS1 on time (' .. tostring(R.road.SS1 and R.road.SS1.kind) .. ')')
@@ -4332,7 +4341,19 @@ do
     T.check(rallyRun.uiCard().phase == 'toStop' and rallyRun.canSkip(), 'skip: the drive to the final service can be skipped')
     -- (already late: the clock stays, the lateness counted)
     R.clock.t = t0 + 45 * 60 + 10
-    car.lat, car.lon = parkLat + 0.05, parkLon
+    -- (near the stop: no skip; far: one)
+    car.lat, car.lon, car.speed = parkLat - 0.001, parkLon, 10
+    rframes(6)
+    T.check(not rallyRun.canSkip(), 'skip: 110 m from the final service, no skip offered')
+    car.lat, car.lon, car.speed = parkLat + 0.05, parkLon, 0
+    rframes(6)
+    -- (the teleport fails: nothing checked in, still driving there)
+    beamngEarth_api.teleport = function() return false end
+    okF = rallyRun.skipTransit()
+    beamngEarth_api.teleport = tp
+    T.check(not okF and R.road.stop3 == nil and rallyRun.uiCard().phase == 'toStop' and not rally.over(R),
+      'skip: the teleport to the stop failed: nothing checked in, still driving there')
+    rframes(3)
     T.check(rallyRun.skipTransit(), 'skip: the drive to the final service skipped')
     rframes(60)
     T.check(geo_m(car.lat, car.lon, parkLat, parkLon) < 1 and rally.over(R), 'skip: at the final service, the rally over')

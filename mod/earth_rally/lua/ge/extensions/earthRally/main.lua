@@ -227,7 +227,7 @@ local function closeAfter(ok, why)
 end
 
 -- (rallyRun's) a move or a stage loading in a full rally: the screen, then the time card or driving.
-rallyRun.ui.loading = function(what, item, stage)
+rallyRun.ui.loading = function(what, item, stage, opts)
   local r = rallyRun.active()
   if not r then return end
   local kick = r.name
@@ -253,7 +253,11 @@ rallyRun.ui.loading = function(what, item, stage)
       end
       return #steps + 1
     end,
-    done = function() if rallyRun.active() then M.openMenu('timecard') end end })
+    -- (a skipped transit to a stage: the car at its board, "Load the stage?" next -- no time card over it)
+    done = function()
+      if not rallyRun.active() then return end
+      if opts and opts.noCard then if menuOpen then M.closeMenu() end else M.openMenu('timecard') end
+    end })
   showLoading('timecard')
 end
 
@@ -1959,9 +1963,13 @@ function M.uiRallyAction(what, eventId, opts)
       if okS and menuOpen and not (card and card.phase == 'stop') and not loadScreen.active() then M.closeMenu() end
       return go(okS, why)
     elseif what == 'skip' then
-      -- (1.10.1: the time card's Skip transit -- the car taken there under the loading screen, the card shut)
+      -- (+skiptransit: the time card's Skip transit -- the car taken there under the loading screen; not over a card
+      -- the skip opened at once, a stop's or the rally's end)
       local okS, why = rallyRun.skipTransit()
-      if okS and menuOpen and not loadScreen.active() then M.closeMenu() end
+      local card = okS and rallyRun.uiCard()
+      if okS and menuOpen and not (card and (card.phase == 'stop' or card.done)) and not loadScreen.active() then
+        M.closeMenu()
+      end
       return go(okS, why)
     elseif what == 'quit' or what == 'abandon' then
       -- (left while the stages are being got ready: the auto recce under way stops with it)
