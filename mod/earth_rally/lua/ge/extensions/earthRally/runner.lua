@@ -450,18 +450,38 @@ function M.keepDamage(on)
     keepWrap = nil
     return
   end
-  if keepWrap or not (sp and type(sp.safeTeleport) == 'function') then
+  if not (sp and type(sp.safeTeleport) == 'function') then
     if keepWrap then keepWrap.untilT = wallClock() + M.KEEP_DAMAGE_S end
     return
   end
+  if keepWrap then
+    keepWrap.untilT = wallClock() + M.KEEP_DAMAGE_S
+    if sp.safeTeleport == keepWrap.fn then return end
+    -- (#80: the game's spawn.safeTeleport replaced since it was wrapped -- a reload: wrapped again, or nothing is kept)
+    log('W', logTag, 'keep damage: spawn.safeTeleport was replaced: wrapped again')
+    keepWrap = nil
+  end
   local orig = sp.safeTeleport
   local w = { orig = orig, untilT = wallClock() + M.KEEP_DAMAGE_S }
+  local function idOf(v)
+    local ok, id = pcall(function() return v:getId() end)
+    if ok and id then return id end
+    ok, id = pcall(function() return v:getID() end)
+    return ok and id or nil
+  end
   w.fn = function(veh, pos, rot, a, b, c, d, resetVehicle, ...)
     local pv = getPlayerVehicle and getPlayerVehicle(0)
-    local same = pv ~= nil and veh ~= nil and (pv == veh or select(2, pcall(function() return pv:getID() == veh:getID() end)) == true)
-    if same and (wallClock() < w.untilT or (run and run.inRally)) then
-      resetVehicle = false
+    local pid, vid = pv and idOf(pv), veh and idOf(veh)
+    local same = pv ~= nil and veh ~= nil and (pv == veh or (pid ~= nil and pid == vid))
+    local on = wallClock() < w.untilT or (run and run.inRally) or false
+    if same and on then
       w.caught = (w.caught or 0) + 1
+      if resetVehicle ~= false then log('I', logTag, 'keep damage: a set-down of the car kept its damage') end
+      resetVehicle = false
+    elseif resetVehicle ~= false then
+      -- (#80: why a reset went through -- the log of the next skip says)
+      log('I', logTag, string.format('keep damage: a set-down let through (player car %s, keeping %s)',
+        tostring(same), tostring(on)))
     end
     return orig(veh, pos, rot, a, b, c, d, resetVehicle, ...)
   end

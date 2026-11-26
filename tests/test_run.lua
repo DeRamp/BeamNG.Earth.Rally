@@ -4755,6 +4755,16 @@ do
   T.check(calls[2] and calls[2].reset == true, 'keepDamage: another car is reset as asked')
   runner.keepDamage(false)
   T.check(spawn.safeTeleport == plain and not runner.keepingDamage(), 'keepDamage off: the game\'s own function back')
+  -- (#80) the game's function replaced while on (a reload): asked again, it is wrapped again
+  runner.keepDamage(true)
+  spawn.safeTeleport = plain
+  runner.keepDamage(true)
+  local nc = #calls
+  spawn.safeTeleport(getPlayerVehicle(0), vec3(0, 0, 0), nil, nil, nil, false, nil, true)
+  T.check(spawn.safeTeleport ~= plain and calls[nc + 1] and calls[nc + 1].reset == false,
+    'keepDamage: the game\'s function replaced while on: wrapped again, the damage kept (#80)')
+  runner.keepDamage(false)
+  T.check(spawn.safeTeleport == plain, 'keepDamage off after the re-wrap: the game\'s own function back')
 
   local nRuns = #(events.results('test', 'hill').runs or {})
   anchor = { lat = 47.0, lon = -123.0 }

@@ -1045,7 +1045,8 @@ local function goToStageStart(it, skip)
         fok, placed, how = true, true, 'turned toward the start only'
       end
       log('I', logTag, 'rally: set down at ' .. startLabel(it) .. ': ' .. (fok and (placed and tostring(how or 'done')
-        or ('left where it landed (' .. tostring(how) .. ')')) or tostring(placed)))
+        or ('left where it landed (' .. tostring(how) .. ')')) or tostring(placed))
+        .. string.format(' (keep damage %s, %d set-down(s) kept)', tostring(runner.keepingDamage()), runner.keepCaught()))
     end
     local okT, whyT = armTransit()
     if not okT then say(tostring(whyT), 6, 'warning', R.name) end
