@@ -134,7 +134,6 @@ files[RA .. 'my stages.kml'] = forestKml
 local r1 = imp.scan()
 local d = find(r1, 'My Rally')
 if DEBUG then
-  for k, v in pairs(d or {}) do print(k, v) end
   for _, w in ipairs(d and (d.warnings or d.problems) or {}) do print('  W', pack.whyText(w)) end
 end
 T.check(d and d.ok and d.name == 'My Forest Rally' and d.stages == 3, 'the rally template imports as it ships')
@@ -145,7 +144,7 @@ local function pass(ss) for _, p in ipairs(ev.itinerary) do if p.ss == ss then r
 T.check(pass('SS3').stage == 'meaford-mills' and pass('SS3').run == 2, 'a stage listed again is its second run')
 T.check(pass('SS1').km == 10.46 and pass('SS3').km == 10.46 and pass('SS6').powerStage == true,
   'a stage block\'s Length on every pass; power stage')
-T.check(pass('SS5').day == 2 and pass('SS5').date == '2031-02-08', 'Day 2 and its date')
+T.check(pass('SS5').day == 2 and pass('SS5').date == '2031-02-08', 'Day 2, dated from Dates')
 T.check(ev.dates.from == '2031-02-07' and ev.place == 'Fernvale', 'dates and town')
 T.check(ev.rules.falseStartS[3] == 180 and ev.rules.lateSPerMin == 10 and ev.rules.startIntervalMin == 2,
   'rules under a Rules: heading')
@@ -154,26 +153,42 @@ T.check(#stops == 3 and stops[1].kind == 'service' and stops[1].after == 2 and s
   'a service at a place from the Places list')
 T.check(stops[2].kind == 'overnight' and stops[2].place.name == 'Ridge Hotel', 'the overnight')
 T.check(ev.rallyStart and ev.rallyStart.name == 'Fernvale Park', 'the rally starts at its Start')
+T.check(ev.timing == nil and pass('SS1').weather == nil and not jsonReadFile('/earthRally/boards/my-forest-rally.json'),
+  'as it ships: untimed, and its commented examples not used')
+local rep = written[RA .. 'import report.txt']
+T.check(rep and rep:find('\r\nIMPORTED\r\n', 1, true), 'the import report written in the folder')
+
+-- the template filled in: its examples taken in, and its timed running order used
+local function filled()
+  local t = template('My Rally/rally.txt')
+  t = t:gsub('\nRunning order:\n.-\n\n\n', '\n\n\n', 1)
+  t = t:gsub('\n#(\t)', '\n%1')
+  local head, tail = t:match('^(.*\n)(# Running order:.*)$')
+  return head .. tail:gsub('\n# ?', '\n'):gsub('^# ?', '')
+end
+files[RA .. 'rally.txt'] = filled()
+local f1 = find(imp.scan(), 'My Rally')
+if DEBUG then for _, w in ipairs(f1 and (f1.warnings or f1.problems) or {}) do print('  F', pack.whyText(w)) end end
+ev = jsonReadFile('/earthRally/events/my-forest-rally.json')
+stops = ev.rallyStops or {}
+T.check(f1 and f1.ok and #f1.warnings == 1 and has(f1.warnings, 'only for Regional'), 'the filled template: clean')
 T.check(ev.timing and ev.timing.start.time == '08:00' and ev.timing.timezone == 'Europe/London', 'timed: start')
 T.check(pass('SS1').firstCar == '08:23' and pass('SS1').targetMin == 20 and pass('SS1').latenessMin == 10, 'timed: SS1')
 T.check(pass('SS3').targetMin == 82 and pass('SS3').outAt == '09:40' and pass('SS3').inType == 'SVC_IN',
   'timed: after service')
-T.check(pass('SS6').targetMin == 100 and ev.timing.earlyFree.MTC_IN and ev.timing.earlyFree.RGC_IN, 'timed: SS6')
-T.check(stops[2].outAt == '08:00', 'timed: the overnight')
+T.check(pass('SS6').targetMin == 100, 'timed: a control only for Regional not counted')
+T.check(ev.timing.earlyFree.MTC_IN and ev.timing.earlyFree.RGC_IN and stops[2].outAt == '08:00', 'timed: the rest')
 T.check(pass('SS1').weather and pass('SS1').weather.code == 3 and pass('SS1').weather.cover.total == 90
   and pass('SS1').weather.wind.fromDeg == 250 and pass('SS1').weather.tempC == 13.6, 'weather in words: SS1')
-T.check(pass('SS2').weather.code == 61 and pass('SS6').weather.fog == true and pass('SS5').weather.visM == 3000
-  and pass('SS3').weather == nil, 'weather on each pass')
+T.check(pass('SS2').weather.code == 61 and pass('SS5').weather.visM == 3000 and pass('SS3').weather == nil,
+  'weather on each pass; visibility in km')
 local bd = jsonReadFile('/earthRally/boards/my-forest-rally.json')
 local function board(ss) for _, p in ipairs(bd and bd.passes or {}) do if p.ss == ss then return p end end end
 T.check(board('SS1') and #board('SS1').field == 3 and board('SS1').field[1][2] == 'A. Vance'
-  and board('SS1').field[1][1] == 399.4 and board('SS1').field[3][4] == 'L2WD', 'results pasted with tabs')
-T.check(board('SS2') and #board('SS2').field == 2 and board('SS2').field[2][6] == true,
-  'results lined up with spaces: DNF left out, N notional')
+  and board('SS1').field[1][1] == 399.4 and board('SS1').field[3][4] == 'L2WD', 'results lined up with spaces')
+T.check(board('SS2') and #board('SS2').field == 2 and board('SS2').field[2][6] == true, 'DNF left out, N notional')
 T.check(board('SS3') and board('SS3').cancelled and pass('SS3').cancelled, 'Cancelled under a pass')
-local rep = written[RA .. 'import report.txt']
-T.check(rep and rep:find('\r\nIMPORTED\r\n', 1, true) and rep:find('3 crews on 3 stages', 1, true),
-  'the import report written in the folder')
+T.check(written[RA .. 'import report.txt']:find('3 crews on 3 stages', 1, true), 'the report counts them')
 
 ------------------------------------------------------------------------------------------ stage blocks, every way
 local BLOCK_BASE = 'Rally: My Forest Rally\nMap: my stages.kml\nDates: 7 Feb 2031\nRunning order:\n'
@@ -364,6 +379,31 @@ files[IMP .. 'Broken.kml'] = nil
 imp.scan()
 T.check(files[IMP .. 'Broken.kml - import report.txt'] == nil, 'taken out: its report too')
 
+-- (second review of the one-file layout)
+local q1, qe1, qb1 = scanBlocks('Places:\n  HQ: 60.0102, -10.0451\n  Hall, 60.03, -10.05\n'
+  .. 'Stage: Kilo Hill\n  Weather: cloudy, 13,6 C, wind 18 km/h from SW, visibility 2 km\n'
+  .. '  Results:\n    Car  Driver  Class  Championship  Time\n    3  D. Smith  L4WD 6:50.2\n    4  E. Ng  -  National  6:51.0\n'
+  .. 'Stage: Long Gap\n  Weather: rain\n')
+local wq = qe1.itinerary[2].weather
+T.check(wq and wq.code == 3 and wq.tempC == 13.6 and wq.wind.ms == 5 and wq.wind.fromDeg == 225 and wq.visM == 2000,
+  'weather: cloudy, a decimal comma, km/h, a compass point, km')
+T.check(has(q1.warnings, 'This row has 3 columns') and field(qb1, 'SS2') and #field(qb1, 'SS2').field == 1,
+  'a row short of a column: said, not lost silently; - for an empty cell')
+T.check(has(q1.warnings, 'Long Gap is not in the running order'), 'a block for a stage not run: said')
+T.check(not has(q1.warnings, 'Town') and qe1.place == nil, 'a place called HQ stays a place')
+local q2, _, qb2 = scanBlocks('Stage: Kilo Hill\n\tResults:\n\t\tPos\t#\tDriver\tTime\n\t\t\t7\tAnn\t6:00\n'
+  .. '\t\t1\t3\tBob\t5:50\n\t\tCanceled\n')
+T.check(field(qb2, 'SS2') and #field(qb2, 'SS2').field == 2 and field(qb2, 'SS2').cancelled,
+  'an Excel paste: a # column, an empty first cell; Canceled')
+local q3, _, qb3 = scanBlocks('Stage: Kilo Hill\n  Results:\n    SS  Driver  Time\n    SS2  Ann  6:00\n')
+T.check(field(qb3, 'SS2') and #field(qb3, 'SS2').field == 1, 'a table row starting with SS2 stays a row')
+-- an untimed running order with lengths on its lines
+local _, qe4 = scanBlocks('', nil)
+files[RA .. 'rally.txt'] = 'Rally: X\nRunning order:\n  SS1 Meaford Mills  10.46 km\n  Kilo Hill 8.2 km\n'
+imp.scan()
+qe4 = jsonReadFile('/earthRally/events/my-forest-rally.json') or jsonReadFile('/earthRally/events/x.json')
+T.check(qe4 and qe4.itinerary[1].km == 10.46 and qe4.itinerary[2].km == 8.2, 'lengths in the running order')
+
 ------------------------------------------------------------------------------------------ the stage template
 local ST = IMP .. 'My Stage/'
 clear(RA)
@@ -373,7 +413,9 @@ local s1 = find(imp.scan(), 'My Stage')
 T.check(s1 and s1.ok and s1.stages == 1 and s1.name == 'Kilo Hill', 'the stage template with line.csv')
 local se = jsonReadFile('/earthRally/events/kilo-hill.json')
 T.check(se and #se.stages[1].line >= 4, 'its line')
-files[ST .. 'stage.txt'] = template('My Stage/stage.txt')
+-- (its examples taken in)
+files[ST .. 'stage.txt'] = template('My Stage/stage.txt'):gsub('\n# (Weather:)', '\n%1'):gsub('\n# (Results:)', '\n%1')
+  :gsub('\n#(\t)', '\n%1')
 files[ST .. 'line.csv'] = nil
 files[ST .. 'kilo hill.kml'] = kml('X', { { 'Kilo Hill', 60.03, -10.05, 30 } })
 local s2 = find(imp.scan(), 'My Stage')

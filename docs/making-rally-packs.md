@@ -62,7 +62,7 @@ what it found, what it left out and how to fix it, with the file and line. The s
 | `rally.txt` | **Everything about the rally in one file:** name, map, dates, town, pictures, rules, places, running order, and a block per stage with each pass's weather and results |
 | `season.txt` | A season: rounds (one folder per rally, each with its `rally.txt`), points, rules |
 | `stage.txt` | One stage: a map (or `line.csv`), its controls, weather and results |
-| `results.csv`, `weather.csv` | Optional, for people who keep times or weather in a spreadsheet instead |
+| `results.csv` | Optional, for people who keep times in a spreadsheet instead |
 | `line.csv` | A stage drawn as points, for a stage with no map |
 
 Only `Rally:` (or `Season:`, `Stage:`) and the map are needed. Leave out what you don't have.
@@ -126,12 +126,15 @@ Stage: Meaford Mills
 ```
 
 * The indents are only for reading: `Stage:` starts a block, `SS3:` (or `Pass 2:`) a pass in it.
-* **Weather** is the sky in words, then any of `90% cloud`, `wind 4 m/s from 250`, `gusts 9`, `12 C`, `rain 0.8`,
-  `snow 0.6`, `fog`, `visibility 400 m`, `night`. On a stage that runs once, or written above its passes, it needs
-  no pass line.
-* **Results** start with a line of column names. Paste them straight from Excel, or line them up with tabs or two
-  spaces. `N` after a time makes it notional; `DNF`, `DNS` or nothing is no time.
-* `results.csv` or `weather.csv` beside `rally.txt` still work; where both give a pass, `rally.txt` wins and the
+* **Weather** is the sky in words, then any of `90% cloud`, `wind 4 m/s from SW` (or km/h), `gusts 9`, `12 C`,
+  `rain 0.8`, `snow 0.6`, `fog`, `visibility 400 m` (or km), `night`. Written before the stage's first pass line,
+  it is the weather of every run of that stage.
+* **Results** start with a line of column names. Paste them straight from Excel, or line them up with two spaces
+  or more. A row must have every column: write `-` in an empty cell when lining up with spaces. `N` after a time
+  makes it notional; `DNF`, `DNS` or `-` is no time. Results before any pass line are for a stage that runs once.
+* **Length** in a block is the stage's official length for every run (the running order's `10.46 km` works too;
+  where they differ, the block's is used and the report says so).
+* `results.csv` beside `rally.txt` still works; where both give a pass, `rally.txt` wins and the
   report says so.
 
 ## The stage map

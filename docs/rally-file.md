@@ -65,12 +65,17 @@ wanted; `Place:` + `At:` blocks work too.
 `Stage: <name>` line starts one, and it runs until a line with one of the rally's own settings (`Running order:`,
 `Town:`...). In it: `Length` (`ss_km` of every pass that has none), a pass line (`SS3:`, or `Pass 2:` / `Run 2:`,
 its stage's second run; `SS3: Cancelled` on one line too), and under a pass `Weather`, `Results` and `Cancelled`.
-Weather or Results before any pass line is the stage's only pass; Weather there goes on every pass. `Weather:` is
+Weather before the first pass line goes on every pass of the stage; Results or Cancelled there are for the stage's
+only pass (a stage that runs more than once: asked which). A block for a stage not in the running order is said and
+left out. `Weather:` is
 the sky, then comma parts (`90% cloud`, `wind 4 m/s from 250`, `gusts 9`, `12 C`, `rain 0.8`, `snow 0.6`, `fog`,
-`thunder`, `visibility 400 m`, `night`, `code 61`), through the same builder as weather.csv. `Results:` is a table
+`thunder`, `visibility 400 m` or `3 km`, `night`, `code 61`; wind in m/s, km/h, mph or knots, from degrees or a
+compass point; a part with a unit not known is said), through the same builder as weather.csv. `Results:` is a table
 to the next block line: its first row the column names (results.csv's), else Car, Driver, Class, Championship,
 Time and said; cells split by tabs (one each when the row has the header's number, as Excel pastes, else runs of
-them), else two spaces or more, else `,` / `;`, else single spaces when that gives the header's number. A block's
+them), else two spaces or more, else `,` / `;`, else single spaces when that gives the header's number. The table's
+indent is its first line's leading tabs; a row with one more has an empty first cell. A row with another number of
+cells than the header is said and left out. Inside a table only a `#` at a line's start is a note. A block's
 results and weather override results.csv's and weather.csv's for the same pass, said; its `Cancelled` cancels the
 pass in the results.
 

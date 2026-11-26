@@ -210,7 +210,10 @@ function M.lines(s)
     local function notes(x) return (x:gsub('^%s*#.*$', ''):gsub('^%s*//.*$', ''):gsub('%s+#.*$', ''):gsub('%s+//.*$', '')) end
     t = notes(t)
     -- (tabbed: the line with its tabs kept, for a table pasted from Excel, whose empty cells are two tabs)
-    out[#out + 1] = { n = n, raw = M.trim(raw), text = M.trim(t), indent = indent, tabbed = M.trim(notes(raw)) }
+    -- (tables: a # inside is a column or a car number, only one at the line's start a note; spaces trimmed, tabs
+    -- kept, as an empty first or last cell is a tab there)
+    local tabbed = raw:match('^%s*#') and '' or raw:gsub('^ +', ''):gsub(' +$', ''):gsub('\r', '')
+    out[#out + 1] = { n = n, raw = M.trim(raw), text = M.trim(t), indent = indent, tabbed = tabbed }
   end
   return out
 end

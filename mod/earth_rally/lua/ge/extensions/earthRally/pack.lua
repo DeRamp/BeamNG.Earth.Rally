@@ -987,6 +987,15 @@ local function makeRally(src, spec, base, ctx, kind)
   -- (rallyStart, 1.7.0 service on the map: where the full rally starts, { name, lat, lon }, or nil)
   -- (timing, the rally-loop plan: the schedule's time zone and start, nil for an untimed rally)
   event.itinerary, event.rallyStops, event.rallyStart, event.timing = itineraryOf(evFile, event.stages, lineId, warn)
+  -- (a stage on its own is never a full rally, whatever its event file holds: its weather rides on its one pass,
+  -- and its length is its line's when none is given)
+  if kind == 'stage' then
+    event.rallyStops, event.rallyStart, event.timing = nil, nil, nil
+    for _, p in ipairs(event.itinerary or {}) do
+      local st = event.stages[1]
+      if not p.km and st and st.id == p.stage then p.km = round2(st.lengthM / 1000) end
+    end
+  end
   event.dates = type(spec.dates) == 'table' and spec.dates or type(info.dates) == 'table' and info.dates or nil
   local hq = type(info.hq) == 'table' and info.hq or {}
   local place = {}

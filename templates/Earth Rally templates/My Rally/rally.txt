@@ -52,96 +52,102 @@ Places:
 
 # --- Running order -------------------------------------------------------------------------
 #   One line per stage or stop, top to bottom.
-#
 #   A stage:   its name, as the line is named in your map. Listed again, it is its next run.
-#              The SS number in front is optional: left out, it is counted.
-#              After the name you can add "power stage".
+#              The SS number in front is optional. After the name you can add "power stage".
 #   A stop:    Start, Service, Regroup, Refuel or Finish, with "at" and a place from above.
 #   A new day: "Day 2" (and its date, if you like). The night before is an overnight.
-#
-#   Timed road sections (optional, for a rally with a real schedule):
-#     - a time at the front of a line: the first car's time there        08:23
-#     - minutes at the end: the time allowed from the line before         20 min
-#     - a stage's lateness time                                           late 10 min
-#     - a time control before a stage: a line with just "ATC" (and its code, if you like)
-#     - timed stops come in pairs: "Service in" / "Service out", "Regroup in" / "Regroup out",
-#       "MTC in" / "MTC out", "Parc ferme in" / "Parc ferme out"
-#     - a control only some classes go through: "only Regional"
+#   Timed road sections: see the example at the end of this file.
 
 Running order:
-	Day 1   7 Feb 2031
-	08:00   TC0    Start at Fernvale Park
-	08:20   TC1    ATC                              20 min
-	08:23   SS1    Meaford Mills                    late 10 min
-	        TC2    ATC                              25 min
-	        SS2    Kilo Hill                        late 10 min
-	        TC2A   Service in at Fernvale Park      30 min
-	09:40   TC2B   Service out at Fernvale Park     30 min
-	        TC3    ATC                              22 min
-	        SS3    Meaford Mills                    late 10 min
-	        TC4    ATC                              25 min
-	        SS4    Kilo Hill                        late 10 min
-	        TC4A   MTC in at Ridge Hotel            40 min
-	Day 2   8 Feb 2031
-	08:00   TC4B   MTC out at Ridge Hotel
-	        TC5    ATC                              30 min
-	        SS5    Long Gap                         late 12 min
-	        TC5A   Service in at Fernvale Park      35 min
-	        TC5B   Service out at Fernvale Park     30 min
-	        TC6    ATC                              35 min
-	        SS6    Long Gap                         late 12 min    power stage
-	        TC6A   Finish at Fernvale Park          40 min
+	Day 1
+	Start at Fernvale Park
+	SS1  Meaford Mills
+	SS2  Kilo Hill
+	Service at Fernvale Park
+	SS3  Meaford Mills
+	SS4  Kilo Hill
+	Day 2
+	Start at Ridge Hotel
+	SS5  Long Gap
+	Service at Fernvale Park
+	SS6  Long Gap               power stage
+	Finish at Fernvale Park
 
 
 # --- Stages --------------------------------------------------------------------------------
 #   One block per stage, named as in the map. Everything in a block is optional.
-#
-#   Length:    the official length, when the results give one
-#   SS1:       one of the stage's runs, from the running order. Under it:
-#     Weather:   the sky, then any of: 90% cloud, wind 4 m/s from 250, gusts 9, 12 C,
-#                rain 0.8, snow 0.6, fog, visibility 400 m, night
-#                (sky: clear, partly cloudy, cloudy, overcast, fog, drizzle, light rain, rain,
-#                heavy rain, light snow, snow, heavy snow, thunder)
-#     Results:   the real crews' times, a line of column names first. Paste them straight
-#                from Excel, or line them up with tabs or two spaces.
-#                Time: 6:39.4 or 399.4 seconds; N after it for a notional time;
-#                DNF, DNS or empty for no time.
-#     Cancelled: the run was cancelled
-#
-#   Prefer spreadsheets? results.csv and weather.csv in this folder still work instead.
+#     Length:     the official length
+#     SS1:        one of the stage's runs. Under it:
+#       Weather:    the sky (clear, cloudy, overcast, fog, drizzle, rain, heavy rain, snow,
+#                   thunder...), then any of: 90% cloud, wind 4 m/s from SW, 12 C, fog, night
+#       Results:    the real crews' times: a line of column names, then one line per crew.
+#                   Paste them from Excel, or line them up with two spaces or more.
+#                   N after a time: notional. DNF, DNS or - : no time.
+#       Cancelled:  the run was cancelled
+#   The examples under each stage start with #: take the # off the lines you want.
+#   results.csv in this folder also works, for anyone who keeps times in a spreadsheet.
 
 Stage: Meaford Mills
 	Length:  10.46 km
-
-	SS1:
-		Weather:  overcast, 90% cloud, wind 4 m/s from 250, 13.6 C
-		Results:
-			Car	Driver		Class	Championship	Time
-			1	A. Vance	L4WD	National	6:39.4
-			2	B. Okafor	O4WD	National	6:44.1
-			7	C. Lindqvist	L2WD	Regional	7:02.8
-
-	SS3:
-		Cancelled
-
+#	SS1:
+#		Weather:  overcast, 90% cloud, wind 4 m/s from 250, 13.6 C
+#		Results:
+#			Car  Driver        Class  Championship  Time
+#			1    A. Vance      L4WD   National      6:39.4
+#			2    B. Okafor     O4WD   National      6:44.1
+#			7    C. Lindqvist  L2WD   Regional      7:02.8
+#	SS3:
+#		Cancelled
 
 Stage: Kilo Hill
 	Length:  8.20 km
-
-	SS2:
-		Weather:  light rain, wind 6 m/s from 240, 11 C
-		Results:
-			Car  Driver        Class  Championship  Time
-			1    A. Vance      L4WD   National      5:12.0
-			2    B. Okafor     O4WD   National      5:20.3 N
-			7    C. Lindqvist  L2WD   Regional      DNF
-
+#	SS2:
+#		Weather:  light rain, wind 6 m/s, 11 C
+#		Results:
+#			Car  Driver        Class  Championship  Time
+#			1    A. Vance      L4WD   National      5:12.0
+#			2    B. Okafor     O4WD   National      5:20.3 N
+#			7    C. Lindqvist  L2WD   Regional      DNF
 
 Stage: Long Gap
 	Length:  14.02 km
+#	SS5:
+#		Weather:  snow, wind 3 m/s, -2.5 C, visibility 3 km
 
-	SS5:
-		Weather:  snow, wind 3 m/s, -2.5 C, visibility 3000 m
 
-	SS6:
-		Weather:  fog, 4 C
+#  ------------------------------------------------------------------------------------------
+#   A timed running order: the same rally with its schedule. To use it, delete the running
+#   order above and take the # off these lines.
+#     - a time at the front: the first car's time there           08:23
+#     - minutes at the end: the time allowed from the line before  20 min
+#     - late 10 min: a stage's lateness time
+#     - ATC: the time control before a stage (its code in front, if you like)
+#     - timed stops in pairs: Service in / Service out, Regroup in / Regroup out, MTC in /
+#       MTC out, Parc ferme in / Parc ferme out
+#     - only Regional: a control only some classes go through
+#  ------------------------------------------------------------------------------------------
+#
+# Running order:
+#	Day 1   7 Feb 2031
+#	08:00   TC0    Start at Fernvale Park
+#	08:20   TC1    ATC                              20 min
+#	08:23   SS1    Meaford Mills                    late 10 min
+#	        TC2    ATC                              25 min
+#	        SS2    Kilo Hill                        late 10 min
+#	        TC2A   Service in at Fernvale Park      30 min
+#	09:40   TC2B   Service out at Fernvale Park     30 min
+#	        TC3    ATC                              22 min
+#	        SS3    Meaford Mills                    late 10 min
+#	        TC4    ATC                              25 min
+#	        SS4    Kilo Hill                        late 10 min
+#	        TC4A   MTC in at Ridge Hotel            40 min
+#	Day 2   8 Feb 2031
+#	08:00   TC4B   MTC out at Ridge Hotel
+#	        TC5    ATC                              30 min
+#	        SS5    Long Gap                         late 12 min
+#	        TC5A   Service in at Fernvale Park      35 min
+#	        TC5B   Service out at Fernvale Park     30 min
+#	        TC5C   Regroup in at Fernvale Park      5 min    only Regional
+#	        TC6    ATC                              35 min
+#	        SS6    Long Gap                         late 12 min    power stage
+#	        TC6A   Finish at Fernvale Park          40 min

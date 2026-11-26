@@ -29,13 +29,15 @@ Map: kilo hill.kml                 # a map with this stage's line (only its firs
 # --- Weather and results (optional) --------------------------------------------------------
 #   As in a rally's stage block: the sky, then any of 90% cloud, wind 4 m/s from 250, 12 C...
 #   Results: a line of column names, then one line per crew (paste from Excel, or line them up
-#   with tabs or two spaces). results.csv in this folder works instead.
+#   with two spaces or more). results.csv in this folder works instead.
 
-Weather:  overcast, wind 4 m/s, 12 C
-Results:
-	Car  Driver        Class  Championship  Time
-	1    A. Vance      L4WD   National      5:12.0
-	2    B. Okafor     O4WD   National      5:20.3
+#   The examples start with #: take the # off the lines you want.
+
+# Weather:  overcast, wind 4 m/s, 12 C
+# Results:
+#	Car  Driver        Class  Championship  Time
+#	1    A. Vance      L4WD   National      5:12.0
+#	2    B. Okafor     O4WD   National      5:20.3
 
 
 # --- Controls (optional) -------------------------------------------------------------------
