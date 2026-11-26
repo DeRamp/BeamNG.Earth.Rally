@@ -468,10 +468,14 @@ local function standIn(veh)
         local rel = veh:getNodePosition(ref)
         if shapeWrap then shapeWrap.caught = (shapeWrap.caught or 0) + 1 end
         log('I', logTag, 'keep damage: BeamNG.Earth teleport moved the car as it is (its shape kept)')
-        return veh:setClusterPosRelRot(ref, x + rel.x, y + rel.y, z + rel.z, 0, 0, 0, 1)
+        local r = veh:setClusterPosRelRot(ref, x + rel.x, y + rel.y, z + rel.z, 0, 0, 0, 1)
+        veh:applyClusterVelocityScaleAdd(ref, 0, 0, 0, 0)
+        M.keepShape(false)     -- (one teleport, one catch: the stand-in goes at once)
+        return r
       end
     elseif k == 'applyClusterVelocityScaleAdd' then
       m = function(_, cid, ...)
+        if cid == -1 and not (shapeWrap and shapeWrap.active) then return veh:applyClusterVelocityScaleAdd(-1, ...) end
         if cid == -1 then cid = veh:getRefNodeId() end
         return veh:applyClusterVelocityScaleAdd(cid, ...)
       end
@@ -484,20 +488,26 @@ local function standIn(veh)
   standIns[veh] = s
   return s
 end
+-- On just before one of our teleports (a skip's, a recovery's), off at its first catch or once the move has settled
+-- (rallyRun's move): never left on through a stage. (`active`: off even if another mod wrapped it after us.)
 local function keepShape(on)
   local dbg = rawget(_G, 'debug')
   if not on then
-    if shapeWrap and rawget(_G, 'getPlayerVehicle') == shapeWrap.fn then _G.getPlayerVehicle = shapeWrap.orig end
+    if shapeWrap then
+      shapeWrap.active = false
+      if rawget(_G, 'getPlayerVehicle') == shapeWrap.fn then _G.getPlayerVehicle = shapeWrap.orig end
+    end
     shapeWrap = nil
     return
   end
+  if not (keepWrap and rawget(_G, 'spawn') and spawn.safeTeleport == keepWrap.fn) then return end  -- (no unwrap: none)
   local gpv = rawget(_G, 'getPlayerVehicle')
   if type(gpv) ~= 'function' or not (dbg and dbg.getinfo) then return end
   if shapeWrap and gpv == shapeWrap.fn then return end
-  local w = { orig = gpv }
+  local w = { orig = gpv, active = true }
   w.fn = function(...)
     local v = w.orig(...)
-    if v == nil then return v end
+    if v == nil or not w.active then return v end
     local okI, info = pcall(dbg.getinfo, 2, 'S')
     local src = okI and info and info.source or ''
     if src:find(M.SHAPE_CALLER, 1, true) then return standIn(v) end
@@ -506,7 +516,7 @@ local function keepShape(on)
   _G.getPlayerVehicle = w.fn
   shapeWrap = w
 end
-M._standIn, M._realCar = standIn, realCar
+M._standIn, M._realCar, M.keepShape = standIn, realCar, keepShape
 function M.shapeKept() return shapeWrap and shapeWrap.caught or 0 end
 
 function M.keepDamage(on)
@@ -517,7 +527,6 @@ function M.keepDamage(on)
     keepShape(false)
     return
   end
-  keepShape(true)
   if not (sp and type(sp.safeTeleport) == 'function') then
     if keepWrap then keepWrap.untilT = wallClock() + M.KEEP_DAMAGE_S end
     return

@@ -4776,14 +4776,16 @@ do
       getId = function() return 42 end }
     local s = runner._standIn(fake)
     s:setClusterPosRelRot(-1, 10, 20, 30, 0, 0, 0, 1)
-    s:applyClusterVelocityScaleAdd(-1, 0, 0, 0, 0)
     s:setClusterPosRelRot(3, 5, 5, 5, 0, 0, 0, 1)
     T.check(got[1][1] == 7 and got[1][2] == 11 and got[1][3] == 22 and got[1][4] == 33 and got[2][2] == 7
       and got[3][1] == 3 and s:getId() == 42 and runner._realCar(s) == fake,
       'keep damage: BeamNG.Earth\'s cluster -1 lift turned into a move by the reference node (#80)')
     local gpv0 = getPlayerVehicle
     runner.keepDamage(true)
-    T.check(getPlayerVehicle(0) == gpv0(0), 'keep damage: any caller but BeamNG.Earth\'s core gets the real car')
+    T.check(getPlayerVehicle == gpv0, 'keep damage on its own: getPlayerVehicle left alone (the stand-in: one teleport)')
+    runner.keepShape(true)
+    T.check(getPlayerVehicle ~= gpv0 and getPlayerVehicle(0) == gpv0(0),
+      'keep shape: any caller but BeamNG.Earth\'s core gets the real car')
     runner.keepDamage(false)
     T.check(getPlayerVehicle == gpv0, 'keep damage off: the game\'s getPlayerVehicle back')
   end
