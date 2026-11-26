@@ -4343,9 +4343,19 @@ do
     rframes(5)
     T.check(not okF and whyF and R.clock.t == t0 + 5 * 60 and runner.approaching() and rallyRun.canSkip(),
       'skip: the teleport failed: not skipped (' .. tostring(whyF) .. '), the transit armed again')
+    local placeCar0, placedDir = runner.placeCar, nil
+    runner.placeCar = function(v, pos, dir) placedDir = dir return placeCar0(v, pos, dir) end
     T.check(rallyRun.skipTransit() and not rallyRun.canSkip(), 'skip: SS1\'s transit skipped')
     rframes(60)
-    T.check(geo_m(car.lat, car.lon, atcLat, atcLon) < 1, 'skip: the car at SS1\'s time control')
+    runner.placeCar = placeCar0
+    T.check(geo_m(car.lat, car.lon, atcLat, atcLon) < runner.AT_BOARD_M, 'skip: the car at SS1\'s time control')
+    do  -- (#79: turned toward the start, not left as it was before the teleport)
+      local s1 = ev.stages[1].controls.start
+      local ax, ay = beamngEarth_api.toGame(atcLat, atcLon, 0)
+      local sx, sy = beamngEarth_api.toGame(s1.lat, s1.lon, 0)
+      T.check(placedDir and placedDir.x * (sx - ax) + placedDir.y * (sy - ay) > 0,
+        'skip: the car set down facing the way on to the start (#79)')
+    end
     T.check(not rallyRun.canSkip(), 'skip: at the board, no skip offered')
     T.check(rallyRun.askInfo() and rallyRun.askInfo().loadAsk and rallyRun.answerLoad('load'), 'skip: SS1 loaded')
     T.check(R.clock.t == t0 + 20 * 60, 'skip: the clock on to the due minute at the check-in, 08:20 (' .. wt.hm(R.clock.t) .. ')')
@@ -4393,10 +4403,19 @@ do
     R = rallyRun.active()
     T.check(R.timed and rallyRun.goNext() and runner.approaching(), 'skip no ATC: on the transit to SS1')
     R.clock.t = t0 + 5 * 60
+    -- (#79: set down behind the start line, facing along the stage -- not left turned as it was before the teleport)
+    local placeCar0, placedDir = runner.placeCar, nil
+    runner.placeCar = function(v, pos, dir) placedDir = dir return placeCar0(v, pos, dir) end
     T.check(rallyRun.skipTransit(), 'skip no ATC: skipped')
     rframes(60)
-    T.check(geo_m(car.lat, car.lon, st.controls.start.lat, st.controls.start.lon) < 1 and R.clock.t == t0 + 20 * 60,
+    runner.placeCar = placeCar0
+    T.check(geo_m(car.lat, car.lon, st.controls.start.lat, st.controls.start.lon) < runner.CAR_BEHIND_LINE_M + 2
+      and R.clock.t == t0 + 20 * 60,
       'skip no ATC: at the start, the clock on to 08:20 (' .. wt.hm(R.clock.t) .. ')')
+    local sx, sy = beamngEarth_api.toGame(st.line[1][1], st.line[1][2], 0)
+    local ex, ey = beamngEarth_api.toGame(st.line[#st.line][1], st.line[#st.line][2], 0)
+    T.check(placedDir and placedDir.x * (ex - sx) + placedDir.y * (ey - sy) > 0,
+      'skip no ATC: the car set down facing along the stage (#79)')
     pcall(runner.abort, true)
     rallyRun.endRally()
     rallyRun.abandon('test19s')

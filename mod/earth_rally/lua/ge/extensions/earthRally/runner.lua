@@ -1256,15 +1256,16 @@ end
 -- beside it, best aligned with the way on to the start point `sp`, walked back along its bends), facing along it;
 -- never the organisers' point itself, which can be metres off the road. `pz` is a height to look for the ground near.
 -- Returns the spot ({ x, y, z, dx, dy, road }) without moving anything.
-local function spotBeforeAtc(a, sp, pz)
-  local spot = M.roadSpot(a.x, a.y, { x = sp.x - a.x, y = sp.y - a.y }, -M.CAR_BEFORE_ATC_M, sp)
+local function spotBeforeAtc(a, sp, pz, backM)
+  backM = backM or M.CAR_BEFORE_ATC_M
+  local spot = M.roadSpot(a.x, a.y, { x = sp.x - a.x, y = sp.y - a.y }, -backM, sp)
   local z, hit = groundNear(spot.x, spot.y, spot.z or pz)
   -- (a road from the place before the teleport, its road map not yet rebuilt here: its height is not the ground's)
   if spot.road and hit == false then
     spot = M.roadSpot(a.x, a.y, { x = sp.x - a.x, y = sp.y - a.y }, 0, sp)
     spot.road = false
     z = groundNear(a.x, a.y, pz)
-    spot.x, spot.y = a.x - spot.dx * M.CAR_BEFORE_ATC_M, a.y - spot.dy * M.CAR_BEFORE_ATC_M
+    spot.x, spot.y = a.x - spot.dx * backM, a.y - spot.dy * backM
   end
   spot.z = z + 1.0
   return spot
@@ -2475,7 +2476,10 @@ end
 -- after a teleport) the car is LEFT on the raw point: inside DRIVEN_THERE_MIN_M of it, so Run stage sets it down
 -- later on a road map that has caught up. Put 40 m back across a field instead, it would be kept there as "driven
 -- there".
-function M.faceAtc(stage)
+-- backM: how far before the board (CAR_BEFORE_ATC_M by default; the rally's skip transit, SKIP_BEFORE_ATC_M: inside
+-- AT_BOARD_M, so the car is at the board as if driven in).
+M.SKIP_BEFORE_ATC_M = 10
+function M.faceAtc(stage, backM)
   local p, veh = carPos()
   if not (p and veh and stage.line and #stage.line >= 1) then return false end
   local lat, lon, kind = M.arrivalPoint(stage)
@@ -2483,10 +2487,20 @@ function M.faceAtc(stage)
   local s = stage.controls and stage.controls.start or { lat = stage.line[1][1], lon = stage.line[1][2] }
   local a, sp = ctlGame({ lat = lat, lon = lon }), ctlGame(s)
   if not (a and sp) then return false end
-  local spot = spotBeforeAtc(a, sp, p.z)
+  local spot = spotBeforeAtc(a, sp, p.z, backM)
   if not spot.road then return false, 'no road on the map there' end
   M.placeCar(veh, spot, { x = spot.dx, y = spot.dy, z = 0 })
   return true, 'on the road map'
+end
+
+-- (#79) The car turned where it stands to face a point (lat / lon), a little above the ground: for a skip transit's
+-- landing at an ATC whose road is not on the road map yet. Returns true once done.
+function M.turnToward(lat, lon)
+  local p, veh = carPos()
+  if not (p and veh) then return false end
+  local t = ctlGame({ lat = lat, lon = lon })
+  if not t then return false end
+  return M.placeCar(veh, { x = p.x, y = p.y, z = p.z + 0.3 }, { x = t.x - p.x, y = t.y - p.y, z = 0 })
 end
 
 -- (1.7.3, item 4) After an auto recce whose landing found no road (faceAtc above: the road map round the car had not

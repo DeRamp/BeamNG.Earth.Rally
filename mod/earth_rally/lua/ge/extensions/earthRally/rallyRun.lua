@@ -1024,6 +1024,21 @@ local function goToStageStart(it, skip)
   local lat, lon = nil, nil
   if stage then lat, lon = runner.arrivalPoint(stage) end
   local function arm()
+    -- (#79) The teleport leaves the car on the raw point, turned as it was: set down on the road, facing the way on.
+    -- At the ATC: SKIP_BEFORE_ATC_M before its board (inside AT_BOARD_M: at the board, as if driven in), facing it;
+    -- with no ATC: behind the start line, facing along the stage. No road there yet: turned toward the start.
+    if stage then
+      local kind = select(3, runner.arrivalPoint(stage))
+      local fok, placed, how
+      if kind == 'ATC' then fok, placed, how = pcall(runner.faceAtc, stage, runner.SKIP_BEFORE_ATC_M)
+      else fok, placed, how = pcall(runner.faceStage, stage, R.eventId) end
+      local s = stage.controls and stage.controls.start
+      if not (fok and placed) and s and select(2, pcall(runner.turnToward, s.lat, s.lon)) == true then
+        fok, placed, how = true, true, 'turned toward the start only'
+      end
+      log('I', logTag, 'rally: set down at ' .. startLabel(it) .. ': ' .. (fok and (placed and tostring(how or 'done')
+        or ('left where it landed (' .. tostring(how) .. ')')) or tostring(placed)))
+    end
     local okT, whyT = armTransit()
     if not okT then say(tostring(whyT), 6, 'warning', R.name) end
     -- (a stage with no ATC to check in at -- loaded at its start, runner.arrivalPoint: the clock on now)
