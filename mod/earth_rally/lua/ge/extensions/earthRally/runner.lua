@@ -318,7 +318,9 @@ function M.placeCar(veh, pos, dir)
   -- rally), moved by the game's safeTeleport without its reset instead (it turns the car 180 degrees itself).
   local sp = rawget(_G, 'spawn')
   if M.keepingDamage() and sp and type(sp.safeTeleport) == 'function' then
-    local ok = pcall(sp.safeTeleport, veh, vec3(pos.x, pos.y, pos.z),
+    -- (the game's own function, not our wrapper: our moves are not counted as BeamNG.Earth's set-downs kept)
+    local tp = M.keepOrig() or sp.safeTeleport
+    local ok = pcall(tp, veh, vec3(pos.x, pos.y, pos.z),
       quatFromDir(vec3(dir.x / l, dir.y / l, (dir.z or 0) / l), vec3(0, 0, 1)), nil, nil, false, nil, false)
     if ok then M.resetCameraSoon() return true end
   end
@@ -574,6 +576,7 @@ function M.keepDamage(on)
   keepWrap = w
 end
 function M.keepingDamage() return keepWrap ~= nil end
+function M.keepOrig() return keepWrap and keepWrap.orig or nil end
 function M.keepCaught() return keepWrap and keepWrap.caught or 0 end
 
 local function carPos()
