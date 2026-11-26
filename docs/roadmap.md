@@ -163,7 +163,7 @@ The owner asked for it, 2026-11-18. Released 2026-11-19.
 | ✔ | An Earth Rally tile on the game's Play > Rally page that opens the menu with no level loaded | built |
 | ✔ | BeamNG.Earth loads only when a stage is driven or a rally started, then the button runs | built |
 
-## +handfiles: hand-made rally files (built on 1.10.0)
+## 1.10.2: hand-made rally files (released 2026-11-26)
 
 The owner asked for it, 2026-11-25: rally files people can write by hand, forgiving of mistakes, that explain
 themselves, on top of the JSON packs (which keep working). Plan in docs/plan-hand-files.md. Built, not yet driven.

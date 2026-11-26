@@ -3,6 +3,23 @@
 Format: [`docs/writing-standard.md`](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/writing-standard.md). Downloads:
 [Releases](https://github.com/DeRamp/BeamNG.Earth.Rally/releases).
 
+## 1.10.2-alpha: hand-made rally files (2026-11-26)
+
+Works with BeamNG.drive 0.40.6 · [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+.
+
+Rallies and seasons can now be written by hand in plain text, no JSON needed.
+
+### New
+* **Rally files in plain text**: one `rally.txt` per rally beside its map; `season.txt` for a season.
+* The running order, timed sections, weather and real results all go in `rally.txt`.
+* Spreadsheets work too: `results.csv`, `weather.csv` and `line.csv`.
+* Small mistakes are forgiven: names, times, dates and positions are read however they are written.
+* Every import writes an **Import report**: open it from **Last import** on the Rallies page.
+* **Templates** to fill in: [download them](https://github.com/DeRamp/BeamNG.Earth.Rally/raw/main/templates/Earth%20Rally%20templates.zip). Guide: [making rally packs](https://github.com/DeRamp/BeamNG.Earth.Rally/blob/main/docs/making-rally-packs.md).
+
+### Changed
+* JSON rally packs work as before, and now report broken JSON by line and column.
+
 ## 1.10.1-alpha: the co-driver's calls (2026-11-26)
 
 Works with BeamNG.drive 0.40.6 · [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth/releases) 1.10+.
