@@ -55,10 +55,12 @@ M.BLOCKED = {
   'forceField', 'funBoom', 'funBreak', 'funExtinguish', 'funFire', 'funHinges', 'funTires', 'funRandomTire',
   'latchesOpen', 'latchesClose', 'funBoost', 'funBoostBackwards', 'funFling', 'funFlingDownward',
 }
--- (notes-rally-loop 3) Casual: the game's own reset (the player's car only: not reset_all_physics, which resets
--- the traffic too) and recovery stay open, so a broken car can carry on; a reset on a stage costs the stage's reset
--- penalty as on Drive stage (runner.onReset, run.casual). The rest as Realistic.
-M.CASUAL_OPEN = { reset_physics = true, recover_vehicle = true, recover_vehicle_alt = true, recover_to_last_road = true }
+-- (notes-rally-loop 3) Casual: the game's recovery (the rewind) stays open, so a broken car can carry on; a rewind on
+-- a stage costs the stage's reset penalty as on Drive stage (runner.onReset, run.casual). The rest as Realistic.
+-- (2026-11-26) The game's own reset (reset_physics) is blocked in Casual too: it shares D-pad right with the rally's
+-- recovery and took the car back to its last reset point, far off the stage. The rally's recovery mends the car in
+-- Casual instead (recoverKey).
+M.CASUAL_OPEN = { recover_vehicle = true, recover_vehicle_alt = true, recover_to_last_road = true }
 function M.blockedFor(mode)
   local out = {}
   for _, a in ipairs(M.BLOCKED) do
@@ -1592,7 +1594,8 @@ function M.recoverKey()
   local r = runner.current()
   -- (Casual, and Realistic between the check-in and the start -- toAtc, toStart, waitStart: not timed yet, so free)
   if R.mode == 'casual' or r.state ~= 'running' then
-    runner.backOnRoad()           -- (Casual on the timed stage: +5 s, runner.BACK_ON_ROAD_PENALTY_S; else free)
+    -- (Casual on the timed stage: +5 s, runner.BACK_ON_ROAD_PENALTY_S; else free. Casual: the car mended too)
+    runner.backOnRoad({ repair = R.mode == 'casual' })
     return true
   end
   -- Realistic, on the stage: the question (#59: the game paused under it, answered on its card: no time-out, and the

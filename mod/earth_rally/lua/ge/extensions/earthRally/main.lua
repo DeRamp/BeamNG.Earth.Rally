@@ -2422,6 +2422,25 @@ logPausedSim = function(dtReal, dtSim)
   pausedLog.real, pausedLog.sim = 0, 0
 end
 
+-- (2026-11-26) The game's own reset (reset_physics: D-pad right, as our recovery is) held off while a single stage
+-- runs on its road: it took the car back to its last reset point, off the stage. Back on the road is the reset there.
+-- (A full rally blocks it itself, rallyRun.block.) Looked at every frame; the filter is sent only on a change.
+local STAGE_FILTER = 'earthRallyStage'
+local stageBlocked = false
+local function stageResetBlock(on)
+  on = on == true
+  if on == stageBlocked then return end
+  local af = rawget(_G, 'core_input_actionFilter')
+  if not (af and af.setGroup and af.addAction) then stageBlocked = on return end
+  local ok, err = pcall(function()
+    af.setGroup(STAGE_FILTER, { 'reset_physics' })
+    af.addAction(0, STAGE_FILTER, on)
+  end)
+  if not ok then log('E', logTag, 'stage reset block: ' .. tostring(err)) return end
+  stageBlocked = on
+end
+M._stageResetBlocked = function() return stageBlocked end
+
 ------------------------------------------------------------------------------------------ multiplayer (plan F)
 -- In a BeamMP session Earth Rally does nothing (the owner, 2026-11-19: "a very multiplayer unfriendly mod"): no stage
 -- or rally starts, a stage under way is stopped and a rally under way left as Save and quit leaves it, no HUD, no input
@@ -2444,6 +2463,7 @@ local function mpStop()
   pcall(rallyRun.quit)          -- (Save and quit: the save kept, BeamNG's own recovery back, traffic given back)
   pcall(rallyRun.release)
   pcall(cardInput.reset)        -- (the card's buttons given back to the game)
+  pcall(stageResetBlock, false) -- (the game's own reset given back)
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)
 end
@@ -2480,6 +2500,7 @@ function M.onUpdate(dtReal, dtSim)
     return
   end
   pcall(rallyRun.update, dtReal, dtSim)
+  do local okS, live = pcall(runner.singleStageLive) pcall(stageResetBlock, okS and live) end
   local okP, errP = pcall(stepRallyPrep, dtReal or 0)
   if not okP then log('E', logTag, 'rally prep: ' .. tostring(errP)) end
   -- (1.7.3, item 3) a road-graph window waiting to be asked again after a timeout
@@ -2591,16 +2612,22 @@ function M.backOnRoad()
   if mpOn then return false end
   local okR, mine = pcall(rallyRun.recoverKey)
   if okR and mine then return true end
-  local ok, r = pcall(runner.backOnRoad) return ok and r end
+  -- (a single stage: the car mended as well, as the game's own reset would -- that one is held off, stageResetBlock)
+  local ok, r = pcall(runner.backOnRoad, { repair = true }) return ok and r end
 function M.flipUpright() local ok, r = pcall(runner.flipUpright) return ok and r end
--- (1.7.0, #25) The pad's rally recovery (D-pad right): the rally's recovery key, and nothing outside a full rally --
--- there the same button is the game's own reset, which a stage counts already.
+-- (1.7.0, #25) The pad's rally recovery (D-pad right): the rally's recovery key. (2026-11-26) On a single stage too:
+-- Back on the road, the car mended; the game's own reset on the same button is held off then (stageResetBlock).
+-- Anywhere else it does nothing, and the button is the game's own reset.
 function M.rallyRecover()
   if mpOn then return false end
   -- (a card up: the d-pad is the card's, cardInput)
   if cardInput.active() then return false end
   local r = rallyRun.active()
-  if not r or r.done then return false end
+  if not r or r.done then
+    local okS, live = pcall(runner.singleStageLive)
+    if okS and live then return M.backOnRoad() end
+    return false
+  end
   local ok, r = pcall(rallyRun.recoverKey)
   return ok and r
 end
@@ -2663,6 +2690,7 @@ function M.onClientEndMission()
   pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
   pcall(rallyRun.release)
   pcall(cardInput.reset)        -- (the card's buttons given back to the game)
+  pcall(stageResetBlock, false) -- (the game's own reset given back)
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)
   pcall(earth.reset)
@@ -2696,6 +2724,7 @@ function M.onModDeactivated()
   pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
   pcall(rallyRun.release)
   pcall(cardInput.reset)        -- (the card's buttons given back to the game)
+  pcall(stageResetBlock, false) -- (the game's own reset given back)
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)
   pcall(earth.reset)
@@ -2725,6 +2754,7 @@ function M.onExtensionUnloaded()
   pcall(rallyRun.quit)          -- (a full rally: left, its save kept, BeamNG's own recovery back)
   pcall(rallyRun.release)
   pcall(cardInput.reset)        -- (the card's buttons given back to the game)
+  pcall(stageResetBlock, false) -- (the game's own reset given back)
   pcall(runner.abort, true)
   pcall(earth.holdStrips, false)
   pcall(earth.reset)

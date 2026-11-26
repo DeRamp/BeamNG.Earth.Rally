@@ -1815,10 +1815,20 @@ do
     'back on the road: on the stage line where it had got to, +1 reset (' .. string.format('%.1f, %.1f', bx - fx, by - fy) .. ')')
   T.check((r10.resetPenS or 0) == penBefore + 5 and toastTitled('Back on the road: %+5 s') ~= nil,
     'back on the road: +5 s, not the reset\'s 15')
+  T.check(runner.singleStageLive() == true, 'a single stage on its road: the game\'s own reset held off (main.lua)')
+  frames(10)
+  -- (2026-11-26) with repair (the key on a single stage, a Casual rally): the car set down mended
+  car.lat, car.lon = toGeo(fx + 30, fy)
+  frames(1)
+  T.check(runner.backOnRoad({ repair = true }) == true and #teleports == 2 and teleports[2].reset == true,
+    'back on the road, repair: the car set down mended')
+  table.remove(teleports)
+  before = r10.resets or 0
   frames(10)
   veh.getDirectionVector = function() return { x = 0, y = 1, z = 0 } end
   veh.getID = function() return 1 end
-  T.check(runner.flipUpright() == true and #teleports == 2 and (r10.resets or 0) == before + 1, 'flip upright: no penalty')
+  local flipOk = runner.flipUpright()
+  T.check(flipOk == true and #teleports == 2 and (r10.resets or 0) == before, 'flip upright: no penalty')
   -- the layout: something puts its own on mid-stage (a car reloaded): ours back within a second
   T.check(layout == 'earthRallyStage', 'the stage layout on for the run')
   layout = 'beamngEarth'
@@ -4061,11 +4071,12 @@ do
       tState = 'on'                 -- (the spawning group arrives)
       rallyRun.update(0.1)
       T.check(deleted == 4 and tState == 'off', 'traffic: the cars that came after the delete taken away too')
-      -- (Casual: the game's own reset and recovery open; the rest blocked. notes-rally-loop 3)
+      -- (Casual: the game's recovery open; its reset blocked (2026-11-26: it shares D-pad right with ours); the rest
+      -- blocked. notes-rally-loop 3)
       local casual = rallyRun.blockedFor('casual')
       local has = function(l, x) for _, v in ipairs(l) do if v == x then return true end end return false end
-      T.check(not has(casual, 'reset_physics') and has(casual, 'reset_all_physics') and not has(casual, 'recover_vehicle') and has(casual, 'vehicle_selector')
-        and has(casual, 'toggle_slow_motion'), 'Casual: reset and recover open, vehicle swap and slow motion blocked')
+      T.check(has(casual, 'reset_physics') and has(casual, 'reset_all_physics') and not has(casual, 'recover_vehicle') and has(casual, 'vehicle_selector')
+        and has(casual, 'toggle_slow_motion'), 'Casual: recover open; reset, vehicle swap and slow motion blocked')
       local real = rallyRun.blockedFor('realistic')
       T.check(has(real, 'reset_physics') and has(real, 'recover_vehicle'), 'Realistic: reset and recover blocked')
       -- (notes-rally-loop 4) a rally started in slow motion runs at normal speed

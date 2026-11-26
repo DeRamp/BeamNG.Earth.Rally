@@ -2588,14 +2588,18 @@ end
 
 -- Recovery, as rally games have it (the player's ask, 2026-11-13): the car moved as the game's own radial-menu "flip
 -- upright" moves it (spawn.safeTeleport, the damage kept), not reset or rewound.
-local function recoverTo(veh, pos, dir)
+-- repair: the car set down mended as well (the game's own reset does that: resetVehicle = true), for a single stage
+-- and a Casual rally (the owner, 2026-11-26: "Both resets should take me back to the stage road, and they should fix
+-- my car"). The damage-keeping wrap (M.keepDamage) is taken off first, or it would turn the repair back into a move.
+local function recoverTo(veh, pos, dir, repair)
   if run and run.online and run.state == 'running' then pcall(online.runReset, run.online, run.clock) end
   local sp = rawget(_G, 'spawn')
   local l = math.sqrt(dir.x * dir.x + dir.y * dir.y)
   if l < 1e-6 then return false end
   local d = vec3(dir.x / l, dir.y / l, 0)
+  if repair then M.keepDamage(false) end
   if sp and sp.safeTeleport then
-    local ok = pcall(sp.safeTeleport, veh, vec3(pos.x, pos.y, pos.z), quatFromDir(d), nil, nil, nil, nil, false)
+    local ok = pcall(sp.safeTeleport, veh, vec3(pos.x, pos.y, pos.z), quatFromDir(d), nil, nil, nil, nil, repair == true)
     if ok then M.resetCameraSoon() return true end
   end
   return M.placeCar(veh, pos, d)
@@ -2603,7 +2607,8 @@ end
 
 -- Back on the road: the car on the stage line where it had got to, facing on along the stage. A reset (RESET_PENALTY_S
 -- on the timed stage, setting resetPenalty). On the way to the start and the stop control too (no penalty there).
-function M.backOnRoad()
+-- opts.repair: the car mended as well (recoverTo).
+function M.backOnRoad(opts)
   if not (run and run.line and (run.state == 'toAtc' or run.state == 'toStart' or run.state == 'running'
     or run.state == 'toStop')) then
     say('Back on the road: during a stage only.', 3, 'info')
@@ -2615,11 +2620,18 @@ function M.backOnRoad()
   local dir, at = aheadDir(run.line, run.cum, along)
   local pos = { x = at.x, y = at.y }
   pos.z = groundNear(pos.x, pos.y, at.z or p.z) + M.RECOVER_UP_M
-  if not recoverTo(veh, pos, dir) then return false end
+  if not recoverTo(veh, pos, dir, opts and opts.repair) then return false end
   -- (BACK_ON_ROAD_PENALTY_S on the timed stage; a Casual rally's too, a Realistic rally's stage asks Recover? instead)
   if run.state == 'running' and (not run.inRally or run.casual) then M.onReset(nil, M.BACK_ON_ROAD_PENALTY_S) end
   run.offRoute, run.backBearing = false, nil
   return true
+end
+
+-- A single stage (not a pass of a full rally) under way on its road: the game's own reset is held off then and
+-- Back on the road is the reset (main.lua stageResetBlock).
+function M.singleStageLive()
+  return run ~= nil and not run.inRally and run.line ~= nil and (run.state == 'toAtc' or run.state == 'toStart'
+    or run.state == 'running' or run.state == 'toStop')
 end
 
 -- (1.7.0) A full rally's transit: the game's own recovery is blocked, so the rally's key puts the car back on the
