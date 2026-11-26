@@ -72,7 +72,7 @@ async function registerPauseTab() {
 }
 
 // (2026-11-26) A Rally menu button over BeamNG.Earth's map while a full rally runs: back to the time card. The map is
-// BeamNG.Earth's page, so the button is ours, laid over it: shown and hidden by Lua (main.lua mapButtonSync, event
+// BeamNG.Earth's page, so the button is ours, laid over it: shown and hidden by Lua (main.lua mapStep, event
 // EarthRallyMapButton), the pad's Select doing the same. Plain DOM, no part of BeamNG.Earth's page touched.
 const MAP_BTN_ID = "earthRallyMapButton"
 const MAP_BTN_EVENT = "EarthRallyMapButton"

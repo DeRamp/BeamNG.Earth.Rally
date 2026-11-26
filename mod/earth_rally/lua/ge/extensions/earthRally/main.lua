@@ -2478,7 +2478,9 @@ end
 local function mapWrapSync(on)
   local st = earthSettings()
   if on and st and type(st.toggleMap) == 'function' then
-    if mapWrap and mapWrap.mod == st and st.toggleMap == mapWrap.fn then return end
+    -- (wrapped once per table: if something else has put its own over ours since, it is left alone, and so is
+    --  its function when the rally ends -- wrapping it again would save a chain that ends in ours)
+    if mapWrap and mapWrap.mod == st then return end
     local w = { mod = st, orig = st.toggleMap }
     w.fn = function() mapPending = true end
     st.toggleMap = w.fn
@@ -2496,6 +2498,12 @@ local function mapButton(show)
   if gh and gh.trigger then pcall(gh.trigger, 'EarthRallyMapButton', { show = show }) end
 end
 -- Every frame: the wrap on while a rally runs, a held map key let through, the map's button shown or hidden.
+local menuAfter3d = nil   -- the clock when the 3D map was asked to close for the time card (its exit can wait a flight)
+M.MAP3D_WAIT_S = 5
+local function map3dRoute()
+  local m3 = rawget(_G, 'beamngEarth_map3d')
+  return (type(m3) == 'table' and type(m3.ROUTE) == 'string' and m3.ROUTE) or 'beamngEarthMap3d'
+end
 local function mapStep()
   local live = rallyLive()
   mapWrapSync(live)
@@ -2503,9 +2511,13 @@ local function mapStep()
     mapPending = false
     if clockS() - selectAt > M.SELECT_SWALLOW_S then earthToggle() end
   end
-  mapButton(live and lastUi == mapRoute())
+  if menuAfter3d then
+    if not live or clockS() - menuAfter3d > M.MAP3D_WAIT_S then menuAfter3d = nil
+    elseif not (map3dOn()) and lastUi ~= map3dRoute() then menuAfter3d = nil M.openMenu() end
+  end
+  mapButton(live and (lastUi == mapRoute() or lastUi == map3dRoute()))
 end
-local function mapOff() mapWrapSync(false) mapButton(false) end
+local function mapOff() mapWrapSync(false) mapButton(false) menuAfter3d = nil end
 M._mapWrapped = function() return mapWrap ~= nil end
 M._mapButtonShown = function() return mapBtnShown end
 
@@ -2514,7 +2526,8 @@ M._mapButtonShown = function() return mapBtnShown end
 function M.mapToMenu()
   if mpOn or not rallyLive() then return false end
   local on3d, m3 = map3dOn()
-  if on3d and m3.exit then pcall(m3.exit) end
+  -- (the 3D map's exit can wait for its camera: the time card opened once it has gone, mapStep)
+  if on3d and m3.exit then pcall(m3.exit) menuAfter3d = clockS() return true end
   return M.openMenu()
 end
 -- The time card's Map button.
@@ -2529,6 +2542,9 @@ function M.rallySelect()
   if mpOn or not rallyLive() then return false end
   selectAt = clockS()
   mapPending = false
+  -- (a loading screen is our page too: never closed by this -- #49; a HUD card up answers on its own buttons)
+  if loadScreen.active() then return true end
+  if cardInput.active() then return true end
   if menuOpen then return M.closeMenu() end
   if mapIsOpen() then return M.mapToMenu() end
   return M.toggleMenu()
@@ -2708,7 +2724,8 @@ function M.backOnRoad()
   local okR, mine = pcall(rallyRun.recoverKey)
   if okR and mine then return true end
   -- (a single stage: the car mended as well, as the game's own reset would -- that one is held off, stageResetBlock)
-  local ok, r = pcall(runner.backOnRoad, { repair = true }) return ok and r end
+  local okS, single = pcall(runner.singleStageLive)
+  local ok, r = pcall(runner.backOnRoad, { repair = okS and single == true }) return ok and r end
 function M.flipUpright() local ok, r = pcall(runner.flipUpright) return ok and r end
 -- (1.7.0, #25) The pad's rally recovery (D-pad right): the rally's recovery key. (2026-11-26) On a single stage too:
 -- Back on the road, the car mended; the game's own reset on the same button is held off then (stageResetBlock).

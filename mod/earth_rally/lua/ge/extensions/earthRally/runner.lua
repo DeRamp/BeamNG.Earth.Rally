@@ -2555,7 +2555,8 @@ end
 -- RESET_DEBOUNCE_S, nor one just after the world's origin moved (BeamNG.Earth moving the car is not the player's).
 function M.onReset(vid, costS)
   if not (run and run.state == 'running') then return false end
-  if run.online then pcall(online.runReset, run.online, run.clock) end
+  -- (costS: Back on the road, whose move (recoverTo) has told the board already)
+  if run.online and not costS then pcall(online.runReset, run.online, run.clock) end
   if run.inRally and not run.casual then
     -- (the game's own recovery is blocked during a Realistic rally, rallyRun.lua; one that still got through -- the radial
     -- menu, quick access: they send no vehicle id -- is the rally's. Not another car's, nor BeamNG.Earth moving it.)
@@ -2631,7 +2632,7 @@ end
 -- Back on the road is the reset (main.lua stageResetBlock).
 function M.singleStageLive()
   return run ~= nil and not run.inRally and run.line ~= nil and (run.state == 'toAtc' or run.state == 'toStart'
-    or run.state == 'running' or run.state == 'toStop')
+    or run.state == 'waitStart' or run.state == 'running' or run.state == 'toStop')
 end
 
 -- (1.7.0) A full rally's transit: the game's own recovery is blocked, so the rally's key puts the car back on the
